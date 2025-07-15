@@ -31,7 +31,10 @@ fmt-check:
 # Fix linting issues and format code
 fix:
     #!/usr/bin/env bash
-    cargo clippy --fix --allow-dirty --workspace --all-targets -- -A clippy::too_many_arguments -A clippy::ptr_arg -A dead_code
+    # First run with --fix to auto-fix what we can
+    cargo clippy --fix --allow-dirty --workspace --all-targets --all-features -- -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+    # Then run without --fix to catch remaining issues (like CI does)
+    cargo clippy --workspace --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
     cargo fmt --all
 
 # Lint workspace packages

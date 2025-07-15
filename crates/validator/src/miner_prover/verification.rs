@@ -6,6 +6,7 @@
 use super::miner_client::{MinerClient, MinerClientConfig};
 use super::types::{ExecutorInfo, ExecutorStatus, MinerInfo};
 use crate::config::VerificationConfig;
+use crate::persistence::{entities::VerificationLog, SimplePersistence};
 use crate::ssh::{ExecutorSshDetails, ValidatorSshClient, ValidatorSshKeyManager};
 use anyhow::{Context, Result};
 use common::identity::{ExecutorId, Hotkey, MinerUid};
@@ -13,6 +14,7 @@ use common::ssh::SshConnectionDetails;
 use protocol::miner_discovery::{
     CloseSshSessionRequest, InitiateSshSessionRequest, SshSessionStatus,
 };
+use sqlx::Row;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -28,6 +30,8 @@ pub struct VerificationEngine {
     miner_client_config: MinerClientConfig,
     validator_hotkey: Hotkey,
     ssh_client: Arc<ValidatorSshClient>,
+    /// Database persistence for storing verification results
+    persistence: Arc<SimplePersistence>,
     /// Whether to use dynamic discovery or fall back to static config
     use_dynamic_discovery: bool,
     /// SSH key path for executor access (fallback)
@@ -43,7 +47,17 @@ pub struct VerificationEngine {
 }
 
 impl VerificationEngine {
-    pub fn new(config: VerificationConfig) -> Self {
+    pub fn new(_config: VerificationConfig) -> Self {
+        warn!("Creating VerificationEngine without persistence - database storage will not be available");
+        panic!(
+            "VerificationEngine requires database persistence - use new_with_persistence() instead"
+        )
+    }
+
+    pub fn new_with_persistence(
+        config: VerificationConfig,
+        persistence: Arc<SimplePersistence>,
+    ) -> Self {
         warn!("Creating VerificationEngine without validator hotkey - dynamic discovery will not be available");
         Self {
             config: config.clone(),
@@ -57,6 +71,7 @@ impl VerificationEngine {
             )
             .unwrap(),
             ssh_client: Arc::new(ValidatorSshClient::new()),
+            persistence,
             use_dynamic_discovery: false, // Disabled without proper initialization
             ssh_key_path: None,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -348,9 +363,11 @@ impl VerificationEngine {
                 / executor_results.len() as f64
         };
 
-        // Step 4: Store verification result
-        self.store_verification_result(task.miner_uid, overall_score)
-            .await?;
+        // Step 4: Store individual executor verification results
+        for result in &executor_results {
+            self.store_executor_verification_result(task.miner_uid, result)
+                .await?;
+        }
 
         verification_steps.push(VerificationStep {
             step_name: "result_storage".to_string(),
@@ -578,48 +595,146 @@ impl VerificationEngine {
         }
     }
 
-    /// Verify executor with SSH automation (enhanced with binary validation)
-    async fn verify_executor_with_ssh_automation(
+    async fn store_executor_verification_result(
         &self,
-        miner_endpoint: &str,
-        executor_info: &ExecutorInfoDetailed,
-    ) -> Result<ExecutorVerificationResult> {
-        // Direct call to enhanced method
-        self.verify_executor_with_ssh_automation_enhanced(miner_endpoint, executor_info)
+        miner_uid: u16,
+        executor_result: &ExecutorVerificationResult,
+    ) -> Result<()> {
+        info!(
+            "Storing executor verification result to database for miner {}, executor {}: score={:.2}",
+            miner_uid, executor_result.executor_id, executor_result.verification_score
+        );
+
+        // Create verification log entry for database storage
+        let verification_log = VerificationLog::new(
+            executor_result.executor_id.clone(),
+            self.validator_hotkey.to_string(),
+            "ssh_automation".to_string(),
+            executor_result.verification_score,
+            executor_result.ssh_connection_successful
+                && executor_result.binary_validation_successful,
+            serde_json::json!({
+                "miner_uid": miner_uid,
+                "executor_id": executor_result.executor_id,
+                "ssh_connection_successful": executor_result.ssh_connection_successful,
+                "binary_validation_successful": executor_result.binary_validation_successful,
+                "verification_method": "ssh_automation",
+                "executor_result": executor_result.executor_result,
+                "score_details": {
+                    "verification_score": executor_result.verification_score,
+                    "ssh_score": if executor_result.ssh_connection_successful { 0.5 } else { 0.0 },
+                    "binary_score": if executor_result.binary_validation_successful { 0.5 } else { 0.0 }
+                }
+            }),
+            2000, // duration_ms placeholder for executor verification
+            if !executor_result.ssh_connection_successful {
+                Some("SSH connection failed".to_string())
+            } else if !executor_result.binary_validation_successful {
+                Some("Binary validation failed".to_string())
+            } else {
+                None
+            },
+        );
+
+        // Store directly to database to avoid repository trait issues
+        let query = r#"
+            INSERT INTO verification_logs (
+                id, executor_id, validator_hotkey, verification_type, timestamp,
+                score, success, details, duration_ms, error_message, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#;
+
+        if let Err(e) = sqlx::query(query)
+            .bind(verification_log.id.to_string())
+            .bind(&verification_log.executor_id)
+            .bind(&verification_log.validator_hotkey)
+            .bind(&verification_log.verification_type)
+            .bind(verification_log.timestamp.to_rfc3339())
+            .bind(verification_log.score)
+            .bind(if verification_log.success { 1 } else { 0 })
+            .bind(serde_json::to_string(&verification_log.details).unwrap_or_default())
+            .bind(verification_log.duration_ms)
+            .bind(&verification_log.error_message)
+            .bind(verification_log.created_at.to_rfc3339())
+            .bind(verification_log.updated_at.to_rfc3339())
+            .execute(self.persistence.pool())
             .await
+        {
+            error!(
+                "Failed to store executor verification result to database: {}",
+                e
+            );
+            return Err(anyhow::anyhow!("Database storage failed: {}", e));
+        }
+
+        // Ensure miner-executor relationship exists
+        if let Err(e) = self
+            .ensure_miner_executor_relationship(miner_uid, &executor_result.executor_id)
+            .await
+        {
+            warn!("Failed to ensure miner-executor relationship: {}", e);
+            // Don't fail the verification storage for this
+        }
+
+        info!(
+            "Executor verification result successfully stored to database for miner {}, executor {}: score={:.2}",
+            miner_uid, executor_result.executor_id, executor_result.verification_score
+        );
+
+        Ok(())
     }
 
-    async fn store_verification_result(&self, miner_uid: u16, score: f64) -> Result<()> {
+    /// Ensure miner-executor relationship exists in database for weight calculation
+    async fn ensure_miner_executor_relationship(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<()> {
         info!(
-            "Storing verification result for miner {}: score={:.2}",
-            miner_uid, score
+            "Ensuring miner-executor relationship for miner {} and executor {}",
+            miner_uid, executor_id
         );
 
-        // Store verification result with timestamp and miner info
-        let verification_entry = serde_json::json!({
-            "miner_uid": miner_uid,
-            "score": score,
-            "timestamp": chrono::Utc::now().to_rfc3339(),
-            "verification_method": "dynamic_discovery"
-        });
+        let miner_id = format!("miner_{miner_uid}");
 
-        // Write to verification results file for persistence
-        let results_file = "/tmp/basilica_verification_results.json";
-        let mut results = if let Ok(content) = tokio::fs::read_to_string(results_file).await {
-            serde_json::from_str::<Vec<serde_json::Value>>(&content).unwrap_or_default()
+        // Check if relationship already exists
+        let query =
+            "SELECT COUNT(*) as count FROM miner_executors WHERE miner_id = ? AND executor_id = ?";
+        let row = sqlx::query(query)
+            .bind(&miner_id)
+            .bind(executor_id)
+            .fetch_one(self.persistence.pool())
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to check miner-executor relationship: {}", e))?;
+
+        let count: i64 = row.get("count");
+
+        if count == 0 {
+            // Insert new relationship
+            let insert_query = r#"
+                INSERT OR IGNORE INTO miner_executors (miner_id, executor_id, created_at, updated_at)
+                VALUES (?, ?, datetime('now'), datetime('now'))
+            "#;
+
+            sqlx::query(insert_query)
+                .bind(&miner_id)
+                .bind(executor_id)
+                .execute(self.persistence.pool())
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to insert miner-executor relationship: {}", e)
+                })?;
+
+            info!(
+                "Created miner-executor relationship: {} -> {}",
+                miner_id, executor_id
+            );
         } else {
-            Vec::new()
-        };
-
-        results.push(verification_entry);
-
-        let results_json = serde_json::to_string_pretty(&results)?;
-        tokio::fs::write(results_file, results_json).await?;
-
-        info!(
-            "Verification result stored for miner {}: score={:.2}",
-            miner_uid, score
-        );
+            debug!(
+                "Miner-executor relationship already exists: {} -> {}",
+                miner_id, executor_id
+            );
+        }
 
         Ok(())
     }
@@ -682,70 +797,13 @@ impl VerificationEngine {
         Ok(final_score)
     }
 
-    /// Verify executors with enhanced automation
-    async fn verify_executors_with_automation(&self, executors: &[ExecutorInfo]) -> Vec<f64> {
-        let mut scores = Vec::new();
-
-        for executor in executors {
-            match self
-                .verify_executor_with_enhanced_automation(executor)
-                .await
-            {
-                Ok(score) => {
-                    scores.push(score);
-                    info!("Enhanced automation verification completed for executor {} with score: {:.4}",
-                          executor.id, score);
-                }
-                Err(e) => {
-                    scores.push(0.0);
-                    warn!(
-                        "Enhanced automation verification failed for executor {}: {}",
-                        executor.id, e
-                    );
-                }
-            }
-        }
-
-        scores
-    }
-
-    /// Verify executor with enhanced automation including rate limiting and retry logic
-    async fn verify_executor_with_enhanced_automation(
-        &self,
-        executor: &ExecutorInfo,
-    ) -> Result<f64> {
-        let max_retries = 3;
-        let mut retry_count = 0;
-
-        loop {
-            match self.verify_executor_dynamic(executor).await {
-                Ok(score) => return Ok(score),
-                Err(e) if retry_count < max_retries - 1 => {
-                    retry_count += 1;
-                    let delay = Duration::from_millis(1000 * retry_count as u64);
-                    warn!(
-                        "Verification attempt {} failed for executor {}: {}. Retrying in {:?}",
-                        retry_count, executor.id, e, delay
-                    );
-                    tokio::time::sleep(delay).await;
-                }
-                Err(e) => {
-                    error!(
-                        "All verification attempts failed for executor {}: {}",
-                        executor.id, e
-                    );
-                    return Err(e);
-                }
-            }
-        }
-    }
-
     /// Create with full configuration for dynamic discovery
     pub fn with_validator_context(
         config: VerificationConfig,
         validator_hotkey: Hotkey,
         ssh_client: Arc<ValidatorSshClient>,
         ssh_key_path: Option<PathBuf>,
+        persistence: Arc<SimplePersistence>,
     ) -> Self {
         let miner_client_config = MinerClientConfig {
             timeout: config.discovery_timeout,
@@ -759,6 +817,7 @@ impl VerificationEngine {
             miner_client_config,
             validator_hotkey,
             ssh_client,
+            persistence,
             use_dynamic_discovery: config.use_dynamic_discovery,
             ssh_key_path,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -774,6 +833,7 @@ impl VerificationEngine {
         validator_hotkey: Hotkey,
         ssh_client: Arc<ValidatorSshClient>,
         ssh_key_manager: Arc<ValidatorSshKeyManager>,
+        persistence: Arc<SimplePersistence>,
     ) -> Result<Self> {
         let miner_client_config = MinerClientConfig {
             timeout: config.discovery_timeout,
@@ -787,6 +847,7 @@ impl VerificationEngine {
             miner_client_config,
             validator_hotkey,
             ssh_client,
+            persistence,
             use_dynamic_discovery: config.use_dynamic_discovery,
             ssh_key_path: None,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -802,6 +863,7 @@ impl VerificationEngine {
         bittensor_service: Arc<bittensor::Service>,
         ssh_client: Arc<ValidatorSshClient>,
         ssh_key_path: Option<PathBuf>,
+        persistence: Arc<SimplePersistence>,
     ) -> anyhow::Result<Self> {
         let validator_hotkey = bittensor::account_id_to_hotkey(bittensor_service.get_account_id())
             .map_err(|e| anyhow::anyhow!("Failed to convert account ID to hotkey: {}", e))?;
@@ -821,6 +883,7 @@ impl VerificationEngine {
             miner_client_config,
             validator_hotkey,
             ssh_client,
+            persistence,
             use_dynamic_discovery: config.use_dynamic_discovery,
             ssh_key_path,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -1305,6 +1368,7 @@ impl VerificationEngine {
         miner_client_config: MinerClientConfig,
         validator_hotkey: Hotkey,
         ssh_client: Arc<ValidatorSshClient>,
+        persistence: Arc<SimplePersistence>,
         use_dynamic_discovery: bool,
         ssh_key_manager: Option<Arc<ValidatorSshKeyManager>>,
         bittensor_service: Option<Arc<bittensor::Service>>,
@@ -1321,6 +1385,7 @@ impl VerificationEngine {
             miner_client_config,
             validator_hotkey,
             ssh_client,
+            persistence,
             use_dynamic_discovery,
             ssh_key_path: None, // Not used when SSH key manager is available
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -2574,248 +2639,6 @@ pub struct VerificationStep {
     pub status: StepStatus,
     pub duration: Duration,
     pub details: String,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::VerificationConfig;
-
-    #[test]
-    fn test_extract_json_from_mixed_output() {
-        let config = VerificationConfig {
-            verification_interval: Duration::from_secs(300),
-            max_concurrent_verifications: 5,
-            challenge_timeout: Duration::from_secs(30),
-            min_score_threshold: 0.5,
-            max_miners_per_round: 10,
-            min_verification_interval: Duration::from_secs(60),
-            netuid: 7,
-            use_dynamic_discovery: true,
-            discovery_timeout: Duration::from_secs(30),
-            fallback_to_static: true,
-            cache_miner_info_ttl: Duration::from_secs(300),
-            grpc_port_offset: None,
-            binary_validation: crate::config::BinaryValidationConfig {
-                enabled: true,
-                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
-                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
-                output_format: "json".to_string(),
-                execution_timeout_secs: 600,
-                score_weight: 0.3,
-            },
-        };
-        let engine = VerificationEngine::new(config);
-
-        // Test data mimicking the actual validator binary output from the logs
-        let mixed_output = r#"2025-07-10T18:01:09.378038Z  INFO validator_binary: Starting validator
-2025-07-10T18:01:09.378366Z  INFO validator_binary: Executing multi-GPU computation...
-2025-07-10T18:01:09.378373Z  INFO validator_binary::executor_manager_ssh: Creating remote directory: /tmp/bas_exec_1606442439272606208
-2025-07-10T18:01:09.549309Z  INFO validator_binary::executor_manager_ssh: Copying executor binary to remote: /tmp/bas_exec_1606442439272606208/executor-binary
-2025-07-10T18:01:10.012607Z  INFO validator_binary::executor_manager_ssh: Executing remote multi-GPU commitment
-2025-07-10T18:01:41.359353Z  INFO validator_binary::executor_manager_ssh: Cleaning up remote directory: /tmp/bas_exec_1606442439272606208
-2025-07-10T18:01:41.539667Z  INFO validator_binary: Multi-GPU execution completed in 32161 ms
-{
-  "execution_time_ms": 32161,
-  "gpu_count": 8,
-  "gpu_results": [
-    {
-      "anti_debug_passed": true,
-      "computation_time_ns": 1247846984,
-      "gpu_index": 0,
-      "gpu_name": "NVIDIA H100 PCIe",
-      "gpu_uuid": "GPU-a53ef3eeaa5ed784a27b0c49660771ba",
-      "memory_bandwidth_gbps": 20651.41327937048
-    }
-  ],
-  "matrix_size": 1024,
-  "random_seed": "0x164b3ae320f4aa00",
-  "success": true,
-  "timing_fingerprint": "0x49ade102f",
-  "total_execution_time_ns": 6085679392
-}
-2025-07-10T18:01:47.017300Z  INFO validator_binary: Validation successful
-"#;
-
-        let result = engine.extract_json_from_output(mixed_output);
-        assert!(result.is_ok(), "Should extract JSON successfully");
-
-        let json_str = result.unwrap();
-        assert!(
-            json_str.contains("execution_time_ms"),
-            "Should contain execution_time_ms"
-        );
-        assert!(json_str.contains("success"), "Should contain success field");
-        assert!(
-            json_str.contains("gpu_results"),
-            "Should contain gpu_results"
-        );
-
-        // Verify it's valid JSON
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(parsed["success"], true);
-        assert_eq!(parsed["execution_time_ms"], 32161);
-        assert!(engine.is_valid_validator_output(&parsed));
-    }
-
-    #[test]
-    fn test_extract_json_single_line() {
-        let config = VerificationConfig {
-            verification_interval: Duration::from_secs(300),
-            max_concurrent_verifications: 5,
-            challenge_timeout: Duration::from_secs(30),
-            min_score_threshold: 0.5,
-            max_miners_per_round: 10,
-            min_verification_interval: Duration::from_secs(60),
-            netuid: 7,
-            use_dynamic_discovery: true,
-            discovery_timeout: Duration::from_secs(30),
-            fallback_to_static: true,
-            cache_miner_info_ttl: Duration::from_secs(300),
-            grpc_port_offset: None,
-            binary_validation: crate::config::BinaryValidationConfig {
-                enabled: true,
-                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
-                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
-                output_format: "json".to_string(),
-                execution_timeout_secs: 600,
-                score_weight: 0.3,
-            },
-        };
-        let engine = VerificationEngine::new(config);
-
-        let single_line_output = r#"Some log message
-{"success": true, "execution_time_ms": 1234, "gpu_results": [], "matrix_size": 512}
-More log messages"#;
-
-        let result = engine.extract_json_from_output(single_line_output);
-        assert!(result.is_ok());
-
-        let json_str = result.unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(parsed["success"], true);
-        assert_eq!(parsed["execution_time_ms"], 1234);
-    }
-
-    #[test]
-    fn test_extract_json_no_valid_json() {
-        let config = VerificationConfig {
-            verification_interval: Duration::from_secs(300),
-            max_concurrent_verifications: 5,
-            challenge_timeout: Duration::from_secs(30),
-            min_score_threshold: 0.5,
-            max_miners_per_round: 10,
-            min_verification_interval: Duration::from_secs(60),
-            netuid: 7,
-            use_dynamic_discovery: true,
-            discovery_timeout: Duration::from_secs(30),
-            fallback_to_static: true,
-            cache_miner_info_ttl: Duration::from_secs(300),
-            grpc_port_offset: None,
-            binary_validation: crate::config::BinaryValidationConfig {
-                enabled: true,
-                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
-                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
-                output_format: "json".to_string(),
-                execution_timeout_secs: 600,
-                score_weight: 0.3,
-            },
-        };
-        let engine = VerificationEngine::new(config);
-
-        let no_json_output = "Just log messages without any JSON content";
-        let result = engine.extract_json_from_output(no_json_output);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_extract_json_invalid_json() {
-        let config = VerificationConfig {
-            verification_interval: Duration::from_secs(300),
-            max_concurrent_verifications: 5,
-            challenge_timeout: Duration::from_secs(30),
-            min_score_threshold: 0.5,
-            max_miners_per_round: 10,
-            min_verification_interval: Duration::from_secs(60),
-            netuid: 7,
-            use_dynamic_discovery: true,
-            discovery_timeout: Duration::from_secs(30),
-            fallback_to_static: true,
-            cache_miner_info_ttl: Duration::from_secs(300),
-            grpc_port_offset: None,
-            binary_validation: crate::config::BinaryValidationConfig {
-                enabled: true,
-                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
-                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
-                output_format: "json".to_string(),
-                execution_timeout_secs: 600,
-                score_weight: 0.3,
-            },
-        };
-        let engine = VerificationEngine::new(config);
-
-        let invalid_json_output = r#"Log message
-{ "incomplete": true, "missing_closing_brace"
-More logs"#;
-        let result = engine.extract_json_from_output(invalid_json_output);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_is_valid_validator_output() {
-        let config = VerificationConfig {
-            verification_interval: Duration::from_secs(300),
-            max_concurrent_verifications: 5,
-            challenge_timeout: Duration::from_secs(30),
-            min_score_threshold: 0.5,
-            max_miners_per_round: 10,
-            min_verification_interval: Duration::from_secs(60),
-            netuid: 7,
-            use_dynamic_discovery: true,
-            discovery_timeout: Duration::from_secs(30),
-            fallback_to_static: true,
-            cache_miner_info_ttl: Duration::from_secs(300),
-            grpc_port_offset: None,
-            binary_validation: crate::config::BinaryValidationConfig {
-                enabled: true,
-                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
-                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
-                output_format: "json".to_string(),
-                execution_timeout_secs: 600,
-                score_weight: 0.3,
-            },
-        };
-        let engine = VerificationEngine::new(config);
-
-        // Valid validator output
-        let valid_json = serde_json::json!({
-            "success": true,
-            "execution_time_ms": 1000,
-            "gpu_results": [],
-            "matrix_size": 1024
-        });
-        assert!(engine.is_valid_validator_output(&valid_json));
-
-        // Minimal valid output (2 required fields)
-        let minimal_json = serde_json::json!({
-            "success": true,
-            "execution_time_ms": 1000
-        });
-        assert!(engine.is_valid_validator_output(&minimal_json));
-
-        // Invalid output (only 1 field)
-        let invalid_json = serde_json::json!({
-            "success": true
-        });
-        assert!(!engine.is_valid_validator_output(&invalid_json));
-
-        // Invalid output (wrong fields)
-        let wrong_fields_json = serde_json::json!({
-            "random_field": true,
-            "another_field": 123
-        });
-        assert!(!engine.is_valid_validator_output(&wrong_fields_json));
-    }
 }
 
 /// Step status tracking

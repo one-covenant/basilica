@@ -199,36 +199,6 @@ impl Repository<VerificationLog, Uuid> for SqliteVerificationLogRepository {
         Ok(logs)
     }
 
-    async fn find_all(&self, pagination: Pagination) -> Result<PaginatedResponse<VerificationLog>, PersistenceError> {
-        let query = r#"
-            SELECT id, executor_id, validator_hotkey, verification_type, timestamp,
-                   score, success, details, duration_ms, error_message, created_at, updated_at
-            FROM verification_logs 
-            ORDER BY timestamp DESC
-            LIMIT ? OFFSET ?
-        "#;
-
-        let rows = sqlx::query(query)
-            .bind(pagination.limit as i64)
-            .bind(pagination.offset as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| PersistenceError::QueryFailed { query: "database operation".to_string() })?;
-
-        let mut logs = Vec::new();
-        for row in rows {
-            logs.push(Self::row_to_verification_log(&row).await?);
-        }
-
-        let count_row = sqlx::query("SELECT COUNT(*) as count FROM verification_logs")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| PersistenceError::QueryFailed { query: "database operation".to_string() })?;
-
-        let total_count = count_row.get::<i64, _>("count") as u64;
-
-        Ok(PaginatedResponse::new(logs, total_count, pagination))
-    }
 
     async fn count(&self) -> Result<u64, PersistenceError> {
         let query = "SELECT COUNT(*) as count FROM verification_logs";

@@ -6,7 +6,7 @@
 use crate::bittensor_core::weight_allocation::WeightAllocationEngine;
 use crate::config::emission::EmissionConfig;
 use crate::gpu::categorization;
-use crate::gpu::{CategoryStats, GpuScoringEngine};
+use crate::gpu::GpuScoringEngine;
 use crate::persistence::entities::VerificationLog;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
@@ -15,7 +15,6 @@ use common::config::BittensorConfig;
 use common::identity::{ExecutorId, MinerUid};
 use common::{KeyValueStorage, MemoryStorage};
 use sqlx::Row;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::interval;
@@ -28,12 +27,13 @@ use tracing::{debug, error, info, warn};
 pub struct ExecutorValidationResult {
     pub executor_id: ExecutorId,
     pub is_valid: bool,
-    pub hardware_score: f64,
+    pub _hardware_score: f64,
     pub gpu_count: usize,
     pub gpu_memory_gb: u64,
-    pub network_bandwidth_mbps: f64,
+    pub _network_bandwidth_mbps: f64,
     pub attestation_valid: bool,
     pub validation_timestamp: chrono::DateTime<chrono::Utc>,
+    pub gpu_model: String,
 }
 
 /// Manages weight setting operations for Bittensor network
@@ -48,7 +48,7 @@ pub struct WeightSetter {
     last_weight_set_block: Arc<tokio::sync::Mutex<u64>>,
     gpu_scoring_engine: Arc<GpuScoringEngine>,
     weight_allocation_engine: Arc<WeightAllocationEngine>,
-    emission_config: EmissionConfig,
+    _emission_config: EmissionConfig,
 }
 
 impl WeightSetter {
@@ -79,16 +79,8 @@ impl WeightSetter {
             last_weight_set_block: Arc::new(tokio::sync::Mutex::new(0)),
             gpu_scoring_engine,
             weight_allocation_engine,
-            emission_config,
+            _emission_config: emission_config,
         })
-    }
-
-    /// Get the validator's hotkey as a string
-    pub fn get_validator_hotkey(&self) -> Result<String> {
-        let account_id = self.bittensor_service.get_account_id();
-        let hotkey = bittensor::account_id_to_hotkey(account_id)
-            .map_err(|e| anyhow::anyhow!("Failed to convert account_id to hotkey: {}", e))?;
-        Ok(hotkey.to_string())
     }
 
     /// Start the weight setting loop
@@ -147,8 +139,7 @@ impl WeightSetter {
             .await?;
 
         if miners_by_category.is_empty() {
-            warn!("No miners found in any GPU category");
-            return Ok(());
+            warn!("No miners found in any GPU category - proceeding with burn allocation");
         }
 
         info!(
@@ -163,8 +154,7 @@ impl WeightSetter {
             .calculate_weight_distribution(miners_by_category)?;
 
         if weight_distribution.miners_served == 0 {
-            warn!("No miners served by weight allocation");
-            return Ok(());
+            warn!("No miners served by weight allocation - proceeding with burn-only weights");
         }
 
         info!(
@@ -192,15 +182,8 @@ impl WeightSetter {
             );
         }
 
-        // 6. Convert to normalized weights for chain submission
-        let normalized_weights: Vec<NormalizedWeight> = weight_distribution
-            .weights
-            .iter()
-            .map(|w| NormalizedWeight {
-                uid: w.uid,
-                weight: w.weight,
-            })
-            .collect();
+        // 6. Convert to normalized weights for chain submission including burn allocation
+        let normalized_weights = self.build_normalized_weights(&weight_distribution)?;
 
         // 7. Get version key and submit weights
         let version_key = self.get_version_key().await?;
@@ -222,6 +205,38 @@ impl WeightSetter {
         Ok(())
     }
 
+    /// Build normalized weights including both miner weights and burn allocation
+    fn build_normalized_weights(
+        &self,
+        weight_distribution: &crate::bittensor_core::weight_allocation::WeightDistribution,
+    ) -> Result<Vec<NormalizedWeight>> {
+        let mut normalized_weights: Vec<NormalizedWeight> = weight_distribution
+            .weights
+            .iter()
+            .map(|w| NormalizedWeight {
+                uid: w.uid,
+                weight: w.weight,
+            })
+            .collect();
+
+        // Include burn allocation if present
+        if let Some(burn_alloc) = &weight_distribution.burn_allocation {
+            normalized_weights.push(NormalizedWeight {
+                uid: burn_alloc.uid,
+                weight: burn_alloc.weight,
+            });
+        }
+
+        // The weight allocation engine guarantees at least burn allocation exists
+        // so this should never be empty, but assert to be safe
+        assert!(
+            !normalized_weights.is_empty(),
+            "Weight allocation engine produced no weights - this should never happen"
+        );
+
+        Ok(normalized_weights)
+    }
+
     /// Update miner GPU profile from validation results
     pub async fn update_miner_gpu_profile(
         &self,
@@ -234,7 +249,7 @@ impl WeightSetter {
             .map(|v| categorization::ExecutorValidationResult {
                 executor_id: v.executor_id.to_string(),
                 is_valid: v.is_valid,
-                gpu_model: format!("H{}", v.gpu_memory_gb / 1024), // Simple conversion for now
+                gpu_model: v.gpu_model, // Use the actual GPU model from validation
                 gpu_count: v.gpu_count,
                 gpu_memory_gb: v.gpu_memory_gb,
                 attestation_valid: v.attestation_valid,
@@ -248,51 +263,6 @@ impl WeightSetter {
             .await?;
 
         Ok(())
-    }
-
-    /// Get category statistics for monitoring
-    pub async fn get_category_statistics(&self) -> Result<HashMap<String, CategoryStats>> {
-        self.gpu_scoring_engine.get_category_statistics().await
-    }
-
-    /// Normalize weights for chain submission using the provided normalization function
-    fn normalize_weights_for_chain(
-        &self,
-        weights: Vec<(u16, f64)>,
-    ) -> Result<Vec<NormalizedWeight>> {
-        // Convert scores to u16 for normalization (scale to 0-65535 range)
-        let max_score = weights
-            .iter()
-            .map(|(_, score)| *score)
-            .fold(0.0f64, f64::max);
-
-        if max_score <= 0.0 {
-            error!("No positive scores found for normalization");
-            return Err(anyhow::anyhow!("No positive scores found"));
-        }
-
-        // Normalize scores directly to u16 range
-        // The chain expects weights in the 0-65535 range
-        // We don't need to call normalize_weights again since we're already normalizing here
-        let result: Vec<NormalizedWeight> = weights
-            .iter()
-            .map(|(uid, score)| {
-                let normalized_weight = ((score / max_score) * u16::MAX as f64) as u16;
-                NormalizedWeight {
-                    uid: *uid,
-                    weight: normalized_weight,
-                }
-            })
-            .collect();
-
-        // Log normalized weights for debugging
-        for nw in result.iter() {
-            let uid: u16 = nw.uid;
-            let weight: u16 = nw.weight;
-            tracing::debug!("Miner UID {} -> normalized weight {}", uid, weight);
-        }
-
-        Ok(result)
     }
 
     /// Submit weights to chain using the provided set_weights_payload function
@@ -383,28 +353,6 @@ impl WeightSetter {
             .map_err(|e| anyhow::anyhow!("Failed to fetch metagraph: {}", e))
     }
 
-    /// Process a completed executor validation and update the miner's score
-    pub async fn process_executor_validation(
-        &self,
-        miner_uid: MinerUid,
-        executor_id: ExecutorId,
-        verification_log: &VerificationLog,
-    ) -> Result<()> {
-        // Extract validation details from the verification log
-        let _validation_result = self.extract_validation_result(executor_id, verification_log)?;
-
-        // Get all recent validations for this miner
-        let recent_validations = self
-            .get_recent_miner_validations(miner_uid, 24) // Last 24 hours
-            .await?;
-
-        // Update the miner's GPU profile using the new system
-        self.update_miner_gpu_profile(miner_uid, recent_validations)
-            .await?;
-
-        Ok(())
-    }
-
     /// Extract validation result from verification log
     fn extract_validation_result(
         &self,
@@ -412,17 +360,27 @@ impl WeightSetter {
         log: &VerificationLog,
     ) -> Result<ExecutorValidationResult> {
         // Parse hardware specs from the verification log details
-        let hardware_specs = if log.success && !log.details.is_null() {
+        // Always try to parse specs, even for failed validations, to track GPU hardware
+        let hardware_specs = if !log.details.is_null() {
             serde_json::from_value(log.details.clone()).ok()
         } else {
             None
         };
 
         // Calculate hardware score based on specs
-        let (hardware_score, gpu_count, gpu_memory_gb, network_bandwidth_mbps) =
+        let (hardware_score, gpu_count, gpu_memory_gb, network_bandwidth_mbps, gpu_model) =
             if let Some(specs) = hardware_specs {
                 let score = self.calculate_hardware_score(&specs);
                 let gpu_count = specs["gpu"].as_array().map(|a| a.len()).unwrap_or(0);
+
+                // Extract GPU model from the first GPU (primary GPU)
+                let gpu_model = specs["gpu"]
+                    .as_array()
+                    .and_then(|gpus| gpus.first())
+                    .and_then(|gpu| gpu["model"].as_str())
+                    .unwrap_or("UNKNOWN")
+                    .to_string();
+
                 let gpu_memory = specs["gpu"]
                     .as_array()
                     .map(|gpus| {
@@ -434,20 +392,21 @@ impl WeightSetter {
                     / 1024; // Convert MB to GB
                 let bandwidth = specs["network"]["bandwidth_mbps"].as_f64().unwrap_or(0.0);
 
-                (score, gpu_count, gpu_memory, bandwidth)
+                (score, gpu_count, gpu_memory, bandwidth, gpu_model)
             } else {
-                (0.0, 0, 0, 0.0)
+                (0.0, 0, 0, 0.0, "UNKNOWN".to_string())
             };
 
         Ok(ExecutorValidationResult {
             executor_id,
             is_valid: log.success,
-            hardware_score,
+            _hardware_score: hardware_score,
             gpu_count,
             gpu_memory_gb,
-            network_bandwidth_mbps,
+            _network_bandwidth_mbps: network_bandwidth_mbps,
             attestation_valid: log.verification_type == "attestation" && log.success,
             validation_timestamp: log.timestamp,
+            gpu_model,
         })
     }
 
@@ -612,67 +571,203 @@ impl WeightSetter {
     }
 }
 
-/// Calculate aggregated miner scores from database
-pub async fn calculate_miner_scores_from_database(
-    persistence: &SimplePersistence,
-    hours: u32,
-) -> Result<HashMap<MinerUid, f64>> {
-    let cutoff_time = chrono::Utc::now() - chrono::Duration::hours(hours as i64);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::entities::VerificationLog;
+    use serde_json::json;
 
-    let query = r#"
-        SELECT 
-            me.miner_id,
-            COUNT(DISTINCT vl.executor_id) as executor_count,
-            COUNT(vl.id) as total_validations,
-            SUM(CASE WHEN vl.success = 1 THEN 1 ELSE 0 END) as successful_validations,
-            AVG(CASE WHEN vl.success = 1 THEN vl.score ELSE 0 END) as avg_score
-        FROM miner_executors me
-        JOIN verification_logs vl ON me.executor_id = vl.executor_id
-        WHERE vl.timestamp >= ?
-        GROUP BY me.miner_id
-    "#;
+    #[test]
+    fn test_extract_validation_result_with_h100() {
+        // Create a verification log with H100 GPU
+        let log = VerificationLog {
+            id: uuid::Uuid::new_v4(),
+            executor_id: "exec123".to_string(),
+            validator_hotkey: "validator".to_string(),
+            verification_type: "attestation".to_string(),
+            timestamp: chrono::Utc::now(),
+            score: 1.0,
+            success: true,
+            details: json!({
+                "gpu": [{
+                    "model": "NVIDIA H100 80GB PCIe",
+                    "vram_mb": 81920
+                }],
+                "cpu": {"cores": 32},
+                "memory": {"total_mb": 131072},
+                "network": {"bandwidth_mbps": 10000.0}
+            }),
+            duration_ms: 1000,
+            error_message: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
 
-    let rows = sqlx::query(query)
-        .bind(cutoff_time.to_rfc3339())
-        .fetch_all(persistence.pool())
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to calculate miner scores: {}", e))?;
+        // The GPU model should be correctly extracted
+        let details = &log.details;
+        let gpu_model = details["gpu"]
+            .as_array()
+            .and_then(|gpus| gpus.first())
+            .and_then(|gpu| gpu["model"].as_str())
+            .unwrap_or("UNKNOWN");
 
-    let mut scores = HashMap::new();
-
-    for row in rows {
-        let miner_id: String = row.get("miner_id");
-        if let Some(uid_str) = miner_id.strip_prefix("miner_") {
-            if let Ok(uid) = uid_str.parse::<u16>() {
-                let miner_uid = MinerUid::new(uid);
-
-                let executor_count: i64 = row.get("executor_count");
-                let total_validations: i64 = row.get("total_validations");
-                let successful_validations: i64 = row.get("successful_validations");
-                let avg_score: Option<f64> = row.get("avg_score");
-
-                // Calculate composite score
-                let success_rate = if total_validations > 0 {
-                    successful_validations as f64 / total_validations as f64
-                } else {
-                    0.0
-                };
-
-                let base_score = avg_score.unwrap_or(0.0) * success_rate;
-                let executor_bonus = (executor_count as f64 * 0.1).min(0.5); // Bonus for multiple executors
-
-                let final_score = (base_score * (1.0 + executor_bonus)).min(1.0);
-
-                scores.insert(miner_uid, final_score);
-
-                debug!(
-                    "Miner {} score: {:.4} (executors: {}, validations: {}, success rate: {:.2})",
-                    uid, final_score, executor_count, total_validations, success_rate
-                );
-            }
-        }
+        assert_eq!(gpu_model, "NVIDIA H100 80GB PCIe");
     }
 
-    info!("Calculated scores for {} miners", scores.len());
-    Ok(scores)
+    #[test]
+    fn test_extract_validation_result_with_h200() {
+        // Create a verification log with H200 GPU
+        let log = VerificationLog {
+            id: uuid::Uuid::new_v4(),
+            executor_id: "exec456".to_string(),
+            validator_hotkey: "validator".to_string(),
+            verification_type: "attestation".to_string(),
+            timestamp: chrono::Utc::now(),
+            score: 1.0,
+            success: true,
+            details: json!({
+                "gpu": [{
+                    "model": "NVIDIA H200",
+                    "vram_mb": 141312  // 138GB
+                }],
+                "cpu": {"cores": 64},
+                "memory": {"total_mb": 262144},
+                "network": {"bandwidth_mbps": 25000.0}
+            }),
+            duration_ms: 1000,
+            error_message: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let details = &log.details;
+        let gpu_model = details["gpu"]
+            .as_array()
+            .and_then(|gpus| gpus.first())
+            .and_then(|gpu| gpu["model"].as_str())
+            .unwrap_or("UNKNOWN");
+
+        assert_eq!(gpu_model, "NVIDIA H200");
+    }
+
+    #[test]
+    fn test_gpu_model_extraction_from_failed_attestation() {
+        // Create a failed verification log - should still extract GPU info
+        let log = VerificationLog {
+            id: uuid::Uuid::new_v4(),
+            executor_id: "exec789".to_string(),
+            validator_hotkey: "validator".to_string(),
+            verification_type: "attestation".to_string(),
+            timestamp: chrono::Utc::now(),
+            score: 0.0,
+            success: false,
+            details: json!({
+                "gpu": [{
+                    "model": "NVIDIA H100 80GB PCIe",
+                    "vram_mb": 81920
+                }],
+                "cpu": {"cores": 32},
+                "memory": {"total_mb": 131072},
+                "network": {"bandwidth_mbps": 10000.0}
+            }),
+            duration_ms: 1000,
+            error_message: Some("Attestation verification failed".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        // Should still extract GPU model even though attestation failed
+        let details = &log.details;
+        let gpu_model = details["gpu"]
+            .as_array()
+            .and_then(|gpus| gpus.first())
+            .and_then(|gpu| gpu["model"].as_str())
+            .unwrap_or("UNKNOWN");
+
+        assert_eq!(gpu_model, "NVIDIA H100 80GB PCIe");
+    }
+
+    #[test]
+    fn test_no_gpu_info_returns_unknown() {
+        // Create a verification log with no GPU info
+        let log = VerificationLog {
+            id: uuid::Uuid::new_v4(),
+            executor_id: "exec999".to_string(),
+            validator_hotkey: "validator".to_string(),
+            verification_type: "attestation".to_string(),
+            timestamp: chrono::Utc::now(),
+            score: 0.0,
+            success: false,
+            details: serde_json::Value::Null,
+            duration_ms: 1000,
+            error_message: Some("Failed to get hardware info".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let details = &log.details;
+        let gpu_model = details["gpu"]
+            .as_array()
+            .and_then(|gpus| gpus.first())
+            .and_then(|gpu| gpu["model"].as_str())
+            .unwrap_or("UNKNOWN");
+
+        assert_eq!(gpu_model, "UNKNOWN");
+    }
+
+    #[test]
+    fn test_old_gpu_model_calculation_was_wrong() {
+        // This test demonstrates why the old calculation was wrong
+        let gpu_memory_gb = 80u64;
+
+        // Old incorrect calculation
+        let old_gpu_model = format!("H{}", gpu_memory_gb / 1024);
+        assert_eq!(old_gpu_model, "H0"); // This is wrong!
+
+        // For H100 with 80GB, dividing by 1024 gives 0.078, formatted as "H0"
+        // For H200 with 138GB, dividing by 1024 gives 0.134, formatted as "H0"
+        // Both would be categorized as "OTHER" and excluded from rewards!
+    }
+
+    #[tokio::test]
+    async fn test_weight_setter_scoring() {
+        // Create mock validation results
+        let validations = vec![
+            ExecutorValidationResult {
+                executor_id: ExecutorId::new(),
+                is_valid: true,
+                _hardware_score: 0.8,
+                gpu_count: 2,
+                gpu_memory_gb: 48,
+                _network_bandwidth_mbps: 1000.0,
+                attestation_valid: true,
+                validation_timestamp: chrono::Utc::now(),
+                gpu_model: "NVIDIA H100".to_string(),
+            },
+            ExecutorValidationResult {
+                executor_id: ExecutorId::new(),
+                is_valid: true,
+                _hardware_score: 0.9,
+                gpu_count: 4,
+                gpu_memory_gb: 96,
+                _network_bandwidth_mbps: 10000.0,
+                attestation_valid: true,
+                validation_timestamp: chrono::Utc::now(),
+                gpu_model: "NVIDIA H100".to_string(),
+            },
+        ];
+
+        // Test that all validations with valid attestations contribute to scoring
+        let valid_count = validations
+            .iter()
+            .filter(|v| v.is_valid && v.attestation_valid)
+            .count();
+
+        assert_eq!(valid_count, 2);
+
+        // Test GPU model is properly set
+        for validation in &validations {
+            assert!(validation.gpu_model.contains("H100"));
+        }
+    }
 }

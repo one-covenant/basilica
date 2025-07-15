@@ -27,9 +27,9 @@ scp -P "$PUBLIC_API_PORT" -r \
 # Deploy
 ssh -p "$PUBLIC_API_PORT" "$PUBLIC_API_HOST" << 'EOF'
     cd /opt/basilica
-    docker-compose -f compose.prod.yml pull
-    docker-compose -f compose.prod.yml up -d
-    docker-compose -f compose.prod.yml ps
+    docker compose -f compose.prod.yml pull
+    docker compose -f compose.prod.yml up -d
+    docker compose -f compose.prod.yml ps
 EOF
 
 echo "Public API deployed successfully"

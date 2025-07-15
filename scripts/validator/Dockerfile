@@ -23,11 +23,11 @@ RUN cargo fetch
 # Build arguments
 ARG BUILD_MODE=release
 ARG FEATURES=""
-ARG BITTENSOR_NETWORK="test"
+ARG BITTENSOR_NETWORK="finney"
 ARG METADATA_CHAIN_ENDPOINT=""
 
-# Set environment variables for the build - default to test network if not specified
-ENV BITTENSOR_NETWORK=${BITTENSOR_NETWORK:-test}
+# Set environment variables for the build - default to finney network if not specified
+ENV BITTENSOR_NETWORK=${BITTENSOR_NETWORK:-finney}
 ENV METADATA_CHAIN_ENDPOINT=${METADATA_CHAIN_ENDPOINT}
 
 # Set environment variables to reduce build size and use less disk space
@@ -64,7 +64,7 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
     find /tmp/target -name "*.rlib" -delete 2>/dev/null || true
 
 # Runtime image
-FROM debian:bookworm-slim
+FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \

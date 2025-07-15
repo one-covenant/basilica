@@ -108,58 +108,9 @@ pub enum Command {
         all: bool,
     },
 
-    Weights {
-        #[command(subcommand)]
-        action: WeightAction,
-    },
-
-    Scores {
-        #[command(subcommand)]
-        action: ScoreAction,
-    },
-
     Database {
         #[command(subcommand)]
         action: DatabaseAction,
-    },
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum WeightAction {
-    Set {
-        #[arg(long)]
-        force: bool,
-    },
-
-    Show,
-
-    History {
-        #[arg(short, long, default_value = "10")]
-        limit: u32,
-    },
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum ScoreAction {
-    Show {
-        #[arg(short, long)]
-        miner_uid: Option<u16>,
-    },
-
-    Update {
-        #[arg(short, long)]
-        miner_uid: u16,
-
-        #[arg(short, long)]
-        score: f64,
-    },
-
-    Clear {
-        #[arg(short, long)]
-        miner_uid: Option<u16>,
-
-        #[arg(long)]
-        all: bool,
     },
 }
 

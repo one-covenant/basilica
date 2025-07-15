@@ -1,6 +1,6 @@
 [Unit]
 Description=Basilica Validator Service
-Documentation=https://github.com/distributedstatemachine/basilica
+Documentation=https://github.com/tplr-ai/basilica
 After=network-online.target
 Wants=network-online.target
 
@@ -10,7 +10,7 @@ User=root
 Group=root
 WorkingDirectory=/opt/basilica
 Environment=RUST_LOG=debug
-ExecStart=/opt/basilica/validator start --config /opt/basilica/config/validator.toml
+ExecStart=/opt/basilica/validator --config /opt/basilica/config/validator.toml start
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure

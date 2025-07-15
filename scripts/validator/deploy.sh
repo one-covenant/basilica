@@ -11,7 +11,7 @@ SYNC_WALLETS=false
 FOLLOW_LOGS=false
 HEALTH_CHECK=false
 TIMEOUT=60
-VERITAS_BINARIES_DIR=""
+VERITAS_BINARIES_DIR="./bin"
 
 usage() {
     cat <<EOF
@@ -101,20 +101,20 @@ build_service() {
         log "Docker mode: skipping local build"
         return
     fi
-    
+
     log "Building validator..."
     if [[ ! -f "scripts/validator/build.sh" ]]; then
         log "ERROR: Build script scripts/validator/build.sh not found"
         exit 1
     fi
-    
+
     # Build with veritas binaries if specified
     if [[ -n "$VERITAS_BINARIES_DIR" ]]; then
         ./scripts/validator/build.sh --veritas-binaries "$VERITAS_BINARIES_DIR"
     else
         ./scripts/validator/build.sh
     fi
-    
+
     if [[ ! -f "./validator" ]]; then
         log "ERROR: Binary ./validator not found after build"
         exit 1
@@ -125,34 +125,34 @@ deploy_veritas_binaries() {
     if [[ -z "$VERITAS_BINARIES_DIR" ]]; then
         return
     fi
-    
+
     if [[ ! -d "$VERITAS_BINARIES_DIR" ]]; then
         log "ERROR: Veritas binaries directory does not exist: $VERITAS_BINARIES_DIR"
         exit 1
     fi
-    
+
     local executor_binary="$VERITAS_BINARIES_DIR/executor-binary/executor-binary"
     local validator_binary="$VERITAS_BINARIES_DIR/validator-binary/validator-binary"
-    
+
     if [[ ! -f "$executor_binary" ]]; then
         log "ERROR: executor-binary not found at: $executor_binary"
         exit 1
     fi
-    
+
     if [[ ! -f "$validator_binary" ]]; then
         log "ERROR: validator-binary not found at: $validator_binary"
         exit 1
     fi
-    
+
     log "Deploying veritas binaries to validator"
     ssh_cmd "mkdir -p /opt/basilica/bin"
-    
+
     scp_file "$executor_binary" "/opt/basilica/bin/executor-binary"
     scp_file "$validator_binary" "/opt/basilica/bin/validator-binary"
-    
+
     ssh_cmd "chmod +x /opt/basilica/bin/executor-binary"
     ssh_cmd "chmod +x /opt/basilica/bin/validator-binary"
-    
+
     log "Veritas binaries deployed successfully"
 }
 
@@ -183,11 +183,11 @@ deploy_binary() {
     scp_file "$CONFIG_FILE" "/opt/basilica/config/validator.toml"
 
     ssh_cmd "mkdir -p /opt/basilica/data && chmod 755 /opt/basilica/data"
-    
+
     # Deploy veritas binaries if specified
     deploy_veritas_binaries
 
-    local start_cmd="cd /opt/basilica && RUST_LOG=debug nohup ./validator start --config config/validator.toml > validator.log 2>&1 &"
+    local start_cmd="cd /opt/basilica && RUST_LOG=debug nohup ./validator --config config/validator.toml start > validator.log 2>&1 &"
 
     log "Starting validator"
     timeout 15 ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "$start_cmd" || true
@@ -220,7 +220,7 @@ deploy_systemd() {
     scp_file "$CONFIG_FILE" "/opt/basilica/config/validator.toml"
 
     ssh_cmd "mkdir -p /opt/basilica/data && chmod 755 /opt/basilica/data"
-    
+
     # Deploy veritas binaries if specified
     deploy_veritas_binaries
 
@@ -229,7 +229,7 @@ deploy_systemd() {
         log "ERROR: Systemd service file not found: scripts/validator/systemd/basilica-validator.service"
         exit 1
     fi
-    
+
     scp_file "scripts/validator/systemd/basilica-validator.service" "/etc/systemd/system/"
     ssh_cmd "systemctl daemon-reload"
     ssh_cmd "systemctl enable basilica-validator"
@@ -251,7 +251,7 @@ deploy_docker() {
     log "Deploying validator in docker mode"
 
     log "Stopping existing validator containers"
-    ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml down 2>/dev/null || true"
+    ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml down 2>/dev/null || true"
 
     log "Creating directories for validator"
     ssh_cmd "mkdir -p /opt/basilica/config"
@@ -264,24 +264,24 @@ deploy_docker() {
         log "ERROR: Docker compose file not found: scripts/validator/compose.prod.yml"
         exit 1
     fi
-    
+
     scp_file "scripts/validator/compose.prod.yml" "/opt/basilica/"
-    
+
     # Deploy .env file if it exists
     if [[ -f "scripts/validator/.env" ]]; then
         scp_file "scripts/validator/.env" "/opt/basilica/"
     fi
 
     log "Pulling and starting validator container"
-    ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml pull"
-    ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml up -d"
+    ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml pull"
+    ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml up -d"
 
     sleep 5
-    if ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml ps | grep -q 'Up'"; then
+    if ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml ps | grep -q 'Up'"; then
         log "Validator container started successfully"
     else
         log "ERROR: Validator container failed to start"
-        ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml logs --tail=20"
+        ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml logs --tail=20"
         exit 1
     fi
 }
@@ -323,7 +323,7 @@ health_check_service() {
             fi
             ;;
         docker)
-            if ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml ps | grep -q 'Up'"; then
+            if ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml ps | grep -q 'Up'"; then
                 log "Validator container running"
             else
                 log "Validator container not running"
@@ -342,7 +342,7 @@ follow_logs_service() {
             ssh_cmd "journalctl -u basilica-validator -f"
             ;;
         docker)
-            ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml logs -f"
+            ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml logs -f"
             ;;
     esac
 }

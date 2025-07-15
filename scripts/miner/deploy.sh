@@ -96,15 +96,15 @@ build_service() {
         log "Docker mode: skipping local build"
         return
     fi
-    
+
     log "Building miner..."
     if [[ ! -f "scripts/miner/build.sh" ]]; then
         log "ERROR: Build script scripts/miner/build.sh not found"
         exit 1
     fi
-    
+
     ./scripts/miner/build.sh
-    
+
     if [[ ! -f "./miner" ]]; then
         log "ERROR: Binary ./miner not found after build"
         exit 1
@@ -138,7 +138,7 @@ deploy_binary() {
     scp_file "$CONFIG_FILE" "/opt/basilica/config/miner.toml"
 
     ssh_cmd "mkdir -p /opt/basilica/data && chmod 755 /opt/basilica/data"
-    
+
     log "Setting up data directories and permissions for miner"
     ssh_cmd "touch /opt/basilica/data/miner.db && chmod 644 /opt/basilica/data/miner.db"
     ssh_cmd "[ ! -f /root/.ssh/miner_executor_key ] && ssh-keygen -t ed25519 -f /root/.ssh/miner_executor_key -N '' || true"
@@ -176,7 +176,7 @@ deploy_systemd() {
     scp_file "$CONFIG_FILE" "/opt/basilica/config/miner.toml"
 
     ssh_cmd "mkdir -p /opt/basilica/data && chmod 755 /opt/basilica/data"
-    
+
     log "Setting up data directories and permissions for miner"
     ssh_cmd "touch /opt/basilica/data/miner.db && chmod 644 /opt/basilica/data/miner.db"
     ssh_cmd "[ ! -f /root/.ssh/miner_executor_key ] && ssh-keygen -t ed25519 -f /root/.ssh/miner_executor_key -N '' || true"
@@ -186,7 +186,7 @@ deploy_systemd() {
         log "ERROR: Systemd service file not found: scripts/miner/systemd/basilica-miner.service"
         exit 1
     fi
-    
+
     scp_file "scripts/miner/systemd/basilica-miner.service" "/etc/systemd/system/"
     ssh_cmd "systemctl daemon-reload"
     ssh_cmd "systemctl enable basilica-miner"
@@ -208,7 +208,7 @@ deploy_docker() {
     log "Deploying miner in docker mode"
 
     log "Stopping existing miner containers"
-    ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml down 2>/dev/null || true"
+    ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml down 2>/dev/null || true"
 
     log "Creating directories for miner"
     ssh_cmd "mkdir -p /opt/basilica/config"
@@ -221,24 +221,24 @@ deploy_docker() {
         log "ERROR: Docker compose file not found: scripts/miner/compose.prod.yml"
         exit 1
     fi
-    
+
     scp_file "scripts/miner/compose.prod.yml" "/opt/basilica/"
-    
+
     # Deploy .env file if it exists
     if [[ -f "scripts/miner/.env" ]]; then
         scp_file "scripts/miner/.env" "/opt/basilica/"
     fi
 
     log "Pulling and starting miner container"
-    ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml pull"
-    ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml up -d"
+    ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml pull"
+    ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml up -d"
 
     sleep 5
-    if ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml ps | grep -q 'Up'"; then
+    if ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml ps | grep -q 'Up'"; then
         log "Miner container started successfully"
     else
         log "ERROR: Miner container failed to start"
-        ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml logs --tail=20"
+        ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml logs --tail=20"
         exit 1
     fi
 }
@@ -280,7 +280,7 @@ health_check_service() {
             fi
             ;;
         docker)
-            if ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml ps | grep -q 'Up'"; then
+            if ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml ps | grep -q 'Up'"; then
                 log "Miner container running"
             else
                 log "Miner container not running"
@@ -299,7 +299,7 @@ follow_logs_service() {
             ssh_cmd "journalctl -u basilica-miner -f"
             ;;
         docker)
-            ssh_cmd "cd /opt/basilica && docker-compose -f compose.prod.yml logs -f"
+            ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml logs -f"
             ;;
     esac
 }

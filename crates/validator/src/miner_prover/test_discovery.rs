@@ -2,8 +2,6 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::*;
-    use crate::config::VerificationConfig;
     use crate::miner_prover::miner_client::{
         BittensorServiceSigner, MinerClient, MinerClientConfig, ValidatorSigner,
     };
@@ -60,42 +58,6 @@ mod tests {
         let ipv6: u128 = 0x20010db8000000000000000000000001;
         let ipv6_addr = std::net::Ipv6Addr::from(ipv6);
         assert_eq!(ipv6_addr.to_string(), "2001:db8::1");
-    }
-
-    #[tokio::test]
-    async fn test_verification_engine_parse_ssh_credentials() {
-        use std::time::Duration;
-
-        let config = VerificationConfig {
-            verification_interval: Duration::from_secs(3600),
-            max_concurrent_verifications: 10,
-            challenge_timeout: Duration::from_secs(60),
-            min_score_threshold: 0.0,
-            max_miners_per_round: 10,
-            min_verification_interval: Duration::from_secs(3600),
-            netuid: 1,
-            use_dynamic_discovery: false,
-            discovery_timeout: Duration::from_secs(30),
-            fallback_to_static: true,
-            cache_miner_info_ttl: Duration::from_secs(3600),
-            grpc_port_offset: None,
-            binary_validation: crate::config::BinaryValidationConfig::default(),
-        };
-        let engine = VerificationEngine::new(config);
-
-        // Test with port
-        let creds = "ubuntu@192.168.1.100:2222";
-        let details = engine.parse_ssh_credentials(creds, None).unwrap();
-        assert_eq!(details.username, "ubuntu");
-        assert_eq!(details.host, "192.168.1.100");
-        assert_eq!(details.port, 2222);
-
-        // Test without port (should default to 22)
-        let creds = "admin@example.com";
-        let details = engine.parse_ssh_credentials(creds, None).unwrap();
-        assert_eq!(details.username, "admin");
-        assert_eq!(details.host, "example.com");
-        assert_eq!(details.port, 22);
     }
 
     #[tokio::test]

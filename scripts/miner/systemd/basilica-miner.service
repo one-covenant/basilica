@@ -1,6 +1,6 @@
 [Unit]
 Description=Basilica Miner Service
-Documentation=https://github.com/distributedstatemachine/basilica
+Documentation=https://github.com/tplr-ai/basilica
 After=network-online.target
 Wants=network-online.target
 

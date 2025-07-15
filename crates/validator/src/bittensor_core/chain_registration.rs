@@ -48,31 +48,8 @@ impl ChainRegistration {
         self.inner.register_startup().await
     }
 
-    /// Get current registration state
-    pub async fn get_state(&self) -> RegistrationStateSnapshot {
-        let state = self.inner.get_state().await;
-        RegistrationStateSnapshot {
-            is_registered: state.is_registered,
-            registration_time: state.registration_time,
-            discovered_uid: state.discovered_uid,
-        }
-    }
-
     /// Get discovered UID
     pub async fn get_discovered_uid(&self) -> Option<u16> {
         self.inner.get_discovered_uid().await
     }
-
-    /// Health check for registration service
-    pub async fn health_check(&self) -> Result<()> {
-        self.inner.health_check().await
-    }
-}
-
-/// Snapshot of the current registration state
-#[derive(Debug, Clone)]
-pub struct RegistrationStateSnapshot {
-    pub is_registered: bool,
-    pub registration_time: Option<chrono::DateTime<chrono::Utc>>,
-    pub discovered_uid: Option<u16>,
 }

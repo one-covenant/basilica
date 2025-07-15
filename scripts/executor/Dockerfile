@@ -38,6 +38,7 @@ ENV METADATA_CHAIN_ENDPOINT=${METADATA_CHAIN_ENDPOINT}
 ENV CARGO_TARGET_DIR=/tmp/target
 ENV CARGO_INCREMENTAL=0
 ENV RUST_BACKTRACE=1
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 # Build the executor directly (workspace should resolve dependencies)
 # Set explicit endpoint if network is specified but endpoint is not
@@ -62,8 +63,10 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
         fi; \
     fi && \
     # Clean up intermediate build artifacts to save space
-    rm -rf /tmp/target/debug/deps /tmp/target/debug/incremental /tmp/target/release/deps /tmp/target/release/incremental && \
-    find /tmp/target -name "*.rlib" -delete 2>/dev/null || true
+    rm -rf /tmp/target/debug /tmp/target/release/deps /tmp/target/release/incremental /tmp/target/release/build && \
+    find /tmp/target -name "*.rlib" -delete 2>/dev/null || true && \
+    find /tmp/target -name "*.rmeta" -delete 2>/dev/null || true && \
+    rm -rf /root/.cargo/registry/cache /root/.cargo/git/db
 
 # Runtime image
 FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04

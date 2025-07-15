@@ -21,7 +21,7 @@ impl Cli {
 
     pub async fn run(&self, args: Args) -> Result<()> {
         self.handler
-            .execute_with_context(args.command, args.local_test)
+            .execute_with_context(args.command, args.config, args.local_test)
             .await
     }
 }

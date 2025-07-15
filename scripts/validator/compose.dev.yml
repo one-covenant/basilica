@@ -12,26 +12,23 @@ services:
 
     volumes:
       - ../../config/validator.toml:/app/validator.toml:ro
-      - validator-data-dev:/app/data
+      - ./data:/app/data:rw
       - ~/.ssh:/app/keys:ro
-      - ~/.bittensor:/home/basilica/.bittensor:rw
+      - ~/.bittensor:/root/.bittensor:rw
       - ../../crates:/app/crates:ro
       - ../../Cargo.toml:/app/Cargo.toml:ro
       - ../../Cargo.lock:/app/Cargo.lock:ro
 
     ports:
-      - "50053:50053"   # gRPC server
-      - "3000:3000"     # Public API
-      - "8080:8080"     # Metrics
+      - "8080:8080"     # Server/API port
+      - "9090:9090"     # Metrics port
 
     networks:
       - basilica_network_dev
 
-    command: ["--config", "/app/validator.toml"]
+    command: ["--config", "/app/validator.toml", "start"]
 
 networks:
   basilica_network_dev:
     driver: bridge
 
-volumes:
-  validator-data-dev:

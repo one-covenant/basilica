@@ -40,7 +40,7 @@ jobs:
     needs: create-release
     strategy:
       matrix:
-        service: [executor, miner, validator, gpu-attestor, public-api]
+        service: [executor, miner, validator, public-api]
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
@@ -81,12 +81,12 @@ jobs:
         run: |
           choco install protoc
           
-      # Generate test key for gpu-attestor
-      - name: Generate test key
-        if: matrix.service == 'gpu-attestor'
+      # Copy veritas binaries for validator
+      - name: Copy veritas binaries
+        if: matrix.service == 'validator'
         run: |
-          chmod +x scripts/gen-key.sh
-          ./scripts/gen-key.sh
+          cp bin/executor-binary/executor-binary ./executor-binary
+          cp bin/validator-binary/validator-binary ./validator-binary
 
       # Build release binary
       - name: Build ${{ matrix.service }}
@@ -134,7 +134,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        service: [executor, miner, validator, gpu-attestor, public-api]
+        service: [executor, miner, validator, public-api]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -162,23 +162,25 @@ jobs:
             type=semver,pattern={{major}}
             type=sha
 
-      # Generate validator key for gpu-attestor
-      - name: Generate validator key
-        if: matrix.service == 'gpu-attestor'
+      # Copy veritas binaries for validator
+      - name: Copy veritas binaries
+        if: matrix.service == 'validator'
         run: |
-          chmod +x scripts/gen-key.sh
-          ./scripts/gen-key.sh
+          cp bin/executor-binary/executor-binary ./executor-binary
+          cp bin/validator-binary/validator-binary ./validator-binary
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./scripts/${{ matrix.service }}/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
+            BUILD_MODE=release
             VERSION=${{ needs.create-release.outputs.version }}
+            BITTENSOR_NETWORK=finney

@@ -146,6 +146,15 @@ pub async fn handle_status() -> Result<()> {
     let start_time = SystemTime::now();
     let mut all_healthy = true;
 
+    // Load config to show actual configuration being used
+    let config = HandlerUtils::load_config(None)?;
+
+    println!("\nConfiguration:");
+    println!("  Wallet: {}", config.bittensor.common.wallet_name);
+    println!("  Hotkey: {}", config.bittensor.common.hotkey_name);
+    println!("  Network: {}", config.bittensor.common.network);
+    println!("  NetUID: {}", config.bittensor.common.netuid);
+
     // 1. Check if validator process is running
     println!("\nProcess Status:");
     match check_validator_process() {
@@ -166,7 +175,7 @@ pub async fn handle_status() -> Result<()> {
 
     // 2. Test database connectivity
     println!("\nDatabase Status:");
-    match test_database_connectivity().await {
+    match test_database_connectivity(&config).await {
         Ok(()) => {
             println!("  SQLite database connection successful");
         }
@@ -178,7 +187,7 @@ pub async fn handle_status() -> Result<()> {
 
     // 3. Check API server health
     println!("\nAPI Server Status:");
-    match test_api_health().await {
+    match test_api_health(&config).await {
         Ok(response_time_ms) => {
             println!("  API server healthy (response time: {response_time_ms}ms)");
         }
@@ -305,6 +314,7 @@ async fn start_validator_services(
             config.automatic_verification.clone(),
             config.ssh_session.clone(),
             bittensor_service.clone(),
+            persistence_arc.clone(),
         )?);
 
         // Initialize weight setter with block-based timing from emission config
@@ -438,10 +448,9 @@ fn check_validator_process() -> Result<Option<(u32, u64, f32)>> {
 }
 
 /// Test database connectivity
-async fn test_database_connectivity() -> Result<()> {
-    // Try to connect to the default SQLite database path
-    let db_path = "./validator.db";
-    let pool = sqlx::SqlitePool::connect(&format!("sqlite:{db_path}")).await?;
+async fn test_database_connectivity(config: &crate::config::ValidatorConfig) -> Result<()> {
+    // Use the configured database URL
+    let pool = sqlx::SqlitePool::connect(&config.database.url).await?;
 
     // Execute a simple query to verify connectivity
     sqlx::query("SELECT 1").fetch_one(&pool).await?;
@@ -451,13 +460,17 @@ async fn test_database_connectivity() -> Result<()> {
 }
 
 /// Test API server health
-async fn test_api_health() -> Result<u64> {
+async fn test_api_health(config: &crate::config::ValidatorConfig) -> Result<u64> {
     let client = Client::new();
     let start_time = SystemTime::now();
 
-    // Try to connect to the default API endpoint
+    // Use the configured server host and port
+    let api_url = format!(
+        "http://{}:{}/api/v1/health",
+        config.server.host, config.server.port
+    );
     let response = client
-        .get("http://127.0.0.1:8080/api/v1/health")
+        .get(&api_url)
         .timeout(Duration::from_secs(10))
         .send()
         .await?;
@@ -476,8 +489,8 @@ async fn test_api_health() -> Result<u64> {
 
 /// Test Bittensor network connectivity
 async fn test_bittensor_connectivity() -> Result<u64> {
-    // Load default config to get Bittensor settings
-    let config = crate::config::ValidatorConfig::default();
+    // Load actual config to get Bittensor settings
+    let config = HandlerUtils::load_config(None)?;
 
     // Create a temporary Bittensor service to test connectivity
     let service = bittensor::Service::new(config.bittensor.common)

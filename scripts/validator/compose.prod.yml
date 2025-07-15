@@ -1,6 +1,6 @@
 services:
   validator:
-    image: ghcr.io/tplr-ai/basilica-validator:latest
+    image: ghcr.io/tplr-ai/basilica/validator:latest
     container_name: basilica-validator
     restart: unless-stopped
     labels:
@@ -9,27 +9,26 @@ services:
     privileged: true
 
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=debug
       - RUST_BACKTRACE=1
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
     volumes:
-      - ../../config/validator.toml:/app/validator.toml:ro
-      - validator-data:/app/data
+      - /opt/basilica/config/validator.toml:/app/validator.toml:ro
+      - /opt/basilica/data:/app/data:rw
       - ~/.ssh:/app/keys:ro
-      - ~/.bittensor:/home/basilica/.bittensor:rw
+      - ~/.bittensor:/root/.bittensor:rw
       - /var/log/basilica:/var/log/basilica:rw
 
     ports:
-      - "50053:50053"   # gRPC server
-      - "3000:3000"     # Public API
-      - "8080:8080"     # Metrics
+      - "8080:8080"     # Server/API port
+      - "9090:9090"     # Metrics port
 
     networks:
       - basilica_network
 
-    command: ["--config", "/app/validator.toml"]
+    command: ["--config", "/app/validator.toml", "start"]
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -62,5 +61,3 @@ networks:
   basilica_network:
     driver: bridge
 
-volumes:
-  validator-data:

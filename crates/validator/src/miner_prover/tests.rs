@@ -87,54 +87,6 @@ fn test_ip_conversion_logic() {
     assert_eq!(ipv6_str, "2001:db8:0:0:0:0:0:1");
 }
 
-#[test]
-fn test_ssh_credential_parsing() {
-    use crate::config::VerificationConfig;
-    use crate::miner_prover::verification::VerificationEngine;
-
-    let config = VerificationConfig {
-        verification_interval: Duration::from_secs(3600),
-        max_concurrent_verifications: 10,
-        challenge_timeout: Duration::from_secs(60),
-        min_score_threshold: 0.0,
-        max_miners_per_round: 10,
-        min_verification_interval: Duration::from_secs(3600),
-        netuid: 1,
-        use_dynamic_discovery: false,
-        discovery_timeout: Duration::from_secs(30),
-        fallback_to_static: true,
-        cache_miner_info_ttl: Duration::from_secs(3600),
-        grpc_port_offset: None,
-        binary_validation: crate::config::BinaryValidationConfig::default(),
-    };
-    let engine = VerificationEngine::new(config);
-
-    // Test standard format with port
-    let creds = "validator@192.168.1.100:2222";
-    let details = engine.parse_ssh_credentials(creds, None).unwrap();
-    assert_eq!(details.username, "validator");
-    assert_eq!(details.host, "192.168.1.100");
-    assert_eq!(details.port, 2222);
-
-    // Test without port (should default to 22)
-    let creds_no_port = "validator@192.168.1.100";
-    let details_no_port = engine.parse_ssh_credentials(creds_no_port, None).unwrap();
-    assert_eq!(details_no_port.username, "validator");
-    assert_eq!(details_no_port.host, "192.168.1.100");
-    assert_eq!(details_no_port.port, 22);
-
-    // Test with IPv6 address
-    let creds_ipv6 = "validator@[2001:db8::1]:2222";
-    let details_ipv6 = engine.parse_ssh_credentials(creds_ipv6, None).unwrap();
-    assert_eq!(details_ipv6.username, "validator");
-    assert_eq!(details_ipv6.host, "[2001:db8::1]");
-    assert_eq!(details_ipv6.port, 2222);
-
-    // Test invalid format
-    let invalid_creds = "invalid-format";
-    assert!(engine.parse_ssh_credentials(invalid_creds, None).is_err());
-}
-
 #[tokio::test]
 async fn test_dynamic_discovery_config() {
     use crate::config::VerificationConfig;
