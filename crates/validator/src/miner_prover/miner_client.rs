@@ -53,6 +53,7 @@ pub struct MinerClient {
 pub trait ValidatorSigner: Send + Sync {
     /// Sign data with the validator's key
     fn sign(&self, data: &[u8]) -> Result<Vec<u8>>;
+    fn get_block_number(&self) -> Result<u64>;
 }
 
 /// Bittensor service-based signer implementation
@@ -75,6 +76,14 @@ impl ValidatorSigner for BittensorServiceSigner {
             .map_err(|e| anyhow::anyhow!("Failed to sign data: {}", e))?;
 
         hex::decode(signature_hex).map_err(|e| anyhow::anyhow!("Failed to decode signature: {}", e))
+    }
+    fn get_block_number(&self) -> Result<u64> {
+        tokio::runtime::Handle::current().block_on(async {
+            self.service
+                .get_block_number()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get block number: {}", e))
+        })
     }
 }
 
@@ -100,7 +109,13 @@ impl MinerClient {
             signer: Some(signer),
         }
     }
-
+    fn get_block_number(&self) -> Result<u64> {
+        if let Some(ref signer) = self.signer {
+            signer.get_block_number()
+        } else {
+            Err(anyhow::anyhow!("No signer provided to get block number"))
+        }
+    }
     /// Create a validator signature for authentication
     fn create_validator_signature(&self, nonce: &str) -> Result<String> {
         if let Some(ref signer) = self.signer {
@@ -151,89 +166,7 @@ impl MinerClient {
     pub async fn connect_and_authenticate(
         &self,
         axon_endpoint: &str,
-    ) -> Result<AuthenticatedMinerConnection> {
-        let grpc_endpoint = self.axon_to_grpc_endpoint(axon_endpoint)?;
-        info!(
-            "Connecting to miner gRPC service at {} (from axon: {})",
-            grpc_endpoint, axon_endpoint
-        );
-
-        // Create channel with timeout
-        let channel = Channel::from_shared(grpc_endpoint.clone())
-            .with_context(|| format!("Invalid gRPC endpoint: {grpc_endpoint}"))?
-            .connect_timeout(self.config.timeout)
-            .timeout(self.config.timeout)
-            .connect()
-            .await
-            .with_context(|| format!("Failed to connect to miner at {grpc_endpoint}"))?;
-
-        // Generate authentication request
-        let nonce = uuid::Uuid::new_v4().to_string();
-        let _timestamp = chrono::Utc::now();
-
-        // Create signature for authentication
-        // The signature needs to be created using the validator's keypair
-        // Since we have a Hotkey, we need to sign the nonce with it
-        // In production, this would use the actual validator's signing key
-
-        // For Bittensor compatibility, we expect the signature to be a hex-encoded string
-        // The miner will verify this using verify_bittensor_signature
-        let signature = self.create_validator_signature(&nonce)?;
-
-        let auth_request = ValidatorAuthRequest {
-            validator_hotkey: self.validator_hotkey.to_string(),
-            signature,
-            nonce,
-            timestamp: Some(protocol::common::Timestamp {
-                value: None, // Handle timestamp conversion properly with matching prost versions
-            }),
-        };
-
-        debug!(
-            "Authenticating with miner as validator {}",
-            self.validator_hotkey
-        );
-
-        // Authenticate with retry logic
-        let auth_response = self
-            .retry_grpc_call(|| {
-                let channel = channel.clone();
-                let auth_request = auth_request.clone();
-                async move {
-                    let mut client = MinerDiscoveryClient::new(channel);
-                    client
-                        .authenticate_validator(auth_request)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Authentication failed: {}", e))
-                }
-            })
-            .await?;
-
-        let auth_response = auth_response.into_inner();
-
-        if !auth_response.authenticated {
-            let error_msg = auth_response
-                .error
-                .map(|e| e.message)
-                .unwrap_or_else(|| "Unknown error".to_string());
-            return Err(anyhow::anyhow!("Authentication failed: {}", error_msg));
-        }
-
-        let session_token = auth_response.session_token;
-        info!("Successfully authenticated with miner");
-
-        Ok(AuthenticatedMinerConnection {
-            client: MinerDiscoveryClient::new(channel),
-            session_token,
-            grpc_endpoint,
-        })
-    }
-
-    /// Connect to a miner and authenticate
-    pub async fn connect_and_authenticate_safe(
-        &self,
         miner_hotkey: &Hotkey,
-        axon_endpoint: &str,
     ) -> Result<AuthenticatedMinerConnection> {
         let grpc_endpoint = self.axon_to_grpc_endpoint(axon_endpoint)?;
         info!(
@@ -253,7 +186,8 @@ impl MinerClient {
         // Generate authentication request
         let nonce = uuid::Uuid::new_v4().to_string();
         let _timestamp = chrono::Utc::now();
-
+        
+   
         // Create signature for authentication
         // The signature needs to be created using the validator's keypair
         // Since we have a Hotkey, we need to sign the nonce with it
@@ -261,11 +195,12 @@ impl MinerClient {
 
         // For Bittensor compatibility, we expect the signature to be a hex-encoded string
         // The miner will verify this using verify_bittensor_signature
-        
-        let nonce_auth_payload = format!("{}:{}:{}", miner_hotkey, _timestamp, nonce);
+        let block_number = self.get_block_number()?;
+
+        let nonce_auth_payload = format!("{}:{}:{}", miner_hotkey, block_number, nonce);
 
         let signature = self.create_validator_signature(&nonce_auth_payload)?;
-
+        
         let auth_request = ValidatorAuthRequest {
             validator_hotkey: self.validator_hotkey.to_string(),
             signature,
@@ -296,13 +231,25 @@ impl MinerClient {
             .await?;
 
         let auth_response = auth_response.into_inner();
-
+        
         if !auth_response.authenticated {
             let error_msg = auth_response
                 .error
                 .map(|e| e.message)
                 .unwrap_or_else(|| "Unknown error".to_string());
             return Err(anyhow::anyhow!("Authentication failed: {}", error_msg));
+        }
+        if let Err(e) = bittensor::utils::verify_bittensor_signature(
+            &miner_hotkey,
+            &auth_response.signature,
+            auth_request.nonce.as_bytes(),
+        ) {
+            warn!(
+                "Signature verification failed for validator {}: {}",
+                auth_request.validator_hotkey, e
+            );
+            return Err(anyhow::anyhow!("Invalid signature"));
+
         }
 
         let session_token = auth_response.session_token;
@@ -314,6 +261,8 @@ impl MinerClient {
             grpc_endpoint,
         })
     }
+
+    /// Connect to a miner and authenticate
 
     /// Retry a gRPC call with exponential backoff
     async fn retry_grpc_call<F, Fut, T>(&self, mut call: F) -> Result<T>

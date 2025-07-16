@@ -34,6 +34,7 @@ message MinerAuthResponse {
   string session_token = 2;
   basilca.common.v1.Timestamp expires_at = 3;
   basilca.common.v1.ErrorInfo error = 4;
+  string signature = 5;
 }
 
 message LeaseRequest {

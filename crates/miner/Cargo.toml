@@ -37,6 +37,7 @@ blake3 = { workspace = true }
 clap = { workspace = true }
 # Storage functionality (if needed in future)
 # memmap2 = { workspace = true }
+hex = "0.4"
 
 # Internal dependencies
 common = { path = "../common" }

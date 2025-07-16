@@ -38,6 +38,7 @@ pub struct VerificationEngine {
     ssh_key_path: Option<PathBuf>,
     /// Cache of miner endpoints for reconnection
     miner_endpoints: Arc<RwLock<HashMap<MinerUid, String>>>,
+    miner_hotkeys: Arc<RwLock<HashMap<MinerUid, Hotkey>>>,
     /// Optional Bittensor service for signing
     bittensor_service: Option<Arc<bittensor::Service>>,
     /// SSH key manager for session keys
@@ -75,6 +76,7 @@ impl VerificationEngine {
             use_dynamic_discovery: false, // Disabled without proper initialization
             ssh_key_path: None,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
+            miner_hotkeys: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service: None,
             ssh_key_manager: None,
             active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
@@ -147,7 +149,7 @@ impl VerificationEngine {
         // Create authenticated miner client
         let client = self.create_authenticated_client()?;
         let mut connection = client
-            .connect_and_authenticate(&miner.endpoint)
+            .connect_and_authenticate(&miner.endpoint, &miner.hotkey)
             .await
             .context("Failed to connect to miner for SSH handshake")?;
 
@@ -294,9 +296,18 @@ impl VerificationEngine {
         let workflow_start = std::time::Instant::now();
         let mut verification_steps = Vec::new();
 
+        let miner_hotkey = Hotkey::new(task.miner_hotkey.clone()).unwrap();
+        
+        // Cache the miner info for later use
+        {
+            let mut miner_hotkeys = self.miner_hotkeys.write().await;
+            miner_hotkeys.insert(MinerUid::from(task.miner_uid), miner_hotkey.clone());    
+        }
+
+
         // Step 1: Discover miner executors via gRPC
         let executor_list = self
-            .discover_miner_executors(&task.miner_endpoint)
+            .discover_miner_executors(&task.miner_endpoint, &miner_hotkey)
             .await
             .with_context(|| {
                 format!("Failed to discover executors for miner {}", task.miner_uid)
@@ -321,10 +332,11 @@ impl VerificationEngine {
 
         // Step 2: Execute SSH-based verification for each executor
         let mut executor_results = Vec::new();
+        let miner_hotkey = Hotkey::new(task.miner_hotkey.clone()).unwrap();
 
         for executor_info in executor_list {
             match self
-                .verify_executor_with_ssh_automation_enhanced(&task.miner_endpoint, &executor_info)
+                .verify_executor_with_ssh_automation_enhanced(&task.miner_endpoint, &miner_hotkey, &executor_info)
                 .await
             {
                 Ok(result) => {
@@ -439,6 +451,7 @@ impl VerificationEngine {
     async fn discover_miner_executors(
         &self,
         miner_endpoint: &str,
+        miner_hotkey: &Hotkey,
     ) -> Result<Vec<ExecutorInfoDetailed>> {
         info!(
             "[EVAL_FLOW] Starting executor discovery from miner at: {}",
@@ -481,7 +494,7 @@ impl VerificationEngine {
             miner_endpoint
         );
         let connection_start = std::time::Instant::now();
-        let mut connection = match client.connect_and_authenticate(miner_endpoint).await {
+        let mut connection = match client.connect_and_authenticate(miner_endpoint, miner_hotkey).await {
             Ok(conn) => {
                 info!(
                     "[EVAL_FLOW] Successfully connected and authenticated to miner in {:?}",
@@ -750,7 +763,7 @@ impl VerificationEngine {
         );
 
         // Step 1: Connect to miner and discover executors
-        let executor_list = self.discover_miner_executors(&miner.endpoint).await?;
+        let executor_list = self.discover_miner_executors(&miner.endpoint, &miner.hotkey).await?;
 
         if executor_list.is_empty() {
             warn!("No executors available from miner {}", miner.uid.as_u16());
@@ -762,7 +775,7 @@ impl VerificationEngine {
 
         for executor_info in executor_list {
             match self
-                .verify_executor_with_ssh_automation_enhanced(&miner.endpoint, &executor_info)
+                .verify_executor_with_ssh_automation_enhanced(&miner.endpoint, &miner.hotkey, &executor_info)
                 .await
             {
                 Ok(result) => {
@@ -821,6 +834,7 @@ impl VerificationEngine {
             use_dynamic_discovery: config.use_dynamic_discovery,
             ssh_key_path,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
+            miner_hotkeys: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service: None,
             ssh_key_manager: None,
             active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
@@ -851,6 +865,7 @@ impl VerificationEngine {
             use_dynamic_discovery: config.use_dynamic_discovery,
             ssh_key_path: None,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
+            miner_hotkeys: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service: None,
             ssh_key_manager: Some(ssh_key_manager),
             active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
@@ -887,6 +902,7 @@ impl VerificationEngine {
             use_dynamic_discovery: config.use_dynamic_discovery,
             ssh_key_path,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
+            miner_hotkeys: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service: Some(bittensor_service),
             ssh_key_manager,
             active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
@@ -900,13 +916,18 @@ impl VerificationEngine {
             miner.uid.as_u16()
         );
 
-        self.connect_to_miner(&miner).await?;
 
-        // Cache the miner endpoint for later use
+        // Cache the miner info for later use
         {
             let mut endpoints = self.miner_endpoints.write().await;
             endpoints.insert(miner.uid, miner.endpoint.clone());
+
+            let mut miner_hotkeys = self.miner_hotkeys.write().await;
+            miner_hotkeys.insert(miner.uid, miner.hotkey.clone());
+            
         }
+
+        self.connect_to_miner(&miner).await?;
 
         let executors = self.request_executor_lease(&miner).await?;
 
@@ -943,6 +964,7 @@ impl VerificationEngine {
             miner.endpoint
         );
 
+        // TODO: replace this with create_authenticated_client
         // Create miner client with proper signer if available
         let client = if let Some(ref bittensor_service) = self.bittensor_service {
             let signer = Box::new(super::miner_client::BittensorServiceSigner::new(
@@ -961,7 +983,7 @@ impl VerificationEngine {
         };
 
         // Test connection by attempting authentication
-        match client.connect_and_authenticate(&miner.endpoint).await {
+        match client.connect_and_authenticate(&miner.endpoint, &miner.hotkey).await {
             Ok(_conn) => {
                 info!(
                     "Successfully connected and authenticated with miner {} at {}",
@@ -1019,7 +1041,7 @@ impl VerificationEngine {
         };
 
         // Connect and authenticate
-        let mut connection = match client.connect_and_authenticate(&miner.endpoint).await {
+        let mut connection = match client.connect_and_authenticate(&miner.endpoint, &miner.hotkey).await {
             Ok(conn) => conn,
             Err(e) => {
                 if self.config.fallback_to_static {
@@ -1170,13 +1192,14 @@ impl VerificationEngine {
 
         // Get miner endpoint from cache
         let miner_endpoint = self.get_miner_endpoint(&executor.miner_uid).await?;
+        let miner_hotkey = self.get_miner_hotkey(&executor.miner_uid).await?;
 
         // Create miner client with proper signer if available
         let client = self.create_authenticated_client()?;
 
         // Connect and authenticate
         let mut connection = client
-            .connect_and_authenticate(&miner_endpoint)
+            .connect_and_authenticate(&miner_endpoint, &miner_hotkey)
             .await
             .context("Failed to reconnect to miner for SSH session")?;
 
@@ -1274,7 +1297,16 @@ impl VerificationEngine {
             )
         })
     }
-
+    /// Get miner hotkey from cache or error
+    async fn get_miner_hotkey(&self, miner_uid: &MinerUid) -> Result<Hotkey> {
+        let hotkeys = self.miner_hotkeys.read().await;
+        hotkeys.get(miner_uid).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Miner endpoint not found in cache for miner {}",
+                miner_uid.as_u16()
+            )
+        })
+    }
     /// Create authenticated miner client
     fn create_authenticated_client(&self) -> Result<MinerClient> {
         Ok(
@@ -1389,6 +1421,7 @@ impl VerificationEngine {
             use_dynamic_discovery,
             ssh_key_path: None, // Not used when SSH key manager is available
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
+            miner_hotkeys: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service,
             ssh_key_manager,
             active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
@@ -2332,6 +2365,7 @@ impl VerificationEngine {
     async fn establish_ssh_session(
         &self,
         miner_endpoint: &str,
+        miner_hotkey: &Hotkey,
         executor_info: &ExecutorInfoDetailed,
     ) -> Result<(
         SshConnectionDetails,
@@ -2339,7 +2373,7 @@ impl VerificationEngine {
     )> {
         // Create authenticated client
         let client = self.create_authenticated_client()?;
-        let mut connection = client.connect_and_authenticate(miner_endpoint).await?;
+        let mut connection = client.connect_and_authenticate(miner_endpoint, miner_hotkey).await?;
 
         // Get SSH key for session
         let (private_key_path, public_key_content) =
@@ -2380,6 +2414,7 @@ impl VerificationEngine {
     async fn verify_executor_with_ssh_automation_enhanced(
         &self,
         miner_endpoint: &str,
+        miner_hotkey: &Hotkey,
         executor_info: &ExecutorInfoDetailed,
     ) -> Result<ExecutorVerificationResult> {
         info!(
@@ -2446,7 +2481,7 @@ impl VerificationEngine {
 
         // Establish SSH session (existing implementation)
         let ssh_session_result = self
-            .establish_ssh_session(miner_endpoint, executor_info)
+            .establish_ssh_session(miner_endpoint, miner_hotkey, executor_info)
             .await;
         let (ssh_details, session_info) = match ssh_session_result {
             Ok(details) => details,

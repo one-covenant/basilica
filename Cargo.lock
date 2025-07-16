@@ -5482,6 +5482,7 @@ dependencies = [
  "figment",
  "futures",
  "governor",
+ "hex",
  "jsonwebtoken",
  "metrics 0.22.4",
  "metrics-exporter-prometheus",

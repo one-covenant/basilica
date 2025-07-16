@@ -252,7 +252,7 @@ impl MinerState {
         ));
 
         // Initialize validator communications server
-        let validator_comms = ValidatorCommsServer::new(
+        let validator_comms: ValidatorCommsServer = ValidatorCommsServer::new(
             config.validator_comms.clone(),
             config.security.clone(),
             executor_manager.clone(),

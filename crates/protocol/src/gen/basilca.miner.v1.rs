@@ -22,6 +22,8 @@ pub struct MinerAuthResponse {
     pub expires_at: ::core::option::Option<super::super::common::v1::Timestamp>,
     #[prost(message, optional, tag = "4")]
     pub error: ::core::option::Option<super::super::common::v1::ErrorInfo>,
+    #[prost(string, tag = "5")]
+    pub signature: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
