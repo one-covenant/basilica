@@ -356,7 +356,6 @@ impl MinerDiscoveryService {
             .get_block_number()
             .await
             .unwrap();
-        
         let miner_hotkey = bittensor::account_id_to_hotkey(
             self.bittensor_service.as_ref().unwrap().get_account_id(),
         )
@@ -372,10 +371,8 @@ impl MinerDiscoveryService {
         if current_block_number - block_number > 5 {
             return Err(anyhow!("Nonce has expired"));
         }
-
         Ok(())
     }
-
 }
 #[tonic::async_trait]
 impl MinerDiscovery for MinerDiscoveryService {
@@ -411,14 +408,10 @@ impl MinerDiscovery for MinerDiscoveryService {
             }
         }
         // Verify nonce format and timestamp
-        // Verify nonce format and timestamp
-        self.verify_nonce(&auth_request.nonce)
-            .await
-            .map_err(|e| {
-                warn!("Nonce verification failed: {}", e);
-                Status::unauthenticated("Invalid or expired nonce")
-            })?;
-        
+        self.verify_nonce(&auth_request.nonce).await.map_err(|e| {
+            warn!("Nonce verification failed: {}", e);
+            Status::unauthenticated("Invalid or expired nonce")
+        })?;
         // Check if validator is in allowlist (if configured)
         if !self.security_config.allowed_validators.is_empty() {
             let validator_hotkey = Hotkey::new(auth_request.validator_hotkey.clone())
