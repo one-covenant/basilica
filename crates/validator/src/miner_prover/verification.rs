@@ -297,13 +297,12 @@ impl VerificationEngine {
         let mut verification_steps = Vec::new();
 
         let miner_hotkey = Hotkey::new(task.miner_hotkey.clone()).unwrap();
-        
+
         // Cache the miner info for later use
         {
             let mut miner_hotkeys = self.miner_hotkeys.write().await;
-            miner_hotkeys.insert(MinerUid::from(task.miner_uid), miner_hotkey.clone());    
+            miner_hotkeys.insert(MinerUid::from(task.miner_uid), miner_hotkey.clone());
         }
-
 
         // Step 1: Discover miner executors via gRPC
         let executor_list = self
@@ -336,7 +335,11 @@ impl VerificationEngine {
 
         for executor_info in executor_list {
             match self
-                .verify_executor_with_ssh_automation_enhanced(&task.miner_endpoint, &miner_hotkey, &executor_info)
+                .verify_executor_with_ssh_automation_enhanced(
+                    &task.miner_endpoint,
+                    &miner_hotkey,
+                    &executor_info,
+                )
                 .await
             {
                 Ok(result) => {
@@ -494,7 +497,10 @@ impl VerificationEngine {
             miner_endpoint
         );
         let connection_start = std::time::Instant::now();
-        let mut connection = match client.connect_and_authenticate(miner_endpoint, miner_hotkey).await {
+        let mut connection = match client
+            .connect_and_authenticate(miner_endpoint, miner_hotkey)
+            .await
+        {
             Ok(conn) => {
                 info!(
                     "[EVAL_FLOW] Successfully connected and authenticated to miner in {:?}",
@@ -763,7 +769,9 @@ impl VerificationEngine {
         );
 
         // Step 1: Connect to miner and discover executors
-        let executor_list = self.discover_miner_executors(&miner.endpoint, &miner.hotkey).await?;
+        let executor_list = self
+            .discover_miner_executors(&miner.endpoint, &miner.hotkey)
+            .await?;
 
         if executor_list.is_empty() {
             warn!("No executors available from miner {}", miner.uid.as_u16());
@@ -775,7 +783,11 @@ impl VerificationEngine {
 
         for executor_info in executor_list {
             match self
-                .verify_executor_with_ssh_automation_enhanced(&miner.endpoint, &miner.hotkey, &executor_info)
+                .verify_executor_with_ssh_automation_enhanced(
+                    &miner.endpoint,
+                    &miner.hotkey,
+                    &executor_info,
+                )
                 .await
             {
                 Ok(result) => {
@@ -916,7 +928,6 @@ impl VerificationEngine {
             miner.uid.as_u16()
         );
 
-
         // Cache the miner info for later use
         {
             let mut endpoints = self.miner_endpoints.write().await;
@@ -924,7 +935,6 @@ impl VerificationEngine {
 
             let mut miner_hotkeys = self.miner_hotkeys.write().await;
             miner_hotkeys.insert(miner.uid, miner.hotkey.clone());
-            
         }
 
         self.connect_to_miner(&miner).await?;
@@ -983,7 +993,10 @@ impl VerificationEngine {
         };
 
         // Test connection by attempting authentication
-        match client.connect_and_authenticate(&miner.endpoint, &miner.hotkey).await {
+        match client
+            .connect_and_authenticate(&miner.endpoint, &miner.hotkey)
+            .await
+        {
             Ok(_conn) => {
                 info!(
                     "Successfully connected and authenticated with miner {} at {}",
@@ -1041,7 +1054,10 @@ impl VerificationEngine {
         };
 
         // Connect and authenticate
-        let mut connection = match client.connect_and_authenticate(&miner.endpoint, &miner.hotkey).await {
+        let mut connection = match client
+            .connect_and_authenticate(&miner.endpoint, &miner.hotkey)
+            .await
+        {
             Ok(conn) => conn,
             Err(e) => {
                 if self.config.fallback_to_static {
@@ -2373,7 +2389,9 @@ impl VerificationEngine {
     )> {
         // Create authenticated client
         let client = self.create_authenticated_client()?;
-        let mut connection = client.connect_and_authenticate(miner_endpoint, miner_hotkey).await?;
+        let mut connection = client
+            .connect_and_authenticate(miner_endpoint, miner_hotkey)
+            .await?;
 
         // Get SSH key for session
         let (private_key_path, public_key_content) =

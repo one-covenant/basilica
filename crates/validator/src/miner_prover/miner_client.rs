@@ -186,8 +186,7 @@ impl MinerClient {
         // Generate authentication request
         let nonce = uuid::Uuid::new_v4().to_string();
         let _timestamp = chrono::Utc::now();
-        
-   
+
         // Create signature for authentication
         // The signature needs to be created using the validator's keypair
         // Since we have a Hotkey, we need to sign the nonce with it
@@ -200,7 +199,7 @@ impl MinerClient {
         let nonce_auth_payload = format!("{}:{}:{}", miner_hotkey, block_number, nonce);
 
         let signature = self.create_validator_signature(&nonce_auth_payload)?;
-        
+
         let auth_request = ValidatorAuthRequest {
             validator_hotkey: self.validator_hotkey.to_string(),
             signature,
@@ -231,7 +230,6 @@ impl MinerClient {
             .await?;
 
         let auth_response = auth_response.into_inner();
-        
         if !auth_response.authenticated {
             let error_msg = auth_response
                 .error
@@ -249,7 +247,6 @@ impl MinerClient {
                 auth_request.validator_hotkey, e
             );
             return Err(anyhow::anyhow!("Invalid signature"));
-
         }
 
         let session_token = auth_response.session_token;
@@ -261,8 +258,6 @@ impl MinerClient {
             grpc_endpoint,
         })
     }
-
-    /// Connect to a miner and authenticate
 
     /// Retry a gRPC call with exponential backoff
     async fn retry_grpc_call<F, Fut, T>(&self, mut call: F) -> Result<T>

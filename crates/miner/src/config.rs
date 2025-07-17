@@ -132,7 +132,6 @@ pub struct ValidatorCommsConfig {
     /// Rate limiting configuration
     pub rate_limit: RateLimitConfig,
     pub bittensor: MinerBittensorConfig,
-
 }
 
 /// Executor management configuration
@@ -499,7 +498,6 @@ impl Default for ValidatorCommsConfig {
             request_timeout: Duration::from_secs(30),
             max_concurrent_sessions: 100,
             rate_limit: RateLimitConfig::default(),
-
         }
     }
 }

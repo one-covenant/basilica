@@ -96,7 +96,8 @@ impl ValidatorCommsServer {
     /// Start serving gRPC requests
     pub async fn serve(&self, addr: SocketAddr) -> Result<()> {
         info!("Starting validator communications server on {}", addr);
-        let bittensor_service: Arc<bittensor::Service> = Arc::new(bittensor::Service::new(self.config.bittensor.common.clone()).await?);
+        let bittensor_service: Arc<bittensor::Service> =
+            Arc::new(bittensor::Service::new(self.config.bittensor.common.clone()).await?);
 
         let miner_discovery_service = MinerDiscoveryService {
             _config: self.config.clone(),
@@ -153,9 +154,10 @@ impl ValidatorCommsServer {
         config
             .validate_advertised_addresses()
             .with_context(|| "Invalid advertised address configuration")?;
-        
-        let bittensor_service: Arc<bittensor::Service> = Arc::new(bittensor::Service::new(config.bittensor.common.clone()).await?);
-    
+
+        let bittensor_service: Arc<bittensor::Service> =
+            Arc::new(bittensor::Service::new(config.bittensor.common.clone()).await?);
+
         // Create gRPC services
         let miner_discovery_service = MinerDiscoveryService {
             _config: self.config.clone(),
@@ -310,9 +312,6 @@ impl ValidatorCommsServer {
     }
 }
 
-// let bittensor_service: Arc<bittensor::Service> =
-//             Arc::new(bittensor::Service::new(config.bittensor.common.clone()).await?);
-        
 /// Simplified gRPC service implementation for miner discovery
 #[derive(Clone)]
 struct MinerDiscoveryService {
@@ -327,21 +326,56 @@ struct MinerDiscoveryService {
     ssh_session_orchestrator: Option<Arc<SshSessionOrchestrator>>,
 }
 impl MinerDiscoveryService {
-    
     pub fn create_miner_signature(&self, payload_str: &str) -> Result<String> {
         if let Some(ref service) = self.bittensor_service {
-            let signature_hex = service.sign_data(payload_str.as_bytes())
-            .map_err(|e| anyhow::anyhow!("Failed to sign data: {}", e))?;
-            let signature_bytes = hex::decode(signature_hex).map_err(|e| anyhow::anyhow!("Failed to decode signature: {}", e))?;
+            let signature_hex = service
+                .sign_data(payload_str.as_bytes())
+                .map_err(|e| anyhow::anyhow!("Failed to sign data: {}", e))?;
+            let signature_bytes = hex::decode(signature_hex)
+                .map_err(|e| anyhow::anyhow!("Failed to decode signature: {}", e))?;
 
             Ok(hex::encode(signature_bytes))
-
         } else {
             Err(anyhow::anyhow!(
                 "No bittensor service provided for validator signature creation"
             ))
         }
     }
+    async fn verify_nonce(&self, nonce_payload: &str) -> Result<()> {
+        let parts: Vec<&str> = nonce_payload.splitn(3, ':').collect();
+        if parts.len() != 3 {
+            warn!("Signature verification failed");
+            return Err(anyhow!("Invalid nonce format"));
+        }
+        let miner_hotkey_in_nonce = parts[0];
+        let block_number: u64 = parts[1].parse::<u64>().unwrap();
+        let current_block_number = self
+            .bittensor_service
+            .as_ref()
+            .unwrap()
+            .get_block_number()
+            .await
+            .unwrap();
+        
+        let miner_hotkey = bittensor::account_id_to_hotkey(
+            self.bittensor_service.as_ref().unwrap().get_account_id(),
+        )
+        .map_err(|e| Status::internal(format!("Failed to get miner hotkey: {}", e)))?;
+
+        // Check if miner hotkey in nonce matches validator_hotkey
+        if miner_hotkey_in_nonce != miner_hotkey.to_string() {
+            warn!("Miner hotkey mismatch in nonce");
+            return Err(anyhow!("Miner hotkey mismatch in nonce"));
+        }
+
+        // Check timestamp within 30 minutes (1800 seconds)
+        if current_block_number - block_number > 5 {
+            return Err(anyhow!("Nonce has expired"));
+        }
+
+        Ok(())
+    }
+
 }
 #[tonic::async_trait]
 impl MinerDiscovery for MinerDiscoveryService {
@@ -377,40 +411,13 @@ impl MinerDiscovery for MinerDiscoveryService {
             }
         }
         // Verify nonce format and timestamp
-        {
-            let parts: Vec<&str> = auth_request.nonce.splitn(3, ':').collect();
-            if parts.len() != 3 {
-                warn!(
-                    "Signature verification failed"
-                );
-                return Err(Status::invalid_argument("Invalid nonce format"));
-            }
-            let miner_hotkey_in_nonce = parts[0];
-            let block_number: u64 = parts[1].parse::<u64>().unwrap();
-            let current_block_number = self.bittensor_service.as_ref().unwrap().get_block_number().await.unwrap();
-            let now = chrono::Utc::now().timestamp();
-            
-            let miner_hotkey = bittensor::account_id_to_hotkey(self.bittensor_service.as_ref().unwrap().get_account_id())
-            .map_err(|e| Status::internal(format!("Failed to get miner hotkey: {}", e)))?;
-
-            // Check if miner hotkey in nonce matches validator_hotkey
-            if miner_hotkey_in_nonce != miner_hotkey.to_string() {
-                warn!(
-                    "Miner hotkey mismatch in nonce"
-                );
-                return Err(Status::unauthenticated("Miner hotkey mismatch in nonce"));
-            }
-    
-            // Check timestamp within 30 minutes (1800 seconds)
-            if current_block_number - block_number > 5 {
-                warn!(
-                    "Nonce has expired "
-                );
-                print!("current_block: {}, block_number in nonce: {}", current_block_number, block_number);
-                return Err(Status::unauthenticated("Nonce has expired"));
-            }
-            
-        }
+        // Verify nonce format and timestamp
+        self.verify_nonce(&auth_request.nonce)
+            .await
+            .map_err(|e| {
+                warn!("Nonce verification failed: {}", e);
+                Status::unauthenticated("Invalid or expired nonce")
+            })?;
         
         // Check if validator is in allowlist (if configured)
         if !self.security_config.allowed_validators.is_empty() {
@@ -476,7 +483,8 @@ impl MinerDiscovery for MinerDiscoveryService {
         let expires_at = chrono::Utc::now()
             + chrono::Duration::seconds(self.security_config.token_expiration.as_secs() as i64);
 
-        let signature = self.create_miner_signature(&auth_request.nonce)
+        let signature = self
+            .create_miner_signature(&auth_request.nonce)
             .map_err(|e| {
                 error!("Failed to create miner signature: {}", e);
                 Status::internal("Failed to create miner signature")
@@ -779,7 +787,6 @@ impl MinerDiscovery for MinerDiscoveryService {
             }
         }
     }
-
 }
 
 /// Create GPU spec from available executor information
@@ -830,7 +837,6 @@ fn create_gpu_spec_from_executor(exec: &AvailableExecutor) -> Option<protocol::c
             compute_capability: "unknown".to_string(),
         })
     }
-
 }
 
 #[cfg(test)]
@@ -841,31 +847,31 @@ mod tests {
     mod test_utils {
         use super::*;
 
-        pub async fn create_validator_signature(
-            payload_str: &str
-        ) -> Result<String> {
+        pub async fn create_validator_signature(payload_str: &str) -> Result<String> {
             let validator_bittensor_config = BittensorConfig::default();
-            let validator_bittensor_service: Arc<bittensor::Service> = Arc::new(bittensor::Service::new(validator_bittensor_config).await?);
+            let validator_bittensor_service: Arc<bittensor::Service> =
+                Arc::new(bittensor::Service::new(validator_bittensor_config).await?);
 
-            let signature_hex = validator_bittensor_service.sign_data(payload_str.as_bytes())
-            .map_err(|e| anyhow::anyhow!("Failed to sign data: {}", e))?;
-            let signature_bytes = hex::decode(signature_hex).map_err(|e| anyhow::anyhow!("Failed to decode signature: {}", e))?;
+            let signature_hex = validator_bittensor_service
+                .sign_data(payload_str.as_bytes())
+                .map_err(|e| anyhow::anyhow!("Failed to sign data: {}", e))?;
+            let signature_bytes = hex::decode(signature_hex)
+                .map_err(|e| anyhow::anyhow!("Failed to decode signature: {}", e))?;
 
             Ok(hex::encode(signature_bytes))
-
         }
 
-        pub async fn get_validator_hotkey(
-        ) -> Result<String> {
+        pub async fn get_validator_hotkey() -> Result<String> {
             let validator_bittensor_config = BittensorConfig::default();
-            let validator_bittensor_service: Arc<bittensor::Service> = Arc::new(bittensor::Service::new(validator_bittensor_config).await?);
-            let validator_hotkey = bittensor::account_id_to_hotkey(validator_bittensor_service.get_account_id())?;
+            let validator_bittensor_service: Arc<bittensor::Service> =
+                Arc::new(bittensor::Service::new(validator_bittensor_config).await?);
+            let validator_hotkey =
+                bittensor::account_id_to_hotkey(validator_bittensor_service.get_account_id())?;
             Ok(validator_hotkey.to_string())
-
         }
     }
     #[tokio::test]
-    async fn test_validator_auth_with_production_verification() -> Result<(), anyhow::Error>  {
+    async fn test_validator_auth_with_production_verification() -> Result<(), anyhow::Error> {
         let config = ValidatorCommsConfig::default();
         let security_config = SecurityConfig {
             verify_signatures: true,
@@ -923,7 +929,8 @@ mod tests {
             )
             .unwrap(),
         );
-        let bittensor_service: Arc<bittensor::Service> = Arc::new(bittensor::Service::new(config.bittensor.common.clone()).await?);
+        let bittensor_service: Arc<bittensor::Service> =
+            Arc::new(bittensor::Service::new(config.bittensor.common.clone()).await?);
 
         let service = MinerDiscoveryService {
             _config: config,
@@ -941,9 +948,9 @@ mod tests {
         let test_hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
         let nonce = "test-nonce";
         let _timestamp = chrono::Utc::now();
-        
+
         let miner_hotkey = bittensor::account_id_to_hotkey(bittensor_service.get_account_id())?;
-        
+
         let block_number = bittensor_service.as_ref().get_block_number().await.unwrap();
 
         let nonce_auth_payload = format!("{}:{}:{}", miner_hotkey.as_str(), block_number, nonce);
@@ -971,8 +978,9 @@ mod tests {
             assert!(status.message().contains("Invalid signature"));
         }
         let validator_hotkey = test_utils::get_validator_hotkey().await?;
-        
-        let valid_signature = test_utils::create_validator_signature(nonce_auth_payload.as_str()).await?;
+
+        let valid_signature =
+            test_utils::create_validator_signature(nonce_auth_payload.as_str()).await?;
         let nonce_auth_payload = format!("{}:{}:{}", miner_hotkey, block_number, nonce);
         let request = ValidatorAuthRequest {
             validator_hotkey: validator_hotkey.to_string(),
@@ -984,21 +992,23 @@ mod tests {
         // This should fail authentication due to invalid signature
         let result = service.authenticate_validator(Request::new(request)).await;
         // Assert that the result is Ok and fail the test if not
-        assert!(result.is_ok(), "Expected Ok result, but got Err: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Expected Ok result, but got Err: {:?}",
+            result.err()
+        );
 
         // Now test with a valid signature
-        // if let Err(e) = bittensor::utils::verify_bittensor_signature(
-        //     &miner_hotkey,
-        //     &result?.into_inner().signature,
-        //     nonce_auth_payload.as_bytes(),
-        // ) {
-        //     warn!(
-        //         "Miner hotkey signature verification failed"
-        //     );
-        //     return Err(anyhow::anyhow!("Invalid signature for Miner hotkey"));
+        assert!(
+            bittensor::utils::verify_bittensor_signature(
+                &miner_hotkey,
+                &result?.get_ref().signature,
+                nonce_auth_payload.as_bytes(),
+            )
+            .is_ok(),
+            "Miner hotkey signature verification failed"
+        );
 
-        // }
-        
         Ok(())
     }
 
@@ -1061,7 +1071,8 @@ mod tests {
             )
             .unwrap(),
         );
-        let bittensor_service: Arc<bittensor::Service> = Arc::new(bittensor::Service::new(config.bittensor.common.clone()).await?);
+        let bittensor_service: Arc<bittensor::Service> =
+            Arc::new(bittensor::Service::new(config.bittensor.common.clone()).await?);
 
         let service = MinerDiscoveryService {
             _config: config,
