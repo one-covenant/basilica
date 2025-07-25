@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -45,8 +45,18 @@ impl GpuScoringEngine {
         // Determine primary GPU model
         let primary_gpu_model = GpuCategorizer::determine_primary_gpu_model(&executor_validations);
 
+        // Check if there are any successful validations
+        let has_successful_validation = executor_validations
+            .iter()
+            .any(|v| v.is_valid && v.attestation_valid);
+
         // Create or update the profile with the calculated score
-        let profile = MinerGpuProfile::new(miner_uid, &executor_validations, new_score);
+        let mut profile = MinerGpuProfile::new(miner_uid, &executor_validations, new_score);
+
+        // If there's a successful validation, update the timestamp
+        if has_successful_validation {
+            profile.last_successful_validation = Some(Utc::now());
+        }
 
         // Store the profile
         self.gpu_profile_repo.upsert_gpu_profile(&profile).await?;
@@ -180,8 +190,10 @@ impl GpuScoringEngine {
     /// A single miner can appear in multiple categories if they have multiple GPU types
     /// Only includes H100 and H200 categories for rewards (OTHER category excluded)
     /// Filters out miners without active axons on the chain
-    pub async fn get_miners_by_gpu_category(
+    /// Only includes miners with successful validations since the given timestamp
+    pub async fn get_miners_by_gpu_category_since_epoch(
         &self,
+        epoch_timestamp: Option<DateTime<Utc>>,
         cutoff_hours: u32,
         metagraph: &bittensor::Metagraph<bittensor::AccountId>,
     ) -> Result<HashMap<String, Vec<(MinerUid, f64)>>> {
@@ -194,6 +206,25 @@ impl GpuScoringEngine {
             // Filter by cutoff time
             if profile.last_updated < cutoff_time {
                 continue;
+            }
+
+            // Filter by last successful validation epoch if provided
+            if let Some(epoch) = epoch_timestamp {
+                // Skip miners who haven't had successful validations since the last epoch
+                match profile.last_successful_validation {
+                    Some(last_validation) if last_validation >= epoch => {
+                        // Miner has successful validation since epoch, include them
+                    }
+                    _ => {
+                        debug!(
+                            miner_uid = profile.miner_uid.as_u16(),
+                            last_validation = ?profile.last_successful_validation,
+                            epoch = ?epoch,
+                            "Skipping miner: No successful validation since last epoch"
+                        );
+                        continue;
+                    }
+                }
             }
 
             // Check if miner has active axon on chain
@@ -600,6 +631,7 @@ mod tests {
                 total_score: 0.8,
                 verification_count: 1,
                 last_updated: Utc::now(),
+                last_successful_validation: None,
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
@@ -608,6 +640,7 @@ mod tests {
                 total_score: 0.6,
                 verification_count: 1,
                 last_updated: Utc::now(),
+                last_successful_validation: None,
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
@@ -616,6 +649,7 @@ mod tests {
                 total_score: 0.9,
                 verification_count: 1,
                 last_updated: Utc::now(),
+                last_successful_validation: None,
             },
         ];
 
@@ -727,6 +761,7 @@ mod tests {
             total_score: 0.2,
             verification_count: 1,
             last_updated: Utc::now(),
+            last_successful_validation: None,
         };
         repo.upsert_gpu_profile(&initial_profile).await.unwrap();
 

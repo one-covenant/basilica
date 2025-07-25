@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::{Row, SqlitePool};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::persistence::entities::{Rental, RentalStatus, VerificationLog};
@@ -144,6 +145,7 @@ impl SimplePersistence {
                 total_score REAL NOT NULL,
                 verification_count INTEGER NOT NULL,
                 last_updated TEXT NOT NULL,
+                last_successful_validation TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
 
                 CONSTRAINT valid_score CHECK (total_score >= 0.0 AND total_score <= 1.0),
@@ -216,6 +218,32 @@ impl SimplePersistence {
         )
         .execute(&self.pool)
         .await?;
+
+        // Check if last_successful_validation column exists before adding it
+        let column_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('miner_gpu_profiles')
+            WHERE name = 'last_successful_validation'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !column_exists {
+            // Migration to add last_successful_validation column
+            sqlx::query(
+                r#"
+                ALTER TABLE miner_gpu_profiles
+                ADD COLUMN last_successful_validation TEXT;
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+
+            info!("Added last_successful_validation column to miner_gpu_profiles table");
+        }
 
         Ok(())
     }

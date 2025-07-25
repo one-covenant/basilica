@@ -10,6 +10,7 @@ pub struct MinerGpuProfile {
     pub total_score: f64,
     pub verification_count: u32,
     pub last_updated: DateTime<Utc>,
+    pub last_successful_validation: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -109,6 +110,7 @@ impl MinerGpuProfile {
             total_score,
             verification_count,
             last_updated: Utc::now(),
+            last_successful_validation: None,
         }
     }
 

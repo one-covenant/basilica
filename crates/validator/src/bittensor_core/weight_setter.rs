@@ -256,13 +256,21 @@ impl WeightSetter {
             metagraph.hotkeys.len()
         );
 
-        // 2. Get miners by GPU category from the scoring engine with axon validation
+        // 2. Get last weight set timestamp for epoch filtering
+        let last_weight_timestamp = self.get_last_weight_set_timestamp().await?;
         info!(
-            "Fetching miners by GPU category from scoring engine, cutoff at {GPU_CATEGORY_CUTOFF_HOURS} hours"
+            "Fetching miners by GPU category from scoring engine, cutoff at {GPU_CATEGORY_CUTOFF_HOURS} hours, epoch: {:?}",
+            last_weight_timestamp
         );
+
+        // 3. Get miners by GPU category from the scoring engine with axon validation and epoch filtering
         let miners_by_category = self
             .gpu_scoring_engine
-            .get_miners_by_gpu_category(GPU_CATEGORY_CUTOFF_HOURS, &metagraph)
+            .get_miners_by_gpu_category_since_epoch(
+                last_weight_timestamp,
+                GPU_CATEGORY_CUTOFF_HOURS,
+                &metagraph,
+            )
             .await?;
 
         if miners_by_category.is_empty() {
@@ -883,6 +891,24 @@ impl WeightSetter {
         Ok(safe_last_block)
     }
 
+    /// Get the last weight set timestamp from storage
+    pub async fn get_last_weight_set_timestamp(
+        &self,
+    ) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
+        let key = format!("last_weight_set_timestamp:{}", self.config.netuid);
+
+        // Try to get from storage
+        if let Some(timestamp) = self.storage.get_i64(&key).await.unwrap_or(None) {
+            let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0)
+                .ok_or_else(|| anyhow::anyhow!("Invalid timestamp: {}", timestamp))?;
+            info!("Found stored last weight set timestamp: {}", datetime);
+            return Ok(Some(datetime));
+        }
+
+        info!("No stored last weight set timestamp found");
+        Ok(None)
+    }
+
     /// Store the last weight set block for persistence across restarts with atomic operation
     async fn store_last_weight_set_block(&self, block: u64) -> Result<()> {
         let key = format!("last_weight_set_block:{}", self.config.netuid);
@@ -894,7 +920,7 @@ impl WeightSetter {
         // Use a transaction-like approach for atomic storage
         match self.storage.set_i64(&key, block as i64).await {
             Ok(()) => {
-                // Store timestamp as well for auditing
+                // Store timestamp as well for auditing and epoch tracking
                 if let Err(e) = self.storage.set_i64(&timestamp_key, timestamp).await {
                     warn!("Failed to store timestamp for block {}: {}", block, e);
                 }

@@ -149,14 +149,15 @@ mod tests {
             total_score: 0.5,
             verification_count: 1,
             last_updated: Utc::now() - chrono::Duration::days(40),
+            last_successful_validation: None,
         };
 
         // Manually insert old profile
         let query = r#"
             INSERT INTO miner_gpu_profiles (
                 miner_uid, primary_gpu_model, gpu_counts_json, 
-                total_score, verification_count, last_updated, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                total_score, verification_count, last_updated, last_successful_validation, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         "#;
 
         sqlx::query(query)
@@ -166,6 +167,11 @@ mod tests {
             .bind(old_profile.total_score)
             .bind(old_profile.verification_count as i64)
             .bind(old_profile.last_updated.to_rfc3339())
+            .bind(
+                old_profile
+                    .last_successful_validation
+                    .map(|dt| dt.to_rfc3339()),
+            )
             .execute(repo.pool())
             .await
             .unwrap();
@@ -178,6 +184,7 @@ mod tests {
             total_score: 0.8,
             verification_count: 1,
             last_updated: Utc::now(),
+            last_successful_validation: None,
         };
 
         repo.upsert_gpu_profile(&recent_profile).await.unwrap();
