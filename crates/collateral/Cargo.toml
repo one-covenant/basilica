@@ -1,0 +1,25 @@
+[package]
+name = "collateral"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "collateral"
+path = "src/lib.rs"
+
+[dependencies]
+alloy = { workspace = true }
+alloy-sol-types = { workspace = true }
+alloy-network = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-contract = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+subxt = { workspace = true }
+subxt-signer = { workspace = true }
+bittensor = { path = "../bittensor" }
