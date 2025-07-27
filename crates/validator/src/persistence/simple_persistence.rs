@@ -4,6 +4,7 @@ use sqlx::{Row, SqlitePool};
 use tracing::info;
 use uuid::Uuid;
 
+use crate::gpu::MinerGpuProfile;
 use crate::persistence::entities::{Rental, RentalStatus, VerificationLog};
 
 /// Simplified persistence implementation for quick testing

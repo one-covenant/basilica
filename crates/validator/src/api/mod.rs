@@ -22,20 +22,29 @@ use tracing::info;
 pub struct ApiState {
     config: ApiConfig,
     persistence: Arc<crate::persistence::SimplePersistence>,
+    gpu_profile_repo: Arc<crate::persistence::gpu_profile_repository::GpuProfileRepository>,
     #[allow(dead_code)]
     storage: common::MemoryStorage,
+    bittensor_service: Option<Arc<bittensor::Service>>,
+    validator_config: crate::config::ValidatorConfig,
 }
 
 impl ApiState {
     pub fn new(
         config: ApiConfig,
         persistence: Arc<crate::persistence::SimplePersistence>,
+        gpu_profile_repo: Arc<crate::persistence::gpu_profile_repository::GpuProfileRepository>,
         storage: common::MemoryStorage,
+        bittensor_service: Option<Arc<bittensor::Service>>,
+        validator_config: crate::config::ValidatorConfig,
     ) -> Self {
         Self {
             config,
             persistence,
+            gpu_profile_repo,
             storage,
+            bittensor_service,
+            validator_config,
         }
     }
 }
@@ -50,10 +59,20 @@ impl ApiHandler {
     pub fn new(
         config: ApiConfig,
         persistence: Arc<crate::persistence::SimplePersistence>,
+        gpu_profile_repo: Arc<crate::persistence::gpu_profile_repository::GpuProfileRepository>,
         storage: common::MemoryStorage,
+        bittensor_service: Option<Arc<bittensor::Service>>,
+        validator_config: crate::config::ValidatorConfig,
     ) -> Self {
         Self {
-            state: ApiState::new(config, persistence, storage),
+            state: ApiState::new(
+                config,
+                persistence,
+                gpu_profile_repo,
+                storage,
+                bittensor_service,
+                validator_config,
+            ),
         }
     }
 
@@ -93,6 +112,38 @@ impl ApiHandler {
                 get(routes::list_miner_executors),
             )
             .route("/health", get(routes::health_check))
+            // new
+            .route("/gpu-profiles", get(routes::list_gpu_profiles))
+            .route(
+                "/gpu-profiles/:category",
+                get(routes::list_gpu_profiles_by_category),
+            )
+            .route("/gpu-categories", get(routes::list_gpu_categories))
+            .route("/emission-metrics", get(routes::list_emission_metrics))
+            .route(
+                "/weight-allocation/history",
+                get(routes::list_weight_allocation_history),
+            )
+            .route(
+                "/weight-allocation/current",
+                get(routes::get_current_weight_allocation),
+            )
+            .route(
+                "/verification/active",
+                get(routes::list_active_verifications),
+            )
+            .route(
+                "/verification/results/:miner_id",
+                get(routes::get_verification_results),
+            )
+            .route("/verification/trigger", post(routes::trigger_verification))
+            .route("/metagraph", get(routes::get_metagraph))
+            .route("/metagraph/miners/:uid", get(routes::get_metagraph_miner))
+            .route("/weights/current", get(routes::get_current_weights))
+            .route("/weights/history", get(routes::get_weights_history))
+            .route("/config", get(routes::get_config))
+            .route("/config/verification", get(routes::get_verification_config))
+            .route("/config/emission", get(routes::get_emission_config))
             .layer(TraceLayer::new_for_http())
             .layer(CorsLayer::permissive())
             .with_state(self.state.clone())

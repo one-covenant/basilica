@@ -240,6 +240,43 @@ pub struct TriggerVerificationResponse {
     pub estimated_completion: chrono::DateTime<chrono::Utc>,
 }
 
+/// Emission metrics response
+#[derive(Debug, Serialize)]
+pub struct EmissionMetricsResponse {
+    pub id: i64,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub burn_amount: u64,
+    pub burn_percentage: f64,
+    pub category_distributions: HashMap<String, CategoryDistributionResponse>,
+    pub total_miners: u32,
+    pub weight_set_block: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CategoryDistributionResponse {
+    pub category: String,
+    pub miner_count: u32,
+    pub total_weight: u64,
+    pub average_score: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MinerWeightAllocation {
+    pub miner_uid: u16,
+    pub gpu_category: String,
+    pub allocated_weight: u64,
+    pub miner_score: f64,
+    pub percentage_of_category: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CategoryWeightSummary {
+    pub category: String,
+    pub total_weight: u64,
+    pub miner_count: u32,
+    pub average_score: f64,
+}
+
 /// API error type
 #[derive(Debug)]
 pub enum ApiError {

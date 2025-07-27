@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
 use common::identity::MinerUid;
+use serde::{Deserialize, Serialize};
+use sqlx::sqlite::SqliteRow;
+use sqlx::Row;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -13,7 +16,40 @@ pub struct MinerGpuProfile {
     pub last_successful_validation: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
+    fn from_row(row: &SqliteRow) -> Result<Self, sqlx::Error> {
+        let miner_uid_val: i64 = row.get("miner_uid");
+        let primary_gpu_model: String = row.get("primary_gpu_model");
+        let gpu_counts_json: String = row.get("gpu_counts_json");
+        let total_score: f64 = row.get("total_score");
+        let verification_count: i64 = row.get("verification_count");
+        let last_updated_str: String = row.get("last_updated");
+
+        let gpu_counts: HashMap<String, u32> =
+            serde_json::from_str(&gpu_counts_json).map_err(|e| sqlx::Error::ColumnDecode {
+                index: "gpu_counts_json".to_string(),
+                source: e.into(),
+            })?;
+
+        let last_updated = DateTime::parse_from_rfc3339(&last_updated_str)
+            .map_err(|e| sqlx::Error::ColumnDecode {
+                index: "last_updated".to_string(),
+                source: e.into(),
+            })?
+            .with_timezone(&Utc);
+
+        Ok(Self {
+            miner_uid: MinerUid::new(miner_uid_val as u16),
+            primary_gpu_model,
+            gpu_counts,
+            total_score,
+            verification_count: verification_count as u32,
+            last_updated,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Hash, Eq)]
 pub enum GpuCategory {
     H100,
     H200,

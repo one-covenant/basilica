@@ -293,7 +293,7 @@ async fn start_validator_services(
         HandlerUtils::print_info("Running in local test mode - Bittensor services disabled");
     }
 
-    let (_bittensor_service, miner_prover_opt, weight_setter_opt) = if !local_test {
+    let (bittensor_service, miner_prover_opt, weight_setter_opt) = if !local_test {
         let bittensor_service: Arc<BittensorService> =
             Arc::new(BittensorService::new(config.bittensor.common.clone()).await?);
 
@@ -358,11 +358,18 @@ async fn start_validator_services(
 
         (Some(bittensor_service), miner_prover, weight_setter_opt)
     } else {
+        // TODO?: why is None supported?
         (None, None, None)
     };
 
-    let api_handler =
-        crate::api::ApiHandler::new(config.api.clone(), persistence_arc.clone(), storage.clone());
+    let api_handler = crate::api::ApiHandler::new(
+        config.api.clone(),
+        persistence_arc.clone(),
+        gpu_profile_repo.clone(),
+        storage.clone(),
+        bittensor_service,
+        config.clone(),
+    );
 
     // Store metrics for cleanup (if needed)
     let _validator_metrics = validator_metrics;

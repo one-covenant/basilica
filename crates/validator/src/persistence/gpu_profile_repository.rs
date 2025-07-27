@@ -4,7 +4,8 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use sqlx::{Row, SqlitePool};
+use serde::{Deserialize, Serialize};
+use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
@@ -302,6 +303,44 @@ pub struct CategoryDistribution {
     pub average_score: f64,
 }
 
+/// Weight allocation history entry
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WeightAllocationHistory {
+    pub id: i64,
+    pub miner_uid: u16,
+    pub gpu_category: String,
+    pub allocated_weight: u64,
+    pub miner_score: f64,
+    pub category_total_score: f64,
+    pub weight_set_block: u64,
+    pub timestamp: DateTime<Utc>,
+    pub emission_metrics_id: Option<i64>,
+}
+
+impl sqlx::FromRow<'_, SqliteRow> for WeightAllocationHistory {
+    fn from_row(row: &SqliteRow) -> Result<Self, sqlx::Error> {
+        let timestamp_str: String = row.get("timestamp");
+        let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
+            .map_err(|e| sqlx::Error::ColumnDecode {
+                index: "timestamp".to_string(),
+                source: e.into(),
+            })?
+            .with_timezone(&Utc);
+
+        Ok(Self {
+            id: row.get("id"),
+            miner_uid: row.get::<i64, _>("miner_uid") as u16,
+            gpu_category: row.get("gpu_category"),
+            allocated_weight: row.get::<i64, _>("allocated_weight") as u64,
+            miner_score: row.get("miner_score"),
+            category_total_score: row.get("category_total_score"),
+            weight_set_block: row.get::<i64, _>("weight_set_block") as u64,
+            timestamp,
+            emission_metrics_id: row.get("emission_metrics_id"),
+        })
+    }
+}
+
 impl GpuProfileRepository {
     /// Store emission metrics for a weight setting round
     pub async fn store_emission_metrics(&self, metrics: &EmissionMetrics) -> Result<i64> {
@@ -362,24 +401,16 @@ impl GpuProfileRepository {
     }
 
     /// Get emission metrics history
-    pub async fn get_emission_metrics_history(
-        &self,
-        limit: u32,
-        offset: u32,
-    ) -> Result<Vec<EmissionMetrics>> {
+    // TODO: Add pagination support with limit/offset parameters
+    pub async fn get_emission_metrics_history(&self) -> Result<Vec<EmissionMetrics>> {
         let query = r#"
             SELECT id, timestamp, burn_amount, burn_percentage,
                    category_distributions_json, total_miners, weight_set_block
             FROM emission_metrics
             ORDER BY timestamp DESC
-            LIMIT ? OFFSET ?
         "#;
 
-        let rows = sqlx::query(query)
-            .bind(limit as i64)
-            .bind(offset as i64)
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(query).fetch_all(&self.pool).await?;
 
         let mut metrics = Vec::new();
 
@@ -520,6 +551,38 @@ impl GpuProfileRepository {
         }
 
         Ok(deleted)
+    }
+
+    /// Get weight allocation history with optional filtering
+    // TODO: Add pagination support with limit/offset parameters
+    pub async fn get_weight_allocation_history(&self) -> Result<Vec<WeightAllocationHistory>> {
+        let query = r#"
+            SELECT id, miner_uid, gpu_category, allocated_weight, 
+                   miner_score, category_total_score, weight_set_block, 
+                   timestamp, emission_metrics_id
+            FROM weight_allocation_history
+            ORDER BY timestamp DESC
+        "#;
+
+        let history: Vec<WeightAllocationHistory> =
+            sqlx::query_as(query).fetch_all(&self.pool).await?;
+
+        Ok(history)
+    }
+
+    pub async fn get_latest_weight_allocation(&self) -> Result<WeightAllocationHistory> {
+        let query = r#"
+            SELECT id, miner_uid, gpu_category, allocated_weight, 
+                   miner_score, category_total_score, weight_set_block, 
+                   timestamp, emission_metrics_id
+            FROM weight_allocation_history
+            ORDER BY weight_set_block DESC
+            LIMIT 1
+        "#;
+
+        let row: WeightAllocationHistory = sqlx::query_as(query).fetch(&self.pool).await?;
+
+        Ok(row)
     }
 }
 
@@ -700,7 +763,7 @@ mod tests {
             .unwrap();
 
         // Retrieve metrics
-        let history = repo.get_emission_metrics_history(10, 0).await.unwrap();
+        let history = repo.get_emission_metrics_history().await.unwrap();
         assert_eq!(history.len(), 1);
 
         let retrieved = &history[0];
