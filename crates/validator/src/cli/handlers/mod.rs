@@ -52,7 +52,7 @@ impl CommandHandler {
 
                 let bittensor_service = bittensor::Service::new(config.bittensor.common.clone()).await?;
                 let account_id = bittensor_service.get_account_id();
-                let ss58_address = format!("{}", account_id);
+                let ss58_address = format!("{account_id}");
                 let validator_hotkey = common::identity::Hotkey::new(ss58_address)
                     .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?;
                 let persistence = std::sync::Arc::new(

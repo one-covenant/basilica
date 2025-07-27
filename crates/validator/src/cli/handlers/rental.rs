@@ -64,6 +64,7 @@ pub async fn handle_rental_command(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_start_rental(
     validator_hotkey: Hotkey,
     persistence: Arc<SimplePersistence>,
@@ -86,7 +87,7 @@ async fn handle_start_rental(
 
     // Read SSH public key
     let ssh_public_key = fs::read_to_string(&ssh_key_path)
-        .with_context(|| format!("Failed to read SSH key from {:?}", ssh_key_path))?;
+        .with_context(|| format!("Failed to read SSH key from {ssh_key_path:?}"))?;
 
     // Parse port mappings
     let port_mappings = parse_port_mappings(&ports)?;

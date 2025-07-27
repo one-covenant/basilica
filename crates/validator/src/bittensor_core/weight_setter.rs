@@ -63,6 +63,7 @@ pub struct WeightSetter {
 
 impl WeightSetter {
     /// Create a new WeightSetter instance
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: BittensorConfig,
         bittensor_service: Arc<BittensorService>,
@@ -89,6 +90,7 @@ impl WeightSetter {
     }
 
     /// Create a new WeightSetter instance with metrics support
+    #[allow(clippy::too_many_arguments)]
     pub fn with_metrics(
         config: BittensorConfig,
         bittensor_service: Arc<BittensorService>,

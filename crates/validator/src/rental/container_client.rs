@@ -251,7 +251,7 @@ impl ContainerClient {
         );
 
         // Get container info
-        let inspect_cmd = format!("docker inspect {}", container_id);
+        let inspect_cmd = format!("docker inspect {container_id}");
         let inspect_output = self
             .execute_ssh_command(&inspect_cmd)
             .await
@@ -304,7 +304,7 @@ impl ContainerClient {
 
     /// Get container status
     pub async fn get_container_status(&self, container_id: &str) -> Result<ContainerStatus> {
-        let inspect_cmd = format!("docker inspect {}", container_id);
+        let inspect_cmd = format!("docker inspect {container_id}");
         let output = self
             .execute_ssh_command(&inspect_cmd)
             .await
@@ -339,7 +339,7 @@ impl ContainerClient {
 
     /// Get container resource usage
     pub async fn get_resource_usage(&self, container_id: &str) -> Result<ResourceUsage> {
-        let stats_cmd = format!("docker stats {} --no-stream --format json", container_id);
+        let stats_cmd = format!("docker stats {container_id} --no-stream --format json");
         let output = self
             .execute_ssh_command(&stats_cmd)
             .await
@@ -381,9 +381,9 @@ impl ContainerClient {
     /// Stop a container
     pub async fn stop_container(&self, container_id: &str, force: bool) -> Result<()> {
         let stop_cmd = if force {
-            format!("docker kill {}", container_id)
+            format!("docker kill {container_id}")
         } else {
-            format!("docker stop {}", container_id)
+            format!("docker stop {container_id}")
         };
 
         self.execute_ssh_command(&stop_cmd)
@@ -396,7 +396,7 @@ impl ContainerClient {
 
     /// Remove a container
     pub async fn remove_container(&self, container_id: &str) -> Result<()> {
-        let rm_cmd = format!("docker rm -f {}", container_id);
+        let rm_cmd = format!("docker rm -f {container_id}");
 
         self.execute_ssh_command(&rm_cmd)
             .await

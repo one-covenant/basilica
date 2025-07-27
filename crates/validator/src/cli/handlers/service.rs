@@ -363,7 +363,7 @@ async fn start_validator_services(
     let validator_hotkey = if let Some(ref bittensor_service) = _bittensor_service {
         // Get the account ID from bittensor service and convert to SS58 string
         let account_id = bittensor_service.get_account_id();
-        let ss58_address = format!("{}", account_id);
+        let ss58_address = format!("{account_id}");
         common::identity::Hotkey::new(ss58_address)
             .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?
     } else {

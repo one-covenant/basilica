@@ -1346,6 +1346,7 @@ impl VerificationEngine {
     }
 
     /// Create VerificationEngine with SSH automation components (new preferred method)
+    #[allow(clippy::too_many_arguments)]
     pub fn with_ssh_automation(
         config: VerificationConfig,
         miner_client_config: MinerClientConfig,
