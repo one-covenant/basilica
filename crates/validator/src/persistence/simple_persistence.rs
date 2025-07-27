@@ -5,6 +5,8 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::persistence::entities::{Rental, RentalStatus, VerificationLog};
+use crate::persistence::ValidatorPersistence;
+use crate::rental::RentalInfo;
 
 /// Simplified persistence implementation for quick testing
 pub struct SimplePersistence {
@@ -121,17 +123,24 @@ impl SimplePersistence {
 
             CREATE TABLE IF NOT EXISTS rentals (
                 id TEXT PRIMARY KEY,
+                validator_hotkey TEXT NOT NULL,
                 executor_id TEXT NOT NULL,
-                customer_public_key TEXT NOT NULL,
-                docker_image TEXT NOT NULL,
-                env_vars TEXT,
-                gpu_requirements TEXT NOT NULL,
-                ssh_access_info TEXT NOT NULL,
-                max_duration_hours INTEGER NOT NULL,
-                cost_per_hour REAL NOT NULL,
-                status TEXT NOT NULL,
+                container_id TEXT NOT NULL,
+                ssh_session_id TEXT NOT NULL,
+                ssh_credentials TEXT NOT NULL,
+                state TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                container_spec TEXT NOT NULL,
+                customer_public_key TEXT,
+                docker_image TEXT,
+                env_vars TEXT,
+                gpu_requirements TEXT,
+                ssh_access_info TEXT,
+                max_duration_hours INTEGER,
+                cost_per_hour REAL,
+                status TEXT,
+                updated_at TEXT,
                 started_at TEXT,
                 terminated_at TEXT,
                 termination_reason TEXT,
@@ -923,6 +932,137 @@ impl SimplePersistence {
         }
 
         Ok(executors)
+    }
+}
+
+#[async_trait::async_trait]
+impl ValidatorPersistence for SimplePersistence {
+    async fn save_rental(&self, rental: &RentalInfo) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO rentals (
+                id, validator_hotkey, executor_id, container_id, ssh_session_id,
+                ssh_credentials, state, created_at, expires_at, container_spec
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                state = excluded.state,
+                container_id = excluded.container_id,
+                ssh_session_id = excluded.ssh_session_id,
+                ssh_credentials = excluded.ssh_credentials",
+        )
+        .bind(&rental.rental_id)
+        .bind(&rental.validator_hotkey)
+        .bind(&rental.executor_id)
+        .bind(&rental.container_id)
+        .bind(&rental.ssh_session_id)
+        .bind(&rental.ssh_credentials)
+        .bind(match &rental.state {
+            crate::rental::RentalState::Provisioning => "provisioning",
+            crate::rental::RentalState::Active => "active",
+            crate::rental::RentalState::Stopping => "stopping",
+            crate::rental::RentalState::Stopped => "stopped",
+            crate::rental::RentalState::Failed => "failed",
+            crate::rental::RentalState::Expired => "expired",
+        })
+        .bind(rental.created_at.to_rfc3339())
+        .bind(rental.expires_at.to_rfc3339())
+        .bind(serde_json::to_string(&rental.container_spec)?)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn load_rental(&self, rental_id: &str) -> anyhow::Result<Option<RentalInfo>> {
+        let row = sqlx::query("SELECT * FROM rentals WHERE id = ?")
+            .bind(rental_id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(row) = row {
+            let state_str: String = row.get("state");
+            let created_at_str: String = row.get("created_at");
+            let expires_at_str: String = row.get("expires_at");
+            let container_spec_str: String = row.get("container_spec");
+
+            let state = match state_str.as_str() {
+                "provisioning" => crate::rental::RentalState::Provisioning,
+                "active" => crate::rental::RentalState::Active,
+                "stopping" => crate::rental::RentalState::Stopping,
+                "stopped" => crate::rental::RentalState::Stopped,
+                "failed" => crate::rental::RentalState::Failed,
+                "expired" => crate::rental::RentalState::Expired,
+                _ => crate::rental::RentalState::Failed,
+            };
+
+            Ok(Some(RentalInfo {
+                rental_id: row.get("id"),
+                validator_hotkey: row.get("validator_hotkey"),
+                executor_id: row.get("executor_id"),
+                container_id: row.get("container_id"),
+                ssh_session_id: row.get("ssh_session_id"),
+                ssh_credentials: row.get("ssh_credentials"),
+                state,
+                created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
+                expires_at: DateTime::parse_from_rfc3339(&expires_at_str)?.with_timezone(&Utc),
+                container_spec: serde_json::from_str(&container_spec_str)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn list_validator_rentals(
+        &self,
+        validator_hotkey: &str,
+    ) -> anyhow::Result<Vec<RentalInfo>> {
+        let rows = sqlx::query(
+            "SELECT * FROM rentals WHERE validator_hotkey = ? ORDER BY created_at DESC",
+        )
+        .bind(validator_hotkey)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut rentals = Vec::new();
+        for row in rows {
+            let state_str: String = row.get("state");
+            let created_at_str: String = row.get("created_at");
+            let expires_at_str: String = row.get("expires_at");
+            let container_spec_str: String = row.get("container_spec");
+
+            let state = match state_str.as_str() {
+                "provisioning" => crate::rental::RentalState::Provisioning,
+                "active" => crate::rental::RentalState::Active,
+                "stopping" => crate::rental::RentalState::Stopping,
+                "stopped" => crate::rental::RentalState::Stopped,
+                "failed" => crate::rental::RentalState::Failed,
+                "expired" => crate::rental::RentalState::Expired,
+                _ => crate::rental::RentalState::Failed,
+            };
+
+            rentals.push(RentalInfo {
+                rental_id: row.get("id"),
+                validator_hotkey: row.get("validator_hotkey"),
+                executor_id: row.get("executor_id"),
+                container_id: row.get("container_id"),
+                ssh_session_id: row.get("ssh_session_id"),
+                ssh_credentials: row.get("ssh_credentials"),
+                state,
+                created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
+                expires_at: DateTime::parse_from_rfc3339(&expires_at_str)?.with_timezone(&Utc),
+                container_spec: serde_json::from_str(&container_spec_str)?,
+            });
+        }
+
+        Ok(rentals)
+    }
+
+    async fn delete_rental(&self, rental_id: &str) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM rentals WHERE id = ?")
+            .bind(rental_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
 }
 

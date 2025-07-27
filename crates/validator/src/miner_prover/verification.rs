@@ -1170,6 +1170,8 @@ impl VerificationEngine {
                 "verification_type": "hardware_attestation"
             })
             .to_string(),
+            rental_mode: false,
+            rental_id: String::new(),
         };
 
         let session_info = connection
@@ -2380,6 +2382,8 @@ impl VerificationEngine {
             validator_public_key: public_key_content,
             session_duration_secs: 300, // 5 minutes
             session_metadata: "binary_validation_session".to_string(),
+            rental_mode: false,
+            rental_id: String::new(),
         };
 
         // Initiate SSH session

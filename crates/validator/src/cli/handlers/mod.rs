@@ -4,6 +4,7 @@ use anyhow::Result;
 use common::config::ConfigValidation;
 
 pub mod database;
+pub mod rental;
 pub mod service;
 
 pub struct CommandHandler;
@@ -41,6 +42,28 @@ impl CommandHandler {
             }
 
             Command::Database { action } => database::handle_database(action).await,
+
+            Command::Rental { action } => {
+                let config = if let Some(config_path) = global_config {
+                    ValidatorConfig::load_from_file(&config_path)?
+                } else {
+                    return Err(anyhow::anyhow!("Configuration required for rental commands"));
+                };
+
+                let bittensor_service = bittensor::Service::new(config.bittensor.common.clone()).await?;
+                let account_id = bittensor_service.get_account_id();
+                let ss58_address = format!("{}", account_id);
+                let validator_hotkey = common::identity::Hotkey::new(ss58_address)
+                    .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?;
+                let persistence = std::sync::Arc::new(
+                    crate::persistence::SimplePersistence::new(
+                        &config.database.url,
+                        validator_hotkey.to_string(),
+                    ).await?
+                );
+
+                rental::handle_rental_command(action, validator_hotkey, persistence).await
+            }
         }
     }
 }

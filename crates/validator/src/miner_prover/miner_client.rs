@@ -389,6 +389,37 @@ impl AuthenticatedMinerConnection {
         Ok(response)
     }
 
+    /// Initiate SSH session for rental with public key
+    pub async fn initiate_rental_ssh_session(
+        &mut self,
+        executor_id: &str,
+        validator_public_key: &str,
+        duration_seconds: i64,
+        rental_id: &str,
+    ) -> Result<InitiateSshSessionResponse> {
+        info!(
+            "Initiating rental SSH session for executor {} (rental: {})",
+            executor_id, rental_id
+        );
+
+        let request = InitiateSshSessionRequest {
+            validator_hotkey: String::new(), // Will be extracted from token by miner
+            executor_id: executor_id.to_string(),
+            purpose: "rental".to_string(),
+            validator_public_key: validator_public_key.to_string(),
+            session_duration_secs: duration_seconds,
+            session_metadata: serde_json::json!({
+                "rental_id": rental_id,
+                "type": "container_deployment"
+            })
+            .to_string(),
+            rental_mode: true,
+            rental_id: rental_id.to_string(),
+        };
+
+        self.initiate_ssh_session_v2(request).await
+    }
+
     /// Close SSH session
     pub async fn close_ssh_session(
         &mut self,

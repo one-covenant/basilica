@@ -80,6 +80,8 @@ message InitiateSshSessionRequest {
   string validator_public_key = 4;  // Required: SSH public key
   int64 session_duration_secs = 5;  // Required: Max session length
   string session_metadata = 6;      // Optional: For audit trail
+  bool rental_mode = 7;             // Enable rental permissions
+  string rental_id = 8;             // Associated rental ID if rental_mode=true
 }
 
 message InitiateSshSessionResponse {

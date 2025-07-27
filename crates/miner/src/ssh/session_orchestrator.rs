@@ -143,12 +143,22 @@ impl SshSessionOrchestrator {
             executor_info.id, request.validator_public_key
         );
 
+        // Check if this is a rental session and adjust permissions accordingly
+        let permissions = if request.rental_mode {
+            info!("Creating rental session for rental {}", request.rental_id);
+            "rental"
+        } else {
+            "validation"
+        };
+
         let actual_ssh_username = self
             .add_validator_key_to_executor(
                 &executor_info,
                 &request.validator_hotkey,
                 &request.validator_public_key,
                 request.session_duration_secs as u64,
+                permissions,
+                request.rental_mode,
             )
             .await?;
 
@@ -391,6 +401,8 @@ impl SshSessionOrchestrator {
         validator_hotkey: &str,
         public_key: &str,
         duration_secs: u64,
+        permissions: &str,
+        rental_mode: bool,
     ) -> Result<String> {
         // Get the executor's gRPC endpoint
         let grpc_endpoint = executor_info
@@ -400,13 +412,33 @@ impl SshSessionOrchestrator {
 
         // Use gRPC to provision validator access on executor
         debug!(
-            "Calling provision_validator_access for validator {} on executor via gRPC endpoint {}: public_key='{}'",
-            validator_hotkey, grpc_endpoint, public_key
+            "Calling provision_validator_access for validator {} on executor via gRPC endpoint {}: public_key='{}', permissions='{}'",
+            validator_hotkey, grpc_endpoint, public_key, permissions
         );
+
+        // For rental mode, we need to pass additional metadata to the executor
+        let metadata = if rental_mode {
+            Some(
+                serde_json::json!({
+                    "permissions": permissions,
+                    "rental_mode": true,
+                    "docker_access": true
+                })
+                .to_string(),
+            )
+        } else {
+            None
+        };
 
         let response = self
             .executor_grpc_client
-            .provision_validator_access(grpc_endpoint, validator_hotkey, public_key, duration_secs)
+            .provision_validator_access(
+                grpc_endpoint,
+                validator_hotkey,
+                public_key,
+                duration_secs,
+                metadata,
+            )
             .await
             .context("Failed to provision validator access via gRPC")?;
 
@@ -462,7 +494,8 @@ impl SshSessionOrchestrator {
                 grpc_endpoint,
                 &session.validator_hotkey,
                 &session._validator_public_key,
-                0, // Duration of 0 means revoke access
+                0,    // Duration of 0 means revoke access
+                None, // No metadata needed for revocation
             )
             .await
             .context("Failed to revoke validator access via gRPC")?;
@@ -597,6 +630,8 @@ mod tests {
             validator_public_key: "invalid-key".to_string(),
             session_duration_secs: 300,
             session_metadata: "{}".to_string(),
+            rental_mode: false,
+            rental_id: String::new(),
         };
 
         let result = orchestrator.validate_session_request(&request);

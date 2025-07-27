@@ -112,6 +112,12 @@ pub enum Command {
         #[command(subcommand)]
         action: DatabaseAction,
     },
+
+    /// Container rental commands
+    Rental {
+        #[command(subcommand)]
+        action: RentalAction,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -128,5 +134,89 @@ pub enum DatabaseAction {
     Cleanup {
         #[arg(long, default_value = "30")]
         days: u32,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+#[allow(dead_code, unused_imports)]
+pub enum RentalAction {
+    /// Start a new container rental
+    Start {
+        /// Miner ID or endpoint
+        #[arg(long)]
+        miner: String,
+
+        /// Executor ID
+        #[arg(long)]
+        executor: String,
+
+        /// Container image
+        #[arg(long)]
+        container: String,
+
+        /// Port mappings (format: host:container:protocol)
+        #[arg(long)]
+        ports: Vec<String>,
+
+        /// Environment variables (format: KEY=VALUE)
+        #[arg(long)]
+        env: Vec<String>,
+
+        /// SSH public key path
+        #[arg(long)]
+        ssh_key: PathBuf,
+
+        /// Command to run in container
+        #[arg(long)]
+        command: Option<String>,
+
+        /// Rental duration in hours
+        #[arg(long, default_value = "1")]
+        duration_hours: u32,
+
+        /// CPU cores
+        #[arg(long)]
+        cpu_cores: Option<f64>,
+
+        /// Memory in MB
+        #[arg(long)]
+        memory_mb: Option<i64>,
+
+        /// GPU count
+        #[arg(long)]
+        gpu_count: Option<u32>,
+    },
+
+    /// Get rental status
+    Status {
+        /// Rental ID
+        #[arg(long)]
+        id: String,
+    },
+
+    /// Stream rental logs
+    Logs {
+        /// Rental ID
+        #[arg(long)]
+        id: String,
+
+        /// Follow logs
+        #[arg(long)]
+        follow: bool,
+
+        /// Number of lines to tail
+        #[arg(long)]
+        tail: Option<u32>,
+    },
+
+    /// Stop a rental
+    Stop {
+        /// Rental ID
+        #[arg(long)]
+        id: String,
+
+        /// Force stop
+        #[arg(long)]
+        force: bool,
     },
 }
