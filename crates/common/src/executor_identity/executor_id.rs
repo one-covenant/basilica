@@ -276,8 +276,7 @@ mod tests {
         let huid = "swift-falcon-a3f2".to_string();
         let created_at = SystemTime::now();
 
-        let id = ExecutorId::from_parts(uuid, huid.clone(), created_at)
-            .expect("Should create from parts");
+        let id = ExecutorId::from_parts(uuid, huid.clone()).expect("Should create from parts");
 
         assert_eq!(id.uuid(), &uuid);
         assert_eq!(id.huid(), &huid);
@@ -290,7 +289,7 @@ mod tests {
         let invalid_huid = "invalid_format".to_string();
         let created_at = SystemTime::now();
 
-        let result = ExecutorId::from_parts(uuid, invalid_huid, created_at);
+        let result = ExecutorId::from_parts(uuid, invalid_huid);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -323,10 +322,9 @@ mod tests {
         let uuid = Uuid::new_v4();
         let huid1 = "swift-falcon-a3f2".to_string();
         let huid2 = "brave-lion-b4c3".to_string();
-        let created_at = SystemTime::now();
 
-        let id1 = ExecutorId::from_parts(uuid, huid1, created_at).unwrap();
-        let id2 = ExecutorId::from_parts(uuid, huid2, created_at).unwrap();
+        let id1 = ExecutorId::from_parts(uuid, huid1).unwrap();
+        let id2 = ExecutorId::from_parts(uuid, huid2).unwrap();
 
         // Same UUID = equal, even with different HUIDs
         assert_eq!(id1, id2);

@@ -229,7 +229,7 @@ impl RegistrationDb {
             CREATE TABLE IF NOT EXISTS executor_uids (
                 executor_address TEXT NOT NULL UNIQUE,
                 uid TEXT NOT NULL UNIQUE,
-                huid TEXT NOT NULL UNIQUE,
+                huid TEXT NOT NULL UNIQUE
             )
             "#,
         )

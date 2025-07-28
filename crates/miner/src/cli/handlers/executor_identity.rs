@@ -3,13 +3,8 @@
 //! This module provides CLI command handlers that support the dual identifier
 //! system (UUID + HUID) for executor management operations.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
 use clap::{Args, Subcommand};
-use common::executor_identity::{ExecutorIdentity, ExecutorIdentityDisplayExt, IdentityDisplay};
-use tracing::info;
-
-use crate::config::MinerConfig;
-use crate::persistence::RegistrationDb;
 
 /// Executor commands with UUID/HUID support
 #[derive(Debug, Clone, Subcommand)]
@@ -113,7 +108,7 @@ pub enum OutputFormat {
     Verbose,
 }
 
-/// Handle executor identity commands
+// /// Handle executor identity commands
 // pub async fn handle_executor_identity_command(
 //     cmd: ExecutorIdentityCommand,
 //     config: &MinerConfig,
@@ -142,7 +137,7 @@ pub enum OutputFormat {
 //     }
 // }
 
-/// List executors with identity support
+// /// List executors with identity support
 // async fn list_executors_with_identity(
 //     filter: Option<String>,
 //     verbose: bool,
@@ -206,7 +201,7 @@ pub enum OutputFormat {
 //     Ok(())
 // }
 
-/// Show detailed executor information
+// /// Show detailed executor information
 // async fn show_executor_with_identity(
 //     executor_id: String,
 //     output: OutputFormat,
@@ -272,7 +267,7 @@ pub enum OutputFormat {
 //     Ok(())
 // }
 
-/// Assign executor to validator
+// /// Assign executor to validator
 // async fn assign_executor_with_identity(
 //     executor_id: String,
 //     validator: String,
@@ -297,7 +292,7 @@ pub enum OutputFormat {
 //     Ok(())
 // }
 
-/// Remove executor assignment
+// /// Remove executor assignment
 // async fn unassign_executor_with_identity(
 //     executor_id: String,
 //     config: &MinerConfig,
@@ -318,7 +313,7 @@ pub enum OutputFormat {
 //     Ok(())
 // }
 
-/// Handle identity-specific subcommands
+// /// Handle identity-specific subcommands
 // async fn handle_identity_subcommand(
 //     cmd: IdentityOperation,
 //     _config: &MinerConfig,
@@ -333,96 +328,96 @@ pub enum OutputFormat {
 //     }
 // }
 
-/// Show current executor identity
-async fn show_current_identity(output: OutputFormat) -> Result<()> {
-    // TODO: Get actual identity from identity store
-    // For now, show a mock identity
+// /// Show current executor identity
+// async fn show_current_identity(output: OutputFormat) -> Result<()> {
+//     // TODO: Get actual identity from identity store
+//     // For now, show a mock identity
 
-    match output {
-        OutputFormat::Json => {
-            println!(r#"{{"message": "Identity store integration pending"}}"#);
-        }
-        _ => {
-            println!("Current executor identity:");
-            println!("  Identity store integration pending");
-        }
-    }
+//     match output {
+//         OutputFormat::Json => {
+//             println!(r#"{{"message": "Identity store integration pending"}}"#);
+//         }
+//         _ => {
+//             println!("Current executor identity:");
+//             println!("  Identity store integration pending");
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-/// Generate test identities
-async fn generate_test_identities(count: usize, output: OutputFormat) -> Result<()> {
-    use common::executor_identity::ExecutorId;
+// /// Generate test identities
+// async fn generate_test_identities(count: usize, output: OutputFormat) -> Result<()> {
+//     use common::executor_identity::ExecutorId;
 
-    let mut identities = Vec::new();
+//     let mut identities = Vec::new();
 
-    for i in 0..count {
-        let id = ExecutorId::new().context(format!("Failed to generate identity {}", i + 1))?;
-        identities.push(id);
-    }
+//     for i in 0..count {
+//         let id = ExecutorId::new().context(format!("Failed to generate identity {}", i + 1))?;
+//         identities.push(id);
+//     }
 
-    match output {
-        OutputFormat::Table => {
-            println!("{:<20} {:<40} {:<10}", "HUID", "UUID", "Short UUID");
-            println!("{}", "-".repeat(72));
-            for id in &identities {
-                println!(
-                    "{:<20} {:<40} {:<10}",
-                    id.huid(),
-                    id.uuid(),
-                    id.short_uuid()
-                );
-            }
-        }
-        OutputFormat::Json => {
-            let json: Vec<_> = identities
-                .iter()
-                .map(|id| {
-                    serde_json::json!({
-                        "uuid": id.uuid().to_string(),
-                        "huid": id.huid(),
-                        "created_at": id.created_at()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0),
-                    })
-                })
-                .collect();
-            println!("{}", serde_json::to_string_pretty(&json)?);
-        }
-        _ => {
-            for id in &identities {
-                println!("{}", id.display().format_compact());
-            }
-        }
-    }
+//     match output {
+//         OutputFormat::Table => {
+//             println!("{:<20} {:<40} {:<10}", "HUID", "UUID", "Short UUID");
+//             println!("{}", "-".repeat(72));
+//             for id in &identities {
+//                 println!(
+//                     "{:<20} {:<40} {:<10}",
+//                     id.huid(),
+//                     id.uuid(),
+//                     id.short_uuid()
+//                 );
+//             }
+//         }
+//         OutputFormat::Json => {
+//             let json: Vec<_> = identities
+//                 .iter()
+//                 .map(|id| {
+//                     serde_json::json!({
+//                         "uuid": id.uuid().to_string(),
+//                         "huid": id.huid(),
+//                         "created_at": id.created_at()
+//                             .duration_since(std::time::UNIX_EPOCH)
+//                             .map(|d| d.as_secs())
+//                             .unwrap_or(0),
+//                     })
+//                 })
+//                 .collect();
+//             println!("{}", serde_json::to_string_pretty(&json)?);
+//         }
+//         _ => {
+//             for id in &identities {
+//                 println!("{}", id.display().format_compact());
+//             }
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-/// Search for executors by identity
-async fn search_executors_by_identity(query: String, show_all: bool) -> Result<()> {
-    // Validate query
-    if query.len() < 3 && !is_valid_uuid(&query) {
-        return Err(anyhow!(
-            "Search query must be a valid UUID or at least 3 characters for HUID prefix"
-        ));
-    }
+// /// Search for executors by identity
+// async fn search_executors_by_identity(query: String, show_all: bool) -> Result<()> {
+//     // Validate query
+//     if query.len() < 3 && !is_valid_uuid(&query) {
+//         return Err(anyhow!(
+//             "Search query must be a valid UUID or at least 3 characters for HUID prefix"
+//         ));
+//     }
 
-    // TODO: Implement actual search against identity store
-    println!("Searching for executors matching '{query}'");
+//     // TODO: Implement actual search against identity store
+//     println!("Searching for executors matching '{query}'");
 
-    if show_all {
-        println!("Showing all matches (including ambiguous ones)");
-    }
+//     if show_all {
+//         println!("Showing all matches (including ambiguous ones)");
+//     }
 
-    println!("Search functionality pending identity store integration");
+//     println!("Search functionality pending identity store integration");
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-/// Find executor by UUID or HUID identifier
+// /// Find executor by UUID or HUID identifier
 // async fn find_executor_by_identifier<'a>(
 //     identifier: &str,
 //     config: &'a MinerConfig,
@@ -469,7 +464,7 @@ fn is_valid_uuid(s: &str) -> bool {
     uuid::Uuid::parse_str(s).is_ok()
 }
 
-/// Print executor table
+// /// Print executor table
 // fn print_executor_table(executors: &[&crate::config::ExecutorConfig], verbose: bool) {
 //     if executors.is_empty() {
 //         println!("No executors found");
