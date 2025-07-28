@@ -161,15 +161,15 @@ impl SqliteIdentityStore {
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     ) -> Result<Box<dyn ExecutorIdentity>> {
         // Try to get existing identity first
-        let existing = sqlx::query_as::<_, (String, String, DateTime<Utc>)>(
-            "SELECT uuid, huid, created_at FROM executor_identities LIMIT 1",
+        let existing = sqlx::query_as::<_, (String, String)>(
+            "SELECT uuid, huid FROM executor_identities LIMIT 1",
         )
         .fetch_optional(&mut **tx)
         .await?;
 
-        if let Some((uuid_str, huid, created_at)) = existing {
+        if let Some((uuid_str, huid)) = existing {
             let uuid = Uuid::parse_str(&uuid_str)?;
-            let identity = ExecutorId::from_parts(uuid, huid.clone(), created_at.into())?;
+            let identity = ExecutorId::from_parts(uuid, huid.clone())?;
 
             debug!("Found existing identity: {}", huid);
             return Ok(Box::new(identity));
@@ -264,7 +264,6 @@ impl SqliteIdentityStore {
                     let identity = ExecutorId::from_parts(
                         *cached.identity.uuid(),
                         cached.identity.huid().to_string(),
-                        cached.identity.created_at(),
                     )?;
                     return Ok(Some(Box::new(identity)));
                 }
@@ -277,7 +276,6 @@ impl SqliteIdentityStore {
                     let identity = ExecutorId::from_parts(
                         *cached.identity.uuid(),
                         cached.identity.huid().to_string(),
-                        cached.identity.created_at(),
                     )?;
                     return Ok(Some(Box::new(identity)));
                 }
@@ -287,16 +285,16 @@ impl SqliteIdentityStore {
         // Not in cache, query database
         let result = if Uuid::parse_str(id).is_ok() {
             // Exact UUID match
-            sqlx::query_as::<_, (String, String, DateTime<Utc>)>(
-                "SELECT uuid, huid, created_at FROM executor_identities WHERE uuid = ?",
+            sqlx::query_as::<_, (String, String)>(
+                "SELECT uuid, huid FROM executor_identities WHERE uuid = ?",
             )
             .bind(id)
             .fetch_optional(&self.pool)
             .await?
         } else if id.len() >= 3 {
             // HUID prefix search
-            sqlx::query_as::<_, (String, String, DateTime<Utc>)>(
-                "SELECT uuid, huid, created_at FROM executor_identities WHERE huid LIKE ? || '%'",
+            sqlx::query_as::<_, (String, String)>(
+                "SELECT uuid, huid FROM executor_identities WHERE huid LIKE ? || '%'",
             )
             .bind(id)
             .fetch_optional(&self.pool)
@@ -305,17 +303,14 @@ impl SqliteIdentityStore {
             None
         };
 
-        if let Some((uuid_str, huid, created_at)) = result {
+        if let Some((uuid_str, huid)) = result {
             let uuid = Uuid::parse_str(&uuid_str)?;
-            let identity = ExecutorId::from_parts(uuid, huid.clone(), created_at.into())?;
+            let identity = ExecutorId::from_parts(uuid, huid.clone())?;
 
             // Update cache
             // Update cache - recreate identity for caching
-            let cache_identity = ExecutorId::from_parts(
-                *identity.uuid(),
-                identity.huid().to_string(),
-                identity.created_at(),
-            )?;
+            let cache_identity =
+                ExecutorId::from_parts(*identity.uuid(), identity.huid().to_string())?;
             self.update_cache(Box::new(cache_identity)).await;
 
             Ok(Some(Box::new(identity)))
@@ -363,11 +358,7 @@ impl IdentityPersistence for SqliteIdentityStore {
         tx.commit().await?;
 
         // Update cache - recreate identity for caching
-        let cache_identity = ExecutorId::from_parts(
-            *identity.uuid(),
-            identity.huid().to_string(),
-            identity.created_at(),
-        )?;
+        let cache_identity = ExecutorId::from_parts(*identity.uuid(), identity.huid().to_string())?;
         self.update_cache(Box::new(cache_identity)).await;
 
         Ok(identity)
@@ -402,7 +393,7 @@ impl IdentityPersistence for SqliteIdentityStore {
         .context("Failed to save executor identity")?;
 
         // Update cache
-        let identity = ExecutorId::from_parts(*id.uuid(), id.huid().to_string(), id.created_at())?;
+        let identity = ExecutorId::from_parts(*id.uuid(), id.huid().to_string())?;
         self.update_cache(Box::new(identity)).await;
 
         debug!("Saved executor identity: {}", id.huid());

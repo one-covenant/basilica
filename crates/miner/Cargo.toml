@@ -39,7 +39,7 @@ clap = { workspace = true }
 # memmap2 = { workspace = true }
 
 # Internal dependencies
-common = { path = "../common" }
+common = { path = "../common", features = ["sqlite"] }
 protocol = { path = "../protocol" }
 bittensor = { path = "../bittensor" }
 
@@ -83,4 +83,4 @@ default = []
 # Enable test utilities for executor communication
 test-utils = []
 # Enable development mode with additional debugging
-dev-mode = ["tracing-subscriber/env-filter"] 
+dev-mode = ["tracing-subscriber/env-filter"]

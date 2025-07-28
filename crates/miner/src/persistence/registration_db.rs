@@ -13,7 +13,7 @@ use std::path::Path;
 use tokio::fs;
 use tracing::{debug, info};
 
-use common::config::DatabaseConfig;
+use common::{config::DatabaseConfig, executor_identity::ExecutorId};
 
 /// Registration database client
 #[derive(Debug, Clone)]
@@ -223,6 +223,19 @@ impl RegistrationDb {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_ssh_sessions_status ON ssh_sessions(status)")
             .execute(&self.pool)
             .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS executor_uids (
+                executor_address TEXT NOT NULL UNIQUE,
+                uid TEXT NOT NULL UNIQUE,
+                huid TEXT NOT NULL UNIQUE,
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("Failed to create ssh_sessions table")?;
 
         info!("Database migrations completed successfully");
         Ok(())
@@ -640,6 +653,30 @@ impl RegistrationDb {
             }
         }
         Ok(())
+    }
+
+    pub async fn get_or_create_executor_id(&self, executor_address: &str) -> Result<ExecutorId> {
+        let executor_id = sqlx::query_as::<_, ExecutorId>(
+            "SELECT * FROM executor_uids WHERE executor_address = ?",
+        )
+        .bind(executor_address)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(executor_id) = executor_id {
+            return Ok(executor_id);
+        }
+
+        let executor_id = ExecutorId::new()?;
+
+        sqlx::query("INSERT INTO executor_uids (executor_address, uid, huid) VALUES (?, ?, ?)")
+            .bind(executor_address)
+            .bind(executor_id.uuid.to_string())
+            .bind(executor_id.huid.clone())
+            .execute(&self.pool)
+            .await?;
+
+        Ok(executor_id)
     }
 }
 

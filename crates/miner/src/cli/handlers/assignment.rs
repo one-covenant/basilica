@@ -4,7 +4,7 @@
 
 use crate::cli::AssignmentCommand;
 use crate::config::MinerConfig;
-use crate::persistence::AssignmentDb;
+use crate::persistence::{AssignmentDb, RegistrationDb};
 use crate::services::assignment_manager::{AssignmentManager, AssignmentSuggester};
 use anyhow::{anyhow, Result};
 use sqlx::SqlitePool;
@@ -18,17 +18,19 @@ pub async fn handle_assignment_command(
     // Create database pool
     let pool = SqlitePool::connect(&config.database.url).await?;
     let assignment_db = AssignmentDb::new(pool.clone());
+    let registration_db = RegistrationDb::new(&config.database).await?;
 
     // Ensure migrations are run
     assignment_db.run_migrations().await?;
 
-    // Extract executor IDs from config
-    let executor_ids: Vec<String> = config
-        .executor_management
-        .executors
-        .iter()
-        .map(|e| e.id.clone())
-        .collect();
+    // Extract executor IDs from config using registration_db
+    let mut executor_ids = Vec::new();
+    for e in &config.executor_management.executors {
+        let executor_id = registration_db
+            .get_or_create_executor_id(&e.grpc_address)
+            .await?;
+        executor_ids.push(executor_id.uuid.to_string());
+    }
 
     let assignment_manager = AssignmentManager::new(pool).with_executors(executor_ids);
 
@@ -379,25 +381,21 @@ mod tests {
         config.executor_management = ExecutorManagementConfig {
             executors: vec![
                 ExecutorConfig {
-                    id: "test-exec-1".to_string(),
                     grpc_address: "127.0.0.1:50051".to_string(),
                     host: "127.0.0.1".to_string(),
                     port: 50051,
                     ssh_port: 22,
                     ssh_username: "testuser".to_string(),
                     enabled: true,
-                    name: Some("Test Executor 1".to_string()),
                     metadata: None,
                 },
                 ExecutorConfig {
-                    id: "test-exec-2".to_string(),
                     grpc_address: "127.0.0.1:50052".to_string(),
                     host: "127.0.0.1".to_string(),
                     port: 50052,
                     ssh_port: 22,
                     ssh_username: "testuser".to_string(),
                     enabled: true,
-                    name: Some("Test Executor 2".to_string()),
                     metadata: None,
                 },
             ],

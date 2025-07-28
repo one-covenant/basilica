@@ -19,13 +19,12 @@ use crate::executor_identity::{
 
 /// Main executor identifier combining UUID and HUID
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "sqlite", derive(sqlx::FromRow))]
 pub struct ExecutorId {
     /// UUID v4 for guaranteed uniqueness
-    uuid: Uuid,
+    pub uuid: Uuid,
     /// Human-readable identifier (e.g., "swift-falcon-a3f2")
-    huid: String,
-    /// Creation timestamp
-    created_at: SystemTime,
+    pub huid: String,
 }
 
 impl ExecutorId {
@@ -49,11 +48,7 @@ impl ExecutorId {
         let uuid = Uuid::new_v4();
         let huid = Self::generate_huid(uuid, word_provider)?;
 
-        Ok(Self {
-            uuid,
-            huid,
-            created_at: SystemTime::now(),
-        })
+        Ok(Self { uuid, huid })
     }
 
     /// Creates an ExecutorId from existing UUID and HUID values
@@ -67,17 +62,13 @@ impl ExecutorId {
     ///
     /// # Errors
     /// Returns an error if the HUID format is invalid
-    pub fn from_parts(uuid: Uuid, huid: String, created_at: SystemTime) -> Result<Self> {
+    pub fn from_parts(uuid: Uuid, huid: String) -> Result<Self> {
         // Validate HUID format
         if !crate::executor_identity::constants::is_valid_huid(&huid) {
             anyhow::bail!("Invalid HUID format: {}", huid);
         }
 
-        Ok(Self {
-            uuid,
-            huid,
-            created_at,
-        })
+        Ok(Self { uuid, huid })
     }
 
     /// Generates a HUID for the given UUID
@@ -140,11 +131,7 @@ impl ExecutorId {
         let word_provider = StaticWordProvider::new();
         let huid = Self::generate_huid(uuid, &word_provider)?;
 
-        Ok(Self {
-            uuid,
-            huid,
-            created_at: SystemTime::now(),
-        })
+        Ok(Self { uuid, huid })
     }
 }
 
@@ -158,7 +145,7 @@ impl ExecutorIdentity for ExecutorId {
     }
 
     fn created_at(&self) -> SystemTime {
-        self.created_at
+        SystemTime::now()
     }
 
     fn matches(&self, query: &str) -> bool {

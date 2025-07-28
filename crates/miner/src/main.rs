@@ -139,16 +139,19 @@ impl MinerState {
 
         // Register all executors with the connection manager
         for executor_config in &config.executor_management.executors {
+            let executor_id = registration_db
+                .get_or_create_executor_id(&executor_config.grpc_address)
+                .await?;
             if !executor_config.enabled {
-                info!("Skipping disabled executor: {}", executor_config.id);
+                info!("Skipping disabled executor: {}", executor_id.uuid);
                 continue;
             }
 
             use std::str::FromStr;
             let executor_info = executors::ExecutorInfo {
-                id: common::identity::ExecutorId::from_str(&executor_config.id).map_err(|e| {
-                    anyhow::anyhow!("Invalid executor ID '{}': {}", executor_config.id, e)
-                })?,
+                id: common::identity::ExecutorId::from_str(&executor_id.uuid.to_string()).map_err(
+                    |e| anyhow::anyhow!("Invalid executor ID '{}': {}", executor_id.uuid, e),
+                )?,
                 host: executor_config.host.clone(),
                 ssh_port: executor_config.ssh_port,
                 ssh_username: executor_config.ssh_username.clone(),
@@ -159,7 +162,7 @@ impl MinerState {
             executor_connection_manager
                 .register_executor(executor_info)
                 .await
-                .with_context(|| format!("Failed to register executor {}", executor_config.id))?;
+                .with_context(|| format!("Failed to register executor {}", executor_id.uuid))?;
         }
 
         let ssh_session_config = ssh::SshSessionConfig {
@@ -423,7 +426,10 @@ async fn handle_cli_command(command: Commands, config: &MinerConfig) -> Result<(
             cli::handle_database_command(database_cmd, config).await
         }
         Commands::Config { config_cmd } => cli::handle_config_command(config_cmd, config).await,
-        Commands::Status => cli::show_miner_status(config).await,
+        Commands::Status => {
+            let db = RegistrationDb::new(&config.database).await?;
+            cli::show_miner_status(config, db).await
+        }
         Commands::Migrate => {
             let mut db_config = config.database.clone();
             db_config.run_migrations = true;

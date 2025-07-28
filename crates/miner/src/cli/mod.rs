@@ -148,7 +148,7 @@ pub async fn handle_config_command(command: ConfigCommand, config: &MinerConfig)
 }
 
 /// Show miner status
-pub async fn show_miner_status(config: &MinerConfig) -> Result<()> {
+pub async fn show_miner_status(config: &MinerConfig, db: RegistrationDb) -> Result<()> {
     println!("=== Basilca Miner Status ===");
     println!("Network: {}", config.bittensor.common.network);
     println!("Hotkey: {}", config.bittensor.common.hotkey_name);
@@ -164,7 +164,12 @@ pub async fn show_miner_status(config: &MinerConfig) -> Result<()> {
         config.executor_management.executors.len()
     );
     for executor in &config.executor_management.executors {
-        println!("  - {} @ {}", executor.id, executor.grpc_address);
+        let executor_id = db.get_or_create_executor_id(&executor.grpc_address).await?;
+        println!(
+            "  - {} @ {}",
+            executor_id.uuid.to_string(),
+            executor.grpc_address
+        );
     }
     println!();
 

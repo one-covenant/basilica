@@ -114,224 +114,224 @@ pub enum OutputFormat {
 }
 
 /// Handle executor identity commands
-pub async fn handle_executor_identity_command(
-    cmd: ExecutorIdentityCommand,
-    config: &MinerConfig,
-    db: RegistrationDb,
-) -> Result<()> {
-    match cmd {
-        ExecutorIdentityCommand::List {
-            filter,
-            verbose,
-            output,
-        } => list_executors_with_identity(filter, verbose, output, config, db).await,
-        ExecutorIdentityCommand::Show {
-            executor_id,
-            output,
-        } => show_executor_with_identity(executor_id, output, config, db).await,
-        ExecutorIdentityCommand::Assign {
-            executor_id,
-            validator,
-        } => assign_executor_with_identity(executor_id, validator, config, db).await,
-        ExecutorIdentityCommand::Unassign { executor_id } => {
-            unassign_executor_with_identity(executor_id, config, db).await
-        }
-        ExecutorIdentityCommand::Identity(subcmd) => {
-            handle_identity_subcommand(subcmd.command, config, db).await
-        }
-    }
-}
+// pub async fn handle_executor_identity_command(
+//     cmd: ExecutorIdentityCommand,
+//     config: &MinerConfig,
+//     db: RegistrationDb,
+// ) -> Result<()> {
+//     match cmd {
+//         ExecutorIdentityCommand::List {
+//             filter,
+//             verbose,
+//             output,
+//         } => list_executors_with_identity(filter, verbose, output, config, db).await,
+//         ExecutorIdentityCommand::Show {
+//             executor_id,
+//             output,
+//         } => show_executor_with_identity(executor_id, output, config, db).await,
+//         ExecutorIdentityCommand::Assign {
+//             executor_id,
+//             validator,
+//         } => assign_executor_with_identity(executor_id, validator, config, db).await,
+//         ExecutorIdentityCommand::Unassign { executor_id } => {
+//             unassign_executor_with_identity(executor_id, config, db).await
+//         }
+//         ExecutorIdentityCommand::Identity(subcmd) => {
+//             handle_identity_subcommand(subcmd.command, config, db).await
+//         }
+//     }
+// }
 
 /// List executors with identity support
-async fn list_executors_with_identity(
-    filter: Option<String>,
-    verbose: bool,
-    output: OutputFormat,
-    config: &MinerConfig,
-    _db: RegistrationDb,
-) -> Result<()> {
-    info!("Listing executors with filter: {:?}", filter);
+// async fn list_executors_with_identity(
+//     filter: Option<String>,
+//     verbose: bool,
+//     output: OutputFormat,
+//     config: &MinerConfig,
+//     _db: RegistrationDb,
+// ) -> Result<()> {
+//     info!("Listing executors with filter: {:?}", filter);
 
-    // Get all configured executors
-    let executors = &config.executor_management.executors;
+//     // Get all configured executors
+//     let executors = &config.executor_management.executors;
 
-    // Apply filter if provided
-    let filtered_executors: Vec<_> = if let Some(query) = &filter {
-        // Validate query length
-        if query.len() < 3 && !is_valid_uuid(query) {
-            return Err(anyhow!(
-                "Filter must be a valid UUID or at least 3 characters for HUID prefix"
-            ));
-        }
+//     // Apply filter if provided
+//     let filtered_executors: Vec<_> = if let Some(query) = &filter {
+//         // Validate query length
+//         if query.len() < 3 && !is_valid_uuid(query) {
+//             return Err(anyhow!(
+//                 "Filter must be a valid UUID or at least 3 characters for HUID prefix"
+//             ));
+//         }
 
-        executors
-            .iter()
-            .filter(|e| {
-                // For now, filter by legacy ID until full identity integration
-                e.id.starts_with(query)
-            })
-            .collect()
-    } else {
-        executors.iter().collect()
-    };
+//         executors
+//             .iter()
+//             .filter(|e| {
+//                 // For now, filter by legacy ID until full identity integration
+//                 e.id.starts_with(query)
+//             })
+//             .collect()
+//     } else {
+//         executors.iter().collect()
+//     };
 
-    // Format output based on requested format
-    match output {
-        OutputFormat::Table => {
-            print_executor_table(&filtered_executors, verbose);
-        }
-        OutputFormat::Json => {
-            print_executor_json(&filtered_executors)?;
-        }
-        OutputFormat::Compact => {
-            for executor in filtered_executors {
-                println!("{}", executor.id);
-            }
-        }
-        OutputFormat::Verbose => {
-            for executor in filtered_executors {
-                println!("HUID: {}", executor.id);
-                println!("Address: {}", executor.grpc_address);
-                if let Some(name) = &executor.name {
-                    println!("Name: {name}");
-                }
-                println!();
-            }
-        }
-        _ => {
-            print_executor_table(&filtered_executors, verbose);
-        }
-    }
+//     // Format output based on requested format
+//     match output {
+//         OutputFormat::Table => {
+//             print_executor_table(&filtered_executors, verbose);
+//         }
+//         OutputFormat::Json => {
+//             print_executor_json(&filtered_executors)?;
+//         }
+//         OutputFormat::Compact => {
+//             for executor in filtered_executors {
+//                 println!("{}", executor.id);
+//             }
+//         }
+//         OutputFormat::Verbose => {
+//             for executor in filtered_executors {
+//                 println!("HUID: {}", executor.id);
+//                 println!("Address: {}", executor.grpc_address);
+//                 if let Some(name) = &executor.name {
+//                     println!("Name: {name}");
+//                 }
+//                 println!();
+//             }
+//         }
+//         _ => {
+//             print_executor_table(&filtered_executors, verbose);
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 /// Show detailed executor information
-async fn show_executor_with_identity(
-    executor_id: String,
-    output: OutputFormat,
-    config: &MinerConfig,
-    db: RegistrationDb,
-) -> Result<()> {
-    info!("Showing executor: {}", executor_id);
+// async fn show_executor_with_identity(
+//     executor_id: String,
+//     output: OutputFormat,
+//     config: &MinerConfig,
+//     db: RegistrationDb,
+// ) -> Result<()> {
+//     info!("Showing executor: {}", executor_id);
 
-    // Find executor by identifier
-    let executor = find_executor_by_identifier(&executor_id, config)
-        .await
-        .context("Failed to find executor")?;
+//     // Find executor by identifier
+//     let executor = find_executor_by_identifier(&executor_id, config)
+//         .await
+//         .context("Failed to find executor")?;
 
-    // Get health status from database
-    let health_records = db.get_all_executor_health().await?;
-    let health = health_records.iter().find(|h| h.executor_id == executor.id);
+//     // Get health status from database
+//     let health_records = db.get_all_executor_health().await?;
+//     let health = health_records.iter().find(|h| h.executor_id == executor.id);
 
-    // Format output
-    match output {
-        OutputFormat::Json => {
-            let json = serde_json::json!({
-                "id": executor.id,
-                "grpc_address": executor.grpc_address,
-                "name": executor.name,
-                "metadata": executor.metadata,
-                "health": health.map(|h| serde_json::json!({
-                    "is_healthy": h.is_healthy,
-                    "consecutive_failures": h.consecutive_failures,
-                    "last_error": h.last_error,
-                    "last_health_check": h.last_health_check,
-                })),
-            });
-            println!("{}", serde_json::to_string_pretty(&json)?);
-        }
-        _ => {
-            println!("Executor Details:");
-            println!("  ID: {}", executor.id);
-            println!("  Address: {}", executor.grpc_address);
-            if let Some(name) = &executor.name {
-                println!("  Name: {name}");
-            }
+//     // Format output
+//     match output {
+//         OutputFormat::Json => {
+//             let json = serde_json::json!({
+//                 "id": executor.id,
+//                 "grpc_address": executor.grpc_address,
+//                 "name": executor.name,
+//                 "metadata": executor.metadata,
+//                 "health": health.map(|h| serde_json::json!({
+//                     "is_healthy": h.is_healthy,
+//                     "consecutive_failures": h.consecutive_failures,
+//                     "last_error": h.last_error,
+//                     "last_health_check": h.last_health_check,
+//                 })),
+//             });
+//             println!("{}", serde_json::to_string_pretty(&json)?);
+//         }
+//         _ => {
+//             println!("Executor Details:");
+//             println!("  ID: {}", executor.id);
+//             println!("  Address: {}", executor.grpc_address);
+//             if let Some(name) = &executor.name {
+//                 println!("  Name: {name}");
+//             }
 
-            if let Some(h) = health {
-                println!("\nHealth Status:");
-                println!(
-                    "  Status: {}",
-                    if h.is_healthy { "Healthy" } else { "Unhealthy" }
-                );
-                println!("  Consecutive Failures: {}", h.consecutive_failures);
-                if let Some(error) = &h.last_error {
-                    println!("  Last Error: {error}");
-                }
-                if let Some(last_check) = &h.last_health_check {
-                    println!(
-                        "  Last Check: {}",
-                        last_check.format("%Y-%m-%d %H:%M:%S UTC")
-                    );
-                }
-            }
-        }
-    }
+//             if let Some(h) = health {
+//                 println!("\nHealth Status:");
+//                 println!(
+//                     "  Status: {}",
+//                     if h.is_healthy { "Healthy" } else { "Unhealthy" }
+//                 );
+//                 println!("  Consecutive Failures: {}", h.consecutive_failures);
+//                 if let Some(error) = &h.last_error {
+//                     println!("  Last Error: {error}");
+//                 }
+//                 if let Some(last_check) = &h.last_health_check {
+//                     println!(
+//                         "  Last Check: {}",
+//                         last_check.format("%Y-%m-%d %H:%M:%S UTC")
+//                     );
+//                 }
+//             }
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 /// Assign executor to validator
-async fn assign_executor_with_identity(
-    executor_id: String,
-    validator: String,
-    config: &MinerConfig,
-    _db: RegistrationDb,
-) -> Result<()> {
-    info!(
-        "Assigning executor {} to validator {}",
-        executor_id, validator
-    );
+// async fn assign_executor_with_identity(
+//     executor_id: String,
+//     validator: String,
+//     config: &MinerConfig,
+//     _db: RegistrationDb,
+// ) -> Result<()> {
+//     info!(
+//         "Assigning executor {} to validator {}",
+//         executor_id, validator
+//     );
 
-    // Find executor by identifier
-    let executor = find_executor_by_identifier(&executor_id, config)
-        .await
-        .context("Failed to find executor")?;
+//     // Find executor by identifier
+//     let executor = find_executor_by_identifier(&executor_id, config)
+//         .await
+//         .context("Failed to find executor")?;
 
-    println!("Assigning {} to validator {}", executor.id, validator);
+//     println!("Assigning {} to validator {}", executor.id, validator);
 
-    // TODO: Implement actual assignment logic
-    println!("Assignment operation would be performed here");
+//     // TODO: Implement actual assignment logic
+//     println!("Assignment operation would be performed here");
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 /// Remove executor assignment
-async fn unassign_executor_with_identity(
-    executor_id: String,
-    config: &MinerConfig,
-    _db: RegistrationDb,
-) -> Result<()> {
-    info!("Unassigning executor {}", executor_id);
+// async fn unassign_executor_with_identity(
+//     executor_id: String,
+//     config: &MinerConfig,
+//     _db: RegistrationDb,
+// ) -> Result<()> {
+//     info!("Unassigning executor {}", executor_id);
 
-    // Find executor by identifier
-    let executor = find_executor_by_identifier(&executor_id, config)
-        .await
-        .context("Failed to find executor")?;
+//     // Find executor by identifier
+//     let executor = find_executor_by_identifier(&executor_id, config)
+//         .await
+//         .context("Failed to find executor")?;
 
-    println!("Removing assignment for {}", executor.id);
+//     println!("Removing assignment for {}", executor.id);
 
-    // TODO: Implement actual unassignment logic
-    println!("Unassignment operation would be performed here");
+//     // TODO: Implement actual unassignment logic
+//     println!("Unassignment operation would be performed here");
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 /// Handle identity-specific subcommands
-async fn handle_identity_subcommand(
-    cmd: IdentityOperation,
-    _config: &MinerConfig,
-    _db: RegistrationDb,
-) -> Result<()> {
-    match cmd {
-        IdentityOperation::Show { output } => show_current_identity(output).await,
-        IdentityOperation::Generate { count, output } => {
-            generate_test_identities(count, output).await
-        }
-        IdentityOperation::Search { query, all } => search_executors_by_identity(query, all).await,
-    }
-}
+// async fn handle_identity_subcommand(
+//     cmd: IdentityOperation,
+//     _config: &MinerConfig,
+//     _db: RegistrationDb,
+// ) -> Result<()> {
+//     match cmd {
+//         IdentityOperation::Show { output } => show_current_identity(output).await,
+//         IdentityOperation::Generate { count, output } => {
+//             generate_test_identities(count, output).await
+//         }
+//         IdentityOperation::Search { query, all } => search_executors_by_identity(query, all).await,
+//     }
+// }
 
 /// Show current executor identity
 async fn show_current_identity(output: OutputFormat) -> Result<()> {
@@ -423,46 +423,46 @@ async fn search_executors_by_identity(query: String, show_all: bool) -> Result<(
 }
 
 /// Find executor by UUID or HUID identifier
-async fn find_executor_by_identifier<'a>(
-    identifier: &str,
-    config: &'a MinerConfig,
-) -> Result<&'a crate::config::ExecutorConfig> {
-    // For now, use simple string matching on legacy IDs
-    // This will be replaced with proper identity matching
+// async fn find_executor_by_identifier<'a>(
+//     identifier: &str,
+//     config: &'a MinerConfig,
+// ) -> Result<&'a crate::config::ExecutorConfig> {
+//     // For now, use simple string matching on legacy IDs
+//     // This will be replaced with proper identity matching
 
-    let executors = &config.executor_management.executors;
+//     let executors = &config.executor_management.executors;
 
-    // Try exact match first
-    if let Some(executor) = executors.iter().find(|e| e.id == identifier) {
-        return Ok(executor);
-    }
+//     // Try exact match first
+//     if let Some(executor) = executors.iter().find(|e| e.id == identifier) {
+//         return Ok(executor);
+//     }
 
-    // Try prefix matching (min 3 chars)
-    if identifier.len() >= 3 {
-        let matches: Vec<_> = executors
-            .iter()
-            .filter(|e| e.id.starts_with(identifier))
-            .collect();
+//     // Try prefix matching (min 3 chars)
+//     if identifier.len() >= 3 {
+//         let matches: Vec<_> = executors
+//             .iter()
+//             .filter(|e| e.id.starts_with(identifier))
+//             .collect();
 
-        match matches.len() {
-            0 => Err(anyhow!("No executor found matching '{}'", identifier)),
-            1 => Ok(matches[0]),
-            _n => {
-                // Multiple matches - show disambiguation
-                let ids: Vec<String> = matches.iter().map(|e| e.id.clone()).collect();
-                Err(anyhow!(
-                    "Multiple executors match '{}': {}",
-                    identifier,
-                    ids.join(", ")
-                ))
-            }
-        }
-    } else {
-        Err(anyhow!(
-            "Executor identifier must be at least 3 characters for prefix matching"
-        ))
-    }
-}
+//         match matches.len() {
+//             0 => Err(anyhow!("No executor found matching '{}'", identifier)),
+//             1 => Ok(matches[0]),
+//             _n => {
+//                 // Multiple matches - show disambiguation
+//                 let ids: Vec<String> = matches.iter().map(|e| e.id.clone()).collect();
+//                 Err(anyhow!(
+//                     "Multiple executors match '{}': {}",
+//                     identifier,
+//                     ids.join(", ")
+//                 ))
+//             }
+//         }
+//     } else {
+//         Err(anyhow!(
+//             "Executor identifier must be at least 3 characters for prefix matching"
+//         ))
+//     }
+// }
 
 /// Check if a string is a valid UUID
 fn is_valid_uuid(s: &str) -> bool {
@@ -470,44 +470,44 @@ fn is_valid_uuid(s: &str) -> bool {
 }
 
 /// Print executor table
-fn print_executor_table(executors: &[&crate::config::ExecutorConfig], verbose: bool) {
-    if executors.is_empty() {
-        println!("No executors found");
-        return;
-    }
+// fn print_executor_table(executors: &[&crate::config::ExecutorConfig], verbose: bool) {
+//     if executors.is_empty() {
+//         println!("No executors found");
+//         return;
+//     }
 
-    if verbose {
-        // Verbose format with more columns
-        println!(
-            "{:<40} {:<20} {:<30} {:<10}",
-            "ID", "NAME", "ADDRESS", "STATUS"
-        );
-        println!("{}", "-".repeat(102));
+//     if verbose {
+//         // Verbose format with more columns
+//         println!(
+//             "{:<40} {:<20} {:<30} {:<10}",
+//             "ID", "NAME", "ADDRESS", "STATUS"
+//         );
+//         println!("{}", "-".repeat(102));
 
-        for executor in executors {
-            println!(
-                "{:<40} {:<20} {:<30} {:<10}",
-                executor.id,
-                executor.name.as_ref().unwrap_or(&"".to_string()),
-                executor.grpc_address,
-                "UNKNOWN" // Status would come from health checks
-            );
-        }
-    } else {
-        // Compact format - HUID only
-        println!("{:<20} {:<10} {:<30}", "ID", "STATUS", "ADDRESS");
-        println!("{}", "-".repeat(62));
+//         for executor in executors {
+//             println!(
+//                 "{:<40} {:<20} {:<30} {:<10}",
+//                 executor.id,
+//                 executor.name.as_ref().unwrap_or(&"".to_string()),
+//                 executor.grpc_address,
+//                 "UNKNOWN" // Status would come from health checks
+//             );
+//         }
+//     } else {
+//         // Compact format - HUID only
+//         println!("{:<20} {:<10} {:<30}", "ID", "STATUS", "ADDRESS");
+//         println!("{}", "-".repeat(62));
 
-        for executor in executors {
-            println!(
-                "{:<20} {:<10} {:<30}",
-                executor.id,
-                "UNKNOWN", // Status would come from health checks
-                executor.grpc_address
-            );
-        }
-    }
-}
+//         for executor in executors {
+//             println!(
+//                 "{:<20} {:<10} {:<30}",
+//                 executor.id,
+//                 "UNKNOWN", // Status would come from health checks
+//                 executor.grpc_address
+//             );
+//         }
+//     }
+// }
 
 /// Print executor JSON
 fn print_executor_json(executors: &[&crate::config::ExecutorConfig]) -> Result<()> {
@@ -515,9 +515,7 @@ fn print_executor_json(executors: &[&crate::config::ExecutorConfig]) -> Result<(
         .iter()
         .map(|e| {
             serde_json::json!({
-                "id": e.id,
                 "grpc_address": e.grpc_address,
-                "name": e.name,
                 "metadata": e.metadata,
             })
         })
