@@ -4,9 +4,8 @@
 //! validator requests for GPU rental and computational challenges.
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use common::identity::MinerUid;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,83 +38,7 @@ use session_cleanup::run_cleanup_service;
 use ssh::{MinerSshConfig, SshCleanupService, ValidatorAccessService};
 use validator_comms::ValidatorCommsServer;
 
-#[derive(Parser, Debug)]
-#[command(author, version, about = "Basilca Miner - Bittensor neuron managing executor fleets", long_about = None)]
-struct Args {
-    /// Configuration file path
-    #[arg(short, long, default_value = "miner.toml")]
-    config: String,
-
-    /// Log level (trace, debug, info, warn, error)
-    #[arg(short, long, default_value = "info")]
-    log_level: String,
-
-    /// Enable prometheus metrics endpoint
-    #[arg(long)]
-    metrics: bool,
-
-    /// Metrics server address
-    #[arg(long, default_value = "0.0.0.0:9091")]
-    metrics_addr: SocketAddr,
-
-    /// Generate sample configuration file
-    #[arg(long)]
-    gen_config: bool,
-
-    /// Subcommands for CLI operations
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Subcommand, Debug)]
-enum Commands {
-    /// Executor management commands
-    Executor {
-        #[command(subcommand)]
-        executor_cmd: cli::ExecutorCommand,
-    },
-    /// Validator management commands
-    Validator {
-        #[command(subcommand)]
-        validator_cmd: cli::ValidatorCommand,
-    },
-    /// Manual executor assignment commands
-    Assignment {
-        #[command(subcommand)]
-        assignment_cmd: cli::AssignmentCommand,
-    },
-    /// Service management commands
-    Service {
-        #[command(subcommand)]
-        service_cmd: cli::ServiceCommand,
-    },
-    /// Database management commands
-    Database {
-        #[command(subcommand)]
-        database_cmd: cli::DatabaseCommand,
-    },
-    /// Configuration management commands
-    Config {
-        #[command(subcommand)]
-        config_cmd: cli::ConfigCommand,
-    },
-    /// Show miner status and statistics
-    Status,
-    /// Run database migrations
-    Migrate,
-    /// Deploy executors to remote machines
-    DeployExecutors {
-        /// Only show what would be deployed without actually deploying
-        #[arg(long)]
-        dry_run: bool,
-        /// Deploy to specific machine IDs only (comma-separated)
-        #[arg(long)]
-        only_machines: Option<String>,
-        /// Skip deployment and only check status
-        #[arg(long)]
-        status_only: bool,
-    },
-}
+use crate::cli::{Args, Commands};
 
 /// Main miner state
 pub struct MinerState {
