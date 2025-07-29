@@ -580,7 +580,7 @@ impl GpuProfileRepository {
             LIMIT 1
         "#;
 
-        let row: WeightAllocationHistory = sqlx::query_as(query).fetch(&self.pool).await?;
+        let row: WeightAllocationHistory = sqlx::query_as(query).fetch_one(&self.pool).await?;
 
         Ok(row)
     }

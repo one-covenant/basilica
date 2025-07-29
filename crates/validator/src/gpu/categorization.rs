@@ -24,6 +24,7 @@ impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
         let total_score: f64 = row.get("total_score");
         let verification_count: i64 = row.get("verification_count");
         let last_updated_str: String = row.get("last_updated");
+        let last_successful_validation_str: String = row.get("last_successful_validation");
 
         let gpu_counts: HashMap<String, u32> =
             serde_json::from_str(&gpu_counts_json).map_err(|e| sqlx::Error::ColumnDecode {
@@ -38,6 +39,19 @@ impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
             })?
             .with_timezone(&Utc);
 
+        let last_successful_validation = if last_successful_validation_str.is_empty() {
+            None
+        } else {
+            Some(
+                DateTime::parse_from_rfc3339(&last_successful_validation_str)
+                    .map_err(|e| sqlx::Error::ColumnDecode {
+                        index: "last_successful_validation".to_string(),
+                        source: e.into(),
+                    })?
+                    .with_timezone(&Utc),
+            )
+        };
+
         Ok(Self {
             miner_uid: MinerUid::new(miner_uid_val as u16),
             primary_gpu_model,
@@ -45,6 +59,7 @@ impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
             total_score,
             verification_count: verification_count as u32,
             last_updated,
+            last_successful_validation,
         })
     }
 }

@@ -136,7 +136,7 @@ impl ApiHandler {
                 "/verification/results/:miner_id",
                 get(routes::get_verification_results),
             )
-            .route("/verification/trigger", post(routes::trigger_verification))
+            // .route("/verification/trigger", post(routes::trigger_verification))
             .route("/metagraph", get(routes::get_metagraph))
             .route("/metagraph/miners/:uid", get(routes::get_metagraph_miner))
             .route("/weights/current", get(routes::get_current_weights))
