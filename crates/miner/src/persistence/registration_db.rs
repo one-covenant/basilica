@@ -670,52 +670,36 @@ impl RegistrationDb {
             return Ok(executor_id);
         }
 
-        // Create new identity with retry logic for concurrent access
-        let mut attempts = 0;
-        const MAX_ATTEMPTS: u32 = 5;
+        let executor_id = ExecutorId::new()?;
 
-        loop {
-            attempts += 1;
-            if attempts > MAX_ATTEMPTS {
-                anyhow::bail!(
-                    "Failed to create unique identity after {} attempts",
-                    MAX_ATTEMPTS
-                );
-            }
+        // Try to insert with conflict handling
+        match sqlx::query(
+            "INSERT INTO executor_uids (executor_address, uid, huid) VALUES (?, ?, ?)",
+        )
+        .bind(executor_address)
+        .bind(executor_id.uuid.to_string())
+        .bind(executor_id.huid.clone())
+        .execute(&self.pool)
+        .await
+        {
+            Ok(_) => Ok(executor_id),
+            Err(e) => {
+                if e.to_string().contains("UNIQUE constraint failed") {
+                    // Another thread/process created the identity, try to retrieve it
+                    let existing = sqlx::query_as::<_, (String, String)>(
+                        "SELECT uid, huid FROM executor_uids WHERE executor_address = ?",
+                    )
+                    .bind(executor_address)
+                    .fetch_optional(&self.pool)
+                    .await?;
 
-            let executor_id = ExecutorId::new()?;
-
-            // Try to insert with conflict handling
-            match sqlx::query(
-                "INSERT INTO executor_uids (executor_address, uid, huid) VALUES (?, ?, ?)",
-            )
-            .bind(executor_address)
-            .bind(executor_id.uuid.to_string())
-            .bind(executor_id.huid.clone())
-            .execute(&self.pool)
-            .await
-            {
-                Ok(_) => {
-                    return Ok(executor_id);
-                }
-                Err(e) => {
-                    if e.to_string().contains("UNIQUE constraint failed") {
-                        // Another thread/process created the identity, try to retrieve it
-                        let existing = sqlx::query_as::<_, (String, String)>(
-                            "SELECT uid, huid FROM executor_uids WHERE executor_address = ?",
-                        )
-                        .bind(executor_address)
-                        .fetch_optional(&self.pool)
-                        .await?;
-
-                        if let Some((uid_str, huid)) = existing {
-                            let uuid = uuid::Uuid::parse_str(&uid_str)?;
-                            let executor_id = ExecutorId::from_parts(uuid, huid)?;
-                            return Ok(executor_id);
-                        }
+                    if let Some((uid_str, huid)) = existing {
+                        let uuid = uuid::Uuid::parse_str(&uid_str)?;
+                        let executor_id = ExecutorId::from_parts(uuid, huid)?;
+                        return Ok(executor_id);
                     }
-                    return Err(e.into());
                 }
+                Err(e.into())
             }
         }
     }
