@@ -677,7 +677,7 @@ impl RegistrationDb {
             "INSERT INTO executor_uids (executor_address, uid, huid) VALUES (?, ?, ?)",
         )
         .bind(executor_address)
-        .bind(executor_id.uuid.to_string())
+        .bind(executor_id.uid.to_string())
         .bind(executor_id.huid.clone())
         .execute(&self.pool)
         .await
@@ -822,8 +822,8 @@ mod tests {
 
         // Verify the identity was generated correctly
         assert!(is_valid_huid(&executor_id.huid));
-        assert_eq!(executor_id.uuid.get_version(), Some(uuid::Version::Random));
-        assert!(!executor_id.uuid.to_string().is_empty());
+        assert_eq!(executor_id.uid.get_version(), Some(uuid::Version::Random));
+        assert!(!executor_id.uid.to_string().is_empty());
         assert!(!executor_id.huid.is_empty());
 
         // Verify the identity was stored in the database
@@ -831,7 +831,7 @@ mod tests {
             .get_or_create_executor_id("127.0.0.1:50051")
             .await
             .unwrap();
-        assert_eq!(stored_id.uuid, executor_id.uuid);
+        assert_eq!(stored_id.uid, executor_id.uid);
         assert_eq!(stored_id.huid, executor_id.huid);
     }
 
@@ -853,7 +853,7 @@ mod tests {
         // Retrieve multiple times - should always return the same identity
         for _ in 0..5 {
             let id2 = db.get_or_create_executor_id(address).await.unwrap();
-            assert_eq!(id2.uuid, id1.uuid);
+            assert_eq!(id2.uid, id1.uid);
             assert_eq!(id2.huid, id1.huid);
         }
     }
@@ -888,14 +888,14 @@ mod tests {
         let mut huids = std::collections::HashSet::new();
 
         for (_, id) in &identities {
-            assert!(uuids.insert(id.uuid));
+            assert!(uuids.insert(id.uid));
             assert!(huids.insert(id.huid.clone()));
         }
 
         // Verify each address maps to the correct identity
         for (address, expected_id) in &identities {
             let retrieved_id = db.get_or_create_executor_id(address).await.unwrap();
-            assert_eq!(retrieved_id.uuid, expected_id.uuid);
+            assert_eq!(retrieved_id.uid, expected_id.uid);
             assert_eq!(retrieved_id.huid, expected_id.huid);
         }
     }
@@ -925,7 +925,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(stored.0, address);
-        assert_eq!(stored.1, original_id.uuid.to_string());
+        assert_eq!(stored.1, original_id.uid.to_string());
         assert_eq!(stored.2, original_id.huid);
     }
 
@@ -948,8 +948,8 @@ mod tests {
             assert!(is_valid_huid(&id.huid), "HUID should be valid: {}", id.huid);
 
             // Verify UUID format
-            assert_eq!(id.uuid.get_version(), Some(uuid::Version::Random));
-            assert_eq!(id.uuid.to_string().len(), 36); // Standard UUID length
+            assert_eq!(id.uid.get_version(), Some(uuid::Version::Random));
+            assert_eq!(id.uid.to_string().len(), 36); // Standard UUID length
         }
     }
 
@@ -976,7 +976,7 @@ mod tests {
         for address in test_addresses {
             let id = db.get_or_create_executor_id(address).await.unwrap();
             assert!(is_valid_huid(&id.huid));
-            assert_eq!(id.uuid.get_version(), Some(uuid::Version::Random));
+            assert_eq!(id.uid.get_version(), Some(uuid::Version::Random));
         }
     }
 
@@ -1010,7 +1010,7 @@ mod tests {
         // All tasks should return the same identity
         let first_id = &identities[0];
         for id in &identities {
-            assert_eq!(id.uuid, first_id.uuid);
+            assert_eq!(id.uid, first_id.uid);
             assert_eq!(id.huid, first_id.huid);
         }
     }
@@ -1035,10 +1035,10 @@ mod tests {
 
             // Verify UUID uniqueness
             assert!(
-                uuids.insert(id.uuid),
+                uuids.insert(id.uid),
                 "UUID collision detected at iteration {}: {}",
                 i,
-                id.uuid
+                id.uid
             );
 
             // Verify HUID uniqueness
@@ -1111,7 +1111,7 @@ mod tests {
         // Test with empty address (edge case)
         let id = db.get_or_create_executor_id("").await.unwrap();
         assert!(is_valid_huid(&id.huid));
-        assert_eq!(id.uuid.get_version(), Some(uuid::Version::Random));
+        assert_eq!(id.uid.get_version(), Some(uuid::Version::Random));
     }
 
     #[tokio::test]
@@ -1135,7 +1135,7 @@ mod tests {
         for address in test_addresses {
             let id = db.get_or_create_executor_id(address).await.unwrap();
             assert!(is_valid_huid(&id.huid));
-            assert_eq!(id.uuid.get_version(), Some(uuid::Version::Random));
+            assert_eq!(id.uid.get_version(), Some(uuid::Version::Random));
         }
     }
 }

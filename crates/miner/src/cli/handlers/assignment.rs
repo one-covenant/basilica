@@ -29,7 +29,7 @@ pub async fn handle_assignment_command(
         let executor_id = registration_db
             .get_or_create_executor_id(&e.grpc_address)
             .await?;
-        executor_ids.push(executor_id.uuid.to_string());
+        executor_ids.push(executor_id.uid.to_string());
     }
 
     let assignment_manager = AssignmentManager::new(pool).with_executors(executor_ids);

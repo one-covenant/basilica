@@ -20,7 +20,7 @@ async fn find_executor_config<'a>(
 ) -> Result<&'a ExecutorConfig> {
     for e in executors {
         let db_executor_id = db.get_or_create_executor_id(&e.grpc_address).await?;
-        if db_executor_id.uuid.to_string() == executor_id {
+        if db_executor_id.uid.to_string() == executor_id {
             return Ok(e);
         }
     }

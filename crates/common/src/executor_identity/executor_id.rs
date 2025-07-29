@@ -22,7 +22,7 @@ use crate::executor_identity::{
 #[cfg_attr(feature = "sqlite", derive(sqlx::FromRow))]
 pub struct ExecutorId {
     /// UUID v4 for guaranteed uniqueness
-    pub uuid: Uuid,
+    pub uid: Uuid,
     /// Human-readable identifier (e.g., "swift-falcon-a3f2")
     pub huid: String,
 }
@@ -48,7 +48,7 @@ impl ExecutorId {
         let uuid = Uuid::new_v4();
         let huid = Self::generate_huid(uuid, word_provider)?;
 
-        Ok(Self { uuid, huid })
+        Ok(Self { uid: uuid, huid })
     }
 
     /// Creates an ExecutorId from existing UUID and HUID values
@@ -68,7 +68,7 @@ impl ExecutorId {
             anyhow::bail!("Invalid HUID format: {}", huid);
         }
 
-        Ok(Self { uuid, huid })
+        Ok(Self { uid: uuid, huid })
     }
 
     /// Generates a HUID for the given UUID
@@ -131,13 +131,13 @@ impl ExecutorId {
         let word_provider = StaticWordProvider::new();
         let huid = Self::generate_huid(uuid, &word_provider)?;
 
-        Ok(Self { uuid, huid })
+        Ok(Self { uid: uuid, huid })
     }
 }
 
 impl ExecutorIdentity for ExecutorId {
     fn uuid(&self) -> &Uuid {
-        &self.uuid
+        &self.uid
     }
 
     fn huid(&self) -> &str {
@@ -155,7 +155,7 @@ impl ExecutorIdentity for ExecutorId {
         }
 
         // Check if query matches UUID prefix
-        if self.uuid.to_string().starts_with(query) {
+        if self.uid.to_string().starts_with(query) {
             return true;
         }
 
@@ -164,11 +164,11 @@ impl ExecutorIdentity for ExecutorId {
     }
 
     fn full_display(&self) -> String {
-        format!("{} ({})", self.huid, self.uuid)
+        format!("{} ({})", self.huid, self.uid)
     }
 
     fn short_uuid(&self) -> String {
-        self.uuid.to_string()[..8].to_string()
+        self.uid.to_string()[..8].to_string()
     }
 }
 
@@ -182,7 +182,7 @@ impl std::fmt::Display for ExecutorId {
 // Implement PartialEq based on UUID (the unique identifier)
 impl PartialEq for ExecutorId {
     fn eq(&self, other: &Self) -> bool {
-        self.uuid == other.uuid
+        self.uid == other.uid
     }
 }
 
@@ -191,7 +191,7 @@ impl Eq for ExecutorId {}
 // Implement Hash based on UUID
 impl std::hash::Hash for ExecutorId {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.uuid.hash(state);
+        self.uid.hash(state);
     }
 }
 

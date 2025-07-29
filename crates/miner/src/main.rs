@@ -143,14 +143,14 @@ impl MinerState {
                 .get_or_create_executor_id(&executor_config.grpc_address)
                 .await?;
             if !executor_config.enabled {
-                info!("Skipping disabled executor: {}", executor_id.uuid);
+                info!("Skipping disabled executor: {}", executor_id.uid);
                 continue;
             }
 
             use std::str::FromStr;
             let executor_info = executors::ExecutorInfo {
-                id: common::identity::ExecutorId::from_str(&executor_id.uuid.to_string()).map_err(
-                    |e| anyhow::anyhow!("Invalid executor ID '{}': {}", executor_id.uuid, e),
+                id: common::identity::ExecutorId::from_str(&executor_id.uid.to_string()).map_err(
+                    |e| anyhow::anyhow!("Invalid executor ID '{}': {}", executor_id.uid, e),
                 )?,
                 host: executor_config.host.clone(),
                 ssh_port: executor_config.ssh_port,
@@ -162,7 +162,7 @@ impl MinerState {
             executor_connection_manager
                 .register_executor(executor_info)
                 .await
-                .with_context(|| format!("Failed to register executor {}", executor_id.uuid))?;
+                .with_context(|| format!("Failed to register executor {}", executor_id.uid))?;
         }
 
         let ssh_session_config = ssh::SshSessionConfig {
