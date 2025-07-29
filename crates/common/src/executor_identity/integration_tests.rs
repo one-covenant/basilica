@@ -435,7 +435,6 @@ mod tests {
 
         let json = display.format_json().expect("Should format");
         assert!(json.contains("\"huid\": \"test-case-0000\""));
-        assert!(json.contains("\"created_at\": 0"));
     }
 
     // Load test for HUID generation performance

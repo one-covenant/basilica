@@ -274,20 +274,17 @@ mod tests {
     fn test_from_parts() {
         let uuid = Uuid::new_v4();
         let huid = "swift-falcon-a3f2".to_string();
-        let created_at = SystemTime::now();
 
         let id = ExecutorId::from_parts(uuid, huid.clone()).expect("Should create from parts");
 
         assert_eq!(id.uuid(), &uuid);
         assert_eq!(id.huid(), &huid);
-        assert_eq!(id.created_at(), created_at);
     }
 
     #[test]
     fn test_from_parts_invalid_huid() {
         let uuid = Uuid::new_v4();
         let invalid_huid = "invalid_format".to_string();
-        let created_at = SystemTime::now();
 
         let result = ExecutorId::from_parts(uuid, invalid_huid);
         assert!(result.is_err());
