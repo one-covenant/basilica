@@ -115,9 +115,9 @@ nanos = 0
 # UPDATE THESE EXECUTOR CONFIGURATIONS:
 # Replace with your actual GPU server details
 executors = [
-  { id = "550e8400-e29b-41d4-a716-446655440001", name = "executor-1", grpc_address = "EXECUTOR_IP:50051", host = "EXECUTOR_IP", port = 50051, ssh_username = "your_username", ssh_port = 22, enabled = true },
+  {  grpc_address = "EXECUTOR_IP:50051", host = "EXECUTOR_IP", port = 50051, ssh_username = "your_username", ssh_port = 22, enabled = true },
   # Add more executors as needed:
-  # { id = "550e8400-e29b-41d4-a716-446655440002", name = "executor-2", grpc_address = "EXECUTOR_IP_2:50051", host = "EXECUTOR_IP_2", port = 50051, ssh_username = "your_username", ssh_port = 22, enabled = true },
+  # { grpc_address = "EXECUTOR_IP_2:50051", host = "EXECUTOR_IP_2", port = 50051, ssh_username = "your_username", ssh_port = 22, enabled = true },
 ]
 max_retry_attempts = 3
 auto_recovery = true

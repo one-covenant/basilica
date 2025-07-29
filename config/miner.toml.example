@@ -105,7 +105,7 @@ nanos = 0
 # Configure your executor fleet here
 # Replace with your actual executor details
 executors = [
-  { id = "YOUR_EXECUTOR_ID", name = "executor-1", grpc_address = "YOUR_EXECUTOR_IP:50051", host = "YOUR_EXECUTOR_IP", port = 50051, ssh_username = "YOUR_SSH_USERNAME", ssh_port = 22, enabled = true },
+  { grpc_address = "YOUR_EXECUTOR_IP:50051", host = "YOUR_EXECUTOR_IP", port = 50051, ssh_username = "YOUR_SSH_USERNAME", ssh_port = 22, enabled = true },
 ]
 max_retry_attempts = 3
 auto_recovery = true
