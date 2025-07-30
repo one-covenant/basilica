@@ -9,8 +9,23 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as AsyncCommand;
 use tracing::{error, info};
 
-use crate::config::{MinerConfig, SshConnectionConfig as SshConfig};
+use crate::config::{ExecutorConfig, MinerConfig, SshConnectionConfig as SshConfig};
 use crate::persistence::RegistrationDb;
+
+/// Find executor configuration by looking up the executor_id from grpc_address in the database
+async fn find_executor_config<'a>(
+    executors: &'a [ExecutorConfig],
+    executor_id: &str,
+    db: &RegistrationDb,
+) -> Result<&'a ExecutorConfig> {
+    for e in executors {
+        let db_executor_id = db.get_or_create_executor_id(&e.grpc_address).await?;
+        if db_executor_id.uuid.to_string() == executor_id {
+            return Ok(e);
+        }
+    }
+    Err(anyhow!("Executor not found: {}", executor_id))
+}
 
 /// Enhanced executor operation types
 #[derive(Debug, Clone)]
@@ -57,14 +72,14 @@ pub async fn handle_enhanced_executor_command(
             executor_id,
             follow,
             lines,
-        } => view_executor_logs(&executor_id, config, follow, lines).await,
+        } => view_executor_logs(&executor_id, config, follow, lines, db).await,
         ExecutorOperation::Connect { executor_id } => {
-            connect_to_executor(&executor_id, config).await
+            connect_to_executor(&executor_id, config, db).await
         }
         ExecutorOperation::Diagnostics { executor_id } => {
             run_executor_diagnostics(&executor_id, config, db).await
         }
-        ExecutorOperation::Ping { executor_id } => ping_executor(&executor_id, config).await,
+        ExecutorOperation::Ping { executor_id } => ping_executor(&executor_id, config, db).await,
     }
 }
 
@@ -78,12 +93,8 @@ async fn restart_executor(
     println!("Restarting executor: {executor_id}");
 
     // Find executor configuration
-    let executor_config = config
-        .executor_management
-        .executors
-        .iter()
-        .find(|e| e.id == executor_id)
-        .ok_or_else(|| anyhow!("Executor not found: {}", executor_id))?;
+    let executor_config =
+        find_executor_config(&config.executor_management.executors, executor_id, &db).await?;
 
     // Check current health status
     let health_records = db.get_all_executor_health().await?;
@@ -145,6 +156,7 @@ async fn view_executor_logs(
     config: &MinerConfig,
     follow: bool,
     lines: Option<usize>,
+    db: RegistrationDb,
 ) -> Result<()> {
     info!(
         "Viewing logs for executor: {} (follow: {})",
@@ -153,12 +165,8 @@ async fn view_executor_logs(
     println!("Viewing logs for executor: {executor_id}");
 
     // Find executor configuration
-    let executor_config = config
-        .executor_management
-        .executors
-        .iter()
-        .find(|e| e.id == executor_id)
-        .ok_or_else(|| anyhow!("Executor not found: {}", executor_id))?;
+    let executor_config =
+        find_executor_config(&config.executor_management.executors, executor_id, &db).await?;
 
     if is_remote_executor(&executor_config.grpc_address) {
         // For remote executors, try to get logs via SSH or systemd
@@ -170,17 +178,17 @@ async fn view_executor_logs(
 }
 
 /// Connect directly to an executor
-async fn connect_to_executor(executor_id: &str, config: &MinerConfig) -> Result<()> {
+async fn connect_to_executor(
+    executor_id: &str,
+    config: &MinerConfig,
+    db: RegistrationDb,
+) -> Result<()> {
     info!("Connecting to executor: {}", executor_id);
     println!("🔗 Connecting to executor: {executor_id}");
 
     // Find executor configuration
-    let executor_config = config
-        .executor_management
-        .executors
-        .iter()
-        .find(|e| e.id == executor_id)
-        .ok_or_else(|| anyhow!("Executor not found: {}", executor_id))?;
+    let executor_config =
+        find_executor_config(&config.executor_management.executors, executor_id, &db).await?;
 
     println!("   Executor address: {}", executor_config.grpc_address);
 
@@ -249,12 +257,8 @@ async fn run_executor_diagnostics(
     println!("Running diagnostics for executor: {executor_id}");
 
     // Find executor configuration
-    let executor_config = config
-        .executor_management
-        .executors
-        .iter()
-        .find(|e| e.id == executor_id)
-        .ok_or_else(|| anyhow!("Executor not found: {}", executor_id))?;
+    let executor_config =
+        find_executor_config(&config.executor_management.executors, executor_id, &db).await?;
 
     println!("\n=== Executor Diagnostics Report ===");
     println!("Executor ID: {executor_id}");
@@ -352,16 +356,12 @@ async fn run_executor_diagnostics(
 }
 
 /// Ping an executor to test basic connectivity
-async fn ping_executor(executor_id: &str, config: &MinerConfig) -> Result<()> {
+async fn ping_executor(executor_id: &str, config: &MinerConfig, db: RegistrationDb) -> Result<()> {
     println!("🏓 Pinging executor: {executor_id}");
 
     // Find executor configuration
-    let executor_config = config
-        .executor_management
-        .executors
-        .iter()
-        .find(|e| e.id == executor_id)
-        .ok_or_else(|| anyhow!("Executor not found: {}", executor_id))?;
+    let executor_config =
+        find_executor_config(&config.executor_management.executors, executor_id, &db).await?;
 
     let start_time = std::time::Instant::now();
 

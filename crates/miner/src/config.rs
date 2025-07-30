@@ -155,9 +155,6 @@ pub struct ExecutorManagementConfig {
 /// Static executor configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutorConfig {
-    /// Unique identifier for the executor
-    pub id: String,
-
     /// gRPC address of the executor (host:port)
     pub grpc_address: String,
 
@@ -175,9 +172,6 @@ pub struct ExecutorConfig {
 
     /// Whether this executor is enabled
     pub enabled: bool,
-
-    /// Optional display name for the executor
-    pub name: Option<String>,
 
     /// Optional metadata about the executor
     pub metadata: Option<serde_json::Value>,

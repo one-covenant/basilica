@@ -8,7 +8,7 @@
 //! ```
 //! use common::executor_identity::{ExecutorId, ExecutorIdentity};
 //!
-//! let id = ExecutorId::new().unwrap();
+//! let id = ExecutorId::new("my-seed").unwrap();
 //! println!("UUID: {}", id.uuid());
 //! println!("HUID: {}", id.huid()); // e.g., "swift-falcon-a3f2"
 //! ```

@@ -157,37 +157,33 @@ impl ExecutorManager {
                 .collect()
         } else if !config.executor_management.executors.is_empty() {
             // Fall back to static executor configuration for backward compatibility
-            config
-                .executor_management
-                .executors
-                .iter()
-                .map(|e| {
-                    let (host, port) = if let Some(colon_pos) = e.grpc_address.rfind(':') {
-                        let host = &e.grpc_address[..colon_pos];
-                        let port = e.grpc_address[colon_pos + 1..].parse().unwrap_or(8080);
-                        (host.to_string(), port)
-                    } else {
-                        (e.grpc_address.clone(), 8080)
-                    };
+            let mut remote_machines = Vec::new();
+            for e in &config.executor_management.executors {
+                let (host, port) = if let Some(colon_pos) = e.grpc_address.rfind(':') {
+                    let host = &e.grpc_address[..colon_pos];
+                    let port = e.grpc_address[colon_pos + 1..].parse().unwrap_or(8080);
+                    (host.to_string(), port)
+                } else {
+                    (e.grpc_address.clone(), 8080)
+                };
 
-                    RemoteMachine {
-                        id: e.id.clone(),
-                        name: e
-                            .name
-                            .clone()
-                            .unwrap_or_else(|| format!("Executor {}", e.id)),
-                        host,
-                        port: 22, // Default SSH port (not used for static executors)
-                        username: "unused".to_string(), // Not used for static executors
-                        private_key_path: std::path::PathBuf::from("/dev/null"), // Not used for static executors
-                        jump_host: None,
-                        ssh_options: vec![],
-                        gpu_count: None,
-                        executor_port: port,
-                        data_dir: None,
-                    }
-                })
-                .collect()
+                let executor_id = db.get_or_create_executor_id(&e.grpc_address).await?;
+
+                remote_machines.push(RemoteMachine {
+                    id: executor_id.uuid.to_string(),
+                    name: executor_id.huid.clone(),
+                    host,
+                    port: 22, // Default SSH port (not used for static executors)
+                    username: "unused".to_string(), // Not used for static executors
+                    private_key_path: std::path::PathBuf::from("/dev/null"), // Not used for static executors
+                    jump_host: None,
+                    ssh_options: vec![],
+                    gpu_count: None,
+                    executor_port: port,
+                    data_dir: None,
+                });
+            }
+            remote_machines
         } else {
             return Err(anyhow::anyhow!("Either remote_executor_deployment or executor_management.executors must be configured"));
         };
