@@ -257,7 +257,11 @@ mod tests {
             assert!(!is_valid_huid(invalid), "{invalid} should be invalid");
 
             // Try to create from parts
-            let result = ExecutorId::from_parts(Uuid::new_v4(), invalid.to_string());
+            let result = ExecutorId::from_parts(
+                Uuid::new_v4(),
+                invalid.to_string(),
+                std::time::SystemTime::now(),
+            );
             assert!(result.is_err(), "{invalid} should fail validation");
         }
 
@@ -420,8 +424,10 @@ mod tests {
         // Create executor with known values
         let uuid = Uuid::nil();
         let huid = "test-case-0000".to_string();
+        let created_at = std::time::UNIX_EPOCH;
 
-        let executor = ExecutorId::from_parts(uuid, huid.clone()).expect("Should create");
+        let executor =
+            ExecutorId::from_parts(uuid, huid.clone(), created_at).expect("Should create");
 
         // Test all display formats
         let display = executor.display();
@@ -435,6 +441,7 @@ mod tests {
 
         let json = display.format_json().expect("Should format");
         assert!(json.contains("\"huid\": \"test-case-0000\""));
+        assert!(json.contains("\"created_at\": 0"));
     }
 
     // Load test for HUID generation performance
@@ -516,6 +523,11 @@ mod tests {
 
     // Helper to create test executor with specific HUID
     fn create_test_executor(huid: &str) -> ExecutorId {
-        ExecutorId::from_parts(Uuid::new_v4(), huid.to_string()).expect("Should create")
+        ExecutorId::from_parts(
+            Uuid::new_v4(),
+            huid.to_string(),
+            std::time::SystemTime::now(),
+        )
+        .expect("Should create")
     }
 }

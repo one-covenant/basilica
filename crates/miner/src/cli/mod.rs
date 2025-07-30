@@ -165,7 +165,7 @@ pub async fn show_miner_status(config: &MinerConfig, db: RegistrationDb) -> Resu
     );
     for executor in &config.executor_management.executors {
         let executor_id = db.get_or_create_executor_id(&executor.grpc_address).await?;
-        println!("  - {} @ {}", executor_id.uid, executor.grpc_address);
+        println!("  - {} @ {}", executor_id.uuid, executor.grpc_address);
     }
     println!();
 

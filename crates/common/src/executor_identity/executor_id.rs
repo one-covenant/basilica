@@ -19,12 +19,13 @@ use crate::executor_identity::{
 
 /// Main executor identifier combining UUID and HUID
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "sqlite", derive(sqlx::FromRow))]
 pub struct ExecutorId {
     /// UUID v4 for guaranteed uniqueness
-    pub uid: Uuid,
+    pub uuid: Uuid,
     /// Human-readable identifier (e.g., "swift-falcon-a3f2")
     pub huid: String,
+    /// Creation timestamp
+    pub created_at: SystemTime,
 }
 
 impl ExecutorId {
@@ -48,7 +49,17 @@ impl ExecutorId {
         let uuid = Uuid::new_v4();
         let huid = Self::generate_huid(uuid, word_provider)?;
 
-        Ok(Self { uid: uuid, huid })
+        // HACK: Set nanosecond value to zero for consistent timestamps
+        let now = SystemTime::now();
+        let duration_since_epoch = now.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+        let created_at =
+            SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(duration_since_epoch.as_secs());
+
+        Ok(Self {
+            uuid,
+            huid,
+            created_at,
+        })
     }
 
     /// Creates an ExecutorId from existing UUID and HUID values
@@ -62,13 +73,17 @@ impl ExecutorId {
     ///
     /// # Errors
     /// Returns an error if the HUID format is invalid
-    pub fn from_parts(uuid: Uuid, huid: String) -> Result<Self> {
+    pub fn from_parts(uuid: Uuid, huid: String, created_at: SystemTime) -> Result<Self> {
         // Validate HUID format
         if !crate::executor_identity::constants::is_valid_huid(&huid) {
             anyhow::bail!("Invalid HUID format: {}", huid);
         }
 
-        Ok(Self { uid: uuid, huid })
+        Ok(Self {
+            uuid,
+            huid,
+            created_at,
+        })
     }
 
     /// Generates a HUID for the given UUID
@@ -131,13 +146,17 @@ impl ExecutorId {
         let word_provider = StaticWordProvider::new();
         let huid = Self::generate_huid(uuid, &word_provider)?;
 
-        Ok(Self { uid: uuid, huid })
+        Ok(Self {
+            uuid,
+            huid,
+            created_at: SystemTime::now(),
+        })
     }
 }
 
 impl ExecutorIdentity for ExecutorId {
     fn uuid(&self) -> &Uuid {
-        &self.uid
+        &self.uuid
     }
 
     fn huid(&self) -> &str {
@@ -145,7 +164,7 @@ impl ExecutorIdentity for ExecutorId {
     }
 
     fn created_at(&self) -> SystemTime {
-        SystemTime::now()
+        self.created_at
     }
 
     fn matches(&self, query: &str) -> bool {
@@ -155,7 +174,7 @@ impl ExecutorIdentity for ExecutorId {
         }
 
         // Check if query matches UUID prefix
-        if self.uid.to_string().starts_with(query) {
+        if self.uuid.to_string().starts_with(query) {
             return true;
         }
 
@@ -164,11 +183,11 @@ impl ExecutorIdentity for ExecutorId {
     }
 
     fn full_display(&self) -> String {
-        format!("{} ({})", self.huid, self.uid)
+        format!("{} ({})", self.huid, self.uuid)
     }
 
     fn short_uuid(&self) -> String {
-        self.uid.to_string()[..8].to_string()
+        self.uuid.to_string()[..8].to_string()
     }
 }
 
@@ -182,7 +201,7 @@ impl std::fmt::Display for ExecutorId {
 // Implement PartialEq based on UUID (the unique identifier)
 impl PartialEq for ExecutorId {
     fn eq(&self, other: &Self) -> bool {
-        self.uid == other.uid
+        self.uuid == other.uuid
     }
 }
 
@@ -191,7 +210,7 @@ impl Eq for ExecutorId {}
 // Implement Hash based on UUID
 impl std::hash::Hash for ExecutorId {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.uid.hash(state);
+        self.uuid.hash(state);
     }
 }
 
@@ -274,19 +293,23 @@ mod tests {
     fn test_from_parts() {
         let uuid = Uuid::new_v4();
         let huid = "swift-falcon-a3f2".to_string();
+        let created_at = SystemTime::now();
 
-        let id = ExecutorId::from_parts(uuid, huid.clone()).expect("Should create from parts");
+        let id = ExecutorId::from_parts(uuid, huid.clone(), created_at)
+            .expect("Should create from parts");
 
         assert_eq!(id.uuid(), &uuid);
         assert_eq!(id.huid(), &huid);
+        assert_eq!(id.created_at(), created_at);
     }
 
     #[test]
     fn test_from_parts_invalid_huid() {
         let uuid = Uuid::new_v4();
         let invalid_huid = "invalid_format".to_string();
+        let created_at = SystemTime::now();
 
-        let result = ExecutorId::from_parts(uuid, invalid_huid);
+        let result = ExecutorId::from_parts(uuid, invalid_huid, created_at);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -319,9 +342,10 @@ mod tests {
         let uuid = Uuid::new_v4();
         let huid1 = "swift-falcon-a3f2".to_string();
         let huid2 = "brave-lion-b4c3".to_string();
+        let created_at = SystemTime::now();
 
-        let id1 = ExecutorId::from_parts(uuid, huid1).unwrap();
-        let id2 = ExecutorId::from_parts(uuid, huid2).unwrap();
+        let id1 = ExecutorId::from_parts(uuid, huid1, created_at).unwrap();
+        let id2 = ExecutorId::from_parts(uuid, huid2, created_at).unwrap();
 
         // Same UUID = equal, even with different HUIDs
         assert_eq!(id1, id2);

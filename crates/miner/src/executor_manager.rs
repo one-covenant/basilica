@@ -170,7 +170,7 @@ impl ExecutorManager {
                 let executor_id = db.get_or_create_executor_id(&e.grpc_address).await?;
 
                 remote_machines.push(RemoteMachine {
-                    id: executor_id.uid.to_string(),
+                    id: executor_id.uuid.to_string(),
                     name: executor_id.huid.clone(),
                     host,
                     port: 22, // Default SSH port (not used for static executors)

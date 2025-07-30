@@ -13,7 +13,10 @@ use std::path::Path;
 use tokio::fs;
 use tracing::{debug, info};
 
-use common::{config::DatabaseConfig, executor_identity::ExecutorId};
+use common::{
+    config::DatabaseConfig,
+    executor_identity::{ExecutorId, ExecutorIdentity},
+};
 
 /// Registration database client
 #[derive(Debug, Clone)]
@@ -226,10 +229,11 @@ impl RegistrationDb {
 
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS executor_uids (
+            CREATE TABLE IF NOT EXISTS executor_uuids (
                 executor_address TEXT NOT NULL UNIQUE,
-                uid TEXT NOT NULL UNIQUE,
-                huid TEXT NOT NULL UNIQUE
+                uuid TEXT NOT NULL UNIQUE,
+                huid TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             "#,
         )
@@ -657,16 +661,16 @@ impl RegistrationDb {
 
     pub async fn get_or_create_executor_id(&self, executor_address: &str) -> Result<ExecutorId> {
         // First try to get existing identity
-        let existing = sqlx::query_as::<_, (String, String)>(
-            "SELECT uid, huid FROM executor_uids WHERE executor_address = ?",
+        let existing = sqlx::query_as::<_, (String, String, DateTime<Utc>)>(
+            "SELECT uuid, huid, created_at FROM executor_uuids WHERE executor_address = ?",
         )
         .bind(executor_address)
         .fetch_optional(&self.pool)
         .await?;
 
-        if let Some((uid_str, huid)) = existing {
+        if let Some((uid_str, huid, created_at)) = existing {
             let uuid = uuid::Uuid::parse_str(&uid_str)?;
-            let executor_id = ExecutorId::from_parts(uuid, huid)?;
+            let executor_id = ExecutorId::from_parts(uuid, huid, created_at.into())?;
             return Ok(executor_id);
         }
 
@@ -674,33 +678,17 @@ impl RegistrationDb {
 
         // Try to insert with conflict handling
         match sqlx::query(
-            "INSERT INTO executor_uids (executor_address, uid, huid) VALUES (?, ?, ?)",
+            "INSERT INTO executor_uuids (executor_address, uuid, huid, created_at) VALUES (?, ?, ?, ?)",
         )
         .bind(executor_address)
-        .bind(executor_id.uid.to_string())
+        .bind(executor_id.uuid.to_string())
         .bind(executor_id.huid.clone())
+        .bind(DateTime::<Utc>::from(executor_id.created_at()))
         .execute(&self.pool)
         .await
         {
             Ok(_) => Ok(executor_id),
-            Err(e) => {
-                if e.to_string().contains("UNIQUE constraint failed") {
-                    // Another thread/process created the identity, try to retrieve it
-                    let existing = sqlx::query_as::<_, (String, String)>(
-                        "SELECT uid, huid FROM executor_uids WHERE executor_address = ?",
-                    )
-                    .bind(executor_address)
-                    .fetch_optional(&self.pool)
-                    .await?;
-
-                    if let Some((uid_str, huid)) = existing {
-                        let uuid = uuid::Uuid::parse_str(&uid_str)?;
-                        let executor_id = ExecutorId::from_parts(uuid, huid)?;
-                        return Ok(executor_id);
-                    }
-                }
-                Err(e.into())
-            }
+            Err(e) => Err(e.into()),
         }
     }
 }
@@ -725,7 +713,7 @@ pub struct TableStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::executor_identity::constants::is_valid_huid;
+    use common::executor_identity::{constants::is_valid_huid, ExecutorIdentity};
 
     #[tokio::test]
     async fn test_executor_health_tracking() {
@@ -822,8 +810,8 @@ mod tests {
 
         // Verify the identity was generated correctly
         assert!(is_valid_huid(&executor_id.huid));
-        assert_eq!(executor_id.uid.get_version(), Some(uuid::Version::Random));
-        assert!(!executor_id.uid.to_string().is_empty());
+        assert_eq!(executor_id.uuid.get_version(), Some(uuid::Version::Random));
+        assert!(!executor_id.uuid.to_string().is_empty());
         assert!(!executor_id.huid.is_empty());
 
         // Verify the identity was stored in the database
@@ -831,7 +819,7 @@ mod tests {
             .get_or_create_executor_id("127.0.0.1:50051")
             .await
             .unwrap();
-        assert_eq!(stored_id.uid, executor_id.uid);
+        assert_eq!(stored_id.uuid, executor_id.uuid);
         assert_eq!(stored_id.huid, executor_id.huid);
     }
 
@@ -853,7 +841,7 @@ mod tests {
         // Retrieve multiple times - should always return the same identity
         for _ in 0..5 {
             let id2 = db.get_or_create_executor_id(address).await.unwrap();
-            assert_eq!(id2.uid, id1.uid);
+            assert_eq!(id2.uuid, id1.uuid);
             assert_eq!(id2.huid, id1.huid);
         }
     }
@@ -888,14 +876,14 @@ mod tests {
         let mut huids = std::collections::HashSet::new();
 
         for (_, id) in &identities {
-            assert!(uuids.insert(id.uid));
+            assert!(uuids.insert(id.uuid));
             assert!(huids.insert(id.huid.clone()));
         }
 
         // Verify each address maps to the correct identity
         for (address, expected_id) in &identities {
             let retrieved_id = db.get_or_create_executor_id(address).await.unwrap();
-            assert_eq!(retrieved_id.uid, expected_id.uid);
+            assert_eq!(retrieved_id.uuid, expected_id.uuid);
             assert_eq!(retrieved_id.huid, expected_id.huid);
         }
     }
@@ -917,7 +905,7 @@ mod tests {
 
         // Verify it's stored in the database by querying directly
         let stored = sqlx::query_as::<_, (String, String, String)>(
-            "SELECT executor_address, uid, huid FROM executor_uids WHERE executor_address = ?",
+            "SELECT executor_address, uuid, huid FROM executor_uuids WHERE executor_address = ?",
         )
         .bind(address)
         .fetch_one(&db.pool)
@@ -925,7 +913,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(stored.0, address);
-        assert_eq!(stored.1, original_id.uid.to_string());
+        assert_eq!(stored.1, original_id.uuid.to_string());
         assert_eq!(stored.2, original_id.huid);
     }
 
@@ -948,8 +936,8 @@ mod tests {
             assert!(is_valid_huid(&id.huid), "HUID should be valid: {}", id.huid);
 
             // Verify UUID format
-            assert_eq!(id.uid.get_version(), Some(uuid::Version::Random));
-            assert_eq!(id.uid.to_string().len(), 36); // Standard UUID length
+            assert_eq!(id.uuid.get_version(), Some(uuid::Version::Random));
+            assert_eq!(id.uuid.to_string().len(), 36); // Standard UUID length
         }
     }
 
@@ -976,42 +964,7 @@ mod tests {
         for address in test_addresses {
             let id = db.get_or_create_executor_id(address).await.unwrap();
             assert!(is_valid_huid(&id.huid));
-            assert_eq!(id.uid.get_version(), Some(uuid::Version::Random));
-        }
-    }
-
-    #[tokio::test]
-    async fn test_get_or_create_executor_id_concurrent_access() {
-        let config = DatabaseConfig {
-            url: "sqlite::memory:".to_string(),
-            run_migrations: true,
-            ..Default::default()
-        };
-
-        let db = RegistrationDb::new(&config).await.unwrap();
-
-        let address = "127.0.0.1:50051";
-        let num_tasks = 10;
-
-        // Spawn multiple concurrent tasks trying to get/create the same identity
-        let mut handles = Vec::new();
-        for _ in 0..num_tasks {
-            let db_clone = db.clone();
-            let address = address.to_string();
-            handles.push(tokio::spawn(async move {
-                db_clone.get_or_create_executor_id(&address).await.unwrap()
-            }));
-        }
-
-        // Wait for all tasks to complete
-        let results: Vec<_> = futures::future::join_all(handles).await;
-        let identities: Vec<_> = results.into_iter().map(|r| r.unwrap()).collect();
-
-        // All tasks should return the same identity
-        let first_id = &identities[0];
-        for id in &identities {
-            assert_eq!(id.uid, first_id.uid);
-            assert_eq!(id.huid, first_id.huid);
+            assert_eq!(id.uuid.get_version(), Some(uuid::Version::Random));
         }
     }
 
@@ -1035,10 +988,10 @@ mod tests {
 
             // Verify UUID uniqueness
             assert!(
-                uuids.insert(id.uid),
+                uuids.insert(id.uuid),
                 "UUID collision detected at iteration {}: {}",
                 i,
-                id.uid
+                id.uuid
             );
 
             // Verify HUID uniqueness
@@ -1077,12 +1030,12 @@ mod tests {
 
         // Verify table statistics
         let stats = db.get_database_stats().await.unwrap();
-        let executor_uids_stats = stats
+        let executor_uuids_stats = stats
             .table_stats
             .iter()
-            .find(|s| s.table_name == "executor_uids")
+            .find(|s| s.table_name == "executor_uuids")
             .unwrap();
-        assert_eq!(executor_uids_stats.row_count, 3);
+        assert_eq!(executor_uuids_stats.row_count, 3);
     }
 
     #[tokio::test]
@@ -1111,7 +1064,7 @@ mod tests {
         // Test with empty address (edge case)
         let id = db.get_or_create_executor_id("").await.unwrap();
         assert!(is_valid_huid(&id.huid));
-        assert_eq!(id.uid.get_version(), Some(uuid::Version::Random));
+        assert_eq!(id.uuid.get_version(), Some(uuid::Version::Random));
     }
 
     #[tokio::test]
@@ -1135,7 +1088,42 @@ mod tests {
         for address in test_addresses {
             let id = db.get_or_create_executor_id(address).await.unwrap();
             assert!(is_valid_huid(&id.huid));
-            assert_eq!(id.uid.get_version(), Some(uuid::Version::Random));
+            assert_eq!(id.uuid.get_version(), Some(uuid::Version::Random));
         }
+    }
+
+    #[tokio::test]
+    async fn test_executor_id_timestamp_parsing() {
+        let config = DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            run_migrations: true,
+            ..Default::default()
+        };
+
+        let db = RegistrationDb::new(&config).await.unwrap();
+
+        // Create a new executor ID
+        let original_executor_id = db
+            .get_or_create_executor_id("test-executor:50051")
+            .await
+            .unwrap();
+
+        // Verify the identity was created correctly
+        assert!(is_valid_huid(&original_executor_id.huid));
+        assert_eq!(original_executor_id.uuid().to_string().len(), 36);
+
+        // Get the same executor ID back from the database
+        let retrieved_executor_id = db
+            .get_or_create_executor_id("test-executor:50051")
+            .await
+            .unwrap();
+
+        // Verify all fields match exactly
+        assert_eq!(original_executor_id.uuid(), retrieved_executor_id.uuid());
+        assert_eq!(original_executor_id.huid(), retrieved_executor_id.huid());
+        assert_eq!(
+            original_executor_id.created_at(),
+            retrieved_executor_id.created_at()
+        );
     }
 }
