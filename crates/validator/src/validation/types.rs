@@ -515,6 +515,7 @@ pub struct ValidatorBinaryOutput {
 #[derive(Debug, Clone)]
 pub struct ExecutorVerificationResult {
     pub executor_id: String,
+    pub grpc_endpoint: String,
     pub verification_score: f64,
     pub ssh_connection_successful: bool,
     pub binary_validation_successful: bool,
