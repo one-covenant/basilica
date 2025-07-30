@@ -49,15 +49,15 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
     fi && \
     if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
-            cargo build --release -p validator --features "$FEATURES"; \
+            cargo build --release -p validator --bin validator --features "$FEATURES"; \
         else \
-            cargo build --release -p validator; \
+            cargo build --release -p validator --bin validator; \
         fi; \
     else \
         if [ -n "$FEATURES" ]; then \
-            cargo build -p validator --features "$FEATURES"; \
+            cargo build -p validator --bin validator --features "$FEATURES"; \
         else \
-            cargo build -p validator; \
+            cargo build -p validator --bin validator; \
         fi; \
     fi && \
     # List what was built for debugging
