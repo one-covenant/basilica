@@ -310,7 +310,7 @@ pub struct ExecutorSshConfig {
     #[serde(default = "default_ssh_connection_timeout")]
     pub ssh_connection_timeout: Duration,
 
-    /// SSH command execution timeout  
+    /// SSH command execution timeout
     #[serde(default = "default_ssh_command_timeout")]
     pub ssh_command_timeout: Duration,
 
@@ -346,15 +346,25 @@ pub struct ValidatorAssignmentConfig {
     #[serde(default = "default_enable_validator_assignment")]
     pub enabled: bool,
 
-    /// Assignment strategy to use (only "round_robin" supported)
+    /// Assignment strategy to use ("highest_stake", "round_robin", etc.)
+    #[serde(default = "default_strategy")]
     pub strategy: String,
+
+    /// Minimum stake threshold in TAO for validator eligibility
+    #[serde(default = "default_min_stake_threshold")]
+    pub min_stake_threshold: f64,
+
+    /// Specific validator hotkey to assign executors to (for highest_stake strategy)
+    pub validator_hotkey: Option<String>,
 }
 
 impl Default for ValidatorAssignmentConfig {
     fn default() -> Self {
         Self {
             enabled: default_enable_validator_assignment(),
-            strategy: "round_robin".to_string(),
+            strategy: default_strategy(),
+            min_stake_threshold: default_min_stake_threshold(),
+            validator_hotkey: None,
         }
     }
 }
@@ -439,7 +449,15 @@ fn default_ssh_retry_delay() -> Duration {
 }
 
 fn default_enable_validator_assignment() -> bool {
-    false
+    true
+}
+
+fn default_strategy() -> String {
+    "highest_stake".to_string()
+}
+
+fn default_min_stake_threshold() -> f64 {
+    6000.0 // 6000 TAO
 }
 
 impl Default for ExecutorSshConfig {

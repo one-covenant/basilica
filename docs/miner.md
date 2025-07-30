@@ -107,7 +107,39 @@ enabled = true
 [metrics.prometheus]
 enabled = true
 port = 9091
+
+[validator_assignment]
+enabled = true
+strategy = "highest_stake"  # Options: "highest_stake", "round_robin"
+min_stake_threshold = 6000.0  # Minimum stake in TAO for validator eligibility
+validator_hotkey = "5G3qVaXzKMPDm5AJ3dpzbpUC27kpccBvDwzSWXrq8M6qMmbC" # Optional
 ```
+
+### Validator Assignment Strategy
+
+The miner supports assignment of executors to validators based on these strategies:
+
+- **`highest_stake`** (default): Assigns executors to a single validator based on stake
+  - If `validator_hotkey` is specified in config, assigns to that validator (if above threshold and online)
+  - Otherwise, assigns to the highest staked validator above the threshold
+  - Configurable minimum stake threshold (default: 6000 TAO)
+  - Only considers validators that are online (have axon endpoints)
+  - Increases security by working only with the most invested validators
+
+- **`round_robin`**: Distributes executors evenly across all eligible validators
+  - Useful for testing or when stake-based assignment is not desired
+
+Configuration example for specific validator selection:
+
+```toml
+[validator_assignment]
+enabled = true
+strategy = "highest_stake"
+min_stake_threshold = 6000.0
+validator_hotkey = "5G3qVaXzKMPDm5AJ3dpzbpUC27kpccBvDwzSWXrq8M6qMmbC"  # Optional
+```
+
+When validator assignment is disabled (`enabled = false`), all executors are made available to all validators. For production deployments, it's recommended to enable assignment with the `highest_stake` strategy to ensure your resources are allocated to the most reliable validators.
 
 ### 3. Set Up Executors
 
