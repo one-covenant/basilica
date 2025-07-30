@@ -745,9 +745,23 @@ impl SimplePersistence {
                 executor_count: executor_count as u32,
                 verification_score: row.get("verification_score"),
                 uptime_percentage: row.get("uptime_percentage"),
-                last_seen: DateTime::parse_from_rfc3339(&last_seen_str)?.with_timezone(&Utc),
-                registered_at: DateTime::parse_from_rfc3339(&registered_at_str)?
-                    .with_timezone(&Utc),
+                last_seen: chrono::NaiveDateTime::parse_from_str(
+                    &last_seen_str,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+                .or_else(|_| {
+                    DateTime::parse_from_rfc3339(&last_seen_str).map(|dt| dt.with_timezone(&Utc))
+                })?,
+                registered_at: chrono::NaiveDateTime::parse_from_str(
+                    &registered_at_str,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+                .or_else(|_| {
+                    DateTime::parse_from_rfc3339(&registered_at_str)
+                        .map(|dt| dt.with_timezone(&Utc))
+                })?,
                 executor_info: serde_json::from_str(&executor_info_str)
                     .unwrap_or(Value::Object(serde_json::Map::new())),
             });
@@ -856,9 +870,23 @@ impl SimplePersistence {
                 executor_count: executor_count as u32,
                 verification_score: row.get("verification_score"),
                 uptime_percentage: row.get("uptime_percentage"),
-                last_seen: DateTime::parse_from_rfc3339(&last_seen_str)?.with_timezone(&Utc),
-                registered_at: DateTime::parse_from_rfc3339(&registered_at_str)?
-                    .with_timezone(&Utc),
+                last_seen: chrono::NaiveDateTime::parse_from_str(
+                    &last_seen_str,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+                .or_else(|_| {
+                    DateTime::parse_from_rfc3339(&last_seen_str).map(|dt| dt.with_timezone(&Utc))
+                })?,
+                registered_at: chrono::NaiveDateTime::parse_from_str(
+                    &registered_at_str,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+                .or_else(|_| {
+                    DateTime::parse_from_rfc3339(&registered_at_str)
+                        .map(|dt| dt.with_timezone(&Utc))
+                })?,
                 executor_info: serde_json::from_str(&executor_info_str)
                     .unwrap_or(Value::Object(serde_json::Map::new())),
             }))
@@ -1107,12 +1135,13 @@ impl SimplePersistence {
     pub async fn get_miner_gpu_counts_from_assignments(
         &self,
         miner_id: &str,
-    ) -> Result<Vec<(String, u32)>, anyhow::Error> {
+    ) -> Result<Vec<(String, u32, String)>, anyhow::Error> {
         let rows = sqlx::query(
-            "SELECT executor_id, COUNT(DISTINCT gpu_uuid) as gpu_count
+            "SELECT executor_id, COUNT(DISTINCT gpu_uuid) as gpu_count, gpu_name
              FROM gpu_uuid_assignments
              WHERE miner_id = ?
-             GROUP BY executor_id",
+             GROUP BY executor_id, gpu_name
+             HAVING COUNT(DISTINCT gpu_uuid) > 0",
         )
         .bind(miner_id)
         .fetch_all(&self.pool)
@@ -1122,7 +1151,8 @@ impl SimplePersistence {
         for row in rows {
             let executor_id: String = row.get("executor_id");
             let gpu_count: i64 = row.get("gpu_count");
-            results.push((executor_id, gpu_count as u32));
+            let gpu_name: String = row.get("gpu_name");
+            results.push((executor_id, gpu_count as u32, gpu_name));
         }
 
         Ok(results)

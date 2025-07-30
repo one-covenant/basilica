@@ -9,6 +9,7 @@ use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::{entities::VerificationLog, SimplePersistence};
 use crate::ssh::{ExecutorSshDetails, ValidatorSshClient, ValidatorSshKeyManager};
+use crate::validation::types::ExecutorVerificationResult;
 use anyhow::{Context, Result};
 use common::identity::{ExecutorId, Hotkey, MinerUid};
 use common::ssh::SshConnectionDetails;
@@ -477,18 +478,23 @@ impl VerificationEngine {
             .unwrap_or_default();
 
         // Ensure miner-executor relationship exists
-        self.ensure_miner_executor_relationship(miner_uid, &unique_executor_id, miner_info)
-            .await
-            .map_err(|e| {
-                error!(
-                    "Failed to ensure miner-executor relationship for miner {}, executor {}: {}",
-                    miner_uid, unique_executor_id, e
-                );
-                anyhow::anyhow!(
+        self.ensure_miner_executor_relationship(
+            miner_uid,
+            &unique_executor_id,
+            &executor_result.grpc_endpoint,
+            miner_info,
+        )
+        .await
+        .map_err(|e| {
+            error!(
+                "Failed to ensure miner-executor relationship for miner {}, executor {}: {}",
+                miner_uid, unique_executor_id, e
+            );
+            anyhow::anyhow!(
                 "Verification storage failed: Unable to establish miner-executor relationship: {}",
                 e
             )
-            })?;
+        })?;
 
         // Store GPU UUID assignments
         self.store_gpu_uuid_assignments(miner_uid, &unique_executor_id, &gpu_infos)
@@ -517,6 +523,7 @@ impl VerificationEngine {
         &self,
         miner_uid: u16,
         executor_id: &str,
+        executor_grpc_endpoint: &str,
         miner_info: &super::types::MinerInfo,
     ) -> Result<()> {
         info!(
@@ -549,7 +556,7 @@ impl VerificationEngine {
             let grpc_check_query =
                 "SELECT COUNT(*) as count FROM miner_executors WHERE grpc_address = ?";
             let grpc_row = sqlx::query(grpc_check_query)
-                .bind(&miner_info.endpoint)
+                .bind(executor_grpc_endpoint)
                 .fetch_one(self.persistence.pool())
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to check grpc_address uniqueness: {}", e))?;
@@ -558,7 +565,7 @@ impl VerificationEngine {
             if grpc_count > 0 {
                 return Err(anyhow::anyhow!(
                     "Cannot create executor relationship: grpc_address {} is already registered to another executor",
-                    miner_info.endpoint
+                    executor_grpc_endpoint
                 ));
             }
 
@@ -576,7 +583,7 @@ impl VerificationEngine {
                 .bind(&relationship_id)
                 .bind(&miner_id)
                 .bind(executor_id)
-                .bind(&miner_info.endpoint)
+                .bind(executor_grpc_endpoint)
                 // -- these will be updated from verification details
                 .bind(0) // gpu_count
                 .bind("{}") // gpu_specs
@@ -596,7 +603,7 @@ impl VerificationEngine {
                 "Created miner-executor relationship: {} -> {} with endpoint {}",
                 miner_id,
                 executor_id,
-                miner_info.endpoint
+                executor_grpc_endpoint
             );
         } else {
             debug!(
@@ -613,7 +620,7 @@ impl VerificationEngine {
             let relationship_id = format!("{miner_id}_{executor_id}");
 
             let duplicates = sqlx::query(duplicate_check_query)
-                .bind(&miner_info.endpoint)
+                .bind(executor_grpc_endpoint)
                 .bind(&relationship_id)
                 .fetch_all(self.persistence.pool())
                 .await
@@ -623,7 +630,7 @@ impl VerificationEngine {
                 let duplicate_count = duplicates.len();
                 warn!(
                     "Found {} duplicate executors with same grpc_address {} for miner {}",
-                    duplicate_count, miner_info.endpoint, miner_id
+                    duplicate_count, executor_grpc_endpoint, miner_id
                 );
 
                 // Delete the duplicates to clean up fraudulent registrations
@@ -659,7 +666,7 @@ impl VerificationEngine {
 
                 info!(
                     "Cleaned up {} duplicate executors for miner {} with grpc_address {}",
-                    duplicate_count, miner_id, miner_info.endpoint
+                    duplicate_count, miner_id, executor_grpc_endpoint
                 );
             }
         }
@@ -2840,6 +2847,7 @@ impl VerificationEngine {
                 );
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
+                    grpc_endpoint: executor_info.grpc_endpoint.clone(),
                     verification_score: 0.0,
                     ssh_connection_successful: false,
                     binary_validation_successful: false,
@@ -2888,6 +2896,7 @@ impl VerificationEngine {
                 self.cleanup_active_session(&executor_info.id).await;
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
+                    grpc_endpoint: executor_info.grpc_endpoint.clone(),
                     verification_score: 0.0,
                     ssh_connection_successful: false,
                     binary_validation_successful: false,
@@ -3050,6 +3059,7 @@ impl VerificationEngine {
 
         Ok(ExecutorVerificationResult {
             executor_id: executor_info.id.clone(),
+            grpc_endpoint: executor_info.grpc_endpoint.clone(),
             verification_score: combined_score,
             ssh_connection_successful,
             binary_validation_successful,
@@ -3096,20 +3106,6 @@ pub struct ExecutorInfoDetailed {
     pub status: String,
     pub capabilities: Vec<String>,
     pub grpc_endpoint: String,
-}
-
-/// Executor verification result
-#[derive(Debug, Clone)]
-pub struct ExecutorVerificationResult {
-    pub executor_id: String,
-    pub verification_score: f64,
-    pub ssh_connection_successful: bool,
-    pub binary_validation_successful: bool,
-    pub executor_result: Option<crate::validation::types::ExecutorResult>,
-    pub error: Option<String>,
-    pub execution_time: Duration,
-    pub validation_details: crate::validation::types::ValidationDetails,
-    pub gpu_count: u64,
 }
 
 /// Verification step tracking
