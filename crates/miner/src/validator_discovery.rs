@@ -392,6 +392,115 @@ impl AssignmentStrategy for RoundRobinAssignment {
     }
 }
 
+/// Highest stake assignment strategy
+pub struct HighestStakeAssignment {
+    pool: SqlitePool,
+    min_stake_threshold: f64,
+    validator_hotkey: Option<String>,
+}
+
+impl HighestStakeAssignment {
+    pub fn new(
+        pool: SqlitePool,
+        min_stake_threshold: f64,
+        validator_hotkey: Option<String>,
+    ) -> Self {
+        Self {
+            pool,
+            min_stake_threshold,
+            validator_hotkey,
+        }
+    }
+}
+
+#[async_trait]
+impl AssignmentStrategy for HighestStakeAssignment {
+    async fn assign_executors(
+        &self,
+        validators: Vec<ValidatorInfo>,
+        executors: Vec<AvailableExecutor>,
+        _current_assignments: &HashMap<String, Vec<String>>,
+    ) -> HashMap<String, Vec<String>> {
+        let mut assignments = HashMap::new();
+        let all_executor_ids: Vec<String> = executors.into_iter().map(|e| e.id).collect();
+        let db = AssignmentDb::new(self.pool.clone());
+        let validator_stakes = match db
+            .get_validator_stakes_above(self.min_stake_threshold)
+            .await
+        {
+            Ok(stakes) => stakes,
+            Err(e) => {
+                warn!("Failed to get validator stakes from database: {}", e);
+                return assignments;
+            }
+        };
+
+        let stake_map: HashMap<String, f64> = validator_stakes
+            .into_iter()
+            .map(|vs| (vs.validator_hotkey, vs.stake_amount))
+            .collect();
+
+        if all_executor_ids.is_empty() {
+            warn!("No available executors found for assignment");
+            return assignments;
+        }
+
+        // Filter validators to only those that are:
+        // 1. Online
+        // 2. Have sufficient stake in database
+        let mut eligible_validators: Vec<_> = validators
+            .into_iter()
+            .filter(|v| {
+                v.axon_endpoint.is_some()
+                    && stake_map.get(&v.hotkey).copied().unwrap_or(0.0) >= self.min_stake_threshold
+            })
+            .collect();
+
+        eligible_validators.sort_by(|a, b| {
+            let stake_a = stake_map.get(&a.hotkey).copied().unwrap_or(0.0);
+            let stake_b = stake_map.get(&b.hotkey).copied().unwrap_or(0.0);
+            stake_b.partial_cmp(&stake_a).unwrap()
+        });
+
+        if eligible_validators.is_empty() {
+            warn!("No validators with sufficient stake and online status found");
+            return assignments;
+        }
+
+        info!(
+            "Found {} eligible validators with stake >= {} TAO and online status",
+            eligible_validators.len(),
+            self.min_stake_threshold
+        );
+
+        let target_validator = if let Some(ref target_hotkey) = self.validator_hotkey {
+            eligible_validators
+                .iter()
+                .find(|v| &v.hotkey == target_hotkey)
+        } else {
+            eligible_validators.first()
+        };
+
+        if let Some(validator) = target_validator {
+            let stake = stake_map.get(&validator.hotkey).copied().unwrap_or(0.0);
+            info!(
+                "Assigning {} executors to validator {} with {:.2} TAO stake",
+                all_executor_ids.len(),
+                &validator.hotkey[..8.min(validator.hotkey.len())],
+                stake
+            );
+            assignments.insert(validator.hotkey.clone(), all_executor_ids);
+        } else {
+            warn!(
+                "Configured validator {} not found among eligible validators",
+                self.validator_hotkey.as_ref().unwrap()
+            );
+        }
+
+        assignments
+    }
+}
+
 /// Manual assignment strategy that reads from the database
 pub struct ManualAssignment {
     pool: SqlitePool,
@@ -495,13 +604,13 @@ mod tests {
         let validators = vec![
             ValidatorInfo {
                 uid: 1,
-                hotkey: "validator1".to_string(),
+                hotkey: "val1".to_string(),
                 stake: 1000,
                 axon_endpoint: Some("1.1.1.1:8080".to_string()),
             },
             ValidatorInfo {
                 uid: 2,
-                hotkey: "validator2".to_string(),
+                hotkey: "val2".to_string(),
                 stake: 2000,
                 axon_endpoint: Some("2.2.2.2:8080".to_string()),
             },
@@ -509,22 +618,22 @@ mod tests {
 
         let executors = vec![
             AvailableExecutor {
-                id: "exec1".to_string(),
-                name: "Executor 1".to_string(),
+                id: "e1".to_string(),
+                name: "E1".to_string(),
                 grpc_address: "".to_string(),
                 resources: None,
                 gpu_count: 1,
             },
             AvailableExecutor {
-                id: "exec2".to_string(),
-                name: "Executor 2".to_string(),
+                id: "e2".to_string(),
+                name: "E2".to_string(),
                 grpc_address: "".to_string(),
                 resources: None,
                 gpu_count: 1,
             },
             AvailableExecutor {
-                id: "exec3".to_string(),
-                name: "Executor 3".to_string(),
+                id: "e3".to_string(),
+                name: "E3".to_string(),
                 grpc_address: "".to_string(),
                 resources: None,
                 gpu_count: 1,
@@ -536,12 +645,10 @@ mod tests {
             .assign_executors(validators, executors, &HashMap::new())
             .await;
 
+        // Round-robin: e1->val1, e2->val2, e3->val1
         assert_eq!(assignments.len(), 2);
-        assert_eq!(
-            assignments.get("validator1").unwrap(),
-            &vec!["exec1", "exec3"]
-        );
-        assert_eq!(assignments.get("validator2").unwrap(), &vec!["exec2"]);
+        assert_eq!(assignments["val1"], vec!["e1", "e3"]);
+        assert_eq!(assignments["val2"], vec!["e2"]);
     }
 
     #[tokio::test]
@@ -549,31 +656,11 @@ mod tests {
         let pool = setup_test_db().await?;
         let strategy = ManualAssignment::new(pool);
 
-        let validators = vec![
-            ValidatorInfo {
-                uid: 1,
-                hotkey: "val-1".to_string(),
-                stake: 1000,
-                axon_endpoint: Some("1.1.1.1:8080".to_string()),
-            },
-            ValidatorInfo {
-                uid: 2,
-                hotkey: "val-2".to_string(),
-                stake: 2000,
-                axon_endpoint: Some("2.2.2.2:8080".to_string()),
-            },
-        ];
-
-        let executors = vec![];
-        let current_assignments = HashMap::new();
-
         let assignments = strategy
-            .assign_executors(validators, executors, &current_assignments)
+            .assign_executors(vec![], vec![], &HashMap::new())
             .await;
 
-        // Should return empty assignments when database is empty
         assert_eq!(assignments.len(), 0);
-
         Ok(())
     }
 
@@ -582,40 +669,21 @@ mod tests {
         let pool = setup_test_db().await?;
         let db = AssignmentDb::new(pool.clone());
 
-        // Create test assignments
-        db.create_assignment("exec-1", "val-1", "test", None)
-            .await?;
-        db.create_assignment("exec-2", "val-1", "test", None)
-            .await?;
-        db.create_assignment("exec-3", "val-2", "test", None)
-            .await?;
-        db.create_assignment("exec-4", "val-3", "test", None)
-            .await?;
+        db.create_assignment("e1", "v1", "test", None).await?;
+        db.create_assignment("e2", "v1", "test", None).await?;
+        db.create_assignment("e3", "v2", "test", None).await?;
 
         let strategy = ManualAssignment::new(pool);
-
-        // Strategy ignores passed validators/executors and reads from DB
         let assignments = strategy
             .assign_executors(vec![], vec![], &HashMap::new())
             .await;
 
-        assert_eq!(assignments.len(), 3); // 3 validators have assignments
-
-        // Check validator 1 has 2 executors
-        let val1_execs = assignments.get("val-1").unwrap();
-        assert_eq!(val1_execs.len(), 2);
-        assert!(val1_execs.contains(&"exec-1".to_string()));
-        assert!(val1_execs.contains(&"exec-2".to_string()));
-
-        // Check validator 2 has 1 executor
-        let val2_execs = assignments.get("val-2").unwrap();
-        assert_eq!(val2_execs.len(), 1);
-        assert_eq!(val2_execs[0], "exec-3");
-
-        // Check validator 3 has 1 executor
-        let val3_execs = assignments.get("val-3").unwrap();
-        assert_eq!(val3_execs.len(), 1);
-        assert_eq!(val3_execs[0], "exec-4");
+        assert_eq!(assignments.len(), 2);
+        let v1_execs = &assignments["v1"];
+        assert_eq!(v1_execs.len(), 2);
+        assert!(v1_execs.contains(&"e1".to_string()));
+        assert!(v1_execs.contains(&"e2".to_string()));
+        assert_eq!(assignments["v2"], vec!["e3"]);
 
         Ok(())
     }
@@ -626,18 +694,14 @@ mod tests {
         let db = AssignmentDb::new(pool.clone());
         let strategy = ManualAssignment::new(pool.clone());
 
-        // Initial assignment
         db.create_assignment("exec-1", "val-1", "test", None)
             .await?;
 
         let assignments1 = strategy
             .assign_executors(vec![], vec![], &HashMap::new())
             .await;
+        assert_eq!(assignments1["val-1"], vec!["exec-1"]);
 
-        assert_eq!(assignments1.len(), 1);
-        assert_eq!(assignments1.get("val-1").unwrap()[0], "exec-1");
-
-        // Reassign executor to different validator
         db.delete_assignment("exec-1", "test").await?;
         db.create_assignment("exec-1", "val-2", "test", None)
             .await?;
@@ -645,10 +709,104 @@ mod tests {
         let assignments2 = strategy
             .assign_executors(vec![], vec![], &HashMap::new())
             .await;
-
-        assert_eq!(assignments2.len(), 1);
         assert!(!assignments2.contains_key("val-1"));
-        assert_eq!(assignments2.get("val-2").unwrap()[0], "exec-1");
+        assert_eq!(assignments2["val-2"], vec!["exec-1"]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_highest_stake_assignment() -> Result<()> {
+        let pool = setup_test_db().await?;
+        let db = AssignmentDb::new(pool.clone());
+
+        db.update_validator_stake("val1", 5000.0, 50.0).await?;
+        db.update_validator_stake("val2", 200.0, 20.0).await?;
+        db.update_validator_stake("val3", 50.0, 5.0).await?;
+
+        let validators = vec![
+            ValidatorInfo {
+                uid: 1,
+                hotkey: "val1".to_string(),
+                stake: 1,
+                axon_endpoint: Some("1.1.1.1:8080".to_string()),
+            },
+            ValidatorInfo {
+                uid: 2,
+                hotkey: "val2".to_string(),
+                stake: 1,
+                axon_endpoint: Some("2.2.2.2:8080".to_string()),
+            },
+            ValidatorInfo {
+                uid: 3,
+                hotkey: "val3".to_string(),
+                stake: 1,
+                axon_endpoint: Some("3.3.3.3:8080".to_string()),
+            },
+            ValidatorInfo {
+                uid: 4,
+                hotkey: "offline".to_string(),
+                stake: 1,
+                axon_endpoint: None, // Offline
+            },
+        ];
+
+        let executors = vec![
+            AvailableExecutor {
+                id: "exec1".to_string(),
+                name: "E1".to_string(),
+                grpc_address: "".to_string(),
+                resources: None,
+                gpu_count: 1,
+            },
+            AvailableExecutor {
+                id: "exec2".to_string(),
+                name: "E2".to_string(),
+                grpc_address: "".to_string(),
+                resources: None,
+                gpu_count: 1,
+            },
+        ];
+
+        let strategy = HighestStakeAssignment::new(pool, 100.0, None);
+        let assignments = strategy
+            .assign_executors(validators, executors, &HashMap::new())
+            .await;
+
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments["val1"], vec!["exec1", "exec2"]); // val1 has highest stake
+        assert!(!assignments.contains_key("val2"));
+        assert!(!assignments.contains_key("val3")); // Below threshold
+        assert!(!assignments.contains_key("offline")); // No endpoint
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_highest_stake_assignment_no_stake_data() -> Result<()> {
+        let pool = setup_test_db().await?;
+
+        let validators = vec![ValidatorInfo {
+            uid: 1,
+            hotkey: "val1".to_string(),
+            stake: 1,
+            axon_endpoint: Some("1.1.1.1:8080".to_string()),
+        }];
+
+        let executors = vec![AvailableExecutor {
+            id: "exec1".to_string(),
+            name: "E1".to_string(),
+            grpc_address: "".to_string(),
+            resources: None,
+            gpu_count: 1,
+        }];
+
+        let strategy = HighestStakeAssignment::new(pool, 100.0, None);
+        let assignments = strategy
+            .assign_executors(validators, executors, &HashMap::new())
+            .await;
+
+        assert_eq!(assignments.len(), 0);
 
         Ok(())
     }

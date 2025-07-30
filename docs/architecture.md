@@ -27,10 +27,10 @@ The miner acts as a fleet manager for GPU resources:
 - **Executor Fleet Manager**: Orchestrates multiple GPU executor machines
 - **Axon Server**: Serves compute requests on the Bittensor network
 - **gRPC Client**: Manages communication with executors
-- **Assignment Manager**: Routes computational tasks to appropriate executors
+- **Assignment Manager**: Routes validation tasks to the executors based on strategies
 - **SSH Session Management**: Handles validator access and session orchestration
-- **Stake Monitor**: Tracks stake levels and maintains service quality
-- **SQLite Storage**: Persists executor assignments and registration data
+- **Stake Monitor**: Tracks validator stake levels for assignment decisions and service quality
+- **SQLite Storage**: Persists executor assignments, validator stakes, and registration data
 
 ### 3. Executor
 

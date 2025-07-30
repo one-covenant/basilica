@@ -178,7 +178,10 @@ secs = 2
 nanos = 0
 
 [validator_assignment]
-strategy = "round_robin"
+enabled = true
+strategy = "highest_stake"
+min_stake_threshold = 6000.0
+validator_hotkey = "5G3qVaXzKMPDm5AJ3dpzbpUC27kpccBvDwzSWXrq8M6qMmbC"
 
 [advertised_addresses]
 # These should match your external IP and ports
