@@ -188,7 +188,7 @@ impl SqliteIdentityStore {
                 );
             }
 
-            let new_id = ExecutorId::new()?;
+            let new_id = ExecutorId::new("default-seed")?;
 
             // Try to insert
             match sqlx::query(
@@ -600,7 +600,7 @@ mod tests {
         assert_eq!(found.uuid(), id1.uuid());
 
         // Test save
-        let new_id = ExecutorId::new().expect("Should create new ID");
+        let new_id = ExecutorId::new("default-seed").expect("Should create new ID");
         store.save(&new_id).await.expect("Should save identity");
 
         let found = store

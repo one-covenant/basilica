@@ -674,7 +674,7 @@ impl RegistrationDb {
             return Ok(executor_id);
         }
 
-        let executor_id = ExecutorId::new()?;
+        let executor_id = ExecutorId::new(executor_address)?;
 
         // Try to insert with conflict handling
         match sqlx::query(

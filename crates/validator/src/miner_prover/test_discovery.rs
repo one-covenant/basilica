@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn test_executor_info_status() {
         let executor_info = ExecutorInfo {
-            id: ExecutorId::new(),
+            id: ExecutorId::new("test-seed"),
             miner_uid: MinerUid::new(1),
             grpc_endpoint: "http://127.0.0.1:50051".to_string(),
             last_verified: None,

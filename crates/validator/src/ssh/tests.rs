@@ -30,7 +30,7 @@ mod ssh_tests {
     fn create_test_executor_details() -> ExecutorSshDetails {
         let connection = create_test_ssh_details();
         ExecutorSshDetails {
-            executor_id: ExecutorId::new(),
+            executor_id: ExecutorId::new("test-seed"),
             connection,
         }
     }
@@ -203,7 +203,7 @@ mod ssh_tests {
         let key_path = temp_dir.path().join("test_key");
         std::fs::write(&key_path, "dummy_key_content").unwrap();
 
-        let executor_id = ExecutorId::new();
+        let executor_id = ExecutorId::new("test-seed");
         let connection = ValidatorSshClient::create_executor_connection(
             executor_id,
             "test.example.com".to_string(),
@@ -226,7 +226,7 @@ mod ssh_tests {
         let key_path = temp_dir.path().join("test_key");
         std::fs::write(&key_path, "dummy_key_content").unwrap();
 
-        let executor_id = ExecutorId::new();
+        let executor_id = ExecutorId::new("test-seed");
         let connection = ValidatorSshClient::create_executor_connection(
             executor_id,
             "test.example.com".to_string(),
