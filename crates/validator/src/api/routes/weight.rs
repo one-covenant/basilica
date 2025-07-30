@@ -1,4 +1,5 @@
 use axum::{extract::State, http::StatusCode, Json};
+use serde_json::Value;
 use tracing::error;
 
 use crate::{
@@ -37,8 +38,18 @@ pub async fn get_current_weight_allocation(
     Ok(Json(current))
 }
 
-pub async fn get_current_weights(State(_state): State<ApiState>) -> StatusCode {
-    StatusCode::NOT_IMPLEMENTED
+pub async fn get_current_weights(State(state): State<ApiState>) -> Result<Json<Value>, ApiError> {
+    let bittensor_service = match &state.bittensor_service {
+        Some(service) => service,
+        None => {
+            error!("Bittensor service not available");
+            return Err(ApiError::InternalError(
+                "Bittensor service not available".to_string(),
+            ));
+        }
+    };
+
+    todo!()
 }
 pub async fn get_weights_history(State(_state): State<ApiState>) -> StatusCode {
     StatusCode::NOT_IMPLEMENTED

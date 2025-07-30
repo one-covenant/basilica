@@ -120,10 +120,10 @@ impl ApiHandler {
             )
             .route("/gpu-categories", get(routes::list_gpu_categories))
             .route("/emission-metrics", get(routes::list_emission_metrics))
-            .route(
-                "/weight-allocation/history",
-                get(routes::list_weight_allocation_history),
-            )
+            // .route(
+            //     "/weight-allocation/history",
+            //     get(routes::list_weight_allocation_history),
+            // )
             .route(
                 "/weight-allocation/current",
                 get(routes::get_current_weight_allocation),

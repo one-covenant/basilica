@@ -6,15 +6,17 @@ use axum::{
 use serde_json::Value;
 use tracing::{error, info};
 
-use crate::api::ApiState;
+use crate::api::{types::ApiError, ApiState};
 
 // Bittensor Integration
-pub async fn get_metagraph(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+pub async fn get_metagraph(State(state): State<ApiState>) -> Result<Json<Value>, ApiError> {
     let bittensor_service = match &state.bittensor_service {
         Some(service) => service,
         None => {
             error!("Bittensor service not available");
-            return Err(StatusCode::SERVICE_UNAVAILABLE);
+            return Err(ApiError::InternalError(
+                "Bittensor service not available".to_string(),
+            ));
         }
     };
 
@@ -77,7 +79,7 @@ pub async fn get_metagraph(State(state): State<ApiState>) -> Result<Json<Value>,
         }
         Err(e) => {
             error!("Failed to fetch metagraph: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiError::InternalError(e.to_string()))
         }
     }
 }
