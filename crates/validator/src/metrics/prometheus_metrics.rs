@@ -5,7 +5,7 @@ use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gau
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::persistence::SimplePersistence;
 
@@ -414,32 +414,66 @@ impl ValidatorPrometheusMetrics {
 
     /// Collect GPU metrics from database
     pub async fn collect_gpu_metrics_from_database(&self) {
-        let persistence = self.persistence.as_ref();
-        let miners = persistence.get_all_registered_miners().await.unwrap();
+        let miners = self.persistence.get_all_registered_miners().await.unwrap();
 
         for miner in miners {
-            let executor_gpu_counts = persistence
+            let miner_uid = miner
+                .miner_id
+                .strip_prefix("miner_")
+                .and_then(|uid_str| uid_str.parse::<u16>().ok())
+                .unwrap_or(0);
+
+            let executor_gpu_counts = self
+                .persistence
                 .get_miner_gpu_counts_from_assignments(&miner.miner_id)
                 .await
                 .unwrap();
 
-            for (executor_id, gpu_count) in &executor_gpu_counts {
+            debug!(
+                "Miner {} (UID: {}) has {} executors with GPU assignments",
+                miner.miner_id,
+                miner_uid,
+                executor_gpu_counts.len()
+            );
+
+            // Only set metrics for executors that have GPU assignments
+            for (executor_id, gpu_count, gpu_model) in &executor_gpu_counts {
+                // executor_id has "minerXXX__UUID" format
+                let executor_uuid = executor_id
+                    .split("__")
+                    .nth(1)
+                    .unwrap_or(executor_id.as_str());
+
+                debug!(
+                    "Setting executor GPU count: miner_uid={}, executor_id={}, gpu_model={}, gpu_count={}",
+                    miner_uid, executor_uuid, gpu_model, gpu_count
+                );
+
                 gauge!("basilica_validator_executor_gpu_count",
-                    "miner_uid" => miner.miner_id.clone(),
-                    "executor_id" => executor_id.clone()
+                    "miner_uid" => miner_uid.to_string(),
+                    "executor_id" => executor_uuid.to_string(),
+                    "gpu_model" => gpu_model.to_string()
                 )
                 .set(*gpu_count as f64);
             }
 
-            let total_count = persistence
+            let total_count = self
+                .persistence
                 .get_miner_total_gpu_count_from_assignments(&miner.miner_id)
                 .await
                 .unwrap();
 
+            debug!(
+                "Setting miner total GPU count: miner_uid={}, total_count={}",
+                miner_uid, total_count
+            );
+
             gauge!("basilica_validator_miner_gpu_count",
-                "miner_uid" => miner.miner_id.clone()
+                "miner_uid" => miner_uid.to_string()
             )
             .set(total_count as f64);
         }
+
+        info!("Completed GPU metrics collection from database");
     }
 }

@@ -9,6 +9,7 @@ use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::{entities::VerificationLog, SimplePersistence};
 use crate::ssh::{ExecutorSshDetails, ValidatorSshClient, ValidatorSshKeyManager};
+use crate::validation::types::ExecutorVerificationResult;
 use anyhow::{Context, Result};
 use common::identity::{ExecutorId, Hotkey, MinerUid};
 use common::ssh::SshConnectionDetails;
@@ -3096,20 +3097,6 @@ pub struct ExecutorInfoDetailed {
     pub status: String,
     pub capabilities: Vec<String>,
     pub grpc_endpoint: String,
-}
-
-/// Executor verification result
-#[derive(Debug, Clone)]
-pub struct ExecutorVerificationResult {
-    pub executor_id: String,
-    pub verification_score: f64,
-    pub ssh_connection_successful: bool,
-    pub binary_validation_successful: bool,
-    pub executor_result: Option<crate::validation::types::ExecutorResult>,
-    pub error: Option<String>,
-    pub execution_time: Duration,
-    pub validation_details: crate::validation::types::ValidationDetails,
-    pub gpu_count: u64,
 }
 
 /// Verification step tracking

@@ -522,6 +522,7 @@ pub struct ExecutorVerificationResult {
     pub error: Option<String>,
     pub execution_time: Duration,
     pub validation_details: ValidationDetails,
+    pub gpu_count: u64,
 }
 
 /// Detailed validation timing and scoring information

@@ -997,9 +997,14 @@ impl WeightSetter {
                     .unwrap_or("UNKNOWN")
                     .to_string();
 
+                let unique_executor_id = format!(
+                    "miner{}__{}",
+                    miner_id.strip_prefix("miner_").unwrap_or(miner_id),
+                    executor_id
+                );
                 let gpu_count = match self
                     .persistence
-                    .get_executor_gpu_count_from_assignments(miner_id, &executor_id.to_string())
+                    .get_executor_gpu_count_from_assignments(miner_id, &unique_executor_id)
                     .await
                 {
                     Ok(count) => count as usize,
