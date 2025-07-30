@@ -552,38 +552,6 @@ impl GpuProfileRepository {
 
         Ok(deleted)
     }
-
-    /// Get weight allocation history with optional filtering
-    // TODO: Add pagination support with limit/offset parameters
-    pub async fn get_weight_allocation_history(&self) -> Result<Vec<WeightAllocationHistory>> {
-        let query = r#"
-            SELECT id, miner_uid, gpu_category, allocated_weight, 
-                   miner_score, category_total_score, weight_set_block, 
-                   timestamp, emission_metrics_id
-            FROM weight_allocation_history
-            ORDER BY timestamp DESC
-        "#;
-
-        let history: Vec<WeightAllocationHistory> =
-            sqlx::query_as(query).fetch_all(&self.pool).await?;
-
-        Ok(history)
-    }
-
-    pub async fn get_latest_weight_allocation(&self) -> Result<WeightAllocationHistory> {
-        let query = r#"
-            SELECT id, miner_uid, gpu_category, allocated_weight, 
-                   miner_score, category_total_score, weight_set_block, 
-                   timestamp, emission_metrics_id
-            FROM weight_allocation_history
-            ORDER BY weight_set_block DESC
-            LIMIT 1
-        "#;
-
-        let row: WeightAllocationHistory = sqlx::query_as(query).fetch_one(&self.pool).await?;
-
-        Ok(row)
-    }
 }
 
 #[cfg(test)]

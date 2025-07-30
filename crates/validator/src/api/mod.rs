@@ -119,15 +119,6 @@ impl ApiHandler {
                 get(routes::list_gpu_profiles_by_category),
             )
             .route("/gpu-categories", get(routes::list_gpu_categories))
-            .route("/emission-metrics", get(routes::list_emission_metrics))
-            // .route(
-            //     "/weight-allocation/history",
-            //     get(routes::list_weight_allocation_history),
-            // )
-            .route(
-                "/weight-allocation/current",
-                get(routes::get_current_weight_allocation),
-            )
             .route(
                 "/verification/active",
                 get(routes::list_active_verifications),
@@ -136,11 +127,6 @@ impl ApiHandler {
                 "/verification/results/:miner_id",
                 get(routes::get_verification_results),
             )
-            // .route("/verification/trigger", post(routes::trigger_verification))
-            .route("/metagraph", get(routes::get_metagraph))
-            .route("/metagraph/miners/:uid", get(routes::get_metagraph_miner))
-            .route("/weights/current", get(routes::get_current_weights))
-            .route("/weights/history", get(routes::get_weights_history))
             .route("/config", get(routes::get_config))
             .route("/config/verification", get(routes::get_verification_config))
             .route("/config/emission", get(routes::get_emission_config))
