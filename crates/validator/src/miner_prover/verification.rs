@@ -552,21 +552,62 @@ impl VerificationEngine {
         let count: i64 = row.get("count");
 
         if count == 0 {
-            // Before inserting, check if this grpc_address is already in use
-            let grpc_check_query =
-                "SELECT COUNT(*) as count FROM miner_executors WHERE grpc_address = ?";
-            let grpc_row = sqlx::query(grpc_check_query)
-                .bind(executor_grpc_endpoint)
-                .fetch_one(self.persistence.pool())
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to check grpc_address uniqueness: {}", e))?;
+            // Check if this grpc_address is already used by a different miner
+            let existing_miner: Option<String> = sqlx::query_scalar(
+                "SELECT miner_id FROM miner_executors WHERE grpc_address = ? AND miner_id != ? LIMIT 1"
+            )
+            .bind(executor_grpc_endpoint)
+            .bind(&miner_id)
+            .fetch_optional(self.persistence.pool())
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to check grpc_address uniqueness: {}", e))?;
 
-            let grpc_count: i64 = grpc_row.get("count");
-            if grpc_count > 0 {
+            if let Some(other_miner) = existing_miner {
                 return Err(anyhow::anyhow!(
-                    "Cannot create executor relationship: grpc_address {} is already registered to another executor",
-                    executor_grpc_endpoint
+                    "Cannot create executor relationship: grpc_address {} is already registered to {}",
+                    executor_grpc_endpoint, other_miner
                 ));
+            }
+
+            // Check if this is an executor ID change for the same miner
+            let old_executor_id: Option<String> = sqlx::query_scalar(
+                "SELECT executor_id FROM miner_executors WHERE grpc_address = ? AND miner_id = ?",
+            )
+            .bind(executor_grpc_endpoint)
+            .bind(&miner_id)
+            .fetch_optional(self.persistence.pool())
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to check for existing executor: {}", e))?;
+
+            if let Some(old_id) = old_executor_id {
+                info!(
+                    "Miner {} is changing executor ID from {} to {} for endpoint {}",
+                    miner_id, old_id, executor_id, executor_grpc_endpoint
+                );
+
+                let mut tx = self.persistence.pool().begin().await?;
+
+                sqlx::query(
+                    "UPDATE gpu_uuid_assignments SET executor_id = ? WHERE executor_id = ? AND miner_id = ?"
+                )
+                .bind(executor_id)
+                .bind(&old_id)
+                .bind(&miner_id)
+                .execute(&mut *tx)
+                .await?;
+
+                sqlx::query("DELETE FROM miner_executors WHERE executor_id = ? AND miner_id = ?")
+                    .bind(&old_id)
+                    .bind(&miner_id)
+                    .execute(&mut *tx)
+                    .await?;
+
+                tx.commit().await?;
+
+                info!(
+                    "Successfully migrated GPU assignments from executor {} to {}",
+                    old_id, executor_id
+                );
             }
 
             // Insert new relationship with required fields
