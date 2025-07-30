@@ -8,11 +8,20 @@ members = [
     "crates/bittensor",
     "crates/public-api", 
     "crates/integration-tests",
+    "crates/collateral",
 ]
 resolver = "2"
 
 # Workspace-wide dependencies that all crates can use
 [workspace.dependencies]
+# Alloy
+alloy = { version = "1.0.23", features = ["sol-types"] }
+alloy-sol-types = { version = "1.0.23" }
+alloy-network = { version = "1.0.23" }
+alloy-primitives = { version = "1.0.23" }
+alloy-provider = { version = "1.0.23" }
+alloy-contract = { version = "1.0.23" }
+
 # Async runtime and utilities
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = "0.7"
@@ -55,6 +64,14 @@ rand = "0.8"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.0", features = ["derive"] }
+
+# Subxt
+subxt = "0.38"
+subxt-types = "0.38"
+subxt-signer = "0.38"
+subxt-codegen = { version = "0.38" }
+subxt-metadata = { version = "0.38" }
+subxt-utils-fetchmetadata = { version = "0.38", features = ["url"] }
 
 # System information
 sysinfo = "0.30"
