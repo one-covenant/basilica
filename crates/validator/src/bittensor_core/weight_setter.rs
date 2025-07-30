@@ -1552,7 +1552,7 @@ mod tests {
         // Create mock validation results
         let validations = vec![
             ExecutorValidationResult {
-                executor_id: ExecutorId::new("test-seed-1"),
+                executor_id: ExecutorId::new(),
                 is_valid: true,
                 _hardware_score: 0.8,
                 gpu_count: 2,
@@ -1563,7 +1563,7 @@ mod tests {
                 gpu_model: "NVIDIA H100".to_string(),
             },
             ExecutorValidationResult {
-                executor_id: ExecutorId::new("test-seed-2"),
+                executor_id: ExecutorId::new(),
                 is_valid: true,
                 _hardware_score: 0.9,
                 gpu_count: 4,

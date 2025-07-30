@@ -96,7 +96,8 @@ async fn test_e2e_collision_handling() {
     // Create many executor IDs directly to test HUID uniqueness
     let provider = StaticWordProvider::new();
     for i in 0..100 {
-        let executor = ExecutorId::new_with_seed_and_provider(&format!("test-seed-{}", i), &provider).expect("Should create executor");
+        let executor = ExecutorId::new_with_seed_and_provider(&format!("test-seed-{i}"), &provider)
+            .expect("Should create executor");
 
         // Verify HUID uniqueness
         assert!(
@@ -486,7 +487,8 @@ fn test_e2e_word_lists_and_combinations() {
     // Generate many HUIDs and check for early collisions
     let mut generated_huids = HashSet::new();
     for i in 0..10000 {
-        let executor = ExecutorId::new_with_seed_and_provider(&format!("test-seed-{}", i), &provider).expect("Should create executor");
+        let executor = ExecutorId::new_with_seed_and_provider(&format!("test-seed-{i}"), &provider)
+            .expect("Should create executor");
 
         let huid = executor.huid().to_string();
         assert!(

@@ -71,7 +71,7 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_executor_management() {
         let executors = (0..10)
-            .map(|i| ExecutorId::new(&format!("test-seed-{}", i)).expect("Should create"))
+            .map(|i| ExecutorId::new(&format!("test-seed-{i}")).expect("Should create"))
             .collect::<Vec<_>>();
 
         // Test uniqueness
@@ -107,7 +107,7 @@ mod tests {
 
         // Generate 1000 executors
         for i in 0..1000 {
-            let executor = ExecutorId::new(&format!("test-seed-{}", i)).expect("Should create");
+            let executor = ExecutorId::new(&format!("test-seed-{i}")).expect("Should create");
 
             // Track first 2 components of HUID (adjective-noun)
             let parts: Vec<&str> = executor.huid().split('-').collect();
@@ -146,7 +146,7 @@ mod tests {
         let executors: Vec<ExecutorId> = (0..1000)
             .map(|i| {
                 let create_start = Instant::now();
-                let executor = ExecutorId::new(&format!("test-seed-{}", i)).expect("Should create");
+                let executor = ExecutorId::new(&format!("test-seed-{i}")).expect("Should create");
                 creation_times.push(create_start.elapsed());
                 executor
             })
@@ -281,18 +281,6 @@ mod tests {
                 should_be_valid,
                 "Query '{query}' validation mismatch"
             );
-        }
-
-        // Test 3: UUID parsing errors
-        let invalid_uuids = vec![
-            "not-a-uuid",
-            "12345",
-            "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-        ];
-
-        for invalid in invalid_uuids {
-            let result = ExecutorId::from_uuid_string(invalid);
-            assert!(result.is_err(), "{invalid} should fail UUID parsing");
         }
     }
 
@@ -453,7 +441,9 @@ mod tests {
         // Generate many HUIDs
         for i in 0..10000 {
             let start = Instant::now();
-            let _executor = ExecutorId::new_with_seed_and_provider(&format!("test-seed-{}", i), &provider).expect("Should create");
+            let _executor =
+                ExecutorId::new_with_seed_and_provider(&format!("test-seed-{i}"), &provider)
+                    .expect("Should create");
             generation_times.push(start.elapsed());
         }
 

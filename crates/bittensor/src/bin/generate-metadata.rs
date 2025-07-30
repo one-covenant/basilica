@@ -41,7 +41,7 @@ async fn main() {
             generate_metadata("local", &endpoint).await;
         }
         _ => {
-            eprintln!("Unknown network: {}", network);
+            eprintln!("Unknown network: {network}");
             eprintln!("Usage: cargo run --bin generate-metadata -- [network]");
             eprintln!("Networks: finney, test, local, all");
             std::process::exit(1);
@@ -50,10 +50,7 @@ async fn main() {
 }
 
 async fn generate_metadata(network: &str, endpoint: &str) {
-    println!(
-        "Generating metadata for {} network from {}",
-        network, endpoint
-    );
+    println!("Generating metadata for {network} network from {endpoint}");
 
     // Fetch metadata from the chain
     let metadata_bytes: Vec<u8> =
@@ -61,7 +58,7 @@ async fn generate_metadata(network: &str, endpoint: &str) {
         {
             Ok(bytes) => bytes,
             Err(e) => {
-                eprintln!("Failed to fetch metadata for {}: {}", network, e);
+                eprintln!("Failed to fetch metadata for {network}: {e}");
                 return;
             }
         };
@@ -85,7 +82,7 @@ async fn generate_metadata(network: &str, endpoint: &str) {
         .generate(metadata)
         .expect("Failed to generate code from metadata");
 
-    let output_path = format!("metadata/{}.rs", network);
+    let output_path = format!("metadata/{network}.rs");
 
     // Try to format the code
     let formatted_code = match Command::new("rustfmt")
@@ -96,7 +93,7 @@ async fn generate_metadata(network: &str, endpoint: &str) {
     {
         Ok(mut process) => {
             if let Some(stdin) = process.stdin.as_mut() {
-                write!(stdin, "{}", code).expect("Failed to write to rustfmt");
+                write!(stdin, "{code}").expect("Failed to write to rustfmt");
             }
             match process.wait_with_output() {
                 Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
@@ -108,10 +105,7 @@ async fn generate_metadata(network: &str, endpoint: &str) {
 
     // Write the metadata file
     let mut file = File::create(&output_path).expect("Failed to create metadata file");
-    write!(file, "{}", formatted_code).expect("Failed to write metadata");
+    write!(file, "{formatted_code}").expect("Failed to write metadata");
 
-    println!(
-        "Generated metadata for {} network at {}",
-        network, output_path
-    );
+    println!("Generated metadata for {network} network at {output_path}");
 }

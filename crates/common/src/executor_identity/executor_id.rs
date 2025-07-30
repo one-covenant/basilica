@@ -157,13 +157,6 @@ impl ExecutorId {
             .collect()
     }
 
-    /// Generates a random hexadecimal suffix of HUID_HEX_LENGTH characters
-    fn generate_hex_suffix(rng: &mut impl Rng) -> String {
-        (0..HUID_HEX_LENGTH)
-            .map(|_| HEX_CHARS[rng.gen_range(0..HEX_CHARS.len())])
-            .collect()
-    }
-
     /// Hashes a seed string to a u64 for RNG seeding
     fn hash_seed_to_u64(seed: &str) -> u64 {
         use std::collections::hash_map::DefaultHasher;
@@ -172,29 +165,6 @@ impl ExecutorId {
         let mut hasher = DefaultHasher::new();
         seed.hash(&mut hasher);
         hasher.finish()
-    }
-
-    /// Parses a UUID string and creates an ExecutorId for it
-    ///
-    /// This generates a new HUID for the provided UUID using a default seed
-    ///
-    /// # Arguments
-    /// * `uuid_str` - String representation of a UUID
-    ///
-    /// # Errors
-    /// Returns an error if the UUID string is invalid or HUID generation fails
-    pub fn from_uuid_string(uuid_str: &str) -> Result<Self> {
-        let uuid = Uuid::parse_str(uuid_str).context("Invalid UUID string")?;
-
-        let word_provider = StaticWordProvider::new();
-        let mut rng = StdRng::seed_from_u64(Self::hash_seed_to_u64("default-seed"));
-        let huid = Self::generate_huid_with_rng(uuid, &mut rng, &word_provider)?;
-
-        Ok(Self {
-            uuid,
-            huid,
-            created_at: SystemTime::now(),
-        })
     }
 }
 
@@ -435,26 +405,6 @@ mod tests {
     }
 
     #[test]
-    fn test_from_uuid_string() {
-        let uuid = Uuid::new_v4();
-        let uuid_str = uuid.to_string();
-
-        let id = ExecutorId::from_uuid_string(&uuid_str).expect("Should create from UUID string");
-
-        assert_eq!(id.uuid(), &uuid);
-        assert!(crate::executor_identity::constants::is_valid_huid(
-            id.huid()
-        ));
-    }
-
-    #[test]
-    fn test_from_uuid_string_invalid() {
-        let result = ExecutorId::from_uuid_string("not-a-uuid");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid UUID"));
-    }
-
-    #[test]
     fn test_equality() {
         let seed = "test-seed-123";
         let id1 = ExecutorId::new(seed).unwrap();
@@ -489,18 +439,6 @@ mod tests {
         // Adding the same ID again shouldn't increase the size
         set.insert(id1.clone());
         assert_eq!(set.len(), 2);
-    }
-
-    #[test]
-    fn test_hex_suffix_generation() {
-        let mut rng = rand::thread_rng();
-
-        // Generate multiple suffixes and verify format
-        for _ in 0..100 {
-            let suffix = ExecutorId::generate_hex_suffix(&mut rng);
-            assert_eq!(suffix.len(), HUID_HEX_LENGTH);
-            assert!(suffix.chars().all(|c| HEX_CHARS.contains(&c)));
-        }
     }
 
     #[test]

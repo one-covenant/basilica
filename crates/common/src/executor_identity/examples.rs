@@ -194,9 +194,9 @@ pub fn seeded_generation_example() -> anyhow::Result<()> {
     let id1 = ExecutorId::new(seed)?;
     let id2 = ExecutorId::new(seed)?;
 
-    println!("Seed: {}", seed);
-    println!("First ID:  {}", id1);
-    println!("Second ID: {}", id2);
+    println!("Seed: {seed}");
+    println!("First ID:  {id1}");
+    println!("Second ID: {id2}");
     println!("Identical: {}", id1 == id2);
 
     // Create ExecutorIds with different seeds
@@ -206,16 +206,16 @@ pub fn seeded_generation_example() -> anyhow::Result<()> {
     let id4 = ExecutorId::new(seed2)?;
 
     println!("\nDifferent seeds:");
-    println!("Seed 1: {}", seed1);
-    println!("ID 3:   {}", id3);
-    println!("Seed 2: {}", seed2);
-    println!("ID 4:   {}", id4);
+    println!("Seed 1: {seed1}");
+    println!("ID 3:   {id3}");
+    println!("Seed 2: {seed2}");
+    println!("ID 4:   {id4}");
     println!("Different: {}", id3 != id4);
 
     // Compare with different seed generation
     let random_id = ExecutorId::new("different-seed")?;
     println!("\nDifferent seed generation:");
-    println!("Different seed ID: {}", random_id);
+    println!("Different seed ID: {random_id}");
     println!("Different from seeded: {}", id1 != random_id);
 
     Ok(())
@@ -228,17 +228,17 @@ pub fn seeded_vs_random_example() -> anyhow::Result<()> {
     let seed = "consistent-seed";
 
     // Generate multiple IDs with the same seed
-    println!("With same seed '{}':", seed);
+    println!("With same seed '{seed}':");
     for i in 1..=3 {
         let id = ExecutorId::new(seed)?;
-        println!("  ID {}: {}", i, id);
+        println!("  ID {i}: {id}");
     }
 
     // Generate multiple IDs with different seeds
     println!("\nWith different seeds:");
     for i in 1..=3 {
-        let id = ExecutorId::new(&format!("seed-{}", i))?;
-        println!("  ID {}: {}", i, id);
+        let id = ExecutorId::new(&format!("seed-{i}"))?;
+        println!("  ID {i}: {id}");
     }
 
     Ok(())
