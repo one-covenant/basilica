@@ -1,10 +1,13 @@
-use alloy_primitives::address;
 use alloy_primitives::{Address, FixedBytes, U256};
 use alloy_provider::ProviderBuilder;
 use alloy_sol_types::sol;
 
 use alloy::signers::Signer;
 use alloy::signers::local::PrivateKeySigner;
+
+pub mod config;
+
+use config::{CHAIN_ID, COLLATERAL_ADDRESS, RPC_URL};
 
 sol!(
     #[allow(missing_docs)]
@@ -15,11 +18,6 @@ sol!(
     Collateral,
     "./src/collateral.json"
 );
-
-// Deployed Collateral contract address
-const COLLATERAL_ADDRESS: Address = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
-const CHAIN_ID: u64 = 42;
-const RPC_URL: &str = "http://localhost:9944";
 
 #[derive(Debug, Clone)]
 pub struct Reclaim {
