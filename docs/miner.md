@@ -11,6 +11,7 @@ The miner component manages a fleet of GPU executor machines, handling:
 - Task distribution and monitoring
 - Serving compute requests through the Axon server
 - GPU verification through Proof-of-Work challenges
+- Automatic executor identity management with dual identifier system (UUID + HUID)
 
 ## Prerequisites
 
@@ -69,14 +70,11 @@ max_retry_attempts = 3
 auto_recovery = true
 
 # Define your executor machines
+# IDs and name are auto-generated now 
 [[executor_management.executors]]
-id = "executor-1"
-name = "GPU Executor 1"
 grpc_address = "127.0.0.1:50051"
 
 [[executor_management.executors]]
-id = "executor-2"
-name = "GPU Executor 2"
 grpc_address = "executor2.example.com:50051"
 
 [validator_comms]
