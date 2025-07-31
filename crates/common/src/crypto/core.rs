@@ -62,7 +62,6 @@ pub fn hash_blake3_string(data: &[u8]) -> String {
 /// Backward compatibility alias
 pub use hash_blake3_string as hash_blake3;
 
-
 /// Verify Bittensor signature
 ///
 /// # Arguments
@@ -92,9 +91,10 @@ pub fn verify_bittensor_signature(
     }
 
     // Decode signature from hex
-    let signature_bytes = hex::decode(signature_hex).map_err(|e| CryptoError::InvalidSignature {
-        details: format!("Invalid hex signature format: {e}"),
-    })?;
+    let signature_bytes =
+        hex::decode(signature_hex).map_err(|e| CryptoError::InvalidSignature {
+            details: format!("Invalid hex signature format: {e}"),
+        })?;
 
     // Convert to AccountId32 type (same as AccountId in bittensor)
     let account_id = sp_core::sr25519::Public::from_str(hotkey.as_str()).map_err(|_| {

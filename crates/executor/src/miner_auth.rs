@@ -54,11 +54,7 @@ impl MinerAuthService {
     }
 
     /// Verify miner authentication
-    pub async fn verify_auth(
-        &self,
-        auth: &MinerAuthentication,
-        request_data: &[u8],
-    ) -> Result<()> {
+    pub async fn verify_auth(&self, auth: &MinerAuthentication, request_data: &[u8]) -> Result<()> {
         // Check if the miner hotkey matches
         if auth.miner_hotkey != self.config.managing_miner_hotkey.to_string() {
             return Err(anyhow!(
@@ -273,7 +269,10 @@ mod tests {
         // Should fail with duplicate nonce
         let result = service.verify_auth(&auth, request_data).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Nonce already used"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Nonce already used"));
     }
 
     #[tokio::test]
@@ -301,7 +300,10 @@ mod tests {
         // Should fail with wrong miner
         let result = service.verify_auth(&auth, request_data).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unauthorized miner"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unauthorized miner"));
     }
 
     #[tokio::test]
@@ -385,7 +387,10 @@ mod tests {
         // Should fail
         let result = service.verify_auth(&auth, request_data).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Request timestamp is in the future"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Request timestamp is in the future"));
     }
 
     #[tokio::test]
@@ -568,8 +573,9 @@ mod tests {
 
     #[test]
     fn test_miner_auth_config() {
-        let hotkey = Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string()).unwrap();
-        
+        let hotkey =
+            Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string()).unwrap();
+
         // Test new() method
         let config = MinerAuthConfig::new(hotkey.clone());
         assert_eq!(config.managing_miner_hotkey, hotkey);

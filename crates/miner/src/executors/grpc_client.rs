@@ -4,11 +4,11 @@
 //! and other control operations.
 
 use anyhow::{Context, Result};
+use prost::Message;
 use protocol::executor_control::{
     executor_control_client::ExecutorControlClient, HealthCheckRequest, HealthCheckResponse,
     ProvisionAccessRequest, ProvisionAccessResponse,
 };
-use prost::Message;
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::transport::Channel;
@@ -53,7 +53,10 @@ impl ExecutorGrpcClient {
     }
 
     /// Create a new executor gRPC client with authentication
-    pub fn new_with_auth(config: ExecutorGrpcConfig, auth_service: Arc<ExecutorAuthService>) -> Self {
+    pub fn new_with_auth(
+        config: ExecutorGrpcConfig,
+        auth_service: Arc<ExecutorAuthService>,
+    ) -> Self {
         Self {
             config,
             auth_service: Some(auth_service),
@@ -96,7 +99,8 @@ impl ExecutorGrpcClient {
         // Add authentication if available
         if let Some(auth_service) = &self.auth_service {
             let request_bytes = request.encode_to_vec();
-            let auth = auth_service.create_auth(&request_bytes)
+            let auth = auth_service
+                .create_auth(&request_bytes)
                 .with_context(|| "Failed to create authentication")?;
             request = request.with_auth(auth);
         }
@@ -167,7 +171,8 @@ impl ExecutorGrpcClient {
         // Add authentication if available
         if let Some(auth_service) = &self.auth_service {
             let request_bytes = request.encode_to_vec();
-            let auth = auth_service.create_auth(&request_bytes)
+            let auth = auth_service
+                .create_auth(&request_bytes)
                 .with_context(|| "Failed to create authentication")?;
             request = request.with_auth(auth);
         }

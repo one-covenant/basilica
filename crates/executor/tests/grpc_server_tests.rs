@@ -48,9 +48,9 @@ async fn create_test_executor_state_no_sig_verify() -> ExecutorState {
         managing_miner_hotkey: Hotkey::from_str(TEST_MINER_HOTKEY).unwrap(),
         ..Default::default()
     };
-    
+
     let mut state = ExecutorState::new(config).await.unwrap();
-    
+
     // Disable signature verification for tests
     let auth_config = MinerAuthConfig {
         managing_miner_hotkey: Hotkey::from_str(TEST_MINER_HOTKEY).unwrap(),
@@ -58,7 +58,7 @@ async fn create_test_executor_state_no_sig_verify() -> ExecutorState {
         verify_signatures: false, // Disable for tests
     };
     state.miner_auth_service = Arc::new(executor::miner_auth::MinerAuthService::new(auth_config));
-    
+
     state
 }
 

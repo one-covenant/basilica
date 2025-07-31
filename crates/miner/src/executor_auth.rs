@@ -171,15 +171,12 @@ mod tests {
         );
 
         // Verify format
-        assert_eq!(
-            canonical.split(':').collect::<Vec<_>>()[0],
-            "MINER_AUTH"
-        );
+        assert_eq!(canonical.split(':').collect::<Vec<_>>()[0], "MINER_AUTH");
         assert!(canonical.contains("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"));
         assert!(canonical.contains("1234567890"));
         assert!(canonical.contains("test-nonce-123"));
         assert!(canonical.contains("test-request-456"));
-        
+
         // Verify it ends with the hash
         let parts: Vec<&str> = canonical.split(':').collect();
         assert_eq!(parts.len(), 6);
@@ -189,7 +186,7 @@ mod tests {
     #[test]
     fn test_canonical_data_deterministic() {
         let request_data = b"deterministic data";
-        
+
         // Create canonical data twice with same inputs
         let canonical1 = create_canonical_data_for_test(
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
@@ -198,7 +195,7 @@ mod tests {
             "same-request",
             request_data,
         );
-        
+
         let canonical2 = create_canonical_data_for_test(
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
             9999999999,
@@ -206,7 +203,7 @@ mod tests {
             "same-request",
             request_data,
         );
-        
+
         // Should be identical
         assert_eq!(canonical1, canonical2);
     }
@@ -215,7 +212,7 @@ mod tests {
     fn test_canonical_data_different_inputs() {
         let data1 = b"data1";
         let data2 = b"data2";
-        
+
         let canonical1 = create_canonical_data_for_test(
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
             1000,
@@ -223,7 +220,7 @@ mod tests {
             "req1",
             data1,
         );
-        
+
         let canonical2 = create_canonical_data_for_test(
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
             1000,
@@ -231,7 +228,7 @@ mod tests {
             "req1",
             data2,
         );
-        
+
         // Should be different due to different data
         assert_ne!(canonical1, canonical2);
     }
@@ -259,7 +256,7 @@ mod tests {
         // Test with_auth
         let authenticated = request.with_auth(auth.clone());
         assert!(authenticated.auth.is_some());
-        
+
         let attached_auth = authenticated.auth.unwrap();
         assert_eq!(attached_auth.miner_hotkey, auth.miner_hotkey);
         assert_eq!(attached_auth.timestamp_ms, auth.timestamp_ms);
@@ -337,20 +334,20 @@ mod tests {
             signature: String::new(),
             request_id: String::new(),
         };
-        
+
         assert!(auth.miner_hotkey.is_empty());
         assert_eq!(auth.timestamp_ms, 0);
         assert!(auth.nonce.is_empty());
-        
+
         // Test max values
         let auth_max = MinerAuthentication {
             miner_hotkey: "hotkey".to_string(),
             timestamp_ms: u64::MAX,
-            nonce: "n".repeat(1000), // Long nonce
-            signature: "s".repeat(1000), // Long signature
+            nonce: "n".repeat(1000),      // Long nonce
+            signature: "s".repeat(1000),  // Long signature
             request_id: "r".repeat(1000), // Long request id
         };
-        
+
         assert_eq!(auth_max.timestamp_ms, u64::MAX);
         assert_eq!(auth_max.nonce.len(), 1000);
         assert_eq!(auth_max.signature.len(), 1000);
@@ -360,7 +357,7 @@ mod tests {
     #[test]
     fn test_request_serialization() {
         use prost::Message;
-        
+
         let request = protocol::executor_control::ProvisionAccessRequest {
             validator_hotkey: "validator".to_string(),
             ssh_public_key: "ssh-rsa key".to_string(),
@@ -386,13 +383,13 @@ mod tests {
         let bytes = request.encode_to_vec();
         let deserialized = protocol::executor_control::ProvisionAccessRequest::decode(&bytes[..])
             .expect("deserialization should work");
-        
+
         // Verify fields match
         assert_eq!(request.validator_hotkey, deserialized.validator_hotkey);
         assert_eq!(request.ssh_public_key, deserialized.ssh_public_key);
         assert_eq!(request.duration_seconds, deserialized.duration_seconds);
         assert_eq!(request.config.len(), deserialized.config.len());
-        
+
         // Verify auth matches
         assert!(deserialized.auth.is_some());
         let orig_auth = request.auth.unwrap();

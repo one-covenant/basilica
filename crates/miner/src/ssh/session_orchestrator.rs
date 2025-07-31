@@ -107,10 +107,8 @@ impl SshSessionOrchestrator {
         config: SshSessionConfig,
         auth_service: Arc<ExecutorAuthService>,
     ) -> Self {
-        let executor_grpc_client = ExecutorGrpcClient::new_with_auth(
-            ExecutorGrpcConfig::default(),
-            auth_service,
-        );
+        let executor_grpc_client =
+            ExecutorGrpcClient::new_with_auth(ExecutorGrpcConfig::default(), auth_service);
 
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
