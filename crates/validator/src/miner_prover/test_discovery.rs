@@ -16,6 +16,7 @@ mod tests {
             max_retries: 3,
             grpc_port_offset: None,
             use_tls: false,
+            require_miner_signature: true,
         };
 
         let hotkey =

@@ -144,9 +144,7 @@ impl MinerAuthService {
         let request_hash = hasher.finalize().to_hex().to_string();
 
         // Create canonical string (must match miner's format)
-        format!(
-            "MINER_AUTH:{miner_hotkey}:{timestamp_ms}:{nonce}:{request_id}:{request_hash}"
-        )
+        format!("MINER_AUTH:{miner_hotkey}:{timestamp_ms}:{nonce}:{request_id}:{request_hash}")
     }
 
     /// Clean up expired nonces

@@ -204,7 +204,8 @@ impl MinerState {
             validator_discovery.clone(),
         )
         .await?
-        .with_ssh_session_orchestrator(ssh_session_orchestrator);
+        .with_ssh_session_orchestrator(ssh_session_orchestrator)
+        .with_bittensor_service(chain_registration.get_bittensor_service());
 
         let jwt_service = validator_comms.jwt_service.clone();
 

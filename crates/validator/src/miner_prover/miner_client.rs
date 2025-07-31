@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::transport::Channel;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use common::identity::Hotkey;
 use protocol::miner_discovery::{
@@ -27,6 +27,8 @@ pub struct MinerClientConfig {
     pub grpc_port_offset: Option<u16>,
     /// Whether to use TLS for gRPC connections
     pub use_tls: bool,
+    /// Whether to require miner signature verification
+    pub require_miner_signature: bool,
 }
 
 impl Default for MinerClientConfig {
@@ -36,6 +38,7 @@ impl Default for MinerClientConfig {
             max_retries: 3,
             grpc_port_offset: None, // Will use default port 8080
             use_tls: false,
+            require_miner_signature: true, // Default to requiring signatures for security
         }
     }
 }
@@ -217,6 +220,55 @@ impl MinerClient {
                 .map(|e| e.message)
                 .unwrap_or_else(|| "Unknown error".to_string());
             return Err(anyhow::anyhow!("Authentication failed: {}", error_msg));
+        }
+
+        // Verify miner's signature
+        if !auth_response.miner_hotkey.is_empty() && !auth_response.miner_signature.is_empty() {
+            debug!(
+                "Verifying miner signature from hotkey: {}",
+                auth_response.miner_hotkey
+            );
+
+            // Parse miner hotkey
+            let miner_hotkey = Hotkey::new(auth_response.miner_hotkey.clone())
+                .map_err(|e| anyhow::anyhow!("Invalid miner hotkey: {}", e))?;
+
+            // Create canonical data that miner signed
+            let validator_hotkey = &self.validator_hotkey;
+            let response_nonce = &auth_response.response_nonce;
+            let session_token = &auth_response.session_token;
+            let canonical_data =
+                format!("MINER_AUTH_RESPONSE:{validator_hotkey}:{response_nonce}:{session_token}");
+
+            // Verify miner's signature
+            if let Err(e) = bittensor::utils::verify_bittensor_signature(
+                &miner_hotkey,
+                &auth_response.miner_signature,
+                canonical_data.as_bytes(),
+            ) {
+                warn!(
+                    "Miner signature verification failed for {}: {}",
+                    auth_response.miner_hotkey, e
+                );
+                return Err(anyhow::anyhow!(
+                    "Miner signature verification failed: {}",
+                    e
+                ));
+            }
+
+            info!(
+                "Successfully verified miner signature from {}",
+                auth_response.miner_hotkey
+            );
+        } else if self.config.require_miner_signature {
+            // Signature is required but not provided
+            error!("Miner did not provide required signature for verification");
+            return Err(anyhow::anyhow!(
+                "Miner authentication response missing required signature"
+            ));
+        } else {
+            // Signature not required and not provided
+            warn!("Miner did not provide signature for verification (not required by config)");
         }
 
         let session_token = auth_response.session_token;
@@ -468,5 +520,44 @@ mod tests {
         let axon = "http://example.com:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
         assert_eq!(grpc, "https://example.com:8091");
+    }
+
+    #[test]
+    fn test_miner_signature_verification_config() {
+        // Test default config requires signature
+        let config = MinerClientConfig::default();
+        assert!(config.require_miner_signature);
+
+        // Test custom config without signature requirement
+        let config_no_sig = MinerClientConfig {
+            require_miner_signature: false,
+            ..Default::default()
+        };
+        assert!(!config_no_sig.require_miner_signature);
+    }
+
+    #[test]
+    fn test_canonical_data_format_for_miner_response() {
+        // Test that canonical data format matches between miner and validator
+        let validator_hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
+        let response_nonce = "test-nonce-123";
+        let session_token = "test-session-token";
+
+        let canonical_data =
+            format!("MINER_AUTH_RESPONSE:{validator_hotkey}:{response_nonce}:{session_token}");
+
+        // Verify format
+        assert!(canonical_data.starts_with("MINER_AUTH_RESPONSE:"));
+        assert!(canonical_data.contains(validator_hotkey));
+        assert!(canonical_data.contains(response_nonce));
+        assert!(canonical_data.contains(session_token));
+
+        // Verify no extra colons or formatting issues
+        let parts: Vec<&str> = canonical_data.split(':').collect();
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0], "MINER_AUTH_RESPONSE");
+        assert_eq!(parts[1], validator_hotkey);
+        assert_eq!(parts[2], response_nonce);
+        assert_eq!(parts[3], session_token);
     }
 }
