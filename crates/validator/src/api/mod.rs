@@ -25,7 +25,6 @@ pub struct ApiState {
     gpu_profile_repo: Arc<crate::persistence::gpu_profile_repository::GpuProfileRepository>,
     #[allow(dead_code)]
     storage: common::MemoryStorage,
-    bittensor_service: Option<Arc<bittensor::Service>>,
     validator_config: crate::config::ValidatorConfig,
 }
 
@@ -35,7 +34,6 @@ impl ApiState {
         persistence: Arc<crate::persistence::SimplePersistence>,
         gpu_profile_repo: Arc<crate::persistence::gpu_profile_repository::GpuProfileRepository>,
         storage: common::MemoryStorage,
-        bittensor_service: Option<Arc<bittensor::Service>>,
         validator_config: crate::config::ValidatorConfig,
     ) -> Self {
         Self {
@@ -43,7 +41,6 @@ impl ApiState {
             persistence,
             gpu_profile_repo,
             storage,
-            bittensor_service,
             validator_config,
         }
     }
@@ -61,7 +58,6 @@ impl ApiHandler {
         persistence: Arc<crate::persistence::SimplePersistence>,
         gpu_profile_repo: Arc<crate::persistence::gpu_profile_repository::GpuProfileRepository>,
         storage: common::MemoryStorage,
-        bittensor_service: Option<Arc<bittensor::Service>>,
         validator_config: crate::config::ValidatorConfig,
     ) -> Self {
         Self {
@@ -70,7 +66,6 @@ impl ApiHandler {
                 persistence,
                 gpu_profile_repo,
                 storage,
-                bittensor_service,
                 validator_config,
             ),
         }

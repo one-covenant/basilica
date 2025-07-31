@@ -68,14 +68,7 @@ pub async fn list_gpu_profiles_by_category(
                 let mut filtered_profile = profile.clone();
                 filtered_profile.gpu_counts = filtered_gpu_counts;
 
-                // Update primary_gpu_model to reflect the filtered GPUs
-                if let Some((primary_model, _)) = filtered_profile
-                    .gpu_counts
-                    .iter()
-                    .max_by_key(|(_, &count)| count)
-                {
-                    filtered_profile.primary_gpu_model = primary_model.clone();
-                }
+                // The filtered profile now only contains GPUs of the target category
 
                 Some(filtered_profile)
             } else {

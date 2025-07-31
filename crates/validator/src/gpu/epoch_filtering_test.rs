@@ -25,7 +25,6 @@ mod tests {
             // Miner 1: Recent validation (should always be included)
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: HashMap::from([("H100".to_string(), 2)]),
                 total_score: 0.9,
                 verification_count: 10,
@@ -35,7 +34,6 @@ mod tests {
             // Miner 2: Older validation (included only without epoch filtering)
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: HashMap::from([("H100".to_string(), 1)]),
                 total_score: 0.8,
                 verification_count: 8,
@@ -45,7 +43,6 @@ mod tests {
             // Miner 3: Very old validation
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: HashMap::from([("H100".to_string(), 3)]),
                 total_score: 0.7,
                 verification_count: 5,
@@ -55,7 +52,6 @@ mod tests {
             // Miner 4: No successful validation ever
             MinerGpuProfile {
                 miner_uid: MinerUid::new(4),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: HashMap::from([("H100".to_string(), 1)]),
                 total_score: 0.5,
                 verification_count: 2,
@@ -65,7 +61,6 @@ mod tests {
             // Miner 5: Different GPU type with recent validation
             MinerGpuProfile {
                 miner_uid: MinerUid::new(5),
-                primary_gpu_model: "H200".to_string(),
                 gpu_counts: HashMap::from([("H200".to_string(), 2)]),
                 total_score: 0.95,
                 verification_count: 12,
@@ -151,11 +146,11 @@ mod tests {
         // Test 6: Verify GPU category distribution
         let h100_count = all_profiles
             .iter()
-            .filter(|p| p.primary_gpu_model == "H100")
+            .filter(|p| p.has_gpu_model("H100"))
             .count();
         let h200_count = all_profiles
             .iter()
-            .filter(|p| p.primary_gpu_model == "H200")
+            .filter(|p| p.has_gpu_model("H200"))
             .count();
 
         assert_eq!(h100_count, 4, "Should have 4 H100 miners");
@@ -184,7 +179,6 @@ mod tests {
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(10),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: HashMap::from([("H100".to_string(), 4)]),
                 total_score: 0.9,
                 verification_count: 20,
@@ -193,7 +187,6 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(11),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: HashMap::from([("H100".to_string(), 2)]),
                 total_score: 0.8,
                 verification_count: 15,
@@ -202,7 +195,6 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(12),
-                primary_gpu_model: "H200".to_string(),
                 gpu_counts: HashMap::from([("H200".to_string(), 1)]),
                 total_score: 0.85,
                 verification_count: 18,
@@ -250,7 +242,6 @@ mod tests {
         // Create a miner with multiple GPU types
         let multi_gpu_profile = MinerGpuProfile {
             miner_uid: MinerUid::new(100),
-            primary_gpu_model: "H100".to_string(), // Primary is H100
             gpu_counts: HashMap::from([("H100".to_string(), 4), ("H200".to_string(), 2)]),
             total_score: 0.92,
             verification_count: 50,
@@ -267,7 +258,6 @@ mod tests {
         assert_eq!(retrieved.gpu_counts.len(), 2, "Should have 2 GPU types");
         assert_eq!(retrieved.gpu_counts.get("H100"), Some(&4));
         assert_eq!(retrieved.gpu_counts.get("H200"), Some(&2));
-        assert_eq!(retrieved.primary_gpu_model, "H100");
         assert_eq!(retrieved.last_successful_validation, Some(recent));
 
         // Clean up

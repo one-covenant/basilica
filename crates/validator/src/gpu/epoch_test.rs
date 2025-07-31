@@ -21,7 +21,6 @@ mod tests {
         // Create profile with last_successful_validation
         let profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
-            primary_gpu_model: "H100".to_string(),
             gpu_counts: std::collections::HashMap::from([("H100".to_string(), 4)]),
             total_score: 0.9,
             verification_count: 10,
@@ -72,7 +71,6 @@ mod tests {
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: std::collections::HashMap::from([("H100".to_string(), 2)]),
                 total_score: 0.8,
                 verification_count: 5,
@@ -81,7 +79,6 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: std::collections::HashMap::from([("H100".to_string(), 1)]),
                 total_score: 0.7,
                 verification_count: 3,
@@ -90,7 +87,6 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
-                primary_gpu_model: "H200".to_string(),
                 gpu_counts: std::collections::HashMap::from([("H200".to_string(), 1)]),
                 total_score: 0.6,
                 verification_count: 2,

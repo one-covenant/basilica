@@ -293,7 +293,7 @@ async fn start_validator_services(
         HandlerUtils::print_info("Running in local test mode - Bittensor services disabled");
     }
 
-    let (bittensor_service, miner_prover_opt, weight_setter_opt) = if !local_test {
+    let (_bittensor_service, miner_prover_opt, weight_setter_opt) = if !local_test {
         let bittensor_service: Arc<BittensorService> =
             Arc::new(BittensorService::new(config.bittensor.common.clone()).await?);
 
@@ -366,7 +366,6 @@ async fn start_validator_services(
         persistence_arc.clone(),
         gpu_profile_repo.clone(),
         storage.clone(),
-        bittensor_service,
         config.clone(),
     );
 

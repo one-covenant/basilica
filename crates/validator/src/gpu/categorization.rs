@@ -10,7 +10,6 @@ use std::str::FromStr;
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MinerGpuProfile {
     pub miner_uid: MinerUid,
-    pub primary_gpu_model: String,
     pub gpu_counts: HashMap<String, u32>,
     pub total_score: f64,
     pub verification_count: u32,
@@ -21,7 +20,6 @@ pub struct MinerGpuProfile {
 impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
     fn from_row(row: &SqliteRow) -> Result<Self, sqlx::Error> {
         let miner_uid_val: i64 = row.get("miner_uid");
-        let primary_gpu_model: String = row.get("primary_gpu_model");
         let gpu_counts_json: String = row.get("gpu_counts_json");
         let total_score: f64 = row.get("total_score");
         let verification_count: i64 = row.get("verification_count");
@@ -56,7 +54,6 @@ impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
 
         Ok(Self {
             miner_uid: MinerUid::new(miner_uid_val as u16),
-            primary_gpu_model,
             gpu_counts,
             total_score,
             verification_count: verification_count as u32,
@@ -120,19 +117,6 @@ impl GpuCategorizer {
     }
 
     /// Determine primary GPU model from validation results
-    /// NOTE: This function is deprecated. Use gpu_counts directly for multi-category scoring.
-    pub fn determine_primary_gpu_model(
-        executor_validations: &[ExecutorValidationResult],
-    ) -> String {
-        let gpu_counts = Self::calculate_gpu_distribution(executor_validations);
-
-        // Return the model with the highest count
-        gpu_counts
-            .into_iter()
-            .max_by_key(|(_, count)| *count)
-            .map(|(model, _)| model)
-            .unwrap_or_else(|| "OTHER".to_string())
-    }
 
     /// Calculate GPU model distribution for a miner
     pub fn calculate_gpu_distribution(
@@ -164,13 +148,11 @@ impl MinerGpuProfile {
         executor_validations: &[ExecutorValidationResult],
         total_score: f64,
     ) -> Self {
-        let primary_gpu_model = GpuCategorizer::determine_primary_gpu_model(executor_validations);
         let gpu_counts = GpuCategorizer::calculate_gpu_distribution(executor_validations);
         let verification_count = executor_validations.len() as u32;
 
         Self {
             miner_uid,
-            primary_gpu_model,
             gpu_counts,
             total_score,
             verification_count,
@@ -185,7 +167,6 @@ impl MinerGpuProfile {
         executor_validations: &[ExecutorValidationResult],
         new_score: f64,
     ) {
-        self.primary_gpu_model = GpuCategorizer::determine_primary_gpu_model(executor_validations);
         self.gpu_counts = GpuCategorizer::calculate_gpu_distribution(executor_validations);
         self.total_score = new_score;
         self.verification_count = executor_validations.len() as u32;

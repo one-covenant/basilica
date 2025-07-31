@@ -63,7 +63,7 @@ if [ -n "$MINER_UID" ]; then
     echo
 
     echo "Profile:"
-    run_query "SELECT miner_uid, primary_gpu_model, total_score, last_successful_validation FROM miner_gpu_profiles WHERE miner_uid = $MINER_UID;"
+    run_query "SELECT miner_uid, total_score, last_successful_validation FROM miner_gpu_profiles WHERE miner_uid = $MINER_UID;"
     echo
 
     echo "Executors:"
@@ -164,7 +164,7 @@ elif [ -n "$GPU_PROFILE" ]; then
     echo
 
     echo "Miners with $GPU_MODEL:"
-    run_query "SELECT miner_uid, total_score, last_successful_validation FROM miner_gpu_profiles WHERE primary_gpu_model = '$GPU_MODEL' AND total_score >= 0.1 ORDER BY total_score DESC;"
+    run_query "SELECT miner_uid, total_score, last_successful_validation FROM miner_gpu_profiles WHERE json_extract(gpu_counts_json, '\$.\"$GPU_MODEL\"') IS NOT NULL AND total_score >= 0.1 ORDER BY total_score DESC;"
     echo
 
     echo "Total $GPU_MODEL GPUs:"
@@ -191,7 +191,8 @@ else
     echo
 
     echo "Miner Profiles by GPU Model:"
-    run_query "SELECT primary_gpu_model, COUNT(*) as miner_count, AVG(total_score) as avg_score FROM miner_gpu_profiles WHERE total_score >= 0.1 GROUP BY primary_gpu_model ORDER BY miner_count DESC;"
+    echo "Note: GPU model distribution query removed - primary_gpu_model column no longer exists"
+    echo "Use gpu_counts_json field for detailed GPU distribution analysis"
     echo
 
     echo "Latest Weight Distribution:"
@@ -201,7 +202,7 @@ else
     echo "Top 10 Miners by Score:"
     run_query "SELECT p.miner_uid,
         SUBSTR(m.hotkey, 1, 10) || '...' as hotkey_prefix,
-        p.primary_gpu_model,
+        -- primary_gpu_model column removed
         p.total_score,
         (SELECT COUNT(DISTINCT gpu_uuid) FROM gpu_uuid_assignments WHERE miner_id = 'miner_' || p.miner_uid) as verified_gpus,
         (SELECT COUNT(*) FROM miner_executors WHERE miner_id = 'miner_' || p.miner_uid) as executor_count

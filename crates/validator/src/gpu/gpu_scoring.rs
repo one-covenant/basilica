@@ -42,9 +42,6 @@ impl GpuScoringEngine {
         // Calculate verification score from executor results
         let new_score = self.calculate_verification_score(&executor_validations);
 
-        // Determine primary GPU model
-        let primary_gpu_model = GpuCategorizer::determine_primary_gpu_model(&executor_validations);
-
         // Check if there are any successful validations
         let has_successful_validation = executor_validations
             .iter()
@@ -63,7 +60,6 @@ impl GpuScoringEngine {
 
         info!(
             miner_uid = miner_uid.as_u16(),
-            primary_gpu = %primary_gpu_model,
             score = new_score,
             total_gpus = profile.total_gpu_count(),
             validations = executor_validations.len(),
@@ -584,7 +580,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(profile.miner_uid, miner_uid);
-        assert_eq!(profile.primary_gpu_model, "H100");
         assert!(profile.total_score > 0.0);
 
         // Test existing profile update with different memory
@@ -603,8 +598,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(updated_profile.miner_uid, miner_uid);
-        assert_eq!(updated_profile.primary_gpu_model, "H100");
-
         assert_eq!(updated_profile.total_score, 1.0);
     }
 
@@ -626,7 +619,6 @@ mod tests {
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: h100_counts_1,
                 total_score: 0.8,
                 verification_count: 1,
@@ -635,7 +627,6 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
-                primary_gpu_model: "H100".to_string(),
                 gpu_counts: h100_counts_2,
                 total_score: 0.6,
                 verification_count: 1,
@@ -644,7 +635,6 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
-                primary_gpu_model: "H200".to_string(),
                 gpu_counts: h200_counts,
                 total_score: 0.9,
                 verification_count: 1,
@@ -752,7 +742,6 @@ mod tests {
         // Create initial profile with score 0.2
         let initial_profile = MinerGpuProfile {
             miner_uid,
-            primary_gpu_model: "H100".to_string(),
             gpu_counts: {
                 let mut counts = HashMap::new();
                 counts.insert("H100".to_string(), 1);

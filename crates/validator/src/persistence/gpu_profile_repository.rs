@@ -34,11 +34,10 @@ impl GpuProfileRepository {
 
         let query = r#"
             INSERT INTO miner_gpu_profiles (
-                miner_uid, primary_gpu_model, gpu_counts_json,
+                miner_uid, gpu_counts_json,
                 total_score, verification_count, last_updated, last_successful_validation, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(miner_uid) DO UPDATE SET
-                primary_gpu_model = excluded.primary_gpu_model,
                 gpu_counts_json = excluded.gpu_counts_json,
                 total_score = excluded.total_score,
                 verification_count = excluded.verification_count,
@@ -52,7 +51,6 @@ impl GpuProfileRepository {
 
         sqlx::query(query)
             .bind(profile.miner_uid.as_u16() as i64)
-            .bind(&profile.primary_gpu_model)
             .bind(&gpu_counts_json)
             .bind(profile.total_score)
             .bind(profile.verification_count as i64)
@@ -61,11 +59,7 @@ impl GpuProfileRepository {
             .execute(&self.pool)
             .await?;
 
-        debug!(
-            miner_uid = profile.miner_uid.as_u16(),
-            primary_gpu = %profile.primary_gpu_model,
-            "GPU profile stored"
-        );
+        debug!(miner_uid = profile.miner_uid.as_u16(), "GPU profile stored");
 
         Ok(())
     }
@@ -73,7 +67,7 @@ impl GpuProfileRepository {
     /// Get a specific miner's GPU profile
     pub async fn get_gpu_profile(&self, miner_uid: MinerUid) -> Result<Option<MinerGpuProfile>> {
         let query = r#"
-            SELECT miner_uid, primary_gpu_model, gpu_counts_json,
+            SELECT miner_uid, gpu_counts_json,
                    total_score, verification_count, last_updated, last_successful_validation
             FROM miner_gpu_profiles
             WHERE miner_uid = ?
@@ -87,7 +81,6 @@ impl GpuProfileRepository {
         match row {
             Some(row) => {
                 let miner_uid_val: i64 = row.get("miner_uid");
-                let primary_gpu_model: String = row.get("primary_gpu_model");
                 let gpu_counts_json: String = row.get("gpu_counts_json");
                 let total_score: f64 = row.get("total_score");
                 let verification_count: i64 = row.get("verification_count");
@@ -104,7 +97,6 @@ impl GpuProfileRepository {
 
                 Ok(Some(MinerGpuProfile {
                     miner_uid: MinerUid::new(miner_uid_val as u16),
-                    primary_gpu_model,
                     gpu_counts,
                     total_score,
                     verification_count: verification_count as u32,
@@ -119,7 +111,7 @@ impl GpuProfileRepository {
     /// Get all GPU profiles
     pub async fn get_all_gpu_profiles(&self) -> Result<Vec<MinerGpuProfile>> {
         let query = r#"
-            SELECT miner_uid, primary_gpu_model, gpu_counts_json,
+            SELECT miner_uid, gpu_counts_json,
                    total_score, verification_count, last_updated, last_successful_validation
             FROM miner_gpu_profiles
             ORDER BY total_score DESC
@@ -131,7 +123,6 @@ impl GpuProfileRepository {
 
         for row in rows {
             let miner_uid_val: i64 = row.get("miner_uid");
-            let primary_gpu_model: String = row.get("primary_gpu_model");
             let gpu_counts_json: String = row.get("gpu_counts_json");
             let total_score: f64 = row.get("total_score");
             let verification_count: i64 = row.get("verification_count");
@@ -147,7 +138,6 @@ impl GpuProfileRepository {
 
             profiles.push(MinerGpuProfile {
                 miner_uid: MinerUid::new(miner_uid_val as u16),
-                primary_gpu_model,
                 gpu_counts,
                 total_score,
                 verification_count: verification_count as u32,
@@ -159,13 +149,13 @@ impl GpuProfileRepository {
         Ok(profiles)
     }
 
-    /// Get profiles by GPU model
+    /// Get profiles by GPU model (searches within gpu_counts_json)
     pub async fn get_profiles_by_gpu_model(&self, gpu_model: &str) -> Result<Vec<MinerGpuProfile>> {
         let query = r#"
-            SELECT miner_uid, primary_gpu_model, gpu_counts_json,
+            SELECT miner_uid, gpu_counts_json,
                    total_score, verification_count, last_updated, last_successful_validation
             FROM miner_gpu_profiles
-            WHERE primary_gpu_model = ?
+            WHERE json_extract(gpu_counts_json, '$."' || ? || '"') IS NOT NULL
             ORDER BY total_score DESC
         "#;
 
@@ -178,7 +168,6 @@ impl GpuProfileRepository {
 
         for row in rows {
             let miner_uid_val: i64 = row.get("miner_uid");
-            let primary_gpu_model: String = row.get("primary_gpu_model");
             let gpu_counts_json: String = row.get("gpu_counts_json");
             let total_score: f64 = row.get("total_score");
             let verification_count: i64 = row.get("verification_count");
@@ -194,7 +183,6 @@ impl GpuProfileRepository {
 
             profiles.push(MinerGpuProfile {
                 miner_uid: MinerUid::new(miner_uid_val as u16),
-                primary_gpu_model,
                 gpu_counts,
                 total_score,
                 verification_count: verification_count as u32,
@@ -236,32 +224,36 @@ impl GpuProfileRepository {
         let total_row = sqlx::query(total_query).fetch_one(&self.pool).await?;
         let total_profiles: i64 = total_row.get("count");
 
-        // Get model distribution and scores
-        let stats_query = r#"
-            SELECT
-                primary_gpu_model,
-                COUNT(*) as miner_count,
-                AVG(total_score) as avg_score,
-                SUM(json_extract(gpu_counts_json, '$."' || primary_gpu_model || '"')) as total_gpus
-            FROM miner_gpu_profiles
-            GROUP BY primary_gpu_model
-        "#;
-
-        let rows = sqlx::query(stats_query).fetch_all(&self.pool).await?;
+        // Get all profiles to calculate statistics from gpu_counts_json
+        let profiles_query = "SELECT gpu_counts_json, total_score FROM miner_gpu_profiles";
+        let rows = sqlx::query(profiles_query).fetch_all(&self.pool).await?;
 
         let mut gpu_model_distribution = HashMap::new();
-        let mut average_score_by_model = HashMap::new();
+        let mut total_score_by_model = HashMap::new();
         let mut total_gpus_by_model = HashMap::new();
+        let mut miner_count_by_model = HashMap::new();
 
         for row in rows {
-            let model: String = row.get("primary_gpu_model");
-            let miner_count: i64 = row.get("miner_count");
-            let avg_score: f64 = row.get("avg_score");
-            let total_gpus: Option<i64> = row.get("total_gpus");
+            let gpu_counts_json: String = row.get("gpu_counts_json");
+            let total_score: f64 = row.get("total_score");
 
-            gpu_model_distribution.insert(model.clone(), miner_count as u64);
-            average_score_by_model.insert(model.clone(), avg_score);
-            total_gpus_by_model.insert(model, total_gpus.unwrap_or(0) as u32);
+            let gpu_counts: HashMap<String, u32> = serde_json::from_str(&gpu_counts_json)?;
+
+            for (model, count) in gpu_counts {
+                *gpu_model_distribution.entry(model.clone()).or_insert(0) += 1;
+                *total_score_by_model.entry(model.clone()).or_insert(0.0) += total_score;
+                *total_gpus_by_model.entry(model.clone()).or_insert(0) += count;
+                *miner_count_by_model.entry(model.clone()).or_insert(0) += 1;
+            }
+        }
+
+        // Calculate average scores
+        let mut average_score_by_model = HashMap::new();
+        for (model, total_score) in total_score_by_model {
+            let miner_count = miner_count_by_model.get(&model).unwrap_or(&0);
+            if *miner_count > 0 {
+                average_score_by_model.insert(model, total_score / *miner_count as f64);
+            }
         }
 
         Ok(GpuProfileStatistics {
@@ -582,7 +574,6 @@ mod tests {
 
         let profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
-            primary_gpu_model: "H100".to_string(),
             gpu_counts,
             total_score: 0.85,
             verification_count: 5,
@@ -598,10 +589,8 @@ mod tests {
         assert!(retrieved.is_some());
 
         let retrieved_profile = retrieved.unwrap();
-        assert_eq!(
-            retrieved_profile.primary_gpu_model,
-            profile.primary_gpu_model
-        );
+        // Verify the profile was stored correctly
+        assert_eq!(retrieved_profile.total_score, profile.total_score);
         assert_eq!(retrieved_profile.total_score, profile.total_score);
         assert_eq!(
             retrieved_profile.verification_count,
@@ -621,7 +610,6 @@ mod tests {
         // Initial profile
         let profile1 = MinerGpuProfile {
             miner_uid,
-            primary_gpu_model: "H100".to_string(),
             gpu_counts: gpu_counts.clone(),
             total_score: 0.5,
             verification_count: 1,
@@ -635,7 +623,6 @@ mod tests {
         gpu_counts.insert("H100".to_string(), 2);
         let profile2 = MinerGpuProfile {
             miner_uid,
-            primary_gpu_model: "H100".to_string(),
             gpu_counts,
             total_score: 0.8,
             verification_count: 2,
@@ -665,7 +652,6 @@ mod tests {
 
             let profile = MinerGpuProfile {
                 miner_uid: MinerUid::new(i),
-                primary_gpu_model: model.to_string(),
                 gpu_counts,
                 total_score: 0.5 + (i as f64 * 0.1),
                 verification_count: 1,
@@ -751,7 +737,6 @@ mod tests {
 
         let old_profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
-            primary_gpu_model: "H100".to_string(),
             gpu_counts: gpu_counts.clone(),
             total_score: 0.5,
             verification_count: 1,
@@ -762,14 +747,13 @@ mod tests {
         // Manually insert with old timestamp
         let query = r#"
             INSERT INTO miner_gpu_profiles (
-                miner_uid, primary_gpu_model, gpu_counts_json,
+                miner_uid, gpu_counts_json,
                 total_score, verification_count, last_updated, last_successful_validation, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         "#;
 
         sqlx::query(query)
             .bind(old_profile.miner_uid.as_u16() as i64)
-            .bind(&old_profile.primary_gpu_model)
             .bind(serde_json::to_string(&old_profile.gpu_counts).unwrap())
             .bind(old_profile.total_score)
             .bind(old_profile.verification_count as i64)
@@ -786,7 +770,6 @@ mod tests {
         // Create a recent profile
         let recent_profile = MinerGpuProfile {
             miner_uid: MinerUid::new(2),
-            primary_gpu_model: "H200".to_string(),
             gpu_counts,
             total_score: 0.8,
             verification_count: 1,
@@ -820,7 +803,6 @@ mod tests {
 
             let profile = MinerGpuProfile {
                 miner_uid: MinerUid::new(i as u16),
-                primary_gpu_model: model.to_string(),
                 gpu_counts,
                 total_score: 0.5 + (i as f64 * 0.1),
                 verification_count: 1,
