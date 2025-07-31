@@ -1815,6 +1815,34 @@ impl VerificationEngine {
         )
     }
 
+    /// Clean up stale executors that haven't been verified in a long time
+    pub async fn cleanup_stale_executors(&self, days_inactive: i64) -> Result<()> {
+        let query = r#"
+            DELETE FROM miner_executors
+            WHERE executor_id IN (
+                SELECT me.executor_id
+                FROM miner_executors me
+                LEFT JOIN verification_logs vl ON me.executor_id = vl.executor_id
+                LEFT JOIN gpu_uuid_assignments ga ON me.executor_id = ga.executor_id
+                WHERE vl.timestamp < datetime('now', ? || ' days')
+                OR vl.timestamp IS NULL
+                GROUP BY me.executor_id
+                HAVING COUNT(DISTINCT ga.gpu_uuid) = 0
+            )
+        "#;
+
+        let result = sqlx::query(query)
+            .bind(format!("-{}", days_inactive))
+            .execute(self.persistence.pool())
+            .await?;
+
+        if result.rows_affected() > 0 {
+            info!("Cleaned up {} stale executors", result.rows_affected());
+        }
+
+        Ok(())
+    }
+
     // ====================================================================
     // Binary Validation Methods
     // ====================================================================
