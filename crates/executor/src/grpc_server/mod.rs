@@ -170,7 +170,7 @@ impl ExecutorControl for ExecutorControlService {
         let req = request.into_inner();
 
         // Verify miner authentication first
-        crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
+        crate::miner_auth::verify_miner_request(&self.state.miner_auth_service, &req).await?;
 
         if req.validator_hotkey.is_empty() {
             return Err(tonic::Status::invalid_argument("Validator hotkey required"));
@@ -231,7 +231,7 @@ impl ExecutorControl for ExecutorControlService {
         let req = request.into_inner();
 
         // Verify miner authentication first
-        crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
+        crate::miner_auth::verify_miner_request(&self.state.miner_auth_service, &req).await?;
 
         if req.validator_hotkey.is_empty() {
             return Err(tonic::Status::invalid_argument("Validator hotkey required"));
@@ -356,7 +356,7 @@ impl ExecutorControl for ExecutorControlService {
         let req = request.into_inner();
 
         // Verify miner authentication first
-        crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
+        crate::miner_auth::verify_miner_request(&self.state.miner_auth_service, &req).await?;
 
         info!(
             "Benchmark requested by validator: {} for type: {}",
@@ -482,7 +482,7 @@ impl ExecutorControl for ExecutorControlService {
         let req = request.into_inner();
 
         // Verify miner authentication first
-        crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
+        crate::miner_auth::verify_miner_request(&self.state.miner_auth_service, &req).await?;
 
         info!("Container operation requested: {}", req.operation);
 
@@ -713,7 +713,7 @@ impl ExecutorControl for ExecutorControlService {
 
         // Verify miner authentication if provided (optional for health checks)
         if req.auth.is_some() {
-            crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
+            crate::miner_auth::verify_miner_request(&self.state.miner_auth_service, &req).await?;
         }
 
         info!("Health check requested by: {}", req.requester);

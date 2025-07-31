@@ -44,7 +44,7 @@ fn create_test_auth() -> MinerAuthentication {
 
 // Helper function to create test executor state with disabled signature verification
 async fn create_test_executor_state_no_sig_verify() -> ExecutorState {
-    let mut config = ExecutorConfig {
+    let config = ExecutorConfig {
         managing_miner_hotkey: Hotkey::from_str(TEST_MINER_HOTKEY).unwrap(),
         ..Default::default()
     };

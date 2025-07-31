@@ -82,8 +82,7 @@ impl ExecutorAuthService {
 
         // Create canonical string
         format!(
-            "MINER_AUTH:{}:{}:{}:{}:{}",
-            miner_hotkey, timestamp_ms, nonce, request_id, request_hash
+            "MINER_AUTH:{miner_hotkey}:{timestamp_ms}:{nonce}:{request_id}:{request_hash}"
         )
     }
 
@@ -154,8 +153,7 @@ mod tests {
 
         // Create canonical string
         format!(
-            "MINER_AUTH:{}:{}:{}:{}:{}",
-            miner_hotkey, timestamp_ms, nonce, request_id, request_hash
+            "MINER_AUTH:{miner_hotkey}:{timestamp_ms}:{nonce}:{request_id}:{request_hash}"
         )
     }
 

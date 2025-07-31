@@ -145,8 +145,7 @@ impl MinerAuthService {
 
         // Create canonical string (must match miner's format)
         format!(
-            "MINER_AUTH:{}:{}:{}:{}:{}",
-            miner_hotkey, timestamp_ms, nonce, request_id, request_hash
+            "MINER_AUTH:{miner_hotkey}:{timestamp_ms}:{nonce}:{request_id}:{request_hash}"
         )
     }
 
@@ -231,7 +230,7 @@ where
         .await
         .map_err(|e| {
             debug!("Miner authentication failed: {}", e);
-            Status::unauthenticated(format!("Authentication failed: {}", e))
+            Status::unauthenticated(format!("Authentication failed: {e}"))
         })?;
 
     Ok(())
