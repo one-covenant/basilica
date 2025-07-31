@@ -1832,7 +1832,7 @@ impl VerificationEngine {
         "#;
 
         let result = sqlx::query(query)
-            .bind(format!("-{}", days_inactive))
+            .bind(format!("-{days_inactive}"))
             .execute(self.persistence.pool())
             .await?;
 
