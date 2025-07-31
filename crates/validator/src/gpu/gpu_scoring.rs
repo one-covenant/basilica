@@ -396,8 +396,112 @@ pub struct CategoryStats {
 mod tests {
     use super::*;
     use crate::persistence::gpu_profile_repository::GpuProfileRepository;
+    use crate::persistence::SimplePersistence;
+    use chrono::Utc;
+    use common::identity::MinerUid;
     use std::collections::HashMap;
+    use std::sync::Arc;
     use tempfile::NamedTempFile;
+
+    /// Helper function to seed all required data for GPU profile tests
+    async fn seed_test_data(
+        persistence: &SimplePersistence,
+        gpu_repo: &GpuProfileRepository,
+        profiles: &[MinerGpuProfile],
+    ) -> anyhow::Result<()> {
+        let now = Utc::now();
+
+        for profile in profiles {
+            // Store basic profile data
+            gpu_repo.upsert_gpu_profile(profile).await?;
+
+            let miner_id = format!("miner_{}", profile.miner_uid.as_u16());
+            let executor_id = format!(
+                "miner{}__test-executor-{}",
+                profile.miner_uid.as_u16(),
+                profile.miner_uid.as_u16()
+            );
+
+            // Seed miners table first (required for foreign key constraint)
+            sqlx::query(
+                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, executor_info) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)"
+            )
+            .bind(&miner_id)
+            .bind(format!("hotkey_{}", profile.miner_uid.as_u16()))
+            .bind("127.0.0.1:8080")
+            .bind(now.to_rfc3339())
+            .bind(now.to_rfc3339())
+            .bind(now.to_rfc3339())
+            .bind("{}")
+            .execute(persistence.pool())
+            .await?;
+
+            // Seed gpu_uuid_assignments table
+            for (gpu_model, count) in &profile.gpu_counts {
+                for i in 0..*count {
+                    let gpu_uuid =
+                        format!("gpu-{}-{}-{}", profile.miner_uid.as_u16(), gpu_model, i);
+                    sqlx::query(
+                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified) 
+                         VALUES (?, ?, ?, ?, ?, ?)"
+                    )
+                    .bind(&gpu_uuid)
+                    .bind(i as i32)
+                    .bind(&executor_id)
+                    .bind(&miner_id)
+                    .bind(gpu_model)
+                    .bind(now.to_rfc3339())
+                    .execute(persistence.pool())
+                    .await?;
+                }
+            }
+
+            // Seed miner_executors table
+            let gpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
+            let cpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
+            sqlx::query(
+                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, created_at, updated_at) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            .bind(&executor_id)
+            .bind(&miner_id)
+            .bind(&executor_id)
+            .bind("127.0.0.1:8080")
+            .bind(profile.gpu_counts.values().sum::<u32>() as i64)
+            .bind(&gpu_specs)
+            .bind(&cpu_specs)
+            .bind(now.to_rfc3339())
+            .bind(now.to_rfc3339())
+            .execute(persistence.pool())
+            .await?;
+
+            // Seed verification_logs table if there's a successful validation
+            if let Some(last_successful) = profile.last_successful_validation {
+                let log_id = uuid::Uuid::new_v4().to_string();
+                sqlx::query(
+                    "INSERT INTO verification_logs (id, executor_id, validator_hotkey, verification_type, timestamp, score, success, details, duration_ms, error_message, created_at, updated_at) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                )
+                .bind(&log_id)
+                .bind(&executor_id)
+                .bind("test_validator_hotkey")
+                .bind("gpu_validation")
+                .bind(last_successful.to_rfc3339())
+                .bind(profile.total_score)
+                .bind(1)
+                .bind("{}")
+                .bind(1000i64)
+                .bind(Option::<String>::None)
+                .bind(now.to_rfc3339())
+                .bind(now.to_rfc3339())
+                .execute(persistence.pool())
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
 
     async fn create_test_gpu_profile_repo() -> Result<(Arc<GpuProfileRepository>, NamedTempFile)> {
         let temp_file = NamedTempFile::new()?;
@@ -643,9 +747,11 @@ mod tests {
             },
         ];
 
-        for profile in profiles {
-            repo.upsert_gpu_profile(&profile).await.unwrap();
-        }
+        // Seed all required data
+        let persistence = crate::persistence::SimplePersistence::with_pool(repo.pool().clone());
+        seed_test_data(&persistence, &repo, &profiles)
+            .await
+            .unwrap();
 
         let stats = engine.get_category_statistics().await.unwrap();
 
