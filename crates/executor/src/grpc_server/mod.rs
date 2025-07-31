@@ -169,6 +169,9 @@ impl ExecutorControl for ExecutorControlService {
     ) -> Result<tonic::Response<ProvisionAccessResponse>, tonic::Status> {
         let req = request.into_inner();
 
+        // Verify miner authentication first
+        crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
+
         if req.validator_hotkey.is_empty() {
             return Err(tonic::Status::invalid_argument("Validator hotkey required"));
         }
@@ -226,6 +229,9 @@ impl ExecutorControl for ExecutorControlService {
         request: tonic::Request<SystemProfileRequest>,
     ) -> Result<tonic::Response<SystemProfileResponse>, tonic::Status> {
         let req = request.into_inner();
+
+        // Verify miner authentication first
+        crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
 
         if req.validator_hotkey.is_empty() {
             return Err(tonic::Status::invalid_argument("Validator hotkey required"));
@@ -348,6 +354,10 @@ impl ExecutorControl for ExecutorControlService {
         request: tonic::Request<BenchmarkRequest>,
     ) -> Result<tonic::Response<BenchmarkResponse>, tonic::Status> {
         let req = request.into_inner();
+
+        // Verify miner authentication first
+        crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
+
         info!(
             "Benchmark requested by validator: {} for type: {}",
             req.validator_hotkey, req.benchmark_type
@@ -470,6 +480,10 @@ impl ExecutorControl for ExecutorControlService {
         request: tonic::Request<ContainerOpRequest>,
     ) -> Result<tonic::Response<ContainerOpResponse>, tonic::Status> {
         let req = request.into_inner();
+
+        // Verify miner authentication first
+        crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
+
         info!("Container operation requested: {}", req.operation);
 
         let container_ops = ContainerOperationsService::new(self.state.clone());
@@ -696,6 +710,12 @@ impl ExecutorControl for ExecutorControlService {
         request: tonic::Request<HealthCheckRequest>,
     ) -> Result<tonic::Response<HealthCheckResponse>, tonic::Status> {
         let req = request.into_inner();
+
+        // Verify miner authentication if provided (optional for health checks)
+        if req.auth.is_some() {
+            crate::miner_auth::verify_miner_request(&*self.state.miner_auth_service, &req).await?;
+        }
+
         info!("Health check requested by: {}", req.requester);
 
         match self.health_check.health_check().await {

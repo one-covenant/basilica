@@ -19,8 +19,9 @@ pub mod p256;
 pub use core::{
     decrypt_aes_gcm, derive_key_from_gpu_info, derive_key_simple, encrypt_aes_gcm,
     generate_ephemeral_ed25519_keypair, generate_random_key, hash_blake3, hash_blake3_string,
-    secure_compare, symmetric_decrypt, symmetric_encrypt, verify_bittensor_signature,
-    verify_signature, verify_signature_bittensor, AES_KEY_SIZE, AES_NONCE_SIZE, BLAKE3_DIGEST_SIZE,
+    secure_compare, symmetric_decrypt, symmetric_encrypt,
+    verify_bittensor_signature, verify_signature, verify_signature_bittensor,
+    AES_KEY_SIZE, AES_NONCE_SIZE, BLAKE3_DIGEST_SIZE,
 };
 
 // Re-export commonly used types and functions

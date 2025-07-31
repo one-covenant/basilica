@@ -40,6 +40,7 @@ prost-types = { workspace = true }
 # Internal dependencies
 common = { path = "../common", features = ["sqlite"] }
 protocol = { path = "../protocol" }
+bittensor = { path = "../bittensor" }
 
 # Additional required dependencies
 clap = { version = "4.4", features = ["derive"] }

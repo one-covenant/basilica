@@ -555,4 +555,22 @@ message GpuPerformanceBaseline {
   
   // Maximum acceptable time (prevents inferior hardware)
   uint64 max_time_ms = 6;
+}
+
+// Authentication data for miner-to-executor requests
+message MinerAuthentication {
+  // Miner's hotkey address
+  string miner_hotkey = 1;
+  
+  // Timestamp of the request (Unix milliseconds)
+  uint64 timestamp_ms = 2;
+  
+  // Nonce to prevent replay attacks
+  string nonce = 3;
+  
+  // Signature of the request payload
+  string signature = 4;
+  
+  // Request ID for tracking
+  string request_id = 5;
 } 

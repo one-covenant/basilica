@@ -3,8 +3,9 @@
 use common::identity::Hotkey;
 use executor::grpc_server::executor_management::ExecutorManagementService;
 use executor::grpc_server::{ExecutorControlService, ExecutorServer};
+use executor::miner_auth::MinerAuthConfig;
 use executor::{ExecutorConfig, ExecutorState};
-use protocol::common::Timestamp;
+use protocol::common::{MinerAuthentication, Timestamp};
 use protocol::executor_control::{
     executor_control_server::ExecutorControl, HealthCheckRequest, SystemProfileRequest,
 };
@@ -18,14 +19,47 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tonic::Request;
 
+// Test miner hotkey
+const TEST_MINER_HOTKEY: &str = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
+
 // Helper function to create test executor state
 async fn create_test_executor_state() -> ExecutorState {
     let config = ExecutorConfig {
-        managing_miner_hotkey: Hotkey::from_str("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY")
-            .unwrap(),
+        managing_miner_hotkey: Hotkey::from_str(TEST_MINER_HOTKEY).unwrap(),
         ..Default::default()
     };
     ExecutorState::new(config).await.unwrap()
+}
+
+// Helper function to create test authentication
+fn create_test_auth() -> MinerAuthentication {
+    MinerAuthentication {
+        miner_hotkey: TEST_MINER_HOTKEY.to_string(),
+        timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+        nonce: uuid::Uuid::new_v4().to_string(),
+        signature: "test_signature".to_string(), // For test, signature verification is disabled
+        request_id: uuid::Uuid::new_v4().to_string(),
+    }
+}
+
+// Helper function to create test executor state with disabled signature verification
+async fn create_test_executor_state_no_sig_verify() -> ExecutorState {
+    let mut config = ExecutorConfig {
+        managing_miner_hotkey: Hotkey::from_str(TEST_MINER_HOTKEY).unwrap(),
+        ..Default::default()
+    };
+    
+    let mut state = ExecutorState::new(config).await.unwrap();
+    
+    // Disable signature verification for tests
+    let auth_config = MinerAuthConfig {
+        managing_miner_hotkey: Hotkey::from_str(TEST_MINER_HOTKEY).unwrap(),
+        max_request_age: chrono::Duration::minutes(5),
+        verify_signatures: false, // Disable for tests
+    };
+    state.miner_auth_service = Arc::new(executor::miner_auth::MinerAuthService::new(auth_config));
+    
+    state
 }
 
 #[tokio::test]
@@ -54,6 +88,7 @@ async fn test_health_check_endpoint() {
     let request = Request::new(HealthCheckRequest {
         requester: "test_miner".to_string(),
         check_type: "basic".to_string(),
+        auth: None, // Auth is optional for health checks
     });
 
     let response = service.health_check(request).await.unwrap();
@@ -66,7 +101,7 @@ async fn test_health_check_endpoint() {
 
 #[tokio::test]
 async fn test_system_profile_endpoint() {
-    let state = Arc::new(create_test_executor_state().await);
+    let state = Arc::new(create_test_executor_state_no_sig_verify().await);
     let service = ExecutorControlService::new(state);
 
     let request = Request::new(SystemProfileRequest {
@@ -75,6 +110,7 @@ async fn test_system_profile_endpoint() {
         key_mapping: HashMap::new(),
         profile_depth: "basic".to_string(),
         include_benchmarks: false,
+        auth: Some(create_test_auth()), // Add test auth
     });
 
     let response = service.execute_system_profile(request).await.unwrap();
@@ -174,6 +210,7 @@ async fn test_concurrent_requests() {
             let request = Request::new(HealthCheckRequest {
                 requester: format!("test_miner_{i}"),
                 check_type: "basic".to_string(),
+                auth: None, // Auth is optional for health checks
             });
 
             service_clone.health_check(request).await
@@ -202,6 +239,7 @@ async fn test_state_sharing() {
     let control_request = Request::new(HealthCheckRequest {
         requester: "test".to_string(),
         check_type: "basic".to_string(),
+        auth: None, // Auth is optional for health checks
     });
 
     let management_request = Request::new(MgmtHealthCheckRequest {

@@ -17,6 +17,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
+use crate::executor_auth::ExecutorAuthService;
 use crate::executors::{
     ExecutorConnectionManager, ExecutorGrpcClient, ExecutorGrpcConfig, ExecutorInfo,
 };
@@ -89,6 +90,27 @@ impl SshSessionOrchestrator {
     /// Create a new SSH session orchestrator
     pub fn new(executor_manager: Arc<ExecutorConnectionManager>, config: SshSessionConfig) -> Self {
         let executor_grpc_client = ExecutorGrpcClient::new(ExecutorGrpcConfig::default());
+
+        Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            sessions_by_validator: Arc::new(RwLock::new(HashMap::new())),
+            executor_manager,
+            executor_grpc_client,
+            rate_limits: Arc::new(RwLock::new(HashMap::new())),
+            config,
+        }
+    }
+
+    /// Create a new SSH session orchestrator with authentication
+    pub fn new_with_auth(
+        executor_manager: Arc<ExecutorConnectionManager>,
+        config: SshSessionConfig,
+        auth_service: Arc<ExecutorAuthService>,
+    ) -> Self {
+        let executor_grpc_client = ExecutorGrpcClient::new_with_auth(
+            ExecutorGrpcConfig::default(),
+            auth_service,
+        );
 
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),

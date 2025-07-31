@@ -18,6 +18,8 @@ use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use blake3::Hasher;
 use rand::RngCore;
+use sp_core::sr25519;
+use std::str::FromStr;
 
 /// Blake3 hash digest size in bytes
 pub const BLAKE3_DIGEST_SIZE: usize = 32;
@@ -60,25 +62,17 @@ pub fn hash_blake3_string(data: &[u8]) -> String {
 /// Backward compatibility alias
 pub use hash_blake3_string as hash_blake3;
 
-/// Verify Bittensor signature for given hotkey and data
+
+/// Verify Bittensor signature
 ///
 /// # Arguments
-/// * `hotkey` - Bittensor hotkey (SS58 format)
-/// * `signature_hex` - Signature as hexadecimal string
-/// * `data` - Original data that was signed
+/// * `hotkey` - The hotkey to verify against
+/// * `signature_hex` - The signature as a hex string
+/// * `data` - The data that was signed
 ///
 /// # Returns
-/// * `Ok(())` if signature is valid
-/// * `Err(CryptoError)` if signature verification fails
-///
-/// # Implementation Notes
-/// Uses `crabtensor::sign::verify_signature` for actual verification.
-/// Converts the hotkey to AccountId and decodes the hex signature before verification.
-///
-/// # Security Notes
-/// - Never trust unverified signatures for authorization decisions
-/// - Ensure data integrity by including context in signed data
-/// - Consider replay attack prevention (e.g., timestamps, nonces)
+/// * `Ok(())` - If the signature is valid
+/// * `Err(CryptoError)` - If the signature is invalid or verification fails
 pub fn verify_bittensor_signature(
     hotkey: &Hotkey,
     signature_hex: &str,
@@ -98,20 +92,18 @@ pub fn verify_bittensor_signature(
     }
 
     // Decode signature from hex
-    let signature_bytes =
-        hex::decode(signature_hex).map_err(|e| CryptoError::InvalidSignature {
-            details: format!("Invalid hex signature format: {e}"),
-        })?;
+    let signature_bytes = hex::decode(signature_hex).map_err(|e| CryptoError::InvalidSignature {
+        details: format!("Invalid hex signature format: {e}"),
+    })?;
 
-    // Convert hotkey to AccountId
-    let account_id = hotkey
-        .to_account_id()
-        .map_err(|e| CryptoError::InvalidSignature {
-            details: format!("Invalid hotkey format: {e}"),
-        })?;
+    // Convert to AccountId32 type (same as AccountId in bittensor)
+    let account_id = sp_core::sr25519::Public::from_str(hotkey.as_str()).map_err(|_| {
+        CryptoError::InvalidSignature {
+            details: format!("Invalid hotkey format: {}", hotkey.as_str()),
+        }
+    })?;
 
-    // Convert signature bytes to the expected type for crabtensor
-    // The error message suggests it expects CryptoBytes<64, ...>
+    // Convert signature bytes to the expected type
     if signature_bytes.len() != 64 {
         return Err(CryptoError::InvalidSignature {
             details: format!(
@@ -125,24 +117,23 @@ pub fn verify_bittensor_signature(
     let mut signature_array = [0u8; 64];
     signature_array.copy_from_slice(&signature_bytes);
 
-    // Use sp_core types that crabtensor expects
-    let signature = sp_core::sr25519::Signature::from_raw(signature_array);
+    // Create signature from bytes
+    let signature = sr25519::Signature::from_raw(signature_array);
 
-    // Use crabtensor to verify the signature (returns bool directly)
-    let is_valid = crabtensor::sign::verify_signature(&account_id, &signature, data);
+    // Verify the signature
+    use sp_core::crypto::Pair as _;
+    let is_valid = sr25519::Pair::verify(&signature, data, &account_id);
 
     if is_valid {
-        tracing::debug!("Signature verification successful for hotkey: {}", hotkey);
         Ok(())
     } else {
-        tracing::warn!("Signature verification failed for hotkey: {}", hotkey);
         Err(CryptoError::InvalidSignature {
             details: "Signature verification failed".to_string(),
         })
     }
 }
 
-/// Backward compatibility function with bytes signature
+/// Backward compatibility function with bytes signature  
 pub fn verify_signature_bittensor(
     hotkey: &Hotkey,
     signature: &[u8],
@@ -473,8 +464,7 @@ pub async fn verify_signature(
 
     match verify_bittensor_signature(&hotkey, signature, message.as_bytes()) {
         Ok(()) => Ok(true),
-        Err(CryptoError::InvalidSignature { .. }) => Ok(false),
-        Err(e) => Err(anyhow::anyhow!("Signature verification error: {}", e)),
+        Err(_) => Ok(false), // Any error means invalid signature
     }
 }
 
@@ -604,13 +594,13 @@ mod tests {
     }
 
     #[test]
-    fn test_signature_verification_with_crabtensor() {
+    fn test_signature_verification_with_bittensor() {
         let hotkey =
             Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string()).unwrap();
         let signature_hex = "deadbeefcafebabe1234567890abcdef"; // Valid hex but likely invalid signature
         let data = b"signed_data";
 
-        // This should fail with real crabtensor verification (invalid signature)
+        // This should fail with real bittensor verification (invalid signature)
         let result = verify_bittensor_signature(&hotkey, signature_hex, data);
         // We expect this to fail since we're using a dummy signature
         assert!(result.is_err());

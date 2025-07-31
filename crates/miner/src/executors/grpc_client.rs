@@ -8,9 +8,13 @@ use protocol::executor_control::{
     executor_control_client::ExecutorControlClient, HealthCheckRequest, HealthCheckResponse,
     ProvisionAccessRequest, ProvisionAccessResponse,
 };
+use prost::Message;
+use std::sync::Arc;
 use std::time::Duration;
 use tonic::transport::Channel;
 use tracing::{debug, info, warn};
+
+use crate::executor_auth::{AuthenticatedRequest, ExecutorAuthService};
 
 /// Configuration for executor gRPC client
 #[derive(Debug, Clone)]
@@ -36,12 +40,24 @@ impl Default for ExecutorGrpcConfig {
 /// gRPC client for communicating with executors
 pub struct ExecutorGrpcClient {
     config: ExecutorGrpcConfig,
+    auth_service: Option<Arc<ExecutorAuthService>>,
 }
 
 impl ExecutorGrpcClient {
     /// Create a new executor gRPC client
     pub fn new(config: ExecutorGrpcConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            auth_service: None,
+        }
+    }
+
+    /// Create a new executor gRPC client with authentication
+    pub fn new_with_auth(config: ExecutorGrpcConfig, auth_service: Arc<ExecutorAuthService>) -> Self {
+        Self {
+            config,
+            auth_service: Some(auth_service),
+        }
     }
 
     /// Connect to executor and provision validator SSH access
@@ -67,14 +83,23 @@ impl ExecutorGrpcClient {
             .await
             .with_context(|| format!("Failed to connect to executor at {grpc_endpoint}"))?;
 
-        let request = ProvisionAccessRequest {
+        let mut request = ProvisionAccessRequest {
             validator_hotkey: validator_hotkey.to_string(),
             ssh_public_key: ssh_public_key.to_string(),
             access_token: String::new(), // Not needed for SSH access
             duration_seconds,
             access_type: "ssh".to_string(),
             config: std::collections::HashMap::new(),
+            auth: None,
         };
+
+        // Add authentication if available
+        if let Some(auth_service) = &self.auth_service {
+            let request_bytes = request.encode_to_vec();
+            let auth = auth_service.create_auth(&request_bytes)
+                .with_context(|| "Failed to create authentication")?;
+            request = request.with_auth(auth);
+        }
 
         debug!(
             "Sending ProvisionAccessRequest for validator {} to executor",
@@ -133,10 +158,19 @@ impl ExecutorGrpcClient {
             .await
             .with_context(|| format!("Failed to connect to executor at {grpc_endpoint}"))?;
 
-        let request = HealthCheckRequest {
+        let mut request = HealthCheckRequest {
             requester: "miner".to_string(),
             check_type: "basic".to_string(),
+            auth: None,
         };
+
+        // Add authentication if available
+        if let Some(auth_service) = &self.auth_service {
+            let request_bytes = request.encode_to_vec();
+            let auth = auth_service.create_auth(&request_bytes)
+                .with_context(|| "Failed to create authentication")?;
+            request = request.with_auth(auth);
+        }
 
         let response = self
             .retry_grpc_call(|| {

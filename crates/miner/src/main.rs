@@ -17,6 +17,7 @@ mod auth;
 mod bittensor_core;
 mod cli;
 mod config;
+mod executor_auth;
 mod executor_manager;
 mod executors;
 mod metrics;
@@ -175,6 +176,11 @@ impl MinerState {
                 .with_context(|| format!("Failed to register executor {}", executor_id.uuid))?;
         }
 
+        // Create executor auth service for signing requests
+        let executor_auth_service = Arc::new(executor_auth::ExecutorAuthService::new(
+            chain_registration.get_bittensor_service(),
+        ));
+
         let ssh_session_config = ssh::SshSessionConfig {
             max_sessions_per_validator: config.ssh_session.max_sessions_per_validator,
             session_rate_limit: config.ssh_session.session_rate_limit,
@@ -182,9 +188,10 @@ impl MinerState {
             max_session_duration: Duration::from_secs(config.ssh_session.max_session_duration),
             enable_audit_log: config.ssh_session.enable_audit_log,
         };
-        let ssh_session_orchestrator = Arc::new(ssh::SshSessionOrchestrator::new(
+        let ssh_session_orchestrator = Arc::new(ssh::SshSessionOrchestrator::new_with_auth(
             executor_connection_manager,
             ssh_session_config,
+            executor_auth_service,
         ));
 
         // Initialize validator communications server
