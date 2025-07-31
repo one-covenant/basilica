@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use axum::{
     extract::{Path, State},
@@ -38,12 +41,7 @@ pub async fn list_gpu_profiles_by_category(
             ApiError::InternalError(e.to_string())
         })?;
 
-    // Parse the category string to GpuCategory
-    let target_category = match category.to_uppercase().as_str() {
-        "H100" => GpuCategory::H100,
-        "H200" => GpuCategory::H200,
-        _ => GpuCategory::Other(category.clone()),
-    };
+    let Ok(target_category) = GpuCategory::from_str(&category);
 
     // Filter profiles to only include those with GPUs of the specified category
     // and create new profiles with only the GPUs of that category

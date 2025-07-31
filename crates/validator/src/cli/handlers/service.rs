@@ -358,7 +358,6 @@ async fn start_validator_services(
 
         (Some(bittensor_service), miner_prover, weight_setter_opt)
     } else {
-        // TODO?: why is None supported?
         (None, None, None)
     };
 

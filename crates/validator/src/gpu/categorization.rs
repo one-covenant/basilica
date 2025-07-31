@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use std::collections::HashMap;
+use std::convert::Infallible;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MinerGpuProfile {
@@ -69,6 +71,18 @@ pub enum GpuCategory {
     H100,
     H200,
     Other(String),
+}
+
+impl FromStr for GpuCategory {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "H100" => Ok(GpuCategory::H100),
+            "H200" => Ok(GpuCategory::H200),
+            other => Ok(GpuCategory::Other(other.to_string())),
+        }
+    }
 }
 
 pub struct GpuCategorizer;
