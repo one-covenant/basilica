@@ -3,20 +3,21 @@
 use anyhow::Result;
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
+
+use crate::persistence::SimplePersistence;
 
 /// Core Prometheus metrics collector for Validator
 pub struct ValidatorPrometheusMetrics {
-    // Performance tracking
-    start_time: Instant,
     last_collection: Arc<RwLock<SystemTime>>,
+    persistence: Arc<SimplePersistence>,
 }
 
 impl ValidatorPrometheusMetrics {
     /// Create new Prometheus metrics collector
-    pub fn new() -> Result<Self> {
+    pub fn new(persistence: Arc<SimplePersistence>) -> Result<Self> {
         // Register and describe all metrics
 
         // Validation metrics
@@ -157,8 +158,8 @@ impl ValidatorPrometheusMetrics {
         );
 
         Ok(Self {
-            start_time: Instant::now(),
             last_collection: Arc::new(RwLock::new(SystemTime::now())),
+            persistence,
         })
     }
 
@@ -198,11 +199,6 @@ impl ValidatorPrometheusMetrics {
         }
     }
 
-    /// Update active SSH connections count
-    pub fn set_active_ssh_connections(&self, count: i64) {
-        gauge!("basilica_validator_ssh_active_connections").set(count as f64);
-    }
-
     /// Record database operation
     pub fn record_database_operation(&self, _operation: &str, success: bool, duration: Duration) {
         counter!("basilica_validator_database_operations_total").increment(1);
@@ -232,25 +228,6 @@ impl ValidatorPrometheusMetrics {
         histogram!("basilica_validator_http_request_duration_seconds")
             .record(duration.as_secs_f64());
         histogram!("basilica_validator_http_response_size_bytes").record(response_size as f64);
-    }
-
-    /// Update system metrics
-    #[allow(clippy::too_many_arguments)]
-    pub fn update_system_metrics(
-        &self,
-        cpu_percent: f64,
-        memory_used: u64,
-        memory_total: u64,
-        disk_used: u64,
-        disk_total: u64,
-        _net_sent: u64,
-        _net_received: u64,
-    ) {
-        gauge!("basilica_validator_cpu_usage_percent").set(cpu_percent);
-        gauge!("basilica_validator_memory_usage_bytes").set(memory_used as f64);
-        gauge!("basilica_validator_memory_total_bytes").set(memory_total as f64);
-        gauge!("basilica_validator_disk_usage_bytes").set(disk_used as f64);
-        gauge!("basilica_validator_disk_total_bytes").set(disk_total as f64);
     }
 
     /// Set executor health status
@@ -435,13 +412,68 @@ impl ValidatorPrometheusMetrics {
         Err(anyhow::anyhow!("Failed to parse df output"))
     }
 
-    /// Get uptime in seconds
-    pub fn uptime_seconds(&self) -> f64 {
-        self.start_time.elapsed().as_secs_f64()
-    }
+    /// Collect GPU metrics from database
+    pub async fn collect_gpu_metrics_from_database(&self) {
+        let miners = self.persistence.get_all_registered_miners().await.unwrap();
 
-    /// Get last collection timestamp
-    pub async fn last_collection_timestamp(&self) -> SystemTime {
-        *self.last_collection.read().await
+        for miner in miners {
+            let miner_uid = miner
+                .miner_id
+                .strip_prefix("miner_")
+                .and_then(|uid_str| uid_str.parse::<u16>().ok())
+                .unwrap_or(0);
+
+            let executor_gpu_counts = self
+                .persistence
+                .get_miner_gpu_counts_from_assignments(&miner.miner_id)
+                .await
+                .unwrap();
+
+            debug!(
+                "Miner {} (UID: {}) has {} executors with GPU assignments",
+                miner.miner_id,
+                miner_uid,
+                executor_gpu_counts.len()
+            );
+
+            // Only set metrics for executors that have GPU assignments
+            for (executor_id, gpu_count, gpu_model) in &executor_gpu_counts {
+                // executor_id has "minerXXX__UUID" format
+                let executor_uuid = executor_id
+                    .split("__")
+                    .nth(1)
+                    .unwrap_or(executor_id.as_str());
+
+                debug!(
+                    "Setting executor GPU count: miner_uid={}, executor_id={}, gpu_model={}, gpu_count={}",
+                    miner_uid, executor_uuid, gpu_model, gpu_count
+                );
+
+                gauge!("basilica_validator_executor_gpu_count",
+                    "miner_uid" => miner_uid.to_string(),
+                    "executor_id" => executor_uuid.to_string(),
+                    "gpu_model" => gpu_model.to_string()
+                )
+                .set(*gpu_count as f64);
+            }
+
+            let total_count = self
+                .persistence
+                .get_miner_total_gpu_count_from_assignments(&miner.miner_id)
+                .await
+                .unwrap();
+
+            debug!(
+                "Setting miner total GPU count: miner_uid={}, total_count={}",
+                miner_uid, total_count
+            );
+
+            gauge!("basilica_validator_miner_gpu_count",
+                "miner_uid" => miner_uid.to_string()
+            )
+            .set(total_count as f64);
+        }
+
+        info!("Completed GPU metrics collection from database");
     }
 }

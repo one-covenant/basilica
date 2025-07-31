@@ -272,12 +272,15 @@ impl DynamicDiscoveryController {
             }
         }
 
-        // Check SSH key generation capability
+        // Check SSH key generation capability using a temporary file
+        let temp_dir = std::env::temp_dir();
+        let test_key_path = temp_dir.join(format!("ssh_test_key_{}", std::process::id()));
+
         match tokio::process::Command::new("ssh-keygen")
             .arg("-t")
             .arg(&self.ssh_session_config.key_algorithm)
             .arg("-f")
-            .arg("/dev/null")
+            .arg(&test_key_path)
             .arg("-N")
             .arg("")
             .arg("-q")
@@ -289,6 +292,11 @@ impl DynamicDiscoveryController {
                     result.add_passed("SSH key generation capability is available");
                 } else {
                     result.add_warning("SSH key generation test failed");
+                }
+
+                // Clean up the test key file
+                if let Err(e) = tokio::fs::remove_file(&test_key_path).await {
+                    debug!("Failed to clean up test SSH key file: {}", e);
                 }
             }
             Err(_) => {

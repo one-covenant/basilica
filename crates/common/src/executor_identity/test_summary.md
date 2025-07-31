@@ -13,8 +13,7 @@ Comprehensive test coverage has been implemented for the UUID+HUID executor iden
 - `test_executor_id_display` - Display formatting validation
 - `test_from_parts` - Creating IDs from existing components
 - `test_from_parts_invalid_huid` - Error handling for invalid HUIDs
-- `test_from_uuid_string` - UUID parsing and ID creation
-- `test_from_uuid_string_invalid` - Error handling for invalid UUIDs
+
 - `test_equality` - Equality based on UUID (not HUID)
 - `test_hash` - HashSet compatibility
 - `test_hex_suffix_generation` - Hex suffix format validation

@@ -242,16 +242,6 @@ async fn start_validator_services(
     config: crate::config::ValidatorConfig,
     local_test: bool,
 ) -> Result<()> {
-    // Initialize metrics system if enabled
-    let validator_metrics = if config.metrics.enabled {
-        let metrics = crate::metrics::ValidatorMetrics::new(config.metrics.clone())?;
-        metrics.start_server().await?;
-        HandlerUtils::print_success("Validator metrics server started");
-        Some(metrics)
-    } else {
-        None
-    };
-
     let storage_path =
         std::path::PathBuf::from(&config.storage.data_dir).join("validator_storage.json");
     let storage = common::MemoryStorage::with_file(storage_path).await?;
@@ -288,6 +278,17 @@ async fn start_validator_services(
         ),
     );
 
+    // Initialize metrics system if enabled
+    let validator_metrics = if config.metrics.enabled {
+        let metrics =
+            crate::metrics::ValidatorMetrics::new(config.metrics.clone(), persistence_arc.clone())?;
+        metrics.start_server().await?;
+        HandlerUtils::print_success("Validator metrics server started with GPU metrics collection");
+        Some(metrics)
+    } else {
+        None
+    };
+
     if local_test {
         HandlerUtils::print_info("Running in local test mode - Bittensor services disabled");
     }
@@ -323,6 +324,7 @@ async fn start_validator_services(
             config.ssh_session.clone(),
             bittensor_service.clone(),
             persistence_arc.clone(),
+            validator_metrics.as_ref().map(|m| Arc::new(m.clone())),
         )?);
 
         // Initialize weight setter with block-based timing from emission config

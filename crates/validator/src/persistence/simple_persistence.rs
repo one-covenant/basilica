@@ -254,6 +254,88 @@ impl SimplePersistence {
             info!("Added last_successful_validation column to miner_gpu_profiles table");
         }
 
+        // Check if gpu_uuids column exists in miner_prover_results
+        let gpu_uuid_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('miner_prover_results')
+            WHERE name = 'gpu_uuid'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !gpu_uuid_exists {
+            // Migration to add gpu_uuid column to miner_prover_results
+            sqlx::query(
+                r#"
+                ALTER TABLE miner_prover_results
+                ADD COLUMN gpu_uuid TEXT;
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+
+            info!("Added gpu_uuid column to miner_prover_results table");
+        }
+
+        // Check if gpu_uuids column exists in miner_executors
+        let gpu_uuids_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('miner_executors')
+            WHERE name = 'gpu_uuids'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !gpu_uuids_exists {
+            // Migration to add gpu_uuids column to miner_executors
+            sqlx::query(
+                r#"
+                ALTER TABLE miner_executors
+                ADD COLUMN gpu_uuids TEXT;
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+
+            info!("Added gpu_uuids column to miner_executors table");
+        }
+
+        // Create GPU UUID assignments table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS gpu_uuid_assignments (
+                gpu_uuid TEXT PRIMARY KEY,
+                gpu_index INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                miner_id TEXT NOT NULL,
+                gpu_name TEXT,
+                last_verified TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Create indexes
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_prover_results_gpu_uuid ON miner_prover_results(gpu_uuid);
+            CREATE INDEX IF NOT EXISTS idx_executors_gpu_uuids ON miner_executors(gpu_uuids);
+            CREATE INDEX IF NOT EXISTS idx_gpu_assignments_executor ON gpu_uuid_assignments(executor_id);
+            CREATE INDEX IF NOT EXISTS idx_gpu_assignments_miner ON gpu_uuid_assignments(miner_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 
@@ -633,6 +715,11 @@ impl SimplePersistence {
         })
     }
 
+    /// Get all registered miners
+    pub async fn get_all_registered_miners(&self) -> Result<Vec<MinerData>, anyhow::Error> {
+        self.get_registered_miners(0, 10000).await
+    }
+
     /// Get registered miners with pagination
     pub async fn get_registered_miners(
         &self,
@@ -667,9 +754,23 @@ impl SimplePersistence {
                 executor_count: executor_count as u32,
                 verification_score: row.get("verification_score"),
                 uptime_percentage: row.get("uptime_percentage"),
-                last_seen: DateTime::parse_from_rfc3339(&last_seen_str)?.with_timezone(&Utc),
-                registered_at: DateTime::parse_from_rfc3339(&registered_at_str)?
-                    .with_timezone(&Utc),
+                last_seen: chrono::NaiveDateTime::parse_from_str(
+                    &last_seen_str,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+                .or_else(|_| {
+                    DateTime::parse_from_rfc3339(&last_seen_str).map(|dt| dt.with_timezone(&Utc))
+                })?,
+                registered_at: chrono::NaiveDateTime::parse_from_str(
+                    &registered_at_str,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+                .or_else(|_| {
+                    DateTime::parse_from_rfc3339(&registered_at_str)
+                        .map(|dt| dt.with_timezone(&Utc))
+                })?,
                 executor_info: serde_json::from_str(&executor_info_str)
                     .unwrap_or(Value::Object(serde_json::Map::new())),
             });
@@ -690,6 +791,23 @@ impl SimplePersistence {
         let executor_info = serde_json::to_string(&executors)?;
 
         let mut tx = self.pool.begin().await?;
+
+        // Validate that grpc_addresses are not already registered
+        for executor in executors {
+            let existing =
+                sqlx::query("SELECT COUNT(*) as count FROM miner_executors WHERE grpc_address = ?")
+                    .bind(&executor.grpc_address)
+                    .fetch_one(&mut *tx)
+                    .await?;
+
+            let count: i64 = existing.get("count");
+            if count > 0 {
+                return Err(anyhow::anyhow!(
+                    "Executor with grpc_address {} is already registered",
+                    executor.grpc_address
+                ));
+            }
+        }
 
         sqlx::query(
             "INSERT INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, executor_info)
@@ -761,9 +879,23 @@ impl SimplePersistence {
                 executor_count: executor_count as u32,
                 verification_score: row.get("verification_score"),
                 uptime_percentage: row.get("uptime_percentage"),
-                last_seen: DateTime::parse_from_rfc3339(&last_seen_str)?.with_timezone(&Utc),
-                registered_at: DateTime::parse_from_rfc3339(&registered_at_str)?
-                    .with_timezone(&Utc),
+                last_seen: chrono::NaiveDateTime::parse_from_str(
+                    &last_seen_str,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+                .or_else(|_| {
+                    DateTime::parse_from_rfc3339(&last_seen_str).map(|dt| dt.with_timezone(&Utc))
+                })?,
+                registered_at: chrono::NaiveDateTime::parse_from_str(
+                    &registered_at_str,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+                .or_else(|_| {
+                    DateTime::parse_from_rfc3339(&registered_at_str)
+                        .map(|dt| dt.with_timezone(&Utc))
+                })?,
                 executor_info: serde_json::from_str(&executor_info_str)
                     .unwrap_or(Value::Object(serde_json::Map::new())),
             }))
@@ -794,18 +926,74 @@ impl SimplePersistence {
         }
 
         if let Some(executors) = &request.executors {
+            // When updating executors, we need to handle the miner_executors table
+            let mut tx = self.pool.begin().await?;
+
+            // First, validate that new grpc_addresses aren't already registered by other miners
+            for executor in executors {
+                let existing = sqlx::query(
+                    "SELECT COUNT(*) as count FROM miner_executors
+                     WHERE grpc_address = ? AND miner_id != ?",
+                )
+                .bind(&executor.grpc_address)
+                .bind(miner_id)
+                .fetch_one(&mut *tx)
+                .await?;
+
+                let count: i64 = existing.get("count");
+                if count > 0 {
+                    return Err(anyhow::anyhow!(
+                        "Executor with grpc_address {} is already registered by another miner",
+                        executor.grpc_address
+                    ));
+                }
+            }
+
+            // Delete existing executors for this miner
+            sqlx::query("DELETE FROM miner_executors WHERE miner_id = ?")
+                .bind(miner_id)
+                .execute(&mut *tx)
+                .await?;
+
+            // Insert new executors
+            for executor in executors {
+                let executor_id = Uuid::new_v4().to_string();
+                let gpu_specs_json = serde_json::to_string(&executor.gpu_specs)?;
+                let cpu_specs_json = serde_json::to_string(&executor.cpu_specs)?;
+
+                sqlx::query(
+                    "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                )
+                .bind(&executor_id)
+                .bind(miner_id)
+                .bind(&executor.executor_id)
+                .bind(&executor.grpc_address)
+                .bind(executor.gpu_count as i64)
+                .bind(&gpu_specs_json)
+                .bind(&cpu_specs_json)
+                .bind(&now)
+                .bind(&now)
+                .execute(&mut *tx)
+                .await?;
+            }
+
+            // Also update the executor_info JSON in the miners table
             let executor_info = serde_json::to_string(executors)?;
             let result =
                 sqlx::query("UPDATE miners SET executor_info = ?, updated_at = ? WHERE id = ?")
                     .bind(&executor_info)
                     .bind(&now)
                     .bind(miner_id)
-                    .execute(&self.pool)
+                    .execute(&mut *tx)
                     .await?;
 
             if result.rows_affected() == 0 {
+                tx.rollback().await?;
                 return Err(anyhow::anyhow!("Miner not found"));
             }
+
+            tx.commit().await?;
         }
 
         Ok(())
@@ -932,6 +1120,67 @@ impl SimplePersistence {
         }
 
         Ok(executors)
+    }
+
+    /// Get the actual gpu_count for an executor from gpu_uuid_assignments
+    pub async fn get_executor_gpu_count_from_assignments(
+        &self,
+        miner_id: &str,
+        executor_id: &str,
+    ) -> Result<u32, anyhow::Error> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(DISTINCT gpu_uuid) FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ?",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count as u32)
+    }
+
+    /// Get the actual gpu_count for all executors of a miner from gpu_uuid_assignments
+    pub async fn get_miner_gpu_counts_from_assignments(
+        &self,
+        miner_id: &str,
+    ) -> Result<Vec<(String, u32, String)>, anyhow::Error> {
+        let rows = sqlx::query(
+            "SELECT executor_id, COUNT(DISTINCT gpu_uuid) as gpu_count, gpu_name
+             FROM gpu_uuid_assignments
+             WHERE miner_id = ?
+             GROUP BY executor_id, gpu_name
+             HAVING COUNT(DISTINCT gpu_uuid) > 0",
+        )
+        .bind(miner_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let executor_id: String = row.get("executor_id");
+            let gpu_count: i64 = row.get("gpu_count");
+            let gpu_name: String = row.get("gpu_name");
+            results.push((executor_id, gpu_count as u32, gpu_name));
+        }
+
+        Ok(results)
+    }
+
+    /// Get total GPU count for a miner from gpu_uuid_assignments
+    pub async fn get_miner_total_gpu_count_from_assignments(
+        &self,
+        miner_id: &str,
+    ) -> Result<u32, anyhow::Error> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(DISTINCT gpu_uuid) FROM gpu_uuid_assignments
+             WHERE miner_id = ?",
+        )
+        .bind(miner_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count as u32)
     }
 }
 
@@ -1134,4 +1383,254 @@ pub struct ExecutorData {
     pub gpu_specs: Vec<crate::api::types::GpuSpec>,
     pub cpu_specs: crate::api::types::CpuSpec,
     pub location: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::types::{CpuSpec, ExecutorRegistration, GpuSpec, UpdateMinerRequest};
+
+    #[tokio::test]
+    async fn test_prevent_duplicate_grpc_address_registration() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "test_validator".to_string())
+            .await
+            .expect("Failed to create persistence");
+
+        // First miner registration
+        let executors1 = vec![ExecutorRegistration {
+            executor_id: "exec1".to_string(),
+            grpc_address: "http://192.168.1.1:8080".to_string(),
+            gpu_count: 2,
+            gpu_specs: vec![GpuSpec {
+                name: "RTX 4090".to_string(),
+                memory_gb: 24,
+                compute_capability: "8.9".to_string(),
+            }],
+            cpu_specs: CpuSpec {
+                cores: 16,
+                model: "Intel i9".to_string(),
+                memory_gb: 32,
+            },
+        }];
+
+        // Register first miner successfully
+        let result = persistence
+            .register_miner("miner1", "hotkey1", "http://miner1.com", &executors1)
+            .await;
+        assert!(result.is_ok());
+
+        // Second miner trying to register with same grpc_address
+        let executors2 = vec![ExecutorRegistration {
+            executor_id: "exec2".to_string(),
+            grpc_address: "http://192.168.1.1:8080".to_string(), // Same address!
+            gpu_count: 1,
+            gpu_specs: vec![GpuSpec {
+                name: "RTX 3090".to_string(),
+                memory_gb: 24,
+                compute_capability: "8.6".to_string(),
+            }],
+            cpu_specs: CpuSpec {
+                cores: 8,
+                model: "Intel i7".to_string(),
+                memory_gb: 16,
+            },
+        }];
+
+        // Should fail due to duplicate grpc_address
+        let result = persistence
+            .register_miner("miner2", "hotkey2", "http://miner2.com", &executors2)
+            .await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("already registered"));
+    }
+
+    #[tokio::test]
+    async fn test_prevent_duplicate_grpc_address_update() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "test_validator".to_string())
+            .await
+            .expect("Failed to create persistence");
+
+        // Register first miner
+        let executors1 = vec![ExecutorRegistration {
+            executor_id: "exec1".to_string(),
+            grpc_address: "http://192.168.1.1:8080".to_string(),
+            gpu_count: 2,
+            gpu_specs: vec![],
+            cpu_specs: CpuSpec {
+                cores: 16,
+                model: "Intel i9".to_string(),
+                memory_gb: 32,
+            },
+        }];
+
+        persistence
+            .register_miner("miner1", "hotkey1", "http://miner1.com", &executors1)
+            .await
+            .expect("Failed to register miner1");
+
+        // Register second miner with different address
+        let executors2 = vec![ExecutorRegistration {
+            executor_id: "exec2".to_string(),
+            grpc_address: "http://192.168.1.2:8080".to_string(),
+            gpu_count: 1,
+            gpu_specs: vec![],
+            cpu_specs: CpuSpec {
+                cores: 8,
+                model: "Intel i7".to_string(),
+                memory_gb: 16,
+            },
+        }];
+
+        persistence
+            .register_miner("miner2", "hotkey2", "http://miner2.com", &executors2)
+            .await
+            .expect("Failed to register miner2");
+
+        // Try to update miner2 with miner1's grpc_address
+        let update_request = UpdateMinerRequest {
+            endpoint: None,
+            executors: Some(vec![ExecutorRegistration {
+                executor_id: "exec2_updated".to_string(),
+                grpc_address: "http://192.168.1.1:8080".to_string(), // Trying to use miner1's address
+                gpu_count: 1,
+                gpu_specs: vec![],
+                cpu_specs: CpuSpec {
+                    cores: 8,
+                    model: "Intel i7".to_string(),
+                    memory_gb: 16,
+                },
+            }]),
+            signature: "test_signature".to_string(),
+        };
+
+        let result = persistence.update_miner("miner2", &update_request).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("already registered by another miner"));
+    }
+
+    #[tokio::test]
+    async fn test_allow_same_miner_update_with_same_grpc_address() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "test_validator".to_string())
+            .await
+            .expect("Failed to create persistence");
+
+        // Register miner
+        let executors = vec![ExecutorRegistration {
+            executor_id: "exec1".to_string(),
+            grpc_address: "http://192.168.1.1:8080".to_string(),
+            gpu_count: 2,
+            gpu_specs: vec![],
+            cpu_specs: CpuSpec {
+                cores: 16,
+                model: "Intel i9".to_string(),
+                memory_gb: 32,
+            },
+        }];
+
+        persistence
+            .register_miner("miner1", "hotkey1", "http://miner1.com", &executors)
+            .await
+            .expect("Failed to register miner");
+
+        // Update same miner with same grpc_address (should succeed)
+        let update_request = UpdateMinerRequest {
+            endpoint: Some("http://miner1-updated.com".to_string()),
+            executors: Some(vec![ExecutorRegistration {
+                executor_id: "exec1_updated".to_string(),
+                grpc_address: "http://192.168.1.1:8080".to_string(), // Same address is OK for same miner
+                gpu_count: 3,                                        // Updated GPU count
+                gpu_specs: vec![],
+                cpu_specs: CpuSpec {
+                    cores: 16,
+                    model: "Intel i9".to_string(),
+                    memory_gb: 64, // Updated memory
+                },
+            }]),
+            signature: "test_signature".to_string(),
+        };
+
+        let result = persistence.update_miner("miner1", &update_request).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_gpu_uuid_duplicate_prevention() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "test_validator".to_string())
+            .await
+            .unwrap();
+
+        // Register initial miner with executor
+        let executor1 = ExecutorRegistration {
+            executor_id: "exec1".to_string(),
+            grpc_address: "http://192.168.1.100:50051".to_string(),
+            gpu_count: 1,
+            gpu_specs: vec![],
+            cpu_specs: CpuSpec {
+                cores: 8,
+                model: "Intel i7".to_string(),
+                memory_gb: 32,
+            },
+        };
+
+        persistence
+            .register_miner("miner1", "hotkey1", "http://miner1.com", &[executor1])
+            .await
+            .unwrap();
+
+        // Manually insert GPU UUID for testing
+        let gpu_uuid = "GPU-550e8400-e29b-41d4-a716-446655440000";
+        sqlx::query(
+            "UPDATE miner_executors SET gpu_uuids = ? WHERE miner_id = ? AND executor_id = ?",
+        )
+        .bind(gpu_uuid)
+        .bind("miner1")
+        .bind("exec1")
+        .execute(&persistence.pool)
+        .await
+        .unwrap();
+
+        // Register another miner with different executor
+        let executor2 = ExecutorRegistration {
+            executor_id: "exec2".to_string(),
+            grpc_address: "http://192.168.1.101:50051".to_string(),
+            gpu_count: 1,
+            gpu_specs: vec![],
+            cpu_specs: CpuSpec {
+                cores: 8,
+                model: "Intel i7".to_string(),
+                memory_gb: 32,
+            },
+        };
+
+        persistence
+            .register_miner("miner2", "hotkey2", "http://miner2.com", &[executor2])
+            .await
+            .unwrap();
+
+        // Verify both executors exist
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM miner_executors")
+            .fetch_one(&persistence.pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+
+        // Verify only one has the GPU UUID
+        let gpu_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM miner_executors WHERE gpu_uuids = ?")
+                .bind(gpu_uuid)
+                .fetch_one(&persistence.pool)
+                .await
+                .unwrap();
+        assert_eq!(gpu_count, 1);
+    }
 }

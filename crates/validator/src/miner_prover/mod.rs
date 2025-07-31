@@ -23,6 +23,7 @@ pub use types::VerificationStats;
 pub use verification::VerificationEngine;
 
 use crate::config::VerificationConfig;
+use crate::metrics::ValidatorMetrics;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
 use bittensor::Service as BittensorService;
@@ -44,6 +45,7 @@ impl MinerProver {
         ssh_session_config: crate::config::SshSessionConfig,
         bittensor_service: Arc<BittensorService>,
         persistence: Arc<SimplePersistence>,
+        metrics: Option<Arc<ValidatorMetrics>>,
     ) -> Result<Self> {
         let discovery = MinerDiscovery::new(bittensor_service.clone(), config.clone());
 
@@ -59,6 +61,7 @@ impl MinerProver {
                 ssh_session_config.clone(),
                 validator_hotkey,
                 persistence,
+                metrics,
             )
             .with_bittensor_service(bittensor_service.clone());
 

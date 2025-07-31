@@ -12,6 +12,7 @@ pub use api_metrics::*;
 pub use business_metrics::*;
 pub use prometheus_metrics::*;
 
+use crate::persistence::SimplePersistence;
 use anyhow::Result;
 use common::config::MetricsConfig;
 use std::sync::Arc;
@@ -27,8 +28,8 @@ pub struct ValidatorMetrics {
 
 impl ValidatorMetrics {
     /// Initialize validator metrics system
-    pub fn new(config: MetricsConfig) -> Result<Self> {
-        let prometheus = Arc::new(ValidatorPrometheusMetrics::new()?);
+    pub fn new(config: MetricsConfig, persistence: Arc<SimplePersistence>) -> Result<Self> {
+        let prometheus = Arc::new(ValidatorPrometheusMetrics::new(persistence.clone())?);
         let business = Arc::new(ValidatorBusinessMetrics::new(prometheus.clone())?);
         let api = Arc::new(ValidatorApiMetrics::new(prometheus.clone())?);
 
@@ -86,6 +87,7 @@ impl ValidatorMetrics {
             loop {
                 ticker.tick().await;
                 prometheus.collect_system_metrics().await;
+                prometheus.collect_gpu_metrics_from_database().await;
             }
         });
 

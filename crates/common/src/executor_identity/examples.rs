@@ -182,6 +182,68 @@ pub mod sqlite_examples {
     }
 }
 
+/// Examples for ExecutorId usage
+use crate::executor_identity::executor_id::ExecutorId;
+
+/// Example demonstrating seeded ExecutorId generation
+pub fn seeded_generation_example() -> anyhow::Result<()> {
+    println!("=== Seeded ExecutorId Generation Example ===");
+
+    // Create ExecutorIds with the same seed
+    let seed = "my-deterministic-seed";
+    let id1 = ExecutorId::new(seed)?;
+    let id2 = ExecutorId::new(seed)?;
+
+    println!("Seed: {seed}");
+    println!("First ID:  {id1}");
+    println!("Second ID: {id2}");
+    println!("Identical: {}", id1 == id2);
+
+    // Create ExecutorIds with different seeds
+    let seed1 = "seed-1";
+    let seed2 = "seed-2";
+    let id3 = ExecutorId::new(seed1)?;
+    let id4 = ExecutorId::new(seed2)?;
+
+    println!("\nDifferent seeds:");
+    println!("Seed 1: {seed1}");
+    println!("ID 3:   {id3}");
+    println!("Seed 2: {seed2}");
+    println!("ID 4:   {id4}");
+    println!("Different: {}", id3 != id4);
+
+    // Compare with different seed generation
+    let random_id = ExecutorId::new("different-seed")?;
+    println!("\nDifferent seed generation:");
+    println!("Different seed ID: {random_id}");
+    println!("Different from seeded: {}", id1 != random_id);
+
+    Ok(())
+}
+
+/// Example demonstrating the difference between seeded and random generation
+pub fn seeded_vs_random_example() -> anyhow::Result<()> {
+    println!("=== Seeded vs Random Generation ===");
+
+    let seed = "consistent-seed";
+
+    // Generate multiple IDs with the same seed
+    println!("With same seed '{seed}':");
+    for i in 1..=3 {
+        let id = ExecutorId::new(seed)?;
+        println!("  ID {i}: {id}");
+    }
+
+    // Generate multiple IDs with different seeds
+    println!("\nWith different seeds:");
+    for i in 1..=3 {
+        let id = ExecutorId::new(&format!("seed-{i}"))?;
+        println!("  ID {i}: {id}");
+    }
+
+    Ok(())
+}
+
 /// Example SQL schema for executor identity tables
 pub const EXAMPLE_SCHEMA: &str = r#"
 -- Main executor identities table

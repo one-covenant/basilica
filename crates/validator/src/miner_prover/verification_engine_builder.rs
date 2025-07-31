@@ -6,6 +6,7 @@
 use super::miner_client::MinerClientConfig;
 use super::verification::VerificationEngine;
 use crate::config::{AutomaticVerificationConfig, SshSessionConfig, VerificationConfig};
+use crate::metrics::ValidatorMetrics;
 use crate::persistence::SimplePersistence;
 use crate::ssh::{SshAutomationComponents, ValidatorSshClient};
 use anyhow::{Context, Result};
@@ -22,6 +23,7 @@ pub struct VerificationEngineBuilder {
     persistence: Arc<SimplePersistence>,
     bittensor_service: Option<Arc<bittensor::Service>>,
     ssh_client: Option<Arc<ValidatorSshClient>>,
+    metrics: Option<Arc<ValidatorMetrics>>,
 }
 
 impl VerificationEngineBuilder {
@@ -32,6 +34,7 @@ impl VerificationEngineBuilder {
         ssh_session_config: SshSessionConfig,
         validator_hotkey: Hotkey,
         persistence: Arc<SimplePersistence>,
+        metrics: Option<Arc<ValidatorMetrics>>,
     ) -> Self {
         Self {
             config,
@@ -41,6 +44,7 @@ impl VerificationEngineBuilder {
             persistence,
             bittensor_service: None,
             ssh_client: None,
+            metrics,
         }
     }
 
@@ -99,6 +103,7 @@ impl VerificationEngineBuilder {
             ssh_automation.enable_dynamic_discovery,
             Some(ssh_automation.ssh_key_manager.clone()),
             self.bittensor_service,
+            self.metrics,
         )?;
 
         info!(
@@ -270,6 +275,7 @@ mod tests {
             ssh_config,
             hotkey,
             persistence,
+            None,
         );
 
         let result = builder.build().await;
@@ -306,6 +312,7 @@ mod tests {
             ssh_config,
             hotkey,
             persistence,
+            None,
         )
         .with_ssh_client(ssh_client);
 
@@ -330,6 +337,7 @@ mod tests {
             ssh_config,
             hotkey,
             persistence,
+            None,
         );
 
         let summary = builder.get_config_summary();
@@ -396,6 +404,7 @@ mod tests {
             true, // dynamic discovery enabled
             None, // no SSH key manager
             None, // no bittensor service
+            None, // no metrics
         );
         assert!(result.is_err());
 
@@ -409,6 +418,7 @@ mod tests {
             false, // dynamic discovery disabled
             None,  // no SSH key manager
             None,  // no bittensor service
+            None,  // no metrics
         );
         assert!(result.is_ok());
 

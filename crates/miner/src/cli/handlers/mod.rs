@@ -9,7 +9,6 @@ pub mod database;
 pub mod disambiguation;
 pub mod executor;
 pub mod executor_identity;
-pub mod identity_integration;
 pub mod service;
 
 pub use assignment::*;

@@ -4,9 +4,8 @@
 //! validator requests for GPU rental and computational challenges.
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use common::identity::MinerUid;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,83 +38,7 @@ use session_cleanup::run_cleanup_service;
 use ssh::{MinerSshConfig, SshCleanupService, ValidatorAccessService};
 use validator_comms::ValidatorCommsServer;
 
-#[derive(Parser, Debug)]
-#[command(author, version, about = "Basilca Miner - Bittensor neuron managing executor fleets", long_about = None)]
-struct Args {
-    /// Configuration file path
-    #[arg(short, long, default_value = "miner.toml")]
-    config: String,
-
-    /// Log level (trace, debug, info, warn, error)
-    #[arg(short, long, default_value = "info")]
-    log_level: String,
-
-    /// Enable prometheus metrics endpoint
-    #[arg(long)]
-    metrics: bool,
-
-    /// Metrics server address
-    #[arg(long, default_value = "0.0.0.0:9091")]
-    metrics_addr: SocketAddr,
-
-    /// Generate sample configuration file
-    #[arg(long)]
-    gen_config: bool,
-
-    /// Subcommands for CLI operations
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Subcommand, Debug)]
-enum Commands {
-    /// Executor management commands
-    Executor {
-        #[command(subcommand)]
-        executor_cmd: cli::ExecutorCommand,
-    },
-    /// Validator management commands
-    Validator {
-        #[command(subcommand)]
-        validator_cmd: cli::ValidatorCommand,
-    },
-    /// Manual executor assignment commands
-    Assignment {
-        #[command(subcommand)]
-        assignment_cmd: cli::AssignmentCommand,
-    },
-    /// Service management commands
-    Service {
-        #[command(subcommand)]
-        service_cmd: cli::ServiceCommand,
-    },
-    /// Database management commands
-    Database {
-        #[command(subcommand)]
-        database_cmd: cli::DatabaseCommand,
-    },
-    /// Configuration management commands
-    Config {
-        #[command(subcommand)]
-        config_cmd: cli::ConfigCommand,
-    },
-    /// Show miner status and statistics
-    Status,
-    /// Run database migrations
-    Migrate,
-    /// Deploy executors to remote machines
-    DeployExecutors {
-        /// Only show what would be deployed without actually deploying
-        #[arg(long)]
-        dry_run: bool,
-        /// Deploy to specific machine IDs only (comma-separated)
-        #[arg(long)]
-        only_machines: Option<String>,
-        /// Skip deployment and only check status
-        #[arg(long)]
-        status_only: bool,
-    },
-}
+use crate::cli::{Args, Commands};
 
 /// Main miner state
 pub struct MinerState {
@@ -149,7 +72,7 @@ impl MinerState {
 
         // Initialize assignment database and run migrations
         let assignment_pool = sqlx::SqlitePool::connect(&config.database.url).await?;
-        let assignment_db = persistence::AssignmentDb::new(assignment_pool);
+        let assignment_db = persistence::AssignmentDb::new(assignment_pool.clone());
         assignment_db.run_migrations().await?;
 
         // Initialize executor manager
@@ -175,32 +98,42 @@ impl MinerState {
         let chain_registration = ChainRegistration::new(config.bittensor.clone()).await?;
 
         // Initialize validator discovery based on configuration
-        let validator_discovery =
-            if config.bittensor.skip_registration || !config.validator_assignment.enabled {
-                // Validator assignment disabled - return all executors to all validators
-                None
-            } else {
-                // Create assignment strategy based on configuration
-                let strategy: Box<dyn validator_discovery::AssignmentStrategy> =
-                    match config.validator_assignment.strategy.as_str() {
-                        "round_robin" => Box::new(validator_discovery::RoundRobinAssignment),
-                        _ => {
-                            tracing::warn!(
-                                "Unknown assignment strategy '{}', defaulting to round_robin",
+        let validator_discovery = if config.bittensor.skip_registration
+            || !config.validator_assignment.enabled
+        {
+            info!("Validator discovery disabled (local testing mode)");
+            None
+        } else {
+            let strategy: Box<dyn validator_discovery::AssignmentStrategy> = match config
+                .validator_assignment
+                .strategy
+                .as_str()
+            {
+                "round_robin" => Box::new(validator_discovery::RoundRobinAssignment),
+                "highest_stake" => {
+                    let strategy = validator_discovery::HighestStakeAssignment::new(
+                        assignment_pool.clone(),
+                        config.validator_assignment.min_stake_threshold,
+                        config.validator_assignment.validator_hotkey.clone(),
+                    );
+                    Box::new(strategy)
+                }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                                "Unknown assignment strategy '{}'. Valid strategies are: highest_stake, round_robin",
                                 config.validator_assignment.strategy
-                            );
-                            Box::new(validator_discovery::RoundRobinAssignment)
-                        }
-                    };
-
-                let discovery = validator_discovery::ValidatorDiscovery::new(
-                    chain_registration.get_bittensor_service(),
-                    executor_manager.clone(),
-                    strategy,
-                    config.bittensor.common.netuid,
-                );
-                Some(std::sync::Arc::new(discovery))
+                            ));
+                }
             };
+
+            let discovery = validator_discovery::ValidatorDiscovery::new(
+                chain_registration.get_bittensor_service(),
+                executor_manager.clone(),
+                strategy,
+                config.bittensor.common.netuid,
+            );
+            Some(std::sync::Arc::new(discovery))
+        };
 
         // Initialize SSH session orchestrator
         let executor_connection_config = executors::ExecutorConnectionConfig {
@@ -216,16 +149,19 @@ impl MinerState {
 
         // Register all executors with the connection manager
         for executor_config in &config.executor_management.executors {
+            let executor_id = registration_db
+                .get_or_create_executor_id(&executor_config.grpc_address)
+                .await?;
             if !executor_config.enabled {
-                info!("Skipping disabled executor: {}", executor_config.id);
+                info!("Skipping disabled executor: {}", executor_id.uuid);
                 continue;
             }
 
             use std::str::FromStr;
             let executor_info = executors::ExecutorInfo {
-                id: common::identity::ExecutorId::from_str(&executor_config.id).map_err(|e| {
-                    anyhow::anyhow!("Invalid executor ID '{}': {}", executor_config.id, e)
-                })?,
+                id: common::identity::ExecutorId::from_str(&executor_id.uuid.to_string()).map_err(
+                    |e| anyhow::anyhow!("Invalid executor ID '{}': {}", executor_id.uuid, e),
+                )?,
                 host: executor_config.host.clone(),
                 ssh_port: executor_config.ssh_port,
                 ssh_username: executor_config.ssh_username.clone(),
@@ -236,7 +172,7 @@ impl MinerState {
             executor_connection_manager
                 .register_executor(executor_info)
                 .await
-                .with_context(|| format!("Failed to register executor {}", executor_config.id))?;
+                .with_context(|| format!("Failed to register executor {}", executor_id.uuid))?;
         }
 
         let ssh_session_config = ssh::SshSessionConfig {
@@ -500,7 +436,10 @@ async fn handle_cli_command(command: Commands, config: &MinerConfig) -> Result<(
             cli::handle_database_command(database_cmd, config).await
         }
         Commands::Config { config_cmd } => cli::handle_config_command(config_cmd, config).await,
-        Commands::Status => cli::show_miner_status(config).await,
+        Commands::Status => {
+            let db = RegistrationDb::new(&config.database).await?;
+            cli::show_miner_status(config, db).await
+        }
         Commands::Migrate => {
             let mut db_config = config.database.clone();
             db_config.run_migrations = true;

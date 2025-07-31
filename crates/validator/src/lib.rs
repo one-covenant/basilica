@@ -20,7 +20,7 @@ pub mod validation;
 pub use api::types::{RentCapacityRequest, RentCapacityResponse};
 pub use api::ApiHandler;
 pub use bittensor_core::weight_setter::WeightSetter;
-pub use cli::{Args, Cli, Command, CommandHandler};
+pub use cli::{Args, Command};
 pub use config::{ValidatorConfig, VerificationConfig};
 pub use metrics::{
     ValidatorApiMetrics, ValidatorBusinessMetrics, ValidatorMetrics, ValidatorPrometheusMetrics,
