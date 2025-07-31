@@ -19,6 +19,10 @@ impl SimplePersistence {
 }
 
 impl SimplePersistence {
+    pub fn with_pool(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
     pub async fn new(
         database_path: &str,
         _validator_hotkey: String,

@@ -117,7 +117,6 @@ impl GpuCategorizer {
     }
 
     /// Determine primary GPU model from validation results
-
     /// Calculate GPU model distribution for a miner
     pub fn calculate_gpu_distribution(
         executor_validations: &[ExecutorValidationResult],
