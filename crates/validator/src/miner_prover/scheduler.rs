@@ -52,10 +52,11 @@ impl VerificationScheduler {
     ) -> Result<()> {
         let mut interval = interval(self.config.verification_interval);
         let mut discovery_interval = tokio::time::interval(Duration::from_secs(300)); // 5-minute discovery cycle
+        let mut cleanup_interval = tokio::time::interval(Duration::from_secs(3600)); // 1-hour cleanup cycle
 
         info!("Starting enhanced verification scheduler with automatic SSH session management");
         info!(
-            "Verification interval: {}s, Discovery interval: 300s",
+            "Verification interval: {}s, Discovery interval: 300s, Cleanup interval: 3600s",
             self.config.verification_interval.as_secs()
         );
 
@@ -70,6 +71,11 @@ impl VerificationScheduler {
                 _ = discovery_interval.tick() => {
                     if let Err(e) = self.run_discovery_verification_cycle(&discovery, &verification).await {
                         error!("Discovery verification cycle failed: {}", e);
+                    }
+                }
+                _ = cleanup_interval.tick() => {
+                    if let Err(e) = verification.cleanup_stale_executors(1).await {
+                        error!("Stale executor cleanup failed: {}", e);
                     }
                 }
             }

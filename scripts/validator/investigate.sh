@@ -106,9 +106,139 @@ if [ -n "$MINER_UID" ]; then
     echo "Successful Validations (last 5):"
     run_query "SELECT executor_id, timestamp, score FROM verification_logs WHERE executor_id IN (SELECT executor_id FROM miner_executors WHERE miner_id = 'miner_$MINER_UID') AND success = 1 ORDER BY timestamp DESC LIMIT 5;"
     echo
-    
+
     echo "Failed Validations (last 5):"
     run_query "SELECT executor_id, timestamp, error_message FROM verification_logs WHERE executor_id IN (SELECT executor_id FROM miner_executors WHERE miner_id = 'miner_$MINER_UID') AND success = 0 ORDER BY timestamp DESC LIMIT 5;"
+    echo
+
+    echo "=== HEALTH CHECK ANALYSIS ==="
+    echo
+    echo "Executor Connectivity Status:"
+    if [ -n "$SSH_CONN" ]; then
+        EXECUTORS=$(ssh "$SSH_CONN" "sqlite3 '$DB_PATH' \"SELECT executor_id || '|' || grpc_address FROM miner_executors WHERE miner_id = 'miner_$MINER_UID';\"")
+
+        for exec_info in $EXECUTORS; do
+            executor_id=$(echo "$exec_info" | cut -d'|' -f1)
+            grpc_address=$(echo "$exec_info" | cut -d'|' -f2)
+            if [[ -z "$grpc_address" ]]; then
+                echo "  $executor_id: GRPC address not set"
+                continue
+            fi
+            if [[ "$grpc_address" =~ ^https?://([^:]+):([0-9]+) ]]; then
+                host="${BASH_REMATCH[1]}"
+                port="${BASH_REMATCH[2]}"
+            elif [[ "$grpc_address" =~ ^([^:]+):([0-9]+)$ ]]; then
+                host="${BASH_REMATCH[1]}"
+                port="${BASH_REMATCH[2]}"
+            else
+                echo "  $executor_id: Invalid address format: $grpc_address"
+                continue
+            fi
+
+            echo -n "  $executor_id ($host:$port): "
+
+            if ssh "$SSH_CONN" "timeout 2 bash -c 'echo > /dev/tcp/$host/$port' 2>/dev/null"; then
+                RECENT_SUCCESS=$(ssh "$SSH_CONN" "sqlite3 '$DB_PATH' \"SELECT COUNT(*) FROM verification_logs WHERE executor_id = '$executor_id' AND success = 1 AND timestamp > datetime('now', '-1 hour');\"")
+                if [ "$RECENT_SUCCESS" -gt 0 ]; then
+                    echo "TCP OK (verified recently)"
+                else
+                    echo "TCP OK (no recent verifications)"
+                fi
+            else
+                echo "TCP UNREACHABLE"
+            fi
+        done
+    fi
+    echo
+
+    echo "Executor Registration vs Activity:"
+    run_query "SELECT
+        me.executor_id,
+        me.gpu_count as registered_gpus,
+        COALESCE(ga.verified_gpus, 0) as verified_gpus,
+        me.status,
+        CASE
+            WHEN vl.last_verification IS NULL THEN 'Never'
+            ELSE datetime(vl.last_verification)
+        END as last_verification,
+        CASE
+            WHEN datetime(vl.last_verification) > datetime('now', '-1 hour') THEN 'Active'
+            WHEN datetime(vl.last_verification) > datetime('now', '-1 day') THEN 'Stale'
+            ELSE 'Inactive'
+        END as health_status
+    FROM miner_executors me
+    LEFT JOIN (
+        SELECT executor_id, COUNT(DISTINCT gpu_uuid) as verified_gpus
+        FROM gpu_uuid_assignments
+        WHERE miner_id = 'miner_$MINER_UID'
+        GROUP BY executor_id
+    ) ga ON me.executor_id = ga.executor_id
+    LEFT JOIN (
+        SELECT executor_id, MAX(timestamp) as last_verification
+        FROM verification_logs
+        WHERE success = 1
+        GROUP BY executor_id
+    ) vl ON me.executor_id = vl.executor_id
+    WHERE me.miner_id = 'miner_$MINER_UID'
+    ORDER BY health_status;"
+    echo
+
+    echo "Discovery Failures (last 24h):"
+    run_query "SELECT
+        COUNT(*) as discovery_failures,
+        MAX(timestamp) as last_failure
+    FROM verification_logs
+    WHERE executor_id = 'miner_$MINER_UID'
+    AND error_message LIKE '%Failed to discover executors%'
+    AND timestamp > datetime('now', '-1 day');"
+    echo
+
+    echo "Miner Endpoint Status:"
+    if [ -n "$SSH_CONN" ]; then
+        MINER_ENDPOINT=$(ssh "$SSH_CONN" "sqlite3 '$DB_PATH' \"SELECT endpoint FROM miners WHERE id = 'miner_$MINER_UID';\"")
+        if [ -n "$MINER_ENDPOINT" ]; then
+            echo -n "  Endpoint: $MINER_ENDPOINT - "
+            if ssh "$SSH_CONN" "timeout 2 curl -s $MINER_ENDPOINT/executors >/dev/null 2>&1"; then
+                echo "REACHABLE"
+                echo "  Executors reported by miner:"
+                ssh "$SSH_CONN" "curl -s $MINER_ENDPOINT/executors 2>/dev/null | jq -r '.[] | \"    \" + .id + \" (\" + .grpc_address + \")\"' 2>/dev/null || echo '    Failed to parse response'"
+            else
+                echo "UNREACHABLE (Discovery will fail)"
+            fi
+        fi
+    fi
+    echo
+
+    echo "Verification Pattern Analysis:"
+    run_query "SELECT
+        verification_type,
+        COUNT(*) as count,
+        SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as successful,
+        ROUND(100.0 * SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as success_rate
+    FROM verification_logs
+    WHERE executor_id IN (SELECT executor_id FROM miner_executors WHERE miner_id = 'miner_$MINER_UID')
+    AND timestamp > datetime('now', '-1 day')
+    GROUP BY verification_type;"
+    echo
+
+    echo "=== HEALTH SUMMARY ==="
+    if [ -n "$SSH_CONN" ]; then
+        TOTAL_EXECUTORS=$(ssh "$SSH_CONN" "sqlite3 '$DB_PATH' \"SELECT COUNT(*) FROM miner_executors WHERE miner_id = 'miner_$MINER_UID';\"")
+        ACTIVE_EXECUTORS=$(ssh "$SSH_CONN" "sqlite3 '$DB_PATH' \"SELECT COUNT(DISTINCT executor_id) FROM verification_logs WHERE executor_id IN (SELECT executor_id FROM miner_executors WHERE miner_id = 'miner_$MINER_UID') AND success = 1 AND timestamp > datetime('now', '-1 hour');\"")
+        EXECUTORS_WITH_GPUS=$(ssh "$SSH_CONN" "sqlite3 '$DB_PATH' \"SELECT COUNT(DISTINCT executor_id) FROM gpu_uuid_assignments WHERE miner_id = 'miner_$MINER_UID';\"")
+
+        echo "  Total Executors: $TOTAL_EXECUTORS"
+        echo "  Active Executors (last hour): $ACTIVE_EXECUTORS"
+        echo "  Executors with verified GPUs: $EXECUTORS_WITH_GPUS"
+
+        if [ "$ACTIVE_EXECUTORS" -eq 0 ]; then
+            echo "  WARNING: No active executors found!"
+        elif [ "$ACTIVE_EXECUTORS" -lt "$TOTAL_EXECUTORS" ]; then
+            echo "  WARNING: Only $ACTIVE_EXECUTORS/$TOTAL_EXECUTORS executors are active"
+        else
+            echo "  All executors appear healthy"
+        fi
+    fi
 
 elif [ -n "$EXECUTOR_ID" ]; then
     echo "=== EXECUTOR $EXECUTOR_ID BREAKDOWN ==="
