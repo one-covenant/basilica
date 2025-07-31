@@ -23,14 +23,14 @@ pub async fn handle_rental_command(
 ) -> Result<()> {
     match action {
         RentalAction::Start {
-            miner,
+            miner_uid,
+            miner_endpoint,
             executor,
             container,
             ports,
             env,
             ssh_key,
             command,
-            duration_hours,
             cpu_cores,
             memory_mb,
             gpu_count,
@@ -38,14 +38,14 @@ pub async fn handle_rental_command(
             handle_start_rental(
                 validator_hotkey,
                 persistence,
-                miner,
+                miner_uid,
+                miner_endpoint,
                 executor,
                 container,
                 ports,
                 env,
                 ssh_key,
                 command,
-                duration_hours,
                 cpu_cores,
                 memory_mb,
                 gpu_count,
@@ -68,21 +68,44 @@ pub async fn handle_rental_command(
 async fn handle_start_rental(
     validator_hotkey: Hotkey,
     persistence: Arc<SimplePersistence>,
-    miner_endpoint: String,
+    miner_uid: Option<u16>,
+    miner_endpoint: Option<String>,
     executor: String,
     container: String,
     ports: Vec<String>,
     env: Vec<String>,
     ssh_key_path: std::path::PathBuf,
     command: Option<String>,
-    duration_hours: u32,
     cpu_cores: Option<f64>,
     memory_mb: Option<i64>,
     gpu_count: Option<u32>,
 ) -> Result<()> {
+    if miner_uid.is_none() && miner_endpoint.is_none() {
+        return Err(anyhow::anyhow!(
+            "Either --miner-uid or --miner-endpoint must be provided"
+        ));
+    }
+
+    let (miner_id, actual_endpoint) = if let Some(uid) = miner_uid {
+        let miner_data = persistence
+            .get_miner_by_id(&uid.to_string())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Miner with UID {} not found", uid))?;
+        (uid.to_string(), miner_data.endpoint)
+    } else if let Some(endpoint) = miner_endpoint {
+        let miners = persistence.get_all_registered_miners().await?;
+        let miner_data = miners
+            .into_iter()
+            .find(|m| m.endpoint == endpoint)
+            .ok_or_else(|| anyhow::anyhow!("No miner found with endpoint {}", endpoint))?;
+        (miner_data.miner_id, endpoint)
+    } else {
+        unreachable!("Already checked that at least one is provided");
+    };
+
     info!(
-        "Starting rental on executor {} via miner {}",
-        executor, miner_endpoint
+        "Starting rental on executor {} via miner {} ({})",
+        executor, miner_id, actual_endpoint
     );
 
     // Read SSH public key
@@ -102,20 +125,17 @@ async fn handle_start_rental(
     ));
 
     // Create rental manager
-    let rental_manager = RentalManager::new(
-        validator_hotkey.clone(),
-        miner_client.clone(),
-        persistence.clone(),
-    );
+    let rental_manager = RentalManager::new(miner_client.clone(), persistence.clone());
 
     let mut miner_connection = miner_client
-        .connect_and_authenticate(&miner_endpoint)
+        .connect_and_authenticate(&actual_endpoint)
         .await
         .context("Failed to connect to miner")?;
 
     // Create rental request
     let rental_request = RentalRequest {
         validator_hotkey: validator_hotkey.to_string(),
+        miner_id,
         executor_id: executor,
         container_spec: ContainerSpec {
             image: container,
@@ -140,7 +160,6 @@ async fn handle_start_rental(
                 extra_hosts: std::collections::HashMap::new(),
             },
         },
-        duration_seconds: (duration_hours * 3600) as i64,
         ssh_public_key,
         metadata: std::collections::HashMap::new(),
     };
@@ -158,7 +177,6 @@ async fn handle_start_rental(
         "Container: {} ({})",
         rental_response.container_info.container_name, rental_response.container_info.container_id
     );
-    info!("Expires at: {}", rental_response.expires_at);
 
     Ok(())
 }
@@ -177,7 +195,7 @@ async fn handle_rental_status(
     ));
 
     // Create rental manager
-    let rental_manager = RentalManager::new(validator_hotkey, miner_client, persistence.clone());
+    let rental_manager = RentalManager::new(miner_client, persistence.clone());
 
     // Get rental status
     let status = rental_manager
@@ -191,7 +209,6 @@ async fn handle_rental_status(
     info!("  Container: {}", status.container_status.container_id);
     info!("  Container State: {}", status.container_status.state);
     info!("  Created: {}", status.created_at);
-    info!("  Expires: {}", status.expires_at);
     info!("Resource Usage:");
     info!("  CPU: {:.2}%", status.resource_usage.cpu_percent);
     info!("  Memory: {} MB", status.resource_usage.memory_mb);
@@ -219,7 +236,7 @@ async fn handle_rental_logs(
     ));
 
     // Create rental manager
-    let rental_manager = RentalManager::new(validator_hotkey, miner_client, persistence.clone());
+    let rental_manager = RentalManager::new(miner_client, persistence.clone());
 
     // Stream logs
     let mut log_receiver = rental_manager
@@ -253,7 +270,7 @@ async fn handle_stop_rental(
     ));
 
     // Create rental manager
-    let rental_manager = RentalManager::new(validator_hotkey, miner_client, persistence.clone());
+    let rental_manager = RentalManager::new(miner_client, persistence.clone());
 
     // Stop rental
     rental_manager

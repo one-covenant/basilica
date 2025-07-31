@@ -13,7 +13,7 @@ use common::identity::Hotkey;
 use protocol::miner_discovery::{
     miner_discovery_client::MinerDiscoveryClient, CloseSshSessionRequest, CloseSshSessionResponse,
     ExecutorConnectionDetails, InitiateSshSessionRequest, InitiateSshSessionResponse, LeaseRequest,
-    SessionInitRequest, ValidatorAuthRequest,
+    ValidatorAuthRequest,
 };
 
 /// Configuration for the miner client
@@ -225,7 +225,6 @@ impl MinerClient {
         Ok(AuthenticatedMinerConnection {
             client: MinerDiscoveryClient::new(channel),
             session_token,
-            grpc_endpoint,
         })
     }
 
@@ -267,9 +266,6 @@ impl MinerClient {
 pub struct AuthenticatedMinerConnection {
     client: MinerDiscoveryClient<Channel>,
     session_token: String,
-    /// The gRPC endpoint used for this connection (useful for debugging/logging)
-    #[allow(dead_code)]
-    grpc_endpoint: String,
 }
 
 impl AuthenticatedMinerConnection {
@@ -311,53 +307,8 @@ impl AuthenticatedMinerConnection {
         Ok(response.available_executors)
     }
 
-    /// Initiate SSH session with a specific executor (legacy method)
+    /// Initiate SSH session with public key
     pub async fn initiate_ssh_session(
-        &mut self,
-        executor_id: &str,
-        session_type: &str,
-    ) -> Result<SshSessionInfo> {
-        info!(
-            "Initiating {} session with executor {}",
-            session_type, executor_id
-        );
-
-        let request = SessionInitRequest {
-            validator_hotkey: String::new(), // Will be extracted from token by miner
-            session_token: self.session_token.clone(),
-            executor_id: executor_id.to_string(),
-            session_type: session_type.to_string(),
-        };
-
-        let response = self
-            .client
-            .initiate_executor_session(request)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to initiate session: {}", e))?;
-
-        let response = response.into_inner();
-
-        if !response.success {
-            let error_msg = response
-                .error
-                .map(|e| e.message)
-                .unwrap_or_else(|| "Unknown error".to_string());
-            return Err(anyhow::anyhow!("Session initiation failed: {}", error_msg));
-        }
-
-        info!(
-            "Successfully initiated session {} with executor {}",
-            response.session_id, executor_id
-        );
-
-        Ok(SshSessionInfo {
-            session_id: response.session_id,
-            access_credentials: response.access_credentials,
-        })
-    }
-
-    /// Initiate SSH session with public key (new method)
-    pub async fn initiate_ssh_session_v2(
         &mut self,
         request: InitiateSshSessionRequest,
     ) -> Result<InitiateSshSessionResponse> {
@@ -393,8 +344,8 @@ impl AuthenticatedMinerConnection {
     pub async fn initiate_rental_ssh_session(
         &mut self,
         executor_id: &str,
+        validator_hotkey: &str,
         validator_public_key: &str,
-        duration_seconds: i64,
         rental_id: &str,
     ) -> Result<InitiateSshSessionResponse> {
         info!(
@@ -403,11 +354,11 @@ impl AuthenticatedMinerConnection {
         );
 
         let request = InitiateSshSessionRequest {
-            validator_hotkey: String::new(), // Will be extracted from token by miner
+            validator_hotkey: validator_hotkey.to_string(),
             executor_id: executor_id.to_string(),
             purpose: "rental".to_string(),
             validator_public_key: validator_public_key.to_string(),
-            session_duration_secs: duration_seconds,
+            session_duration_secs: 0, // No predetermined duration for rentals
             session_metadata: serde_json::json!({
                 "rental_id": rental_id,
                 "type": "container_deployment"
@@ -417,7 +368,7 @@ impl AuthenticatedMinerConnection {
             rental_id: rental_id.to_string(),
         };
 
-        self.initiate_ssh_session_v2(request).await
+        self.initiate_ssh_session(request).await
     }
 
     /// Close SSH session
@@ -443,13 +394,31 @@ impl AuthenticatedMinerConnection {
 
         Ok(response)
     }
-}
 
-/// Information about an SSH session
-#[derive(Debug, Clone)]
-pub struct SshSessionInfo {
-    pub session_id: String,
-    pub access_credentials: String,
+    /// Close SSH session by ID
+    pub async fn close_ssh_session_by_id(
+        &mut self,
+        session_id: &str,
+        validator_hotkey: &str,
+        reason: &str,
+    ) -> Result<()> {
+        let request = CloseSshSessionRequest {
+            session_id: session_id.to_string(),
+            validator_hotkey: validator_hotkey.to_string(),
+            reason: reason.to_string(),
+        };
+
+        let response = self.close_ssh_session(request).await?;
+
+        if !response.success {
+            return Err(anyhow::anyhow!(
+                "Failed to close SSH session: {}",
+                response.message
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

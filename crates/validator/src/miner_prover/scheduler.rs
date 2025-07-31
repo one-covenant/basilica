@@ -4,7 +4,7 @@
 //! Implements Single Responsibility Principle by focusing only on task scheduling.
 
 use super::discovery::MinerDiscovery;
-use super::types::{MinerInfo, VerificationStats};
+use super::types::MinerInfo;
 use super::verification::VerificationEngine;
 use crate::config::VerificationConfig;
 use anyhow::Result;
@@ -581,14 +581,6 @@ impl VerificationScheduler {
 
         if num_completed > 0 {
             debug!("Cleaned up {} completed verification tasks", num_completed);
-        }
-    }
-
-    /// Get current verification statistics
-    pub fn get_stats(&self) -> VerificationStats {
-        VerificationStats {
-            active_verifications: self.active_verifications.len(),
-            max_concurrent: self.config.max_concurrent_verifications,
         }
     }
 }

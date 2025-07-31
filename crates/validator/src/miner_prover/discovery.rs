@@ -8,26 +8,13 @@ use crate::config::VerificationConfig;
 use anyhow::Result;
 use bittensor::{AccountId, AxonInfo, Service as BittensorService};
 use common::identity::{Hotkey, MinerUid};
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-
-/// Cached miner endpoint information
-#[derive(Clone, Debug)]
-struct CachedMinerEndpoint {
-    axon_endpoint: String,
-    cached_at: chrono::DateTime<chrono::Utc>,
-}
 
 #[derive(Clone)]
 pub struct MinerDiscovery {
     bittensor_service: Arc<BittensorService>,
     config: VerificationConfig,
-    /// Cache of miner endpoints with TTL
-    endpoint_cache: Arc<RwLock<HashMap<MinerUid, CachedMinerEndpoint>>>,
-    cache_ttl: Duration,
 }
 
 impl MinerDiscovery {
@@ -35,15 +22,7 @@ impl MinerDiscovery {
         Self {
             bittensor_service,
             config,
-            endpoint_cache: Arc::new(RwLock::new(HashMap::new())),
-            cache_ttl: Duration::from_secs(300), // 5 minutes default
         }
-    }
-
-    /// Create with custom cache TTL
-    pub fn with_cache_ttl(mut self, ttl: Duration) -> Self {
-        self.cache_ttl = ttl;
-        self
     }
 
     /// Get list of miners that need verification using metagraph
@@ -161,48 +140,6 @@ impl MinerDiscovery {
         }))
     }
 
-    /// Get miner axon info from metagraph by UID
-    pub async fn get_miner_axon_info(&self, uid: MinerUid) -> Result<Option<AxonInfo>> {
-        debug!("Fetching axon info for miner UID {}", uid.as_u16());
-
-        // Check cache first
-        {
-            let cache = self.endpoint_cache.read().await;
-            if let Some(cached) = cache.get(&uid) {
-                let age = chrono::Utc::now()
-                    .signed_duration_since(cached.cached_at)
-                    .to_std()
-                    .unwrap_or(Duration::MAX);
-                if age < self.cache_ttl {
-                    debug!("Using cached endpoint for miner {}", uid.as_u16());
-                    // We still need to fetch fresh axon info, but we have cached endpoint
-                }
-            }
-        }
-
-        let metagraph = self
-            .bittensor_service
-            .get_metagraph(self.config.netuid)
-            .await?;
-
-        let axon_info = metagraph.axons.get(uid.as_u16() as usize).cloned();
-
-        if let Some(ref axon) = axon_info {
-            // Update cache with fresh axon endpoint
-            let axon_endpoint = self.axon_info_to_endpoint(axon);
-            let mut cache = self.endpoint_cache.write().await;
-            cache.insert(
-                uid,
-                CachedMinerEndpoint {
-                    axon_endpoint,
-                    cached_at: chrono::Utc::now(),
-                },
-            );
-        }
-
-        Ok(axon_info)
-    }
-
     /// Convert AxonInfo to endpoint string
     pub fn axon_info_to_endpoint(&self, axon: &AxonInfo) -> String {
         // Convert IP from u128 to string
@@ -246,33 +183,5 @@ impl MinerDiscovery {
                 ipv6_str
             }
         }
-    }
-
-    /// Get cached miner endpoints
-    pub async fn get_cached_endpoints(&self) -> HashMap<MinerUid, String> {
-        let cache = self.endpoint_cache.read().await;
-        let now = chrono::Utc::now();
-
-        cache
-            .iter()
-            .filter_map(|(uid, cached)| {
-                let age = now
-                    .signed_duration_since(cached.cached_at)
-                    .to_std()
-                    .unwrap_or(Duration::MAX);
-                if age < self.cache_ttl {
-                    Some((*uid, cached.axon_endpoint.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    /// Clear the endpoint cache
-    pub async fn clear_cache(&self) {
-        let mut cache = self.endpoint_cache.write().await;
-        cache.clear();
-        info!("Cleared miner endpoint cache");
     }
 }

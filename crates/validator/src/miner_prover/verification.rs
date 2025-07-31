@@ -4,7 +4,7 @@
 //! Implements Single Responsibility Principle by focusing only on verification logic.
 
 use super::miner_client::{MinerClient, MinerClientConfig};
-use super::types::{ExecutorInfo, ExecutorStatus, MinerInfo};
+use super::types::{ExecutorInfo, MinerInfo};
 use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::{entities::VerificationLog, SimplePersistence};
@@ -1453,8 +1453,6 @@ impl VerificationEngine {
                             .unwrap_or_else(|_| ExecutorId::new()),
                         miner_uid: miner.uid,
                         grpc_endpoint: details.grpc_endpoint,
-                        last_verified: None,
-                        verification_status: ExecutorStatus::Available,
                     })
                     .collect();
 
@@ -1582,7 +1580,7 @@ impl VerificationEngine {
         };
 
         let session_info = connection
-            .initiate_ssh_session_v2(session_request)
+            .initiate_ssh_session(session_request)
             .await
             .context("Failed to initiate SSH session")?;
 
@@ -2873,7 +2871,7 @@ impl VerificationEngine {
         };
 
         // Initiate SSH session
-        let session_info = connection.initiate_ssh_session_v2(ssh_request).await?;
+        let session_info = connection.initiate_ssh_session(ssh_request).await?;
 
         // Parse SSH credentials
         let ssh_details =

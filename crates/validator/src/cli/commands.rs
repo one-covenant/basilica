@@ -142,9 +142,21 @@ pub enum DatabaseAction {
 pub enum RentalAction {
     /// Start a new container rental
     Start {
-        /// Miner ID or endpoint
-        #[arg(long)]
-        miner: String,
+        /// Miner UID (e.g., 123)
+        #[arg(
+            long,
+            conflicts_with = "miner_endpoint",
+            required_unless_present = "miner_endpoint"
+        )]
+        miner_uid: Option<u16>,
+
+        /// Miner endpoint (e.g., http://192.168.1.1:8080)
+        #[arg(
+            long,
+            conflicts_with = "miner_uid",
+            required_unless_present = "miner_uid"
+        )]
+        miner_endpoint: Option<String>,
 
         /// Executor ID
         #[arg(long)]
@@ -169,10 +181,6 @@ pub enum RentalAction {
         /// Command to run in container
         #[arg(long)]
         command: Option<String>,
-
-        /// Rental duration in hours
-        #[arg(long, default_value = "1")]
-        duration_hours: u32,
 
         /// CPU cores
         #[arg(long)]

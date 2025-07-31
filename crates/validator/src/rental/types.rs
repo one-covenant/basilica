@@ -8,9 +8,9 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RentalRequest {
     pub validator_hotkey: String,
+    pub miner_id: String,
     pub executor_id: String,
     pub container_spec: ContainerSpec,
-    pub duration_seconds: i64,
     pub ssh_public_key: String,
     pub metadata: HashMap<String, String>,
 }
@@ -69,7 +69,6 @@ pub struct RentalResponse {
     pub rental_id: String,
     pub ssh_credentials: String,
     pub container_info: ContainerInfo,
-    pub expires_at: DateTime<Utc>,
 }
 
 /// Container information
@@ -90,7 +89,6 @@ pub enum RentalState {
     Stopping,
     Stopped,
     Failed,
-    Expired,
 }
 
 /// Rental information stored in memory and persistence
@@ -104,8 +102,8 @@ pub struct RentalInfo {
     pub ssh_credentials: String,
     pub state: RentalState,
     pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
     pub container_spec: ContainerSpec,
+    pub miner_id: String,
 }
 
 /// Rental status
@@ -115,7 +113,6 @@ pub struct RentalStatus {
     pub state: RentalState,
     pub container_status: ContainerStatus,
     pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
     pub resource_usage: ResourceUsage,
 }
 

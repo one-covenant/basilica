@@ -22,7 +22,6 @@ pub struct StartRentalRequest {
     pub miner_id: String,
     pub executor_id: String,
     pub container_image: String,
-    pub duration_seconds: i64,
     pub ssh_public_key: String,
     #[serde(default)]
     pub environment: std::collections::HashMap<String, String>,
@@ -117,6 +116,7 @@ pub async fn start_rental(
     // Convert request to internal rental request
     let rental_request = RentalRequest {
         validator_hotkey: state.validator_hotkey.to_string(),
+        miner_id: request.miner_id.clone(),
         executor_id: request.executor_id,
         container_spec: crate::rental::ContainerSpec {
             image: request.container_image,
@@ -155,7 +155,6 @@ pub async fn start_rental(
                 extra_hosts: std::collections::HashMap::new(),
             },
         },
-        duration_seconds: request.duration_seconds,
         ssh_public_key: request.ssh_public_key,
         metadata: std::collections::HashMap::new(),
     };

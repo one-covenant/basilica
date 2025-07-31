@@ -5,7 +5,7 @@ mod tests {
     use crate::miner_prover::miner_client::{
         BittensorServiceSigner, MinerClient, MinerClientConfig, ValidatorSigner,
     };
-    use crate::miner_prover::types::{ExecutorInfo, ExecutorStatus, MinerInfo};
+    use crate::miner_prover::types::{ExecutorInfo, MinerInfo};
     use common::identity::{ExecutorId, Hotkey, MinerUid};
     use std::time::Duration;
 
@@ -92,19 +92,14 @@ mod tests {
     }
 
     #[test]
-    fn test_executor_info_status() {
+    fn test_executor_info_creation() {
         let executor_info = ExecutorInfo {
             id: ExecutorId::new(),
             miner_uid: MinerUid::new(1),
             grpc_endpoint: "http://127.0.0.1:50051".to_string(),
-            last_verified: None,
-            verification_status: ExecutorStatus::Available,
         };
 
-        assert!(matches!(
-            executor_info.verification_status,
-            ExecutorStatus::Available
-        ));
-        assert!(executor_info.last_verified.is_none());
+        assert_eq!(executor_info.miner_uid.as_u16(), 1);
+        assert_eq!(executor_info.grpc_endpoint, "http://127.0.0.1:50051");
     }
 }

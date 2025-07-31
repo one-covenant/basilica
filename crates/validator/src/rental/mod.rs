@@ -19,13 +19,12 @@ pub use monitoring::{HealthMonitor, LogStreamer};
 pub use types::*;
 
 use crate::miner_prover::miner_client::{AuthenticatedMinerConnection, MinerClient};
-use crate::persistence::ValidatorPersistence;
-use common::identity::Hotkey;
+use crate::persistence::{SimplePersistence, ValidatorPersistence};
 
 /// Rental manager for coordinating container deployments
 pub struct RentalManager {
     /// Persistence layer
-    persistence: Arc<dyn ValidatorPersistence>,
+    persistence: Arc<SimplePersistence>,
     /// Active rentals
     active_rentals: Arc<RwLock<std::collections::HashMap<String, RentalInfo>>>,
     /// Deployment manager
@@ -34,15 +33,13 @@ pub struct RentalManager {
     log_streamer: Arc<LogStreamer>,
     /// Health monitor
     health_monitor: Arc<HealthMonitor>,
+    /// Miner client for reconnections
+    miner_client: Arc<MinerClient>,
 }
 
 impl RentalManager {
     /// Create a new rental manager
-    pub fn new(
-        _validator_hotkey: Hotkey,
-        _miner_client: Arc<MinerClient>,
-        persistence: Arc<dyn ValidatorPersistence>,
-    ) -> Self {
+    pub fn new(miner_client: Arc<MinerClient>, persistence: Arc<SimplePersistence>) -> Self {
         let deployment_manager = Arc::new(DeploymentManager::new());
         let log_streamer = Arc::new(LogStreamer::new());
         let health_monitor = Arc::new(HealthMonitor::new());
@@ -53,6 +50,7 @@ impl RentalManager {
             deployment_manager: deployment_manager.clone(),
             log_streamer: log_streamer.clone(),
             health_monitor: health_monitor.clone(),
+            miner_client,
         }
     }
 
@@ -69,8 +67,8 @@ impl RentalManager {
         let ssh_session = miner_connection
             .initiate_rental_ssh_session(
                 &request.executor_id,
+                &request.validator_hotkey,
                 &request.ssh_public_key,
-                request.duration_seconds,
                 &rental_id,
             )
             .await?;
@@ -97,8 +95,8 @@ impl RentalManager {
             ssh_credentials: ssh_session.access_credentials.clone(),
             state: RentalState::Active,
             created_at: chrono::Utc::now(),
-            expires_at: chrono::Utc::now() + chrono::Duration::seconds(request.duration_seconds),
             container_spec: request.container_spec.clone(),
+            miner_id: request.miner_id.clone(),
         };
 
         // Save to persistence
@@ -119,7 +117,6 @@ impl RentalManager {
             rental_id,
             ssh_credentials: ssh_session.access_credentials,
             container_info,
-            expires_at: rental_info.expires_at,
         })
     }
 
@@ -150,7 +147,6 @@ impl RentalManager {
             state: rental_info.state.clone(),
             container_status,
             created_at: rental_info.created_at,
-            expires_at: rental_info.expires_at,
             resource_usage,
         })
     }
@@ -175,17 +171,21 @@ impl RentalManager {
             .stop_container(&container_client, &rental_info.container_id, force)
             .await?;
 
+        // Close SSH session through miner connection
+        if let Err(e) = self.close_ssh_session(&rental_info).await {
+            tracing::error!(
+                "Failed to close SSH session {} for rental {}: {}",
+                rental_info.ssh_session_id,
+                rental_id,
+                e
+            );
+            // Continue with cleanup even if SSH session closure fails
+        }
+
         // Update rental state
         let mut updated_rental = rental_info.clone();
         updated_rental.state = RentalState::Stopped;
         self.persistence.save_rental(&updated_rental).await?;
-
-        // Note: SSH session closure should be done through the same miner connection
-        // that was used to create it. For now, we'll log this requirement.
-        tracing::warn!(
-            "SSH session {} needs to be closed through the original miner connection",
-            rental_info.ssh_session_id
-        );
 
         Ok(())
     }
@@ -215,44 +215,37 @@ impl RentalManager {
             .await
     }
 
-    /// List all active rentals for a validator
-    pub async fn list_rentals(&self, validator_hotkey: &Hotkey) -> Result<Vec<RentalInfo>> {
-        let rentals = self.active_rentals.read().await;
-        let validator_rentals: Vec<RentalInfo> = rentals
-            .values()
-            .filter(|r| r.validator_hotkey == validator_hotkey.to_string())
-            .cloned()
-            .collect();
+    /// Close SSH session for a rental
+    async fn close_ssh_session(&self, rental_info: &RentalInfo) -> Result<()> {
+        let miner_data = self
+            .persistence
+            .get_miner_by_id(&rental_info.miner_id)
+            .await?
+            .ok_or_else(|| {
+                anyhow::anyhow!("Miner {} not found in database", rental_info.miner_id)
+            })?;
 
-        Ok(validator_rentals)
-    }
+        let mut miner_connection = self
+            .miner_client
+            .connect_and_authenticate(&miner_data.endpoint)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to reconnect to miner: {}", e))?;
 
-    /// Run periodic cleanup of expired rentals
-    pub async fn run_cleanup_task(&self) {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+        // Close the SSH session
+        miner_connection
+            .close_ssh_session_by_id(
+                &rental_info.ssh_session_id,
+                &rental_info.validator_hotkey,
+                "rental_stopped",
+            )
+            .await?;
 
-        loop {
-            interval.tick().await;
+        tracing::info!(
+            "Successfully closed SSH session {} for rental {}",
+            rental_info.ssh_session_id,
+            rental_info.rental_id
+        );
 
-            let now = chrono::Utc::now();
-            let mut expired_rentals = Vec::new();
-
-            // Find expired rentals
-            {
-                let rentals = self.active_rentals.read().await;
-                for (rental_id, rental_info) in rentals.iter() {
-                    if rental_info.expires_at < now && rental_info.state == RentalState::Active {
-                        expired_rentals.push(rental_id.clone());
-                    }
-                }
-            }
-
-            // Stop expired rentals
-            for rental_id in expired_rentals {
-                if let Err(e) = self.stop_rental(&rental_id, false).await {
-                    tracing::error!("Failed to stop expired rental {}: {}", rental_id, e);
-                }
-            }
-        }
+        Ok(())
     }
 }

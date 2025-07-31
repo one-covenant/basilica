@@ -18,8 +18,6 @@ pub struct DeploymentManager {
 /// Deployment configuration
 #[derive(Debug, Clone)]
 pub struct DeploymentConfig {
-    /// Maximum container name length
-    pub max_container_name_length: usize,
     /// Allowed container registries
     pub allowed_registries: Vec<String>,
     /// Blocked images
@@ -50,7 +48,6 @@ pub struct NetworkPolicies {
 impl Default for DeploymentConfig {
     fn default() -> Self {
         Self {
-            max_container_name_length: 128,
             allowed_registries: vec![
                 "docker.io".to_string(),
                 "gcr.io".to_string(),

@@ -130,14 +130,13 @@ impl SimplePersistence {
                 ssh_credentials TEXT NOT NULL,
                 state TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
                 container_spec TEXT NOT NULL,
+                miner_id TEXT NOT NULL DEFAULT '',
                 customer_public_key TEXT,
                 docker_image TEXT,
                 env_vars TEXT,
                 gpu_requirements TEXT,
                 ssh_access_info TEXT,
-                max_duration_hours INTEGER,
                 cost_per_hour REAL,
                 status TEXT,
                 updated_at TEXT,
@@ -335,6 +334,31 @@ impl SimplePersistence {
         )
         .execute(&self.pool)
         .await?;
+
+        // Check if miner_id column exists in rentals table
+        let miner_id_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('rentals')
+            WHERE name = 'miner_id'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !miner_id_exists {
+            sqlx::query(
+                r#"
+                ALTER TABLE rentals
+                ADD COLUMN miner_id TEXT NOT NULL DEFAULT '';
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+
+            info!("Added miner_id column to rentals table");
+        }
 
         Ok(())
     }
@@ -1190,13 +1214,14 @@ impl ValidatorPersistence for SimplePersistence {
         sqlx::query(
             "INSERT INTO rentals (
                 id, validator_hotkey, executor_id, container_id, ssh_session_id,
-                ssh_credentials, state, created_at, expires_at, container_spec
+                ssh_credentials, state, created_at, container_spec, miner_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 state = excluded.state,
                 container_id = excluded.container_id,
                 ssh_session_id = excluded.ssh_session_id,
-                ssh_credentials = excluded.ssh_credentials",
+                ssh_credentials = excluded.ssh_credentials,
+                miner_id = excluded.miner_id",
         )
         .bind(&rental.rental_id)
         .bind(&rental.validator_hotkey)
@@ -1210,11 +1235,10 @@ impl ValidatorPersistence for SimplePersistence {
             crate::rental::RentalState::Stopping => "stopping",
             crate::rental::RentalState::Stopped => "stopped",
             crate::rental::RentalState::Failed => "failed",
-            crate::rental::RentalState::Expired => "expired",
         })
         .bind(rental.created_at.to_rfc3339())
-        .bind(rental.expires_at.to_rfc3339())
         .bind(serde_json::to_string(&rental.container_spec)?)
+        .bind(&rental.miner_id)
         .execute(&self.pool)
         .await?;
 
@@ -1230,7 +1254,6 @@ impl ValidatorPersistence for SimplePersistence {
         if let Some(row) = row {
             let state_str: String = row.get("state");
             let created_at_str: String = row.get("created_at");
-            let expires_at_str: String = row.get("expires_at");
             let container_spec_str: String = row.get("container_spec");
 
             let state = match state_str.as_str() {
@@ -1239,7 +1262,6 @@ impl ValidatorPersistence for SimplePersistence {
                 "stopping" => crate::rental::RentalState::Stopping,
                 "stopped" => crate::rental::RentalState::Stopped,
                 "failed" => crate::rental::RentalState::Failed,
-                "expired" => crate::rental::RentalState::Expired,
                 _ => crate::rental::RentalState::Failed,
             };
 
@@ -1252,8 +1274,8 @@ impl ValidatorPersistence for SimplePersistence {
                 ssh_credentials: row.get("ssh_credentials"),
                 state,
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
-                expires_at: DateTime::parse_from_rfc3339(&expires_at_str)?.with_timezone(&Utc),
                 container_spec: serde_json::from_str(&container_spec_str)?,
+                miner_id: row.get::<String, _>("miner_id"),
             }))
         } else {
             Ok(None)
@@ -1275,7 +1297,6 @@ impl ValidatorPersistence for SimplePersistence {
         for row in rows {
             let state_str: String = row.get("state");
             let created_at_str: String = row.get("created_at");
-            let expires_at_str: String = row.get("expires_at");
             let container_spec_str: String = row.get("container_spec");
 
             let state = match state_str.as_str() {
@@ -1284,7 +1305,6 @@ impl ValidatorPersistence for SimplePersistence {
                 "stopping" => crate::rental::RentalState::Stopping,
                 "stopped" => crate::rental::RentalState::Stopped,
                 "failed" => crate::rental::RentalState::Failed,
-                "expired" => crate::rental::RentalState::Expired,
                 _ => crate::rental::RentalState::Failed,
             };
 
@@ -1297,8 +1317,8 @@ impl ValidatorPersistence for SimplePersistence {
                 ssh_credentials: row.get("ssh_credentials"),
                 state,
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
-                expires_at: DateTime::parse_from_rfc3339(&expires_at_str)?.with_timezone(&Utc),
                 container_spec: serde_json::from_str(&container_spec_str)?,
+                miner_id: row.get::<String, _>("miner_id"),
             });
         }
 
