@@ -5,8 +5,7 @@
 
 use anyhow::{Context, Result};
 use basilica_protocol::executor_control::{
-    executor_control_client::ExecutorControlClient, HealthCheckRequest, HealthCheckResponse,
-    ProvisionAccessRequest, ProvisionAccessResponse,
+    executor_control_client::ExecutorControlClient, ProvisionAccessRequest, ProvisionAccessResponse,
 };
 use std::time::Duration;
 use tonic::transport::Channel;

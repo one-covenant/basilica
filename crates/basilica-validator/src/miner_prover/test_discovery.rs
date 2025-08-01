@@ -5,7 +5,7 @@ mod tests {
     use crate::miner_prover::miner_client::{
         BittensorServiceSigner, MinerClient, MinerClientConfig, ValidatorSigner,
     };
-    use crate::miner_prover::types::{ExecutorInfo, ExecutorStatus, MinerInfo};
+    use crate::miner_prover::types::{ExecutorInfo, MinerInfo};
     use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
     use std::time::Duration;
 
