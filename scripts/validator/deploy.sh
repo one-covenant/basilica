@@ -116,8 +116,8 @@ build_service() {
         ./scripts/validator/build.sh
     fi
 
-    if [[ ! -f "./validator" ]]; then
-        log "ERROR: Binary ./validator not found after build"
+    if [[ ! -f "./basilica-validator" ]]; then
+        log "ERROR: Binary ./basilica-validator not found after build"
         exit 1
     fi
 }
@@ -176,7 +176,7 @@ deploy_binary() {
     # Try to move the current binary out of the way to avoid "Text file busy"
     ssh_cmd "mv /opt/basilica/validator /opt/basilica/validator.old 2>/dev/null || true"
 
-    scp_file "validator" "/opt/basilica/"
+    scp_file "basilica-validator" "/opt/basilica/validator"
     ssh_cmd "chmod +x /opt/basilica/validator"
 
     log "Creating directories for validator"
@@ -213,7 +213,7 @@ deploy_systemd() {
     ssh_cmd "cp /opt/basilica/validator /opt/basilica/validator.backup 2>/dev/null || true"
     ssh_cmd "mv /opt/basilica/validator /opt/basilica/validator.old 2>/dev/null || true"
 
-    scp_file "validator" "/opt/basilica/"
+    scp_file "basilica-validator" "/opt/basilica/validator"
     ssh_cmd "chmod +x /opt/basilica/validator"
 
     log "Creating directories for validator"

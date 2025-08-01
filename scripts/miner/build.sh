@@ -96,10 +96,10 @@ fi
 if [[ "$EXTRACT_BINARY" == "true" ]]; then
     echo "Extracting miner binary..."
     container_id=$(docker create "$IMAGE_NAME:$IMAGE_TAG")
-    docker cp "$container_id:/usr/local/bin/miner" ./miner
+    docker cp "$container_id:/usr/local/bin/basilica-miner" ./basilica-miner
     docker rm "$container_id"
-    chmod +x ./miner
-    echo "Binary extracted to: ./miner"
+    chmod +x ./basilica-miner
+    echo "Binary extracted to: ./basilica-miner"
 fi
 
 echo "Build completed successfully!"

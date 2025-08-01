@@ -93,8 +93,8 @@ build_service() {
 
     ./scripts/executor/build.sh
 
-    if [[ ! -f "./executor" ]]; then
-        log "ERROR: Binary ./executor not found after build"
+    if [[ ! -f "./basilica-executor" ]]; then
+        log "ERROR: Binary ./basilica-executor not found after build"
         exit 1
     fi
 }
@@ -153,7 +153,7 @@ deploy_binary() {
     # Try to move the current binary out of the way to avoid "Text file busy"
     ssh_cmd "mv /opt/basilica/executor /opt/basilica/executor.old 2>/dev/null || true"
 
-    scp_file "executor" "/opt/basilica/"
+    scp_file "basilica-executor" "/opt/basilica/executor"
     ssh_cmd "chmod +x /opt/basilica/executor"
 
     log "Creating directories for executor"
@@ -207,7 +207,7 @@ deploy_systemd() {
     ssh_cmd "cp /opt/basilica/executor /opt/basilica/executor.backup 2>/dev/null || true"
     ssh_cmd "mv /opt/basilica/executor /opt/basilica/executor.old 2>/dev/null || true"
 
-    scp_file "executor" "/opt/basilica/"
+    scp_file "basilica-executor" "/opt/basilica/executor"
     ssh_cmd "chmod +x /opt/basilica/executor"
 
     log "Creating directories for executor"

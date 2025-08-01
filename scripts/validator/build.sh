@@ -135,10 +135,10 @@ fi
 if [[ "$EXTRACT_BINARY" == "true" ]]; then
     echo "Extracting validator binary..."
     container_id=$(docker create "$IMAGE_NAME:$IMAGE_TAG")
-    docker cp "$container_id:/usr/local/bin/validator" ./validator
+    docker cp "$container_id:/usr/local/bin/basilica-validator" ./basilica-validator
     docker rm "$container_id"
-    chmod +x ./validator
-    echo "Binary extracted to: ./validator"
+    chmod +x ./basilica-validator
+    echo "Binary extracted to: ./basilica-validator"
 fi
 
 echo "Build completed successfully!"

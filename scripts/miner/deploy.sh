@@ -106,8 +106,8 @@ build_service() {
 
     ./scripts/miner/build.sh
 
-    if [[ ! -f "./miner" ]]; then
-        log "ERROR: Binary ./miner not found after build"
+    if [[ ! -f "./basilica-miner" ]]; then
+        log "ERROR: Binary ./basilica-miner not found after build"
         exit 1
     fi
 }
@@ -131,7 +131,7 @@ deploy_binary() {
     # Try to move the current binary out of the way to avoid "Text file busy"
     ssh_cmd "mv /opt/basilica/miner /opt/basilica/miner.old 2>/dev/null || true"
 
-    scp_file "miner" "/opt/basilica/"
+    scp_file "basilica-miner" "/opt/basilica/miner"
     ssh_cmd "chmod +x /opt/basilica/miner"
 
     log "Creating directories for miner"
@@ -169,7 +169,7 @@ deploy_systemd() {
     ssh_cmd "cp /opt/basilica/miner /opt/basilica/miner.backup 2>/dev/null || true"
     ssh_cmd "mv /opt/basilica/miner /opt/basilica/miner.old 2>/dev/null || true"
 
-    scp_file "miner" "/opt/basilica/"
+    scp_file "basilica-miner" "/opt/basilica/miner"
     ssh_cmd "chmod +x /opt/basilica/miner"
 
     log "Creating directories for miner"

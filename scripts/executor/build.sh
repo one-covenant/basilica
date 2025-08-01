@@ -85,10 +85,10 @@ fi
 if [[ "$EXTRACT_BINARY" == "true" ]]; then
     echo "Extracting executor binary..."
     container_id=$(docker create "$IMAGE_NAME:$IMAGE_TAG")
-    docker cp "$container_id:/usr/local/bin/executor" ./executor
+    docker cp "$container_id:/usr/local/bin/basilica-executor" ./basilica-executor
     docker rm "$container_id"
-    chmod +x ./executor
-    echo "Binary extracted to: ./executor"
+    chmod +x ./basilica-executor
+    echo "Binary extracted to: ./basilica-executor"
 fi
 
 echo "Build completed successfully!"
