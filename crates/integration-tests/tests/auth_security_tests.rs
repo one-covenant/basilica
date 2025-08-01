@@ -6,11 +6,12 @@
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use integration_tests::{
-    create_miner_auth_service_with_config, test_hotkeys, MockExecutorAuthService,
+    create_miner_auth_service, create_miner_auth_service_with_config, test_hotkeys, MockExecutorAuthService,
 };
 use protocol::common::MinerAuthentication;
 use std::sync::Arc;
 use tokio::time::{sleep, Instant};
+use uuid;
 
 #[tokio::test]
 async fn test_replay_attack_prevention() -> Result<()> {
@@ -57,7 +58,7 @@ async fn test_nonce_uniqueness_enforcement() -> Result<()> {
 
     // Create authentication with specific nonce
     let mut auth1 = executor_auth.create_auth(request_data)?;
-    let fixed_nonce = b"fixed-nonce-for-testing".to_vec();
+    let fixed_nonce = uuid::Uuid::new_v4().to_string().into_bytes();
     auth1.nonce = fixed_nonce.clone();
 
     // First use succeeds
@@ -129,25 +130,29 @@ async fn test_malicious_input_handling() -> Result<()> {
 
     let request_data = b"normal request";
 
-    // Test 1: Empty/invalid nonce
+    // Test 1: Invalid nonce (not UUID format)
     let malicious_auth1 = MinerAuthentication {
         miner_hotkey: miner_hotkey.to_string(),
         timestamp_ms: Utc::now().timestamp_millis() as u64,
-        nonce: Vec::new(), // Empty nonce
+        nonce: b"invalid-nonce-format".to_vec(), // Invalid UUID format
         signature: b"signature".to_vec(),
         request_id: b"request_id".to_vec(),
     };
 
     let result = miner_auth.verify_auth(&malicious_auth1, request_data).await;
-    // Empty nonce should still work but be tracked
-    assert!(result.is_ok(), "Empty nonce should be handled gracefully");
+    // Invalid UUID nonce should be rejected as a security measure
+    assert!(result.is_err(), "Invalid UUID nonce should be rejected to prevent replay attacks");
+    assert!(
+        result.unwrap_err().to_string().contains("Nonce must be a valid UUID format"),
+        "Error should indicate UUID validation failure"
+    );
 
-    // Test 2: Extremely large nonce (potential DoS)
-    let large_nonce = vec![0u8; 1024 * 1024]; // 1MB nonce
+    // Test 2: Valid UUID but potentially resource-intensive processing test
+    let valid_uuid_nonce = uuid::Uuid::new_v4().to_string().into_bytes();
     let malicious_auth2 = MinerAuthentication {
         miner_hotkey: miner_hotkey.to_string(),
         timestamp_ms: Utc::now().timestamp_millis() as u64,
-        nonce: large_nonce,
+        nonce: valid_uuid_nonce,
         signature: b"signature".to_vec(),
         request_id: b"request_id".to_vec(),
     };
@@ -155,21 +160,23 @@ async fn test_malicious_input_handling() -> Result<()> {
     let start = Instant::now();
     let result = miner_auth
         .verify_auth(&malicious_auth2, request_data)
-        .await
-        .unwrap();
+        .await;
     let elapsed = start.elapsed();
 
-    // Should not take excessively long to process
+    // Should process quickly regardless of outcome
     assert!(
         elapsed < tokio::time::Duration::from_secs(1),
-        "Large nonce processing should be fast"
+        "UUID nonce processing should be fast"
     );
+    
+    // Should succeed with valid UUID (unless other validation fails)
+    assert!(result.is_ok(), "Valid UUID nonce should pass nonce validation");
 
     // Test 3: Invalid hotkey
     let malicious_auth3 = MinerAuthentication {
         miner_hotkey: "invalid hotkey".to_string(),
         timestamp_ms: Utc::now().timestamp_millis() as u64,
-        nonce: b"nonce".to_vec(),
+        nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
         signature: b"signature".to_vec(),
         request_id: b"request_id".to_vec(),
     };
@@ -181,7 +188,7 @@ async fn test_malicious_input_handling() -> Result<()> {
     let malicious_auth4 = MinerAuthentication {
         miner_hotkey: miner_hotkey.to_string(),
         timestamp_ms: 0,
-        nonce: b"nonce".to_vec(),
+        nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
         signature: b"signature".to_vec(),
         request_id: b"request_id".to_vec(),
     };
@@ -444,6 +451,58 @@ async fn test_resource_exhaustion_protection() -> Result<()> {
     );
 
     println!("100 rapid authentications completed in {:?}", total_time);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_invalid_nonce_formats() -> Result<()> {
+    let miner_hotkey = test_hotkeys::MINER_HOTKEY_1;
+    let miner_auth = create_miner_auth_service(miner_hotkey);
+    let request_data = b"test request";
+
+    // Test various invalid nonce formats
+    let invalid_nonces = vec![
+        (Vec::new(), "empty nonce"),
+        (b"not-a-uuid".to_vec(), "invalid format"),
+        (b"12345678-1234-1234-1234-12345678901".to_vec(), "too short"),
+        (b"12345678-1234-1234-1234-1234567890123".to_vec(), "too long"),
+        (b"invalid-uuid-format-here".to_vec(), "invalid format"),
+        (b"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".to_vec(), "invalid hex chars"),
+    ];
+
+    for (invalid_nonce, description) in invalid_nonces {
+        let auth_with_invalid_nonce = MinerAuthentication {
+            miner_hotkey: miner_hotkey.to_string(),
+            timestamp_ms: Utc::now().timestamp_millis() as u64,
+            nonce: invalid_nonce,
+            signature: b"test_signature".to_vec(),
+            request_id: b"test_request_id".to_vec(),
+        };
+
+        let result = miner_auth.verify_auth(&auth_with_invalid_nonce, request_data).await;
+        
+        // Should fail with specific error message
+        assert!(result.is_err(), "Invalid nonce ({description}) should be rejected");
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("Nonce must be a valid UUID format"),
+            "Expected UUID validation error for {description}, got: {error_msg}"
+        );
+    }
+
+    // Test that valid UUID nonce works (for comparison)
+    let valid_uuid = uuid::Uuid::new_v4().to_string();
+    let auth_with_valid_nonce = MinerAuthentication {
+        miner_hotkey: miner_hotkey.to_string(),
+        timestamp_ms: Utc::now().timestamp_millis() as u64,
+        nonce: valid_uuid.into_bytes(),
+        signature: b"test_signature".to_vec(),
+        request_id: b"test_request_id".to_vec(),
+    };
+
+    let result = miner_auth.verify_auth(&auth_with_valid_nonce, request_data).await;
+    assert!(result.is_ok(), "Valid UUID nonce should be accepted");
 
     Ok(())
 }

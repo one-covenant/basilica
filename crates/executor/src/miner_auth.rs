@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::Status;
+use uuid::Uuid;
 use tracing::{debug, warn};
 
 /// Configuration for miner authentication
@@ -42,7 +43,7 @@ impl MinerAuthConfig {
 pub struct MinerAuthService {
     config: MinerAuthConfig,
     /// Used nonces to prevent replay attacks
-    used_nonces: Arc<RwLock<HashMap<Vec<u8>, chrono::DateTime<Utc>>>>,
+    used_nonces: Arc<RwLock<HashMap<Uuid, chrono::DateTime<Utc>>>>,
 }
 
 impl MinerAuthService {
@@ -82,15 +83,20 @@ impl MinerAuthService {
             }
         }
 
+        // Validate nonce is a valid UUID (security requirement to prevent replay attacks)
+        let nonce_str = String::from_utf8_lossy(&auth.nonce);
+        let nonce_uuid = Uuid::parse_str(&nonce_str)
+            .map_err(|_| anyhow!("Nonce must be a valid UUID format"))?;
+
         // Check nonce for replay attack prevention
         let mut used_nonces = self.used_nonces.write().await;
 
-        if used_nonces.contains_key(&auth.nonce) {
+        if used_nonces.contains_key(&nonce_uuid) {
             return Err(anyhow!("Nonce already used"));
         }
 
         // Store nonce with expiration
-        used_nonces.insert(auth.nonce.clone(), now);
+        used_nonces.insert(nonce_uuid, now);
 
         // Clean up old nonces
         let cutoff = now - self.config.max_request_age - Duration::hours(1);

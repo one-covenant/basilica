@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_create_test_auth_with_custom_values() {
-        let custom_nonce = b"custom_nonce".to_vec();
+        let custom_nonce = "550e8400-e29b-41d4-a716-446655440000".to_string().into_bytes(); // Valid UUID
         let custom_timestamp = 1234567890u64;
         let custom_request_id = b"custom_request_id".to_vec();
 
