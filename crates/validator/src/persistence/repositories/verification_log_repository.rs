@@ -3,11 +3,11 @@ use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
-use common::persistence::{
+use basilica_common::persistence::{
     Repository, DatabaseConnection, Cleanup, 
     PaginatedResponse, Pagination
 };
-use common::PersistenceError;
+use basilica_common::PersistenceError;
 use crate::persistence::entities::{VerificationLog, ExecutorVerificationStats};
 
 #[async_trait]
@@ -385,9 +385,9 @@ impl Cleanup for SqliteVerificationLogRepository {
         Ok(())
     }
 
-    async fn storage_stats(&self) -> Result<common::persistence::StorageStats, PersistenceError> {
+    async fn storage_stats(&self) -> Result<basilica_common::persistence::StorageStats, PersistenceError> {
         // SQLite doesn't have built-in storage stats like PostgreSQL
-        Ok(common::persistence::StorageStats {
+        Ok(basilica_common::persistence::StorageStats {
             total_size_bytes: 0,
             data_size_bytes: 0,
             index_size_bytes: 0,

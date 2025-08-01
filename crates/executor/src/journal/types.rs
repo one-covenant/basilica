@@ -63,7 +63,7 @@ impl ValidatorAccess {
         validator_id: ValidatorId,
         access_type: AccessType,
         duration: std::time::Duration,
-        ssh_key: Option<common::ssh::SshKeyInfo>,
+        ssh_key: Option<basilica_common::ssh::SshKeyInfo>,
     ) -> Self {
         let now = SystemTime::now();
         let mut permissions = Vec::new();

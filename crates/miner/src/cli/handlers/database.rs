@@ -373,7 +373,7 @@ async fn perform_hot_backup(db: &RegistrationDb, backup_path: &Path) -> Result<(
 async fn verify_backup_integrity(backup_path: &Path) -> Result<bool> {
     // Try to open the backup database and perform basic operations
     let backup_url = format!("sqlite:{}", backup_path.display());
-    let temp_config = common::config::DatabaseConfig {
+    let temp_config = basilica_common::config::DatabaseConfig {
         url: backup_url,
         max_connections: 1,
         min_connections: 1,

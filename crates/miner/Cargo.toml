@@ -39,7 +39,7 @@ clap = { workspace = true }
 # memmap2 = { workspace = true }
 
 # Internal dependencies
-common = { path = "../common", features = ["sqlite"] }
+basilica-common = { path = "../basilica-common", features = ["sqlite"] }
 protocol = { path = "../protocol" }
 bittensor = { path = "../bittensor" }
 

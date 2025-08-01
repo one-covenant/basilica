@@ -1,7 +1,7 @@
 //! Unit tests for executor configuration
 
-use common::config::{LoggingConfig, MetricsConfig, ServerConfig};
-use common::identity::Hotkey;
+use basilica_common::config::{LoggingConfig, MetricsConfig, ServerConfig};
+use basilica_common::identity::Hotkey;
 use executor::config::docker::DockerConfigValidation;
 use executor::config::system::SystemConfigValidation;
 use executor::config::{

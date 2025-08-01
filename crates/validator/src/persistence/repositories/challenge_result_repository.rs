@@ -3,8 +3,8 @@ use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
-use common::persistence::{Repository, DatabaseConnection, Cleanup, PaginatedResponse, Pagination};
-use common::PersistenceError;
+use basilica_common::persistence::{Repository, DatabaseConnection, Cleanup, PaginatedResponse, Pagination};
+use basilica_common::PersistenceError;
 use crate::persistence::entities::ChallengeResult;
 
 #[async_trait]

@@ -2,7 +2,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::journal::events::{SecuritySeverity, VerificationEvent};
-use common::journal::*;
+use basilica_common::journal::*;
 
 /// Validator-specific journal logger for verification events
 pub struct VerificationLogger {
@@ -251,12 +251,12 @@ impl VerificationLogger {
             SecuritySeverity::Critical => "CRITICAL",
         };
 
-        // Convert internal SecuritySeverity to common::journal::SecuritySeverity
+        // Convert internal SecuritySeverity to basilica_common::journal::SecuritySeverity
         let common_severity = match severity {
-            SecuritySeverity::Low => common::journal::SecuritySeverity::Low,
-            SecuritySeverity::Medium => common::journal::SecuritySeverity::Medium,
-            SecuritySeverity::High => common::journal::SecuritySeverity::High,
-            SecuritySeverity::Critical => common::journal::SecuritySeverity::Critical,
+            SecuritySeverity::Low => basilica_common::journal::SecuritySeverity::Low,
+            SecuritySeverity::Medium => basilica_common::journal::SecuritySeverity::Medium,
+            SecuritySeverity::High => basilica_common::journal::SecuritySeverity::High,
+            SecuritySeverity::Critical => basilica_common::journal::SecuritySeverity::Critical,
         };
 
         log_security_violation(

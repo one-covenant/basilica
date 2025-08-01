@@ -386,7 +386,7 @@ async fn verify_miner_signature(request: &RegisterMinerRequest) -> Result<bool, 
         "{}:{}:{}",
         request.miner_id, request.hotkey, request.endpoint
     );
-    common::crypto::verify_signature(&request.signature, &message, &request.hotkey).await
+    basilica_common::crypto::verify_signature(&request.signature, &message, &request.hotkey).await
 }
 
 async fn verify_miner_update_signature(
@@ -395,7 +395,7 @@ async fn verify_miner_update_signature(
 ) -> Result<bool, anyhow::Error> {
     let endpoint = request.endpoint.as_deref().unwrap_or("");
     let message = format!("{miner_id}:{endpoint}:update");
-    common::crypto::verify_signature(&request.signature, &message, miner_id).await
+    basilica_common::crypto::verify_signature(&request.signature, &message, miner_id).await
 }
 
 fn determine_miner_status(

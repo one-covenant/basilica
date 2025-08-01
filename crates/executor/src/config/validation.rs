@@ -1,7 +1,7 @@
 //! Configuration validation implementation
 
-use common::config::ConfigValidation;
-use common::error::ConfigurationError;
+use basilica_common::config::ConfigValidation;
+use basilica_common::error::ConfigurationError;
 
 use super::{DockerConfigValidation, ExecutorConfig, SystemConfigValidation};
 

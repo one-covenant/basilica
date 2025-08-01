@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 use crate::metrics::MinerPrometheusMetrics;
-use common::metrics::traits::BasilcaMetrics;
+use basilica_common::metrics::traits::BasilcaMetrics;
 
 /// Business metrics specific to Miner operations
 pub struct MinerBusinessMetrics {

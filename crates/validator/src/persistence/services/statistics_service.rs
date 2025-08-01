@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
-use common::persistence::Pagination;
-use common::PersistenceError;
+use basilica_common::persistence::Pagination;
+use basilica_common::PersistenceError;
 use crate::persistence::{
     entities::ExecutorVerificationStats,
     repositories::VerificationLogRepository,

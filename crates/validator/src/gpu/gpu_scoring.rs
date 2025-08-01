@@ -7,7 +7,7 @@ use tracing::{debug, info, warn};
 use super::categorization::{ExecutorValidationResult, GpuCategorizer, MinerGpuProfile};
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
-use common::identity::MinerUid;
+use basilica_common::identity::MinerUid;
 
 pub struct GpuScoringEngine {
     gpu_profile_repo: Arc<GpuProfileRepository>,

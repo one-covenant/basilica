@@ -45,7 +45,7 @@ url = "2.5"
 prost-types = { workspace = true }
 
 # Internal dependencies
-common = { path = "../common" }
+basilica-common = { path = "../basilica-common" }
 protocol = { path = "../protocol" }
 bittensor = { path = "../bittensor" }
 

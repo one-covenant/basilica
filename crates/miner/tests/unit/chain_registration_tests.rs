@@ -6,7 +6,7 @@ use mockall::predicate::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use common::identity::MinerUid;
+use basilica_common::identity::MinerUid;
 use miner::bittensor_core::ChainRegistration;
 use miner::config::MinerBittensorConfig;
 
@@ -20,7 +20,7 @@ mock! {
 #[cfg(test)]
 mod chain_registration_tests {
     use super::*;
-    use common::config::BittensorConfig;
+    use basilica_common::config::BittensorConfig;
     use std::net::SocketAddr;
 
     fn create_test_config() -> MinerBittensorConfig {

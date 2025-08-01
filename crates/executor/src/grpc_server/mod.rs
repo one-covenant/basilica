@@ -199,7 +199,7 @@ impl ExecutorControl for ExecutorControlService {
             })?;
 
         // Create SSH credentials in JSON format with correct username
-        let ssh_username = common::ssh::SimpleSshUsers::validator_username(&req.validator_hotkey);
+        let ssh_username = basilica_common::ssh::SimpleSshUsers::validator_username(&req.validator_hotkey);
         let credentials = serde_json::json!({
             "ssh_username": ssh_username,
             "ssh_host": "executor.local",
@@ -312,10 +312,10 @@ impl ExecutorControl for ExecutorControlService {
             .collect::<Vec<_>>()
             .join("|");
 
-        let encryption_key = common::crypto::derive_key_from_gpu_info(&gpu_info_str);
+        let encryption_key = basilica_common::crypto::derive_key_from_gpu_info(&gpu_info_str);
 
         // Encrypt the profile data
-        let encrypted_data = common::crypto::symmetric_encrypt(&encryption_key, profile_bytes)
+        let encrypted_data = basilica_common::crypto::symmetric_encrypt(&encryption_key, profile_bytes)
             .map_err(|e| {
                 tracing::error!("Failed to encrypt system profile: {}", e);
                 tonic::Status::internal("Failed to encrypt system profile")
@@ -323,12 +323,12 @@ impl ExecutorControl for ExecutorControlService {
 
         // Extract nonce (first 12 bytes) and ciphertext
         let (nonce_bytes, ciphertext_bytes) =
-            encrypted_data.split_at(common::crypto::AES_NONCE_SIZE);
+            encrypted_data.split_at(basilica_common::crypto::AES_NONCE_SIZE);
         let encrypted_profile = hex::encode(ciphertext_bytes);
         let encryption_nonce = hex::encode(nonce_bytes);
 
         // Generate profile hash for integrity verification
-        let profile_hash = common::crypto::hash_blake3_string(profile_bytes);
+        let profile_hash = basilica_common::crypto::hash_blake3_string(profile_bytes);
 
         let collected_at = std::time::SystemTime::now();
 
@@ -487,7 +487,7 @@ impl ExecutorControl for ExecutorControlService {
                     Ok(tonic::Response::new(ContainerOpResponse {
                         success: true,
                         container_id: container_id.clone(),
-                        status: Some(protocol::ContainerStatus {
+                        status: Some(protocol::common::ContainerStatus {
                             container_id: container_id.clone(),
                             status: "created".to_string(),
                             status_message: format!(
@@ -529,7 +529,7 @@ impl ExecutorControl for ExecutorControlService {
                 Ok(tonic::Response::new(ContainerOpResponse {
                     success: true,
                     container_id: req.container_id.clone(),
-                    status: Some(protocol::ContainerStatus {
+                    status: Some(protocol::common::ContainerStatus {
                         container_id: req.container_id.clone(),
                         status: "deleted".to_string(),
                         status_message: format!(
@@ -559,7 +559,7 @@ impl ExecutorControl for ExecutorControlService {
                 Ok(tonic::Response::new(ContainerOpResponse {
                     success: true,
                     container_id: req.container_id.clone(),
-                    status: Some(protocol::ContainerStatus {
+                    status: Some(protocol::common::ContainerStatus {
                         container_id: req.container_id.clone(),
                         status,
                         status_message: format!("Container {} status retrieved", req.container_id),
@@ -590,7 +590,7 @@ impl ExecutorControl for ExecutorControlService {
                 Ok(tonic::Response::new(ContainerOpResponse {
                     success: true,
                     container_id: req.container_id.clone(),
-                    status: Some(protocol::ContainerStatus {
+                    status: Some(protocol::common::ContainerStatus {
                         container_id: req.container_id.clone(),
                         status: "key_added".to_string(),
                         status_message: format!(

@@ -244,7 +244,7 @@ async fn start_validator_services(
 ) -> Result<()> {
     let storage_path =
         std::path::PathBuf::from(&config.storage.data_dir).join("validator_storage.json");
-    let storage = common::MemoryStorage::with_file(storage_path).await?;
+    let storage = basilica_common::MemoryStorage::with_file(storage_path).await?;
 
     // Extract database path from URL (remove sqlite: prefix if present)
     let db_url = &config.database.url;

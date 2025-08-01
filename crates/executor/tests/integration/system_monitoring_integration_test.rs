@@ -1,5 +1,5 @@
 use anyhow::Result;
-use common::metrics::{MetricsRecorder, SystemMetricsProvider};
+use basilica_common::metrics::{MetricsRecorder, SystemMetricsProvider};
 use executor::config::{ExecutorConfig, MetricsConfig, MonitoringConfig};
 use executor::monitoring::{
     AlertLevel, AlertType, ExecutorMonitor, HealthChecker, MetricThreshold, ResourceMonitor,

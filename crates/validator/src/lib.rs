@@ -38,7 +38,7 @@ pub use ssh::{ExecutorSshDetails, ValidatorSshClient};
 pub use validation::types::{ValidationConfig, ValidationError};
 
 /// Re-export common error types
-pub use common::error::{BasilcaError, BasilcaResult};
+pub use basilica_common::error::{BasilcaError, BasilcaResult};
 
 /// Validator library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

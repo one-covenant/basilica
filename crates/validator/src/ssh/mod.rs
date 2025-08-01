@@ -43,8 +43,8 @@ pub use key_manager::ValidatorSshKeyManager;
 mod tests;
 
 use anyhow::Result;
-use common::identity::ExecutorId;
-use common::ssh::{
+use basilica_common::identity::ExecutorId;
+use basilica_common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, SshFileTransferManager,
     StandardSshClient,
 };

@@ -23,14 +23,14 @@ pub struct ApiState {
     config: ApiConfig,
     persistence: Arc<crate::persistence::SimplePersistence>,
     #[allow(dead_code)]
-    storage: common::MemoryStorage,
+    storage: basilica_common::MemoryStorage,
 }
 
 impl ApiState {
     pub fn new(
         config: ApiConfig,
         persistence: Arc<crate::persistence::SimplePersistence>,
-        storage: common::MemoryStorage,
+        storage: basilica_common::MemoryStorage,
     ) -> Self {
         Self {
             config,
@@ -50,7 +50,7 @@ impl ApiHandler {
     pub fn new(
         config: ApiConfig,
         persistence: Arc<crate::persistence::SimplePersistence>,
-        storage: common::MemoryStorage,
+        storage: basilica_common::MemoryStorage,
     ) -> Self {
         Self {
             state: ApiState::new(config, persistence, storage),

@@ -6,4 +6,4 @@ pub mod types;
 
 pub use types::*;
 
-pub use common::journal::*;
+pub use basilica_common::journal::*;

@@ -25,7 +25,7 @@ rand = "0.8"
 # Internal dependencies
 validator = { path = "../validator" }
 protocol = { path = "../protocol" }
-common = { path = "../common" }
+basilica-common = { path = "../basilica-common" }
 
 [dev-dependencies]
 criterion = "0.5"

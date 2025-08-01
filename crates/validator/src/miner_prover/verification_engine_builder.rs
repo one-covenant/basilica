@@ -10,7 +10,7 @@ use crate::metrics::ValidatorMetrics;
 use crate::persistence::SimplePersistence;
 use crate::ssh::{SshAutomationComponents, ValidatorSshClient};
 use anyhow::{Context, Result};
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 use std::sync::Arc;
 use tracing::{info, warn};
 

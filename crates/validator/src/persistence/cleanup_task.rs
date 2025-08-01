@@ -121,7 +121,7 @@ mod tests {
     use crate::gpu::MinerGpuProfile;
     use crate::persistence::SimplePersistence;
     use chrono::Utc;
-    use common::identity::MinerUid;
+    use basilica_common::identity::MinerUid;
     use std::collections::HashMap;
     use tempfile::NamedTempFile;
 

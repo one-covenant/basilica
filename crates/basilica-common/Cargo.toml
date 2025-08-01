@@ -1,5 +1,5 @@
 [package]
-name = "common"
+name = "basilica-common"
 version = "0.1.0"
 edition = "2021"
 description = "Core shared types, errors, traits, and cryptographic utilities for Basilca "

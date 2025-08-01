@@ -12,7 +12,7 @@ pub use executor_metrics::*;
 pub use prometheus_metrics::*;
 
 use anyhow::Result;
-use common::config::MetricsConfig;
+use basilica_common::config::MetricsConfig;
 use std::sync::Arc;
 
 /// Complete miner metrics collection system

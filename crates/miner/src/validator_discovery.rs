@@ -575,7 +575,7 @@ mod tests {
 
     fn create_test_config() -> MinerConfig {
         use crate::config::MinerBittensorConfig;
-        use common::config::{BittensorConfig, DatabaseConfig};
+        use basilica_common::config::{BittensorConfig, DatabaseConfig};
 
         MinerConfig {
             bittensor: MinerBittensorConfig {

@@ -1,7 +1,7 @@
 use super::HandlerUtils;
 use crate::cli::{commands::ServiceCommands, CliContext};
 use anyhow::Result;
-use common::config::ConfigValidation;
+use basilica_common::config::ConfigValidation;
 
 pub async fn handle_service_command(cmd: &ServiceCommands, context: &CliContext) -> Result<()> {
     match cmd {

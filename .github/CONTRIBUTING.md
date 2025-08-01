@@ -39,7 +39,7 @@ cargo build --release
 cargo test
 
 # Run tests for specific crate
-cargo test -p common
+cargo test -p basilica-common
 
 # Run tests with logging
 RUST_LOG=debug cargo test

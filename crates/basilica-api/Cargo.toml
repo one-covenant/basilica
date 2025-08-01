@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # Internal dependencies
-common = { path = "../common" }
+basilica-common = { path = "../basilica-common" }
 bittensor = { path = "../bittensor" }
 protocol = { path = "../protocol" }
 

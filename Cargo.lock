@@ -1061,10 +1061,10 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum 0.7.9",
+ "basilica-common",
  "bittensor",
  "chrono",
  "clap",
- "common",
  "criterion",
  "dashmap",
  "figment",
@@ -1102,6 +1102,46 @@ dependencies = [
  "uuid",
  "weighted-rs",
  "wiremock",
+]
+
+[[package]]
+name = "basilica-common"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "base64 0.22.1",
+ "blake3",
+ "chrono",
+ "crabtensor",
+ "ed25519-dalek",
+ "figment",
+ "hex",
+ "libc",
+ "once_cell",
+ "p256",
+ "pbkdf2",
+ "rand 0.8.5",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "signature",
+ "sp-core",
+ "sqlx",
+ "ssh-key",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-journald",
+ "tracing-subscriber",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -1183,8 +1223,8 @@ name = "bittensor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "basilica-common",
  "chrono",
- "common",
  "crabtensor",
  "hex",
  "home",
@@ -1866,46 +1906,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
-]
-
-[[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "argon2",
- "async-trait",
- "base64 0.22.1",
- "blake3",
- "chrono",
- "crabtensor",
- "ed25519-dalek",
- "figment",
- "hex",
- "libc",
- "once_cell",
- "p256",
- "pbkdf2",
- "rand 0.8.5",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "signature",
- "sp-core",
- "sqlx",
- "ssh-key",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "toml 0.8.23",
- "tracing",
- "tracing-journald",
- "tracing-subscriber",
- "uuid",
- "zeroize",
 ]
 
 [[package]]
@@ -3285,11 +3285,11 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.21.7",
+ "basilica-common",
  "blake3",
  "bollard",
  "chrono",
  "clap",
- "common",
  "figment",
  "fs_extra",
  "futures-util",
@@ -4793,8 +4793,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
+ "basilica-common",
  "chrono",
- "common",
  "criterion",
  "dirs",
  "futures",
@@ -5494,11 +5494,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "basilica-common",
  "bittensor",
  "blake3",
  "chrono",
  "clap",
- "common",
  "cron",
  "deadpool",
  "figment",
@@ -9313,7 +9313,7 @@ dependencies = [
 name = "protocol"
 version = "0.1.0"
 dependencies = [
- "common",
+ "basilica-common",
  "prost",
  "prost-types",
  "serde",
@@ -13705,11 +13705,11 @@ dependencies = [
  "async-trait",
  "axum 0.7.9",
  "base64 0.21.7",
+ "basilica-common",
  "bittensor",
  "blake3",
  "chrono",
  "clap",
- "common",
  "fastrand",
  "figment",
  "futures",

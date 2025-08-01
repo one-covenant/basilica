@@ -8,7 +8,7 @@ use std::process::Command;
 use tracing::{error, info, warn};
 
 use crate::config::MinerConfig;
-use common::config::ConfigValidation;
+use basilica_common::config::ConfigValidation;
 
 /// Service management operations
 #[derive(Debug, Clone)]

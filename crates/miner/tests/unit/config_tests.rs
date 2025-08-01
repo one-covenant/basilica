@@ -1,6 +1,6 @@
 //! Unit tests for configuration
 
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 use miner::config::{
     load_config, DiscoveryConfig, ExecutorConfig, ExecutorManagementConfig, MinerConfig,
 };

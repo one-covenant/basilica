@@ -7,12 +7,12 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use common::config::{
+use basilica_common::config::{
     loader, BittensorConfig, ConfigValidation, DatabaseConfig, LoggingConfig, MetricsConfig,
     ServerConfig,
 };
-use common::error::ConfigurationError;
-use common::identity::Hotkey;
+use basilica_common::error::ConfigurationError;
+use basilica_common::identity::Hotkey;
 
 /// Remote machine configuration for executor deployment
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -167,7 +167,7 @@ pub mod validator_api {
 }
 
 // Re-export common types at crate root for convenience
-pub use common::*;
+pub use basilica_common::*;
 
 // Utility functions for working with protocol types
 pub mod utils {

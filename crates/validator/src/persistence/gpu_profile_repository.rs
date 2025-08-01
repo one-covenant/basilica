@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use tracing::{debug, info};
 
 use crate::gpu::MinerGpuProfile;
-use common::identity::MinerUid;
+use basilica_common::identity::MinerUid;
 
 /// Repository for GPU profile operations
 pub struct GpuProfileRepository {

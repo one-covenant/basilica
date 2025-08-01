@@ -14,7 +14,7 @@ pub use prometheus_metrics::*;
 
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
-use common::config::MetricsConfig;
+use basilica_common::config::MetricsConfig;
 use std::sync::Arc;
 
 /// Complete validator metrics collection system

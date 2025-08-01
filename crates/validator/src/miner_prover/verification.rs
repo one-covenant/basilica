@@ -11,8 +11,8 @@ use crate::persistence::{entities::VerificationLog, SimplePersistence};
 use crate::ssh::{ExecutorSshDetails, ValidatorSshClient, ValidatorSshKeyManager};
 use crate::validation::types::ExecutorVerificationResult;
 use anyhow::{Context, Result};
-use common::identity::{ExecutorId, Hotkey, MinerUid};
-use common::ssh::SshConnectionDetails;
+use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
+use basilica_common::ssh::SshConnectionDetails;
 use protocol::miner_discovery::{
     CloseSshSessionRequest, InitiateSshSessionRequest, SshSessionStatus,
 };

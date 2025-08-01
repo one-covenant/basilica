@@ -1,6 +1,6 @@
 //! Unit tests for gRPC server
 
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 use executor::grpc_server::container_operations::ContainerOperationsService;
 use executor::grpc_server::executor_management::ExecutorManagementService;
 use executor::grpc_server::health_check::{HealthCheckService, HealthStatus};

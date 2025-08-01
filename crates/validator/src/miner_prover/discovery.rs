@@ -7,7 +7,7 @@ use super::types::MinerInfo;
 use crate::config::VerificationConfig;
 use anyhow::Result;
 use bittensor::{AccountId, AxonInfo, Service as BittensorService};
-use common::identity::{Hotkey, MinerUid};
+use basilica_common::identity::{Hotkey, MinerUid};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

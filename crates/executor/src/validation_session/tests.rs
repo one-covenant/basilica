@@ -7,7 +7,7 @@ use crate::validation_session::{
     hotkey_verifier::HotkeyVerificationConfig, AccessControlConfig, RateLimitConfig, RequestType,
     ValidatorAccessControl, ValidatorId, ValidatorRole,
 };
-use common::crypto::P256KeyPair;
+use basilica_common::crypto::P256KeyPair;
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
 

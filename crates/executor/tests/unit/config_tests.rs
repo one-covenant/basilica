@@ -1,6 +1,6 @@
 //! Unit tests for executor configuration
 
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 use executor::config::{DockerConfig, ExecutorConfig, SystemConfig};
 use executor::validation_session::ValidatorConfig;
 use std::fs;

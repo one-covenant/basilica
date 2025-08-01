@@ -2,7 +2,7 @@ use super::HandlerUtils;
 use crate::cli::{commands::ValidatorCommands, CliContext};
 use crate::validation_session::ValidatorId;
 use anyhow::Result;
-use common::network::get_public_ip;
+use basilica_common::network::get_public_ip;
 
 pub async fn handle_validator_command(cmd: &ValidatorCommands, context: &CliContext) -> Result<()> {
     match cmd {
@@ -202,7 +202,7 @@ async fn show_logs(hotkey: Option<&str>, limit: u32, context: &CliContext) -> Re
     };
 
     // Use the simplified journal query
-    let log_entries = common::journal::query_logs(
+    let log_entries = basilica_common::journal::query_logs(
         hotkey,
         Some("1 hour ago"), // Show logs from last hour
         Some(limit as usize),

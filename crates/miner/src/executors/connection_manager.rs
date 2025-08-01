@@ -4,8 +4,8 @@
 //! health checks, and command execution capabilities.
 
 use anyhow::{Context, Result};
-use common::identity::ExecutorId;
-use common::ssh::{
+use basilica_common::identity::ExecutorId;
+use basilica_common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, StandardSshClient,
 };
 use protocol::miner_discovery::SshSessionStatus;

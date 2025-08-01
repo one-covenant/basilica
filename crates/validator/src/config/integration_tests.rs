@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::config::{emission::DEFAULT_BURN_UID, ValidatorConfig};
-    use common::config::ConfigValidation;
+    use basilica_common::config::ConfigValidation;
 
     #[test]
     fn test_validator_config_includes_emission_config() {

@@ -10,7 +10,7 @@ use std::time::Duration;
 use tracing::{debug, info};
 
 use crate::ssh::ValidatorSshClient;
-use common::ssh::SshConnectionDetails;
+use basilica_common::ssh::SshConnectionDetails;
 
 /// GPU profile data structure matching gpu-attestor output
 #[derive(Debug, Clone, Serialize, Deserialize)]

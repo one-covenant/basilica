@@ -10,7 +10,7 @@ use super::key_manager::ValidatorSshKeyManager;
 use super::key_manager_builder::ValidatorSshKeyManagerBuilder;
 use crate::config::{AutomaticVerificationConfig, SshSessionConfig, VerificationConfig};
 use anyhow::{Context, Result};
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};

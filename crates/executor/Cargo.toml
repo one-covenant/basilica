@@ -38,7 +38,7 @@ bollard = { workspace = true }
 prost-types = { workspace = true }
 
 # Internal dependencies
-common = { path = "../common", features = ["sqlite"] }
+basilica-common = { path = "../basilica-common", features = ["sqlite"] }
 protocol = { path = "../protocol" }
 
 # Additional required dependencies

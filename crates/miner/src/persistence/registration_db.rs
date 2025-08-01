@@ -13,7 +13,7 @@ use std::path::Path;
 use tokio::fs;
 use tracing::{debug, info};
 
-use common::{
+use basilica_common::{
     config::DatabaseConfig,
     executor_identity::{ExecutorId, ExecutorIdentity},
 };
@@ -713,7 +713,7 @@ pub struct TableStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::executor_identity::{constants::is_valid_huid, ExecutorIdentity};
+    use basilica_common::executor_identity::{constants::is_valid_huid, ExecutorIdentity};
 
     #[tokio::test]
     async fn test_executor_health_tracking() {

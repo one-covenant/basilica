@@ -1,6 +1,6 @@
 //! Unit tests for ExecutorFleetManager
 
-use common::config::DatabaseConfig;
+use basilica_common::config::DatabaseConfig;
 use miner::config::{ExecutorConfig, ExecutorManagementConfig};
 use miner::executor_fleet_manager::{ExecutorFleetManager, FleetStatistics};
 use miner::persistence::RegistrationDb;

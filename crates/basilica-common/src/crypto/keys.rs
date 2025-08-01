@@ -13,7 +13,7 @@ use crate::error::CryptoError;
 ///
 /// # Example
 /// ```rust
-/// use common::crypto::keys::generate_ed25519_keypair;
+/// use basilica_common::crypto::keys::generate_ed25519_keypair;
 ///
 /// let (private_pem, public_openssh) = generate_ed25519_keypair();
 /// assert!(private_pem.contains("-----BEGIN PRIVATE KEY-----"));
@@ -52,7 +52,7 @@ pub fn generate_ed25519_keypair() -> (String, String) {
 ///
 /// # Example
 /// ```rust
-/// use common::crypto::keys::generate_p256_keypair;
+/// use basilica_common::crypto::keys::generate_p256_keypair;
 ///
 /// let keypair = generate_p256_keypair().unwrap();
 /// let private_pem = keypair.private_key().to_pem().unwrap();
@@ -75,7 +75,7 @@ pub fn generate_p256_keypair() -> Result<P256KeyPair, CryptoError> {
 ///
 /// # Example
 /// ```rust
-/// use common::crypto::keys::generate_p256_keypair_formatted;
+/// use basilica_common::crypto::keys::generate_p256_keypair_formatted;
 ///
 /// let (private_pem, public_pem, public_hex) = generate_p256_keypair_formatted().unwrap();
 /// assert!(private_pem.contains("-----BEGIN PRIVATE KEY-----"));
@@ -102,7 +102,7 @@ pub fn generate_p256_keypair_formatted() -> Result<(String, String, String), Cry
 ///
 /// # Example
 /// ```rust
-/// use common::crypto::keys::generate_ed25519_keypair_pem;
+/// use basilica_common::crypto::keys::generate_ed25519_keypair_pem;
 ///
 /// let (private_pem, public_pem) = generate_ed25519_keypair_pem().unwrap();
 /// assert!(private_pem.contains("-----BEGIN PRIVATE KEY-----"));

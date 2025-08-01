@@ -1,5 +1,5 @@
 use anyhow::Result;
-use common::identity::{ExecutorId, Hotkey, MinerUid};
+use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
 use executor::config::{ExecutorConfig, GrpcConfig, TlsConfig};
 use executor::grpc::{create_grpc_server, ExecutorServiceImpl};
 use protocol::executor::{

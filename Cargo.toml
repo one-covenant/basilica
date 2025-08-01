@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/common",
+    "crates/basilica-common",
     "crates/protocol", 
     "crates/executor",
     "crates/miner", 

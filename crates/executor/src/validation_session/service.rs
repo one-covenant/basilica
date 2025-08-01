@@ -1,8 +1,8 @@
 use super::access_control::ValidatorAccessControl;
 use super::types::{ValidatorAccess, ValidatorConfig, ValidatorId};
 use anyhow::Result;
-use common::journal::{log_validator_access_granted, log_validator_access_revoked};
-use common::ssh::{SimpleSshKeys, SimpleSshUsers};
+use basilica_common::journal::{log_validator_access_granted, log_validator_access_revoked};
+use basilica_common::ssh::{SimpleSshKeys, SimpleSshUsers};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};

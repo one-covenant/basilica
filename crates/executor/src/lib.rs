@@ -13,7 +13,7 @@ pub mod validation_session;
 pub use config::ExecutorConfig;
 
 use anyhow::Result;
-use common::identity::ExecutorId;
+use basilica_common::identity::ExecutorId;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use tracing::info;

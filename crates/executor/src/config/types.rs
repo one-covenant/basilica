@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-use common::config::{loader, LoggingConfig, MetricsConfig, ServerConfig};
-use common::identity::Hotkey;
+use basilica_common::config::{loader, LoggingConfig, MetricsConfig, ServerConfig};
+use basilica_common::identity::Hotkey;
 use std::str::FromStr;
 
 use super::{DockerConfig, SystemConfig};

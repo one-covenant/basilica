@@ -281,7 +281,7 @@ GET /api/v1/status   # Detailed status
 ```text
 basilica/
 ├── crates/              # Rust workspace
-│   ├── common/          # Shared utilities (crypto, config, storage, SSH)
+│   ├── basilica-common/ # Shared utilities (crypto, config, storage, SSH)
 │   ├── protocol/        # Protocol definitions (gRPC/protobuf)
 │   ├── validator/       # Validator service
 │   ├── miner/          # Miner service

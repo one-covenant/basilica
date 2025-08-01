@@ -11,7 +11,7 @@ pub mod types;
 
 use crate::config::SystemConfig;
 use anyhow::Result;
-use common::metrics::{
+use basilica_common::metrics::{
     metric_names::*,
     traits::{GpuDevice, GpuMetrics, MetricsRecorder, SystemMetricsProvider},
 };

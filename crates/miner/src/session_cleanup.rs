@@ -63,7 +63,7 @@ pub async fn run_cleanup_service(
 mod tests {
     use super::*;
     use chrono::Duration as ChronoDuration;
-    use common::identity::Hotkey;
+    use basilica_common::identity::Hotkey;
 
     #[tokio::test]
     async fn test_session_cleanup_service() {

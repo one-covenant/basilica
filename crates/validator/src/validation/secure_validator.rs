@@ -5,7 +5,7 @@
 //! executor's machine.
 
 use anyhow::{Context, Result};
-use common::ssh::SshConnectionDetails;
+use basilica_common::ssh::SshConnectionDetails;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

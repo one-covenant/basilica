@@ -6,7 +6,7 @@
 use super::key_manager::ValidatorSshKeyManager;
 use crate::config::SshSessionConfig;
 use anyhow::{Context, Result};
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 use std::sync::Arc;
 use tokio::fs;
 use tracing::info;

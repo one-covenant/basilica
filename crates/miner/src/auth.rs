@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 
 /// JWT claims for validator authentication
 #[derive(Debug, Clone, Serialize, Deserialize)]

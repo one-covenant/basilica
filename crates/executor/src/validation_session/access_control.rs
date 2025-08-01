@@ -4,7 +4,7 @@ use super::types::{
     AccessControlConfig, SessionStats, ValidatorAccess, ValidatorId, ValidatorRole,
 };
 use anyhow::Result;
-use common::journal::{log_security_violation, SecuritySeverity};
+use basilica_common::journal::{log_security_violation, SecuritySeverity};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;

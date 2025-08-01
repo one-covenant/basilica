@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 use crate::metrics::ValidatorPrometheusMetrics;
-use common::metrics::traits::BasilcaMetrics;
+use basilica_common::metrics::traits::BasilcaMetrics;
 
 /// Business metrics specific to Validator operations
 pub struct ValidatorBusinessMetrics {

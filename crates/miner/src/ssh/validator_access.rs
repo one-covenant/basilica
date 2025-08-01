@@ -1,7 +1,7 @@
 //! SSH access management specifically for validators accessing executors
 
 use anyhow::Result;
-use common::ssh::{SshCleanupStats, SshHealthStatus, SshService};
+use basilica_common::ssh::{SshCleanupStats, SshHealthStatus, SshService};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 

@@ -42,7 +42,7 @@ const DEFAULT_ENV_PREFIX: &str = "BASILCA";
 ///
 /// # Example
 /// ```rust
-/// use common::config::loader::load_config;
+/// use basilica_common::config::loader::load_config;
 /// use serde::{Deserialize, Serialize};
 ///
 /// #[derive(Debug, Default, Deserialize, Serialize)]

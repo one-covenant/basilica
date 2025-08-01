@@ -9,7 +9,7 @@ use std::time::Duration;
 use tonic::transport::Channel;
 use tracing::{debug, info, warn};
 
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 use protocol::miner_discovery::{
     miner_discovery_client::MinerDiscoveryClient, CloseSshSessionRequest, CloseSshSessionResponse,
     ExecutorConnectionDetails, InitiateSshSessionRequest, InitiateSshSessionResponse, LeaseRequest,

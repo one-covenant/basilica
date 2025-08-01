@@ -1,5 +1,5 @@
 use anyhow::Result;
-use common::identity::{ExecutorId, Hotkey};
+use basilica_common::identity::{ExecutorId, Hotkey};
 use executor::config::{ContainerConfig, ExecutorConfig, GrpcConfig, SecurityConfig};
 use executor::persistence::{ExecutorPersistence, ValidationSession, ValidationSessionRepository};
 use executor::session::{SessionManager, SessionState, SessionValidator};

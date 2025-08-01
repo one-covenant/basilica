@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use common::config::{
+use basilica_common::config::{
     loader, BittensorConfig, ConfigValidation, DatabaseConfig, LoggingConfig, MetricsConfig,
     ServerConfig,
 };
-use common::error::ConfigurationError;
+use basilica_common::error::ConfigurationError;
 
 /// Enhanced validator Bittensor configuration with advertised address support
 #[derive(Debug, Clone, Serialize, Deserialize)]

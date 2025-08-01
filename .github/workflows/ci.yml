@@ -35,21 +35,21 @@ jobs:
           filters: |
             executor:
               - 'crates/executor/**'
-              - 'crates/common/**'
+              - 'crates/basilica-common/**'
               - 'crates/protocol/**'
               - 'scripts/executor/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             validator:
               - 'crates/validator/**'
-              - 'crates/common/**'
+              - 'crates/basilica-common/**'
               - 'crates/protocol/**'
               - 'scripts/validator/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             miner:
               - 'crates/miner/**'
-              - 'crates/common/**'
+              - 'crates/basilica-common/**'
               - 'crates/protocol/**'
               - 'crates/bittensor/**'
               - 'scripts/miner/**'
@@ -57,7 +57,7 @@ jobs:
               - 'Cargo.lock'
             basilica-api:
               - 'crates/basilica-api/**'
-              - 'crates/common/**'
+              - 'crates/basilica-common/**'
               - 'crates/protocol/**'
               - 'scripts/basilica-api/**'
               - 'Cargo.toml'
@@ -100,11 +100,11 @@ jobs:
       - name: Quick check builds
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p common -p protocol -p bittensor
+          cargo check -p basilica-common -p protocol -p bittensor
       - name: Run clippy on core packages
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo clippy -p common -p protocol -p bittensor --all-targets -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+          cargo clippy -p basilica-common -p protocol -p bittensor --all-targets -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
 
   # Lint complex packages
   lint-complex:

@@ -2,7 +2,7 @@
 mod tests {
     use crate::gpu::categorization::*;
     use chrono::Utc;
-    use common::identity::MinerUid;
+    use basilica_common::identity::MinerUid;
 
     #[test]
     fn test_gpu_model_normalization() {

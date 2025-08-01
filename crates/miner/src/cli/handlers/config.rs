@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use tracing::{error, info};
 
 use crate::config::MinerConfig;
-use common::config::ConfigValidation;
+use basilica_common::config::ConfigValidation;
 
 /// Configuration operation types
 #[derive(Debug, Clone)]
@@ -324,7 +324,7 @@ async fn perform_comprehensive_validation(config: &MinerConfig) -> Result<Valida
 
 /// Validate database configuration
 fn validate_database_config(
-    config: &common::config::DatabaseConfig,
+    config: &basilica_common::config::DatabaseConfig,
     errors: &mut Vec<String>,
     warnings: &mut Vec<String>,
 ) {
@@ -343,7 +343,7 @@ fn validate_database_config(
 
 /// Validate server configuration
 fn validate_server_config(
-    config: &common::config::ServerConfig,
+    config: &basilica_common::config::ServerConfig,
     _errors: &mut [String],
     warnings: &mut Vec<String>,
 ) {

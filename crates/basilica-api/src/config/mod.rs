@@ -16,8 +16,8 @@ pub use rate_limit::{RateLimitBackend, RateLimitConfig};
 pub use server::ServerConfig;
 pub use telemetry::TelemetryConfig;
 
-use common::config::{BittensorConfig, ConfigLoader};
-use common::ConfigurationError as ConfigError;
+use basilica_common::config::{BittensorConfig, ConfigLoader};
+use basilica_common::ConfigurationError as ConfigError;
 use figment::{
     providers::{Env, Format, Serialized, Toml},
     Figment,

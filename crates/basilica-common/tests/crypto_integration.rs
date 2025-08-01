@@ -1,6 +1,6 @@
 //! Integration tests for crypto module
 
-use common::crypto::{
+use basilica_common::crypto::{
     argon2_derive_key, generate_ephemeral_ed25519_keypair, generate_p256_keypair_formatted,
     pbkdf2_derive_key, KdfParams,
 };
@@ -83,7 +83,7 @@ fn test_argon2_key_derivation() {
 #[test]
 fn test_crypto_module_exports_all_functions() {
     // This test ensures all functions are properly exported
-    use common::crypto::{
+    use basilica_common::crypto::{
         generate_random_key,
         // Core functions
         hash_blake3,
@@ -98,7 +98,7 @@ fn test_crypto_module_exports_all_functions() {
 
 #[test]
 fn test_no_placeholder_implementations() {
-    use common::crypto::{
+    use basilica_common::crypto::{
         derive_key_simple, generate_ed25519_keypair, generate_p256_keypair, generate_random_key,
     };
 

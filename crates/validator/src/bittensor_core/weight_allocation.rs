@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
 use crate::config::emission::EmissionConfig;
-use common::identity::MinerUid;
+use basilica_common::identity::MinerUid;
 
 pub struct WeightAllocationEngine {
     emission_config: EmissionConfig,

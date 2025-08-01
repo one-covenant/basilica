@@ -6,7 +6,7 @@
 //!
 //! # Example
 //! ```
-//! use common::executor_identity::{ExecutorId, ExecutorIdentity};
+//! use basilica_common::executor_identity::{ExecutorId, ExecutorIdentity};
 //!
 //! let id = ExecutorId::new("my-seed").unwrap();
 //! println!("UUID: {}", id.uuid());

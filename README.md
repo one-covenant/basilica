@@ -30,7 +30,7 @@ Basilica creates a trustless marketplace for GPU compute by:
 - **Miner**: Manages GPU executor fleets, handles assignments, and serves compute requests via Axon
 - **Executor**: GPU machine agent with container management, system monitoring, and secure task execution
 - **Basilica API**: HTTP gateway with authentication, caching, rate limiting, and request aggregation
-- **Common**: Shared utilities including crypto, SSH management, storage, and configuration
+- **Basilica Common**: Shared utilities including crypto, SSH management, storage, and configuration
 - **Protocol**: gRPC/protobuf definitions for inter-component communication
 - **Bittensor**: Network integration for registration, discovery, and weight management
 

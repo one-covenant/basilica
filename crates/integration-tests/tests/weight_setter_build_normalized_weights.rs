@@ -1,7 +1,7 @@
 //! Integration test for WeightSetter build_normalized_weights function
 
 use anyhow::Result;
-use common::identity::MinerUid;
+use basilica_common::identity::MinerUid;
 use std::collections::HashMap;
 use validator::bittensor_core::weight_allocation::NormalizedWeight;
 use validator::bittensor_core::weight_allocation::{WeightAllocationEngine, WeightDistribution};

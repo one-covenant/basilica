@@ -4,9 +4,9 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc, Duration};
 use serde_json::Value;
 
-use common::persistence::{PaginatedResponse, Pagination};
-use common::PersistenceError;
-use common::identity::{ExecutorId, MinerUid};
+use basilica_common::persistence::{PaginatedResponse, Pagination};
+use basilica_common::PersistenceError;
+use basilica_common::identity::{ExecutorId, MinerUid};
 use crate::persistence::{
     entities::{VerificationLog, ChallengeResult, EnvironmentValidation},
     repositories::{

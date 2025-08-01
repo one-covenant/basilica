@@ -6,8 +6,8 @@
 #[cfg(test)]
 mod ssh_tests {
     use crate::ssh::{ExecutorSshDetails, RetryConfig, SshSessionStats, ValidatorSshClient};
-    use common::identity::ExecutorId;
-    use common::ssh::{SshConnectionConfig, SshConnectionDetails};
+    use basilica_common::identity::ExecutorId;
+    use basilica_common::ssh::{SshConnectionConfig, SshConnectionDetails};
     use std::time::Duration;
     use tempfile::tempdir;
 

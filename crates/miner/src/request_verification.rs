@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 
 /// Request signature data
 #[derive(Debug, Clone, Serialize, Deserialize)]

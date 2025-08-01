@@ -4,7 +4,7 @@
 //! when searching by UUID or HUID prefix.
 
 use anyhow::{anyhow, Result};
-use common::executor_identity::ExecutorIdentity;
+use basilica_common::executor_identity::ExecutorIdentity;
 use std::fmt::Write;
 
 use crate::persistence::RegistrationDb;

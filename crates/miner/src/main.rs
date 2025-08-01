@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use common::identity::MinerUid;
+use basilica_common::identity::MinerUid;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,7 +30,7 @@ mod validator_discovery;
 
 use auth::JwtAuthService;
 use bittensor_core::ChainRegistration;
-use common::ssh::manager::DefaultSshService;
+use basilica_common::ssh::manager::DefaultSshService;
 use config::MinerConfig;
 use executor_manager::ExecutorManager;
 use persistence::RegistrationDb;
@@ -159,7 +159,7 @@ impl MinerState {
 
             use std::str::FromStr;
             let executor_info = executors::ExecutorInfo {
-                id: common::identity::ExecutorId::from_str(&executor_id.uuid.to_string()).map_err(
+                id: basilica_common::identity::ExecutorId::from_str(&executor_id.uuid.to_string()).map_err(
                     |e| anyhow::anyhow!("Invalid executor ID '{}': {}", executor_id.uuid, e),
                 )?,
                 host: executor_config.host.clone(),
@@ -561,7 +561,7 @@ fn init_logging(level: &str) -> Result<()> {
 
 /// Load configuration from file and environment
 fn load_config(config_path: &str) -> Result<MinerConfig> {
-    use common::config::ConfigValidation;
+    use basilica_common::config::ConfigValidation;
 
     let path = PathBuf::from(config_path);
     let config = if path.exists() {

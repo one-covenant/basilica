@@ -8,7 +8,7 @@ use super::types::{MinerInfo, VerificationStats};
 use super::verification::VerificationEngine;
 use crate::config::VerificationConfig;
 use anyhow::Result;
-use common::identity::MinerUid;
+use basilica_common::identity::MinerUid;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

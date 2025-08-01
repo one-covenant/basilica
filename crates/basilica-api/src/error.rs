@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use common::BasilcaError;
+use basilica_common::BasilcaError;
 use serde_json::json;
 use thiserror::Error;
 
@@ -14,7 +14,7 @@ use thiserror::Error;
 pub enum Error {
     /// Configuration error
     #[error("Configuration error: {0}")]
-    Config(#[from] common::ConfigurationError),
+    Config(#[from] basilica_common::ConfigurationError),
 
     /// Bittensor integration error
     #[error("Bittensor error: {0}")]

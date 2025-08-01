@@ -20,7 +20,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use tonic_health::server::health_reporter;
 use tracing::{debug, error, info, warn};
 
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 use protocol::miner_discovery::{
     miner_discovery_server::{MinerDiscovery, MinerDiscoveryServer},
     CloseSshSessionRequest, CloseSshSessionResponse, ExecutorConnectionDetails,
@@ -789,7 +789,7 @@ mod tests {
                 }],
                 ..Default::default()
             },
-            database: common::config::DatabaseConfig {
+            database: basilica_common::config::DatabaseConfig {
                 url: "sqlite::memory:".to_string(),
                 ..Default::default()
             },
@@ -809,7 +809,7 @@ mod tests {
             ..crate::ssh::MinerSshConfig::default()
         };
         let ssh_service = std::sync::Arc::new(
-            common::ssh::manager::DefaultSshService::new(ssh_config.clone()).unwrap(),
+            basilica_common::ssh::manager::DefaultSshService::new(ssh_config.clone()).unwrap(),
         );
         let ssh_access_service = crate::ssh::ValidatorAccessService::new(
             ssh_config,
@@ -891,7 +891,7 @@ mod tests {
                 }],
                 ..Default::default()
             },
-            database: common::config::DatabaseConfig {
+            database: basilica_common::config::DatabaseConfig {
                 url: "sqlite::memory:".to_string(),
                 ..Default::default()
             },
@@ -911,7 +911,7 @@ mod tests {
             ..crate::ssh::MinerSshConfig::default()
         };
         let ssh_service = std::sync::Arc::new(
-            common::ssh::manager::DefaultSshService::new(ssh_config.clone()).unwrap(),
+            basilica_common::ssh::manager::DefaultSshService::new(ssh_config.clone()).unwrap(),
         );
         let ssh_access_service = crate::ssh::ValidatorAccessService::new(
             ssh_config,

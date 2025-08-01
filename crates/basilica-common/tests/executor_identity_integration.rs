@@ -5,7 +5,7 @@
 
 #![cfg(feature = "sqlite")]
 
-use common::executor_identity::{
+use basilica_common::executor_identity::{
     is_valid_huid, validate_identifier, ExecutorId, ExecutorIdentity, IdentityDisplay,
     IdentityPersistence, SqliteIdentityStore, StaticWordProvider, WordProvider,
 };
@@ -68,7 +68,7 @@ async fn test_e2e_executor_lifecycle() {
     assert_eq!(found_by_prefix.uuid(), executor.uuid());
 
     // Step 4: Test display formatting
-    use common::executor_identity::ExecutorIdentityDisplay;
+    use basilica_common::executor_identity::ExecutorIdentityDisplay;
     let display = ExecutorIdentityDisplay::new(&*executor);
 
     let compact = display.format_compact();

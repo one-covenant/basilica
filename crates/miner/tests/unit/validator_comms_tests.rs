@@ -1,7 +1,7 @@
 //! Unit tests for ValidatorHandlerService
 
-use common::config::DatabaseConfig;
-use common::identity::Hotkey;
+use basilica_common::config::DatabaseConfig;
+use basilica_common::identity::Hotkey;
 use miner::config::{ExecutorConfig, ExecutorManagementConfig, MinerConfig};
 use miner::executor_fleet_manager::ExecutorFleetManager;
 use miner::persistence::RegistrationDb;

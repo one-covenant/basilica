@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use common::ssh::{SshAccessConfig, SshKeyInfo, SshKeyParams, SshService, SshUserInfo};
+use basilica_common::ssh::{SshAccessConfig, SshKeyInfo, SshKeyParams, SshService, SshUserInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;

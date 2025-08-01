@@ -1,8 +1,8 @@
 //! Unit tests for persistence layer
 
 use chrono::Utc;
-use common::config::DatabaseConfig;
-use common::identity::Hotkey;
+use basilica_common::config::DatabaseConfig;
+use basilica_common::identity::Hotkey;
 use miner::persistence::{RegistrationDb, ValidatorSession};
 use std::time::Duration;
 

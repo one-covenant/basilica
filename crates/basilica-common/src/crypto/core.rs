@@ -38,7 +38,7 @@ pub const AES_NONCE_SIZE: usize = 12;
 ///
 /// # Example
 /// ```rust
-/// use common::crypto::hash_blake3_string;
+/// use basilica_common::crypto::hash_blake3_string;
 ///
 /// let data = b"Hello, Basilca!";
 /// let hash = hash_blake3_string(data);
@@ -168,7 +168,7 @@ pub fn verify_signature_bittensor(
 ///
 /// # Example
 /// ```rust
-/// use common::crypto::generate_ephemeral_ed25519_keypair;
+/// use basilica_common::crypto::generate_ephemeral_ed25519_keypair;
 ///
 /// let (private_pem, public_openssh) = generate_ephemeral_ed25519_keypair();
 /// assert!(private_pem.contains("-----BEGIN PRIVATE KEY-----"));
@@ -217,7 +217,7 @@ pub fn derive_key_from_gpu_info(gpu_info_str: &str) -> [u8; 32] {
 ///
 /// # Example
 /// ```rust
-/// use common::crypto::{generate_random_key, AES_KEY_SIZE};
+/// use basilica_common::crypto::{generate_random_key, AES_KEY_SIZE};
 ///
 /// let key = generate_random_key(AES_KEY_SIZE);
 /// assert_eq!(key.len(), AES_KEY_SIZE);
@@ -352,7 +352,7 @@ pub fn decrypt_aes_gcm(
 ///
 /// # Example
 /// ```rust
-/// use common::crypto::derive_key_simple;
+/// use basilica_common::crypto::derive_key_simple;
 ///
 /// let password = "my_secure_password";
 /// let salt = b"unique_salt_16by";

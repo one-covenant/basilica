@@ -5,7 +5,7 @@
 //! access control.
 
 use anyhow::{Context, Result};
-use common::crypto::P256PublicKey;
+use basilica_common::crypto::P256PublicKey;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
@@ -214,7 +214,7 @@ impl HotkeySignatureVerifier {
             .context("Failed to parse P256 public key")?;
 
         // Verify the signature using our crypto module
-        match common::crypto::verify_p256_signature(&public_key, message, signature_bytes) {
+        match basilica_common::crypto::verify_p256_signature(&public_key, message, signature_bytes) {
             Ok(()) => {
                 debug!("P256 signature verification successful");
                 Ok(true)
@@ -318,7 +318,7 @@ impl HotkeySignatureVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::crypto::P256KeyPair;
+    use basilica_common::crypto::P256KeyPair;
 
     #[tokio::test]
     async fn test_challenge_generation() {

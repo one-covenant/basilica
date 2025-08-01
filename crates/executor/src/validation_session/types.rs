@@ -1,7 +1,7 @@
 //! Validation session types
 
 use crate::validation_session::hotkey_verifier::HotkeyVerificationConfig;
-use common::ssh::SshKeyInfo;
+use basilica_common::ssh::SshKeyInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
@@ -121,7 +121,7 @@ impl ValidatorAccess {
             fingerprint: String::new(),
             created_at: now,
             expires_at: far_future,
-            algorithm: common::ssh::SshKeyAlgorithm::Ed25519,
+            algorithm: basilica_common::ssh::SshKeyAlgorithm::Ed25519,
             key_size: 256,
         };
 

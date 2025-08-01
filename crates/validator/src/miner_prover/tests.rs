@@ -3,7 +3,7 @@
 #[cfg(test)]
 use crate::miner_prover::miner_client::{MinerClient, MinerClientConfig};
 #[cfg(test)]
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 #[cfg(test)]
 use std::time::Duration;
 

@@ -1,6 +1,6 @@
 //! Unit tests for CLI functionality
 
-use common::config::DatabaseConfig;
+use basilica_common::config::DatabaseConfig;
 use miner::cli::{
     display_executor_details, display_executors_table, handle_command, AddExecutorArgs, Command,
     GenerateConfigArgs, ListExecutorsArgs, MinerArgs, RemoveExecutorArgs, StatusArgs,

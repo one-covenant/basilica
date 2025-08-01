@@ -2,7 +2,7 @@
 //!
 //! Data types and structures for hardware validation.
 
-use common::identity::ExecutorId;
+use basilica_common::identity::ExecutorId;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};

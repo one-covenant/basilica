@@ -1,6 +1,6 @@
 //! SSH configuration for miner operations
 
-use common::ssh::{SshConfigProvider, SshKeyAlgorithm};
+use basilica_common::ssh::{SshConfigProvider, SshKeyAlgorithm};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -77,9 +77,9 @@ impl SshConfigProvider for MinerSshConfig {
     }
 }
 
-impl From<MinerSshConfig> for common::ssh::SshConfig {
+impl From<MinerSshConfig> for basilica_common::ssh::SshConfig {
     fn from(val: MinerSshConfig) -> Self {
-        common::ssh::SshConfig {
+        basilica_common::ssh::SshConfig {
             key_directory: val.key_directory.to_string_lossy().to_string(),
             default_algorithm: val.default_algorithm,
             default_key_size: val.default_key_size,
