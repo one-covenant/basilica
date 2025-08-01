@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! # Basilca Validator
 //!
 //! Bittensor neuron for verifying and scoring miners/executors.

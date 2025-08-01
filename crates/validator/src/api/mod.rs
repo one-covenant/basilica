@@ -22,20 +22,26 @@ use tracing::info;
 pub struct ApiState {
     config: ApiConfig,
     persistence: Arc<crate::persistence::SimplePersistence>,
+    gpu_profile_repo: Arc<crate::persistence::gpu_profile_repository::GpuProfileRepository>,
     #[allow(dead_code)]
     storage: common::MemoryStorage,
+    validator_config: crate::config::ValidatorConfig,
 }
 
 impl ApiState {
     pub fn new(
         config: ApiConfig,
         persistence: Arc<crate::persistence::SimplePersistence>,
+        gpu_profile_repo: Arc<crate::persistence::gpu_profile_repository::GpuProfileRepository>,
         storage: common::MemoryStorage,
+        validator_config: crate::config::ValidatorConfig,
     ) -> Self {
         Self {
             config,
             persistence,
+            gpu_profile_repo,
             storage,
+            validator_config,
         }
     }
 }
@@ -50,10 +56,18 @@ impl ApiHandler {
     pub fn new(
         config: ApiConfig,
         persistence: Arc<crate::persistence::SimplePersistence>,
+        gpu_profile_repo: Arc<crate::persistence::gpu_profile_repository::GpuProfileRepository>,
         storage: common::MemoryStorage,
+        validator_config: crate::config::ValidatorConfig,
     ) -> Self {
         Self {
-            state: ApiState::new(config, persistence, storage),
+            state: ApiState::new(
+                config,
+                persistence,
+                gpu_profile_repo,
+                storage,
+                validator_config,
+            ),
         }
     }
 
@@ -93,6 +107,24 @@ impl ApiHandler {
                 get(routes::list_miner_executors),
             )
             .route("/health", get(routes::health_check))
+            // new
+            .route("/gpu-profiles", get(routes::list_gpu_profiles))
+            .route(
+                "/gpu-profiles/:category",
+                get(routes::list_gpu_profiles_by_category),
+            )
+            .route("/gpu-categories", get(routes::list_gpu_categories))
+            .route(
+                "/verification/active",
+                get(routes::list_active_verifications),
+            )
+            .route(
+                "/verification/results/:miner_id",
+                get(routes::get_verification_results),
+            )
+            .route("/config", get(routes::get_config))
+            .route("/config/verification", get(routes::get_verification_config))
+            .route("/config/emission", get(routes::get_emission_config))
             .layer(TraceLayer::new_for_http())
             .layer(CorsLayer::permissive())
             .with_state(self.state.clone())
