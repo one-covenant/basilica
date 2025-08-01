@@ -21,7 +21,7 @@ pub use types::*;
 use crate::miner_prover::miner_client::{AuthenticatedMinerConnection, MinerClient};
 use crate::persistence::{SimplePersistence, ValidatorPersistence};
 use crate::ssh::ValidatorSshKeyManager;
-use protocol::basilca::miner::v1::CloseSshSessionRequest;
+use basilica_protocol::basilca::miner::v1::CloseSshSessionRequest;
 
 /// Rental manager for coordinating container deployments
 pub struct RentalManager {
