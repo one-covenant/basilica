@@ -13,6 +13,24 @@ use tracing::debug;
 
 use bittensor::Service as BittensorService;
 
+/// Create canonical data for signing/verification
+/// This is a standalone function to ensure consistency between production and test code
+pub fn create_canonical_data(
+    miner_hotkey: &str,
+    timestamp_ms: u64,
+    nonce: &str,
+    request_id: &str,
+    request_data: &[u8],
+) -> String {
+    // Hash the request data
+    let mut hasher = Hasher::new();
+    hasher.update(request_data);
+    let request_hash = hasher.finalize().to_hex().to_string();
+
+    // Create canonical string
+    format!("MINER_AUTH:{miner_hotkey}:{timestamp_ms}:{nonce}:{request_id}:{request_hash}")
+}
+
 /// Service for signing miner-to-executor requests
 #[derive(Clone)]
 pub struct ExecutorAuthService {
@@ -39,7 +57,7 @@ impl ExecutorAuthService {
         let request_id = uuid::Uuid::new_v4().to_string();
 
         // Create canonical data to sign
-        let canonical_data = self.create_canonical_data(
+        let canonical_data = create_canonical_data(
             &self.miner_hotkey,
             timestamp_ms,
             &nonce,
@@ -70,24 +88,6 @@ impl ExecutorAuthService {
             signature: signature_bytes,
             request_id: request_id.into_bytes(),
         })
-    }
-
-    /// Create canonical data for signing
-    fn create_canonical_data(
-        &self,
-        miner_hotkey: &str,
-        timestamp_ms: u64,
-        nonce: &str,
-        request_id: &str,
-        request_data: &[u8],
-    ) -> String {
-        // Hash the request data
-        let mut hasher = Hasher::new();
-        hasher.update(request_data);
-        let request_hash = hasher.finalize().to_hex().to_string();
-
-        // Create canonical string
-        format!("MINER_AUTH:{miner_hotkey}:{timestamp_ms}:{nonce}:{request_id}:{request_hash}")
     }
 
     /// Get the miner's hotkey
@@ -142,27 +142,10 @@ impl AuthenticatedRequest for protocol::executor_control::HealthCheckRequest {
 mod tests {
     use super::*;
 
-    // Helper function to create canonical data for tests
-    fn create_canonical_data_for_test(
-        miner_hotkey: &str,
-        timestamp_ms: u64,
-        nonce: &str,
-        request_id: &str,
-        request_data: &[u8],
-    ) -> String {
-        // Hash the request data
-        let mut hasher = Hasher::new();
-        hasher.update(request_data);
-        let request_hash = hasher.finalize().to_hex().to_string();
-
-        // Create canonical string
-        format!("MINER_AUTH:{miner_hotkey}:{timestamp_ms}:{nonce}:{request_id}:{request_hash}")
-    }
-
     #[test]
     fn test_canonical_data_creation() {
         let request_data = b"test request data";
-        let canonical = create_canonical_data_for_test(
+        let canonical = create_canonical_data(
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
             1234567890,
             "test-nonce-123",
@@ -188,7 +171,7 @@ mod tests {
         let request_data = b"deterministic data";
 
         // Create canonical data twice with same inputs
-        let canonical1 = create_canonical_data_for_test(
+        let canonical1 = create_canonical_data(
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
             9999999999,
             "same-nonce",
@@ -196,7 +179,7 @@ mod tests {
             request_data,
         );
 
-        let canonical2 = create_canonical_data_for_test(
+        let canonical2 = create_canonical_data(
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
             9999999999,
             "same-nonce",
@@ -213,7 +196,7 @@ mod tests {
         let data1 = b"data1";
         let data2 = b"data2";
 
-        let canonical1 = create_canonical_data_for_test(
+        let canonical1 = create_canonical_data(
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
             1000,
             "nonce1",
@@ -221,7 +204,7 @@ mod tests {
             data1,
         );
 
-        let canonical2 = create_canonical_data_for_test(
+        let canonical2 = create_canonical_data(
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
             1000,
             "nonce1",
