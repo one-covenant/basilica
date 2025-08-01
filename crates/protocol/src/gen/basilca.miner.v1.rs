@@ -114,6 +114,12 @@ pub struct InitiateSshSessionRequest {
     /// Optional: For audit trail
     #[prost(string, tag = "6")]
     pub session_metadata: ::prost::alloc::string::String,
+    /// Enable rental permissions
+    #[prost(bool, tag = "7")]
+    pub rental_mode: bool,
+    /// Associated rental ID if rental_mode=true
+    #[prost(string, tag = "8")]
+    pub rental_id: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -4,7 +4,7 @@
 //! Implements Single Responsibility Principle by focusing only on verification logic.
 
 use super::miner_client::{MinerClient, MinerClientConfig};
-use super::types::{ExecutorInfo, ExecutorStatus, MinerInfo};
+use super::types::{ExecutorInfo, MinerInfo};
 use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::{entities::VerificationLog, SimplePersistence};
@@ -1453,8 +1453,6 @@ impl VerificationEngine {
                             .unwrap_or_else(|_| ExecutorId::new()),
                         miner_uid: miner.uid,
                         grpc_endpoint: details.grpc_endpoint,
-                        last_verified: None,
-                        verification_status: ExecutorStatus::Available,
                     })
                     .collect();
 
@@ -1577,10 +1575,12 @@ impl VerificationEngine {
                 "verification_type": "hardware_attestation"
             })
             .to_string(),
+            rental_mode: false,
+            rental_id: String::new(),
         };
 
         let session_info = connection
-            .initiate_ssh_session_v2(session_request)
+            .initiate_ssh_session(session_request)
             .await
             .context("Failed to initiate SSH session")?;
 
@@ -1751,6 +1751,7 @@ impl VerificationEngine {
     }
 
     /// Create VerificationEngine with SSH automation components (new preferred method)
+    #[allow(clippy::too_many_arguments)]
     pub fn with_ssh_automation(
         config: VerificationConfig,
         miner_client_config: MinerClientConfig,
@@ -2865,10 +2866,12 @@ impl VerificationEngine {
             validator_public_key: public_key_content,
             session_duration_secs: 300, // 5 minutes
             session_metadata: "binary_validation_session".to_string(),
+            rental_mode: false,
+            rental_id: String::new(),
         };
 
         // Initiate SSH session
-        let session_info = connection.initiate_ssh_session_v2(ssh_request).await?;
+        let session_info = connection.initiate_ssh_session(ssh_request).await?;
 
         // Parse SSH credentials
         let ssh_details =

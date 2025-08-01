@@ -12,6 +12,7 @@ pub mod journal;
 pub mod metrics;
 pub mod miner_prover;
 pub mod persistence;
+pub mod rental;
 pub mod ssh;
 pub mod validation;
 
@@ -34,6 +35,7 @@ pub use persistence::entities::{
     VerificationLog,
 };
 pub use persistence::SimplePersistence;
+pub use rental::{RentalInfo, RentalManager, RentalRequest, RentalResponse};
 pub use ssh::{ExecutorSshDetails, ValidatorSshClient};
 pub use validation::types::{ValidationConfig, ValidationError};
 

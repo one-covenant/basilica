@@ -43,6 +43,7 @@ async-trait = "0.1"
 toml = "0.8"
 url = "2.5"
 prost-types = { workspace = true }
+async-stream = "0.3"
 
 # Internal dependencies
 common = { path = "../common" }
