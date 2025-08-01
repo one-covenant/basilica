@@ -397,8 +397,8 @@ mod tests {
     use super::*;
     use crate::persistence::gpu_profile_repository::GpuProfileRepository;
     use crate::persistence::SimplePersistence;
+    use basilica_common::identity::MinerUid;
     use chrono::Utc;
-    use common::identity::MinerUid;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tempfile::NamedTempFile;
