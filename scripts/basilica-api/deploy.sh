@@ -15,13 +15,16 @@ REMOTE_DIR="/opt/basilica"
 
 echo "Deploying Basilica API to $BASILICA_API_HOST:$BASILICA_API_PORT"
 
+# Get the repository root directory
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+
 # Create remote directory
 ssh -p "$BASILICA_API_PORT" "$BASILICA_API_HOST" "mkdir -p $REMOTE_DIR"
 
 # Copy necessary files
 scp -P "$BASILICA_API_PORT" -r \
-    scripts/basilica-api/compose.prod.yml \
-    config/basilica-api.toml \
+    "$REPO_ROOT/scripts/basilica-api/compose.prod.yml" \
+    "$REPO_ROOT/config/basilica-api.toml" \
     "$BASILICA_API_HOST:$REMOTE_DIR/"
 
 # Deploy
