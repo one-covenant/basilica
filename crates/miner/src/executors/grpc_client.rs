@@ -92,7 +92,7 @@ impl ExecutorGrpcClient {
             config.insert("metadata".to_string(), metadata_str);
         }
 
-        let request = ProvisionAccessRequest {
+        let mut request = ProvisionAccessRequest {
             validator_hotkey: validator_hotkey.to_string(),
             ssh_public_key: ssh_public_key.to_string(),
             access_token: String::new(), // Not needed for SSH access
@@ -156,7 +156,7 @@ impl ExecutorGrpcClient {
         Ok(response)
     }
 
-    /// Health check executor
+    // /// Health check executor
     // pub async fn health_check(&self, executor_endpoint: &str) -> Result<HealthCheckResponse> {
     //     let grpc_endpoint = self.build_grpc_endpoint(executor_endpoint)?;
 
