@@ -3,6 +3,7 @@ use anyhow::Result;
 use common::config::ConfigValidation;
 
 pub mod database;
+pub mod rental;
 pub mod service;
 
 pub struct HandlerUtils;

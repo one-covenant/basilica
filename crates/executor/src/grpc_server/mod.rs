@@ -188,8 +188,29 @@ impl ExecutorControl for ExecutorControlService {
             crate::validation_session::types::ValidatorId::new(req.validator_hotkey.clone());
 
         // Use the SSH public key provided by the validator
-        if req.ssh_public_key.is_empty() {
+        if req.ssh_public_key.is_empty() || req.ssh_public_key.len() < 10 {
             return Err(tonic::Status::invalid_argument("SSH public key required"));
+        }
+
+        // Check if this is a rental request by examining metadata
+        let is_rental = req
+            .config
+            .get("metadata")
+            .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
+            .and_then(|v| v.get("rental_mode").and_then(|rm| rm.as_bool()))
+            .unwrap_or(false);
+
+        // We need this for logging for better support.
+        if is_rental {
+            tracing::info!(
+                "Provisioning rental SSH access for validator {}",
+                req.validator_hotkey
+            );
+        } else {
+            tracing::info!(
+                "Provisioning evaluation SSH access for validator: {}",
+                req.validator_hotkey
+            );
         }
 
         // Grant SSH access using the validator's public key

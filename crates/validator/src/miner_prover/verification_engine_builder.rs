@@ -164,19 +164,6 @@ impl VerificationEngineBuilder {
             ..Default::default()
         }
     }
-
-    /// Get detailed configuration summary for logging
-    pub fn get_config_summary(&self) -> String {
-        format!(
-            "VerificationEngine[netuid={}, use_dynamic={}, discovery_timeout={:?}, max_concurrent={}, ssh_automation={}, ssh_algorithm={}]",
-            self.config.netuid,
-            self.config.use_dynamic_discovery,
-            self.config.discovery_timeout,
-            self.config.max_concurrent_verifications,
-            self.automatic_verification_config.enable_ssh_automation,
-            self.ssh_session_config.key_algorithm
-        )
-    }
 }
 
 #[cfg(test)]
@@ -322,30 +309,6 @@ mod tests {
         let status = engine.get_ssh_automation_status();
         assert!(status.ssh_key_manager_available);
         assert!(!status.bittensor_service_available); // Not set in this test
-    }
-
-    #[ignore]
-    #[test]
-    fn test_config_summary() {
-        let (verification_config, automatic_config, ssh_config, persistence) =
-            create_test_configs();
-        let hotkey = create_test_hotkey();
-
-        let builder = VerificationEngineBuilder::new(
-            verification_config,
-            automatic_config,
-            ssh_config,
-            hotkey,
-            persistence,
-            None,
-        );
-
-        let summary = builder.get_config_summary();
-        assert!(summary.contains("VerificationEngine"));
-        assert!(summary.contains("netuid=387"));
-        assert!(summary.contains("use_dynamic=true"));
-        assert!(summary.contains("ssh_automation=true"));
-        assert!(summary.contains("ssh_algorithm=ed25519"));
     }
 
     #[test]

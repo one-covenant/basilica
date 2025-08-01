@@ -112,6 +112,12 @@ pub enum Command {
         #[command(subcommand)]
         action: DatabaseAction,
     },
+
+    /// Container rental commands
+    Rental {
+        #[command(subcommand)]
+        action: RentalAction,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -128,5 +134,97 @@ pub enum DatabaseAction {
     Cleanup {
         #[arg(long, default_value = "30")]
         days: u32,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+#[allow(dead_code, unused_imports)]
+pub enum RentalAction {
+    /// Start a new container rental
+    Start {
+        /// Miner UID (e.g., 123)
+        #[arg(
+            long,
+            conflicts_with = "miner_endpoint",
+            required_unless_present = "miner_endpoint"
+        )]
+        miner_uid: Option<u16>,
+
+        /// Miner endpoint (e.g., http://192.168.1.1:8080)
+        #[arg(
+            long,
+            conflicts_with = "miner_uid",
+            required_unless_present = "miner_uid"
+        )]
+        miner_endpoint: Option<String>,
+
+        /// Executor ID
+        #[arg(long)]
+        executor: String,
+
+        /// Container image
+        #[arg(long)]
+        container: String,
+
+        /// Port mappings (format: host:container:protocol)
+        #[arg(long)]
+        ports: Vec<String>,
+
+        /// Environment variables (format: KEY=VALUE)
+        #[arg(long)]
+        env: Vec<String>,
+
+        /// SSH public key path
+        #[arg(long)]
+        ssh_key: PathBuf,
+
+        /// Command to run in container
+        #[arg(long)]
+        command: Option<String>,
+
+        /// CPU cores
+        #[arg(long)]
+        cpu_cores: Option<f64>,
+
+        /// Memory in MB
+        #[arg(long)]
+        memory_mb: Option<i64>,
+
+        /// GPU count
+        #[arg(long)]
+        gpu_count: Option<u32>,
+    },
+
+    /// Get rental status
+    Status {
+        /// Rental ID
+        #[arg(long)]
+        id: String,
+    },
+
+    /// Stream rental logs
+    Logs {
+        /// Rental ID
+        #[arg(long)]
+        id: String,
+
+        /// Follow logs
+        #[arg(long)]
+        follow: bool,
+
+        /// Number of lines to tail
+        #[arg(long)]
+        tail: Option<u32>,
+    },
+
+    /// Stop a rental
+    Stop {
+        /// Rental ID
+        #[arg(long)]
+        id: String,
+
+        /// Force stop
+        #[arg(long)]
+        force: bool,
     },
 }
