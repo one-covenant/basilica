@@ -294,7 +294,7 @@ async fn test_authentication_with_corrupted_message() -> Result<()> {
 
     // Create authenticated request first
     let authenticated_request = create_authenticated_request(request.clone(), miner_hotkey)?;
-    
+
     // Then modify the request data while keeping the original auth (this should fail)
     let modified_request = ProvisionAccessRequest {
         validator_hotkey: test_hotkeys::VALIDATOR_HOTKEY_2.to_string(), // Modified!
@@ -310,8 +310,11 @@ async fn test_authentication_with_corrupted_message() -> Result<()> {
     let result = executor::miner_auth::verify_miner_request(&auth_service, &modified_request).await;
 
     // Assert that authentication fails due to signature verification failure
-    assert!(result.is_err(), "Authentication should fail when request data is corrupted");
-    
+    assert!(
+        result.is_err(),
+        "Authentication should fail when request data is corrupted"
+    );
+
     let error = result.unwrap_err();
     assert_eq!(error.code(), tonic::Code::Unauthenticated);
     assert!(
@@ -340,7 +343,7 @@ async fn test_multiple_concurrent_grpc_authentications() -> Result<()> {
                 0 => {
                     // ProvisionAccessRequest
                     let request = ProvisionAccessRequest {
-                        validator_hotkey: format!("validator-{}", i),
+                        validator_hotkey: format!("validator-{i}"),
                         ssh_public_key: "ssh-rsa key".to_string(),
                         access_token: String::new(),
                         duration_seconds: 3600,
@@ -350,10 +353,12 @@ async fn test_multiple_concurrent_grpc_authentications() -> Result<()> {
                     };
 
                     let authenticated_request = create_authenticated_request(request, miner_hotkey)
-                        .map_err(|e| tonic::Status::internal(format!("Auth creation failed: {}", e)))?;
+                        .map_err(|e| {
+                            tonic::Status::internal(format!("Auth creation failed: {e}"))
+                        })?;
 
                     executor::miner_auth::verify_miner_request(
-                        &*auth_service,
+                        &auth_service,
                         &authenticated_request,
                     )
                     .await
@@ -361,19 +366,21 @@ async fn test_multiple_concurrent_grpc_authentications() -> Result<()> {
                 1 => {
                     // SystemProfileRequest
                     let request = SystemProfileRequest {
-                        session_key: format!("session-{}", i),
+                        session_key: format!("session-{i}"),
                         key_mapping: HashMap::new(),
                         profile_depth: "basic".to_string(),
                         include_benchmarks: false,
-                        validator_hotkey: format!("validator-{}", i),
+                        validator_hotkey: format!("validator-{i}"),
                         auth: None,
                     };
 
                     let authenticated_request = create_authenticated_request(request, miner_hotkey)
-                        .map_err(|e| tonic::Status::internal(format!("Auth creation failed: {}", e)))?;
+                        .map_err(|e| {
+                            tonic::Status::internal(format!("Auth creation failed: {e}"))
+                        })?;
 
                     executor::miner_auth::verify_miner_request(
-                        &*auth_service,
+                        &auth_service,
                         &authenticated_request,
                     )
                     .await
@@ -384,15 +391,17 @@ async fn test_multiple_concurrent_grpc_authentications() -> Result<()> {
                         benchmark_type: "cpu".to_string(),
                         duration_seconds: 30,
                         parameters: HashMap::new(),
-                        validator_hotkey: format!("validator-{}", i),
+                        validator_hotkey: format!("validator-{i}"),
                         auth: None,
                     };
 
                     let authenticated_request = create_authenticated_request(request, miner_hotkey)
-                        .map_err(|e| tonic::Status::internal(format!("Auth creation failed: {}", e)))?;
+                        .map_err(|e| {
+                            tonic::Status::internal(format!("Auth creation failed: {e}"))
+                        })?;
 
                     executor::miner_auth::verify_miner_request(
-                        &*auth_service,
+                        &auth_service,
                         &authenticated_request,
                     )
                     .await
@@ -400,16 +409,18 @@ async fn test_multiple_concurrent_grpc_authentications() -> Result<()> {
                 _ => {
                     // HealthCheckRequest
                     let request = HealthCheckRequest {
-                        requester: format!("requester-{}", i),
+                        requester: format!("requester-{i}"),
                         check_type: "basic".to_string(),
                         auth: None,
                     };
 
                     let authenticated_request = create_authenticated_request(request, miner_hotkey)
-                        .map_err(|e| tonic::Status::internal(format!("Auth creation failed: {}", e)))?;
+                        .map_err(|e| {
+                            tonic::Status::internal(format!("Auth creation failed: {e}"))
+                        })?;
 
                     executor::miner_auth::verify_miner_request(
-                        &*auth_service,
+                        &auth_service,
                         &authenticated_request,
                     )
                     .await
@@ -425,7 +436,7 @@ async fn test_multiple_concurrent_grpc_authentications() -> Result<()> {
     for handle in handles {
         match handle.await? {
             Ok(_) => success_count += 1,
-            Err(e) => println!("Request failed: {}", e),
+            Err(e) => println!("Request failed: {e}"),
         }
     }
 
@@ -443,7 +454,7 @@ async fn test_expired_authentication() -> Result<()> {
     let auth_service = create_miner_auth_service_with_config(
         miner_hotkey,
         Duration::minutes(5), // 5 minute expiry
-        false, // Skip signature verification for this test
+        false,                // Skip signature verification for this test
     );
 
     // Create request with expired authentication (6 hours ago)
@@ -528,21 +539,27 @@ async fn test_malformed_request_fields() -> Result<()> {
         // Note: We can still authenticate malformed requests, but the service should
         // validate the fields after authentication
         let authenticated_request = create_authenticated_request(request, miner_hotkey)?;
-        
+
         // Authentication itself should succeed (we're testing field validation, not auth)
-        let result = executor::miner_auth::verify_miner_request(&auth_service, &authenticated_request).await;
-        
+        let result =
+            executor::miner_auth::verify_miner_request(&auth_service, &authenticated_request).await;
+
         // For this test, we verify that authentication works even with malformed fields
         // The actual field validation would happen in the service implementation
         match result {
             Ok(_) => {
                 // Authentication succeeded - field validation would happen later in service logic
-                println!("Test case {}: Authentication succeeded with malformed field", i);
+                println!("Test case {i}: Authentication succeeded with malformed field");
             }
             Err(e) => {
                 // If it fails, it should be due to authentication, not field validation
-                assert_eq!(e.code(), tonic::Code::Unauthenticated, 
-                    "Test case {}: Should only fail due to authentication issues, got: {}", i, e.message());
+                assert_eq!(
+                    e.code(),
+                    tonic::Code::Unauthenticated,
+                    "Test case {}: Should only fail due to authentication issues, got: {}",
+                    i,
+                    e.message()
+                );
             }
         }
     }
@@ -566,11 +583,16 @@ async fn test_null_empty_required_fields() -> Result<()> {
     };
 
     let authenticated_system_request = create_authenticated_request(system_request, miner_hotkey)?;
-    let result = executor::miner_auth::verify_miner_request(&auth_service, &authenticated_system_request).await;
-    
+    let result =
+        executor::miner_auth::verify_miner_request(&auth_service, &authenticated_system_request)
+            .await;
+
     // Authentication should succeed even with empty session key
     // Field validation would be handled by the service implementation
-    assert!(result.is_ok(), "Authentication should succeed even with empty session_key");
+    assert!(
+        result.is_ok(),
+        "Authentication should succeed even with empty session_key"
+    );
 
     // Test BenchmarkRequest with empty benchmark type
     let benchmark_request = BenchmarkRequest {
@@ -581,10 +603,16 @@ async fn test_null_empty_required_fields() -> Result<()> {
         auth: None,
     };
 
-    let authenticated_benchmark_request = create_authenticated_request(benchmark_request, miner_hotkey)?;
-    let result = executor::miner_auth::verify_miner_request(&auth_service, &authenticated_benchmark_request).await;
-    
-    assert!(result.is_ok(), "Authentication should succeed even with empty benchmark_type");
+    let authenticated_benchmark_request =
+        create_authenticated_request(benchmark_request, miner_hotkey)?;
+    let result =
+        executor::miner_auth::verify_miner_request(&auth_service, &authenticated_benchmark_request)
+            .await;
+
+    assert!(
+        result.is_ok(),
+        "Authentication should succeed even with empty benchmark_type"
+    );
 
     // Test ContainerOpRequest with empty operation
     let container_request = ContainerOpRequest {
@@ -597,15 +625,21 @@ async fn test_null_empty_required_fields() -> Result<()> {
         auth: None,
     };
 
-    let authenticated_container_request = create_authenticated_request(container_request, miner_hotkey)?;
-    let result = executor::miner_auth::verify_miner_request(&auth_service, &authenticated_container_request).await;
-    
-    assert!(result.is_ok(), "Authentication should succeed even with empty operation");
+    let authenticated_container_request =
+        create_authenticated_request(container_request, miner_hotkey)?;
+    let result =
+        executor::miner_auth::verify_miner_request(&auth_service, &authenticated_container_request)
+            .await;
+
+    assert!(
+        result.is_ok(),
+        "Authentication should succeed even with empty operation"
+    );
 
     Ok(())
 }
 
-#[tokio::test]  
+#[tokio::test]
 async fn test_authentication_with_corrupted_signature() -> Result<()> {
     let miner_hotkey = test_hotkeys::MINER_HOTKEY_1;
     let auth_service = create_miner_auth_service_with_config(
@@ -626,20 +660,24 @@ async fn test_authentication_with_corrupted_signature() -> Result<()> {
 
     // Create valid authentication but then corrupt the signature
     let mut authenticated_request = create_authenticated_request(request, miner_hotkey)?;
-    
+
     if let Some(ref mut auth) = authenticated_request.auth {
         // Corrupt the signature
         auth.signature = b"corrupted_signature".to_vec();
     }
 
-    let result = executor::miner_auth::verify_miner_request(&auth_service, &authenticated_request).await;
-    assert!(result.is_err(), "Corrupted signature should cause authentication to fail");
+    let result =
+        executor::miner_auth::verify_miner_request(&auth_service, &authenticated_request).await;
+    assert!(
+        result.is_err(),
+        "Corrupted signature should cause authentication to fail"
+    );
 
     if let Err(status) = result {
         assert_eq!(status.code(), tonic::Code::Unauthenticated);
         assert!(
-            status.message().contains("Authentication failed") || 
-            status.message().contains("signature"),
+            status.message().contains("Authentication failed")
+                || status.message().contains("signature"),
             "Error should indicate signature failure, got: {}",
             status.message()
         );
@@ -652,7 +690,7 @@ async fn test_authentication_with_corrupted_signature() -> Result<()> {
 async fn test_authentication_with_wrong_miner_hotkey() -> Result<()> {
     let correct_miner_hotkey = test_hotkeys::MINER_HOTKEY_1;
     let wrong_miner_hotkey = test_hotkeys::MINER_HOTKEY_2;
-    
+
     // Create auth service expecting correct hotkey
     let auth_service = create_miner_auth_service(correct_miner_hotkey);
 
@@ -669,8 +707,12 @@ async fn test_authentication_with_wrong_miner_hotkey() -> Result<()> {
     // Create authenticated request with wrong miner hotkey
     let authenticated_request = create_authenticated_request(request, wrong_miner_hotkey)?;
 
-    let result = executor::miner_auth::verify_miner_request(&auth_service, &authenticated_request).await;
-    assert!(result.is_err(), "Wrong miner hotkey should cause authentication to fail");
+    let result =
+        executor::miner_auth::verify_miner_request(&auth_service, &authenticated_request).await;
+    assert!(
+        result.is_err(),
+        "Wrong miner hotkey should cause authentication to fail"
+    );
 
     if let Err(status) = result {
         assert_eq!(status.code(), tonic::Code::Unauthenticated);

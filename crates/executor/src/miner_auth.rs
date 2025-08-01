@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::Status;
-use uuid::Uuid;
 use tracing::{debug, warn};
+use uuid::Uuid;
 
 /// Configuration for miner authentication
 #[derive(Debug, Clone)]
@@ -414,10 +414,11 @@ mod tests {
 
         // Add a nonce with an old timestamp (more than 1 hour + 1 second ago)
         let old_timestamp = (Utc::now() - Duration::hours(2)).timestamp_millis() as u64;
+        let test_nonce_123 = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let auth = MinerAuthentication {
             miner_hotkey: miner_hotkey.to_string(),
             timestamp_ms: old_timestamp,
-            nonce: "test-nonce-123".to_string().into_bytes(),
+            nonce: test_nonce_123.to_string().into_bytes(),
             signature: "test_signature".to_string().into_bytes(),
             request_id: "test-request".to_string().into_bytes(),
         };
@@ -428,17 +429,15 @@ mod tests {
         // But let's manually insert it to test cleanup
         {
             let mut used_nonces = service.used_nonces.write().await;
-            used_nonces.insert(
-                "test-nonce-123".to_string().into_bytes(),
-                Utc::now() - Duration::hours(2),
-            );
+            used_nonces.insert(test_nonce_123, Utc::now() - Duration::hours(2));
         }
 
         // Add a new nonce to trigger cleanup
+        let test_nonce_456 = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let auth2 = MinerAuthentication {
             miner_hotkey: miner_hotkey.to_string(),
             timestamp_ms: Utc::now().timestamp_millis() as u64,
-            nonce: "test-nonce-456".to_string().into_bytes(),
+            nonce: test_nonce_456.to_string().into_bytes(),
             signature: "test_signature".to_string().into_bytes(),
             request_id: "test-request-2".to_string().into_bytes(),
         };
@@ -448,8 +447,8 @@ mod tests {
         // Check that the old nonce was cleaned up
         {
             let used_nonces = service.used_nonces.read().await;
-            assert!(!used_nonces.contains_key(&"test-nonce-123".to_string().into_bytes()));
-            assert!(used_nonces.contains_key(&"test-nonce-456".to_string().into_bytes()));
+            assert!(!used_nonces.contains_key(&test_nonce_123));
+            assert!(used_nonces.contains_key(&test_nonce_456));
         }
     }
 

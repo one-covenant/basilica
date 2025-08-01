@@ -201,7 +201,7 @@ async fn test_concurrent_authentication_requests() -> Result<()> {
         let miner_auth = miner_auth.clone();
 
         let handle = tokio::spawn(async move {
-            let request_data = format!("test request data {}", i);
+            let request_data = format!("test request data {i}");
             let auth = executor_auth.create_auth(request_data.as_bytes())?;
 
             // Small delay to increase concurrency
@@ -218,7 +218,7 @@ async fn test_concurrent_authentication_requests() -> Result<()> {
     for handle in handles {
         match handle.await? {
             Ok(_) => success_count += 1,
-            Err(e) => println!("Authentication failed: {}", e),
+            Err(e) => println!("Authentication failed: {e}"),
         }
     }
 
@@ -286,8 +286,8 @@ async fn test_authentication_nonce_cleanup() -> Result<()> {
     // Create multiple authentications
     for i in 0..5 {
         let auth = executor_auth
-            .create_auth(&format!("{} {}", String::from_utf8_lossy(request_data), i).as_bytes())?;
-        let _ = miner_auth.verify_auth(&auth, request_data).await?;
+            .create_auth(format!("{} {}", String::from_utf8_lossy(request_data), i).as_bytes())?;
+        miner_auth.verify_auth(&auth, request_data).await?;
     }
 
     // Wait for nonces to expire
@@ -298,7 +298,7 @@ async fn test_authentication_nonce_cleanup() -> Result<()> {
 
     // Create a new auth to trigger internal cleanup
     let new_auth = executor_auth.create_auth(b"trigger cleanup")?;
-    let _ = miner_auth
+    miner_auth
         .verify_auth(&new_auth, b"trigger cleanup")
         .await?;
 

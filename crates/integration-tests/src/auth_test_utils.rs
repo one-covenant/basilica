@@ -177,19 +177,16 @@ pub fn assert_grpc_error_contains(result: &Result<(), tonic::Status>, expected_m
 /// Creates an authenticated request by serializing the request without auth field,
 /// creating authentication based on that data, and then adding auth to the request.
 /// This prevents the circular dependency issue where auth field is included in signature.
-pub fn create_authenticated_request<T>(
-    request: T,
-    miner_hotkey: &str,
-) -> Result<T>
+pub fn create_authenticated_request<T>(request: T, miner_hotkey: &str) -> Result<T>
 where
     T: prost::Message + miner::executor_auth::AuthenticatedRequest + Clone,
 {
     // Serialize request without auth field for signature calculation
     let request_bytes = request.encode_to_vec();
-    
+
     // Create authentication based on request data without auth
     let auth = create_valid_auth(miner_hotkey, &request_bytes)?;
-    
+
     // Add auth to request and return
     Ok(request.with_auth(auth))
 }
@@ -204,16 +201,11 @@ where
     T: prost::Message + miner::executor_auth::AuthenticatedRequest + Clone,
 {
     let _request_bytes = request.encode_to_vec();
-    
+
     // Create expired auth
     let expired_timestamp = (Utc::now() - Duration::hours(hours_ago)).timestamp_millis() as u64;
-    let auth = create_test_auth(
-        miner_hotkey,
-        Some(expired_timestamp),
-        None,
-        None,
-    );
-    
+    let auth = create_test_auth(miner_hotkey, Some(expired_timestamp), None, None);
+
     Ok(request.with_auth(auth))
 }
 
@@ -274,7 +266,9 @@ mod tests {
 
     #[test]
     fn test_create_test_auth_with_custom_values() {
-        let custom_nonce = "550e8400-e29b-41d4-a716-446655440000".to_string().into_bytes(); // Valid UUID
+        let custom_nonce = "550e8400-e29b-41d4-a716-446655440000"
+            .to_string()
+            .into_bytes(); // Valid UUID
         let custom_timestamp = 1234567890u64;
         let custom_request_id = b"custom_request_id".to_vec();
 
@@ -293,14 +287,8 @@ mod tests {
 
     #[test]
     fn test_test_hotkeys_constants() {
-        // Ensure test hotkeys are valid format
-        assert!(!test_hotkeys::MINER_HOTKEY_1.is_empty());
-        assert!(!test_hotkeys::MINER_HOTKEY_2.is_empty());
-        assert!(!test_hotkeys::VALIDATOR_HOTKEY_1.is_empty());
-        assert!(!test_hotkeys::VALIDATOR_HOTKEY_2.is_empty());
-
         // Ensure they're all different
-        let hotkeys = vec![
+        let hotkeys = [
             test_hotkeys::MINER_HOTKEY_1,
             test_hotkeys::MINER_HOTKEY_2,
             test_hotkeys::VALIDATOR_HOTKEY_1,

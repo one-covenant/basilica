@@ -6,12 +6,12 @@
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use integration_tests::{
-    create_miner_auth_service, create_miner_auth_service_with_config, test_hotkeys, MockExecutorAuthService,
+    create_miner_auth_service, create_miner_auth_service_with_config, test_hotkeys,
+    MockExecutorAuthService,
 };
 use protocol::common::MinerAuthentication;
 use std::sync::Arc;
 use tokio::time::{sleep, Instant};
-use uuid;
 
 #[tokio::test]
 async fn test_replay_attack_prevention() -> Result<()> {
@@ -141,9 +141,15 @@ async fn test_malicious_input_handling() -> Result<()> {
 
     let result = miner_auth.verify_auth(&malicious_auth1, request_data).await;
     // Invalid UUID nonce should be rejected as a security measure
-    assert!(result.is_err(), "Invalid UUID nonce should be rejected to prevent replay attacks");
     assert!(
-        result.unwrap_err().to_string().contains("Nonce must be a valid UUID format"),
+        result.is_err(),
+        "Invalid UUID nonce should be rejected to prevent replay attacks"
+    );
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Nonce must be a valid UUID format"),
         "Error should indicate UUID validation failure"
     );
 
@@ -158,9 +164,7 @@ async fn test_malicious_input_handling() -> Result<()> {
     };
 
     let start = Instant::now();
-    let result = miner_auth
-        .verify_auth(&malicious_auth2, request_data)
-        .await;
+    let result = miner_auth.verify_auth(&malicious_auth2, request_data).await;
     let elapsed = start.elapsed();
 
     // Should process quickly regardless of outcome
@@ -168,9 +172,12 @@ async fn test_malicious_input_handling() -> Result<()> {
         elapsed < tokio::time::Duration::from_secs(1),
         "UUID nonce processing should be fast"
     );
-    
+
     // Should succeed with valid UUID (unless other validation fails)
-    assert!(result.is_ok(), "Valid UUID nonce should pass nonce validation");
+    assert!(
+        result.is_ok(),
+        "Valid UUID nonce should pass nonce validation"
+    );
 
     // Test 3: Invalid hotkey
     let malicious_auth3 = MinerAuthentication {
@@ -219,8 +226,7 @@ async fn test_unauthorized_miner_attempts() -> Result<()> {
         let result = miner_auth.verify_auth(&auth, request_data).await;
         assert!(
             result.is_err(),
-            "Unauthorized miner {} should be rejected",
-            unauthorized_miner
+            "Unauthorized miner {unauthorized_miner} should be rejected"
         );
         assert!(result
             .unwrap_err()
@@ -304,12 +310,12 @@ async fn test_nonce_memory_exhaustion_protection() -> Result<()> {
 
     // Generate many nonces to test memory cleanup
     for i in 0..1000 {
-        let request_data = format!("request {}", i);
+        let request_data = format!("request {i}");
         let auth = executor_auth.create_auth(request_data.as_bytes())?;
 
         // Each should succeed once
         let result = miner_auth.verify_auth(&auth, request_data.as_bytes()).await;
-        assert!(result.is_ok(), "Request {} should succeed", i);
+        assert!(result.is_ok(), "Request {i} should succeed");
 
         // Every 100 requests, trigger cleanup
         if i % 100 == 0 {
@@ -364,8 +370,7 @@ async fn test_timing_attack_resistance() -> Result<()> {
     };
 
     println!(
-        "Correct miner time: {:?}, Wrong miner time: {:?}, Ratio: {:.2}",
-        correct_time, wrong_time, time_ratio
+        "Correct miner time: {correct_time:?}, Wrong miner time: {wrong_time:?}, Ratio: {time_ratio:.2}"
     );
 
     // Allow some variance but ensure it's not dramatically different
@@ -400,7 +405,7 @@ async fn test_signature_bypass_attempt() -> Result<()> {
     assert!(result.is_err(), "Invalid signature should be rejected");
 
     // Note: The exact error depends on the crypto implementation
-    println!("Signature verification error: {:?}", result);
+    println!("Signature verification error: {result:?}");
 
     Ok(())
 }
@@ -423,7 +428,7 @@ async fn test_resource_exhaustion_protection() -> Result<()> {
         let executor_auth = MockExecutorAuthService::new(miner_hotkey);
 
         let handle = tokio::spawn(async move {
-            let request_data = format!("rapid request {}", i);
+            let request_data = format!("rapid request {i}");
             let auth = executor_auth.create_auth(request_data.as_bytes())?;
             miner_auth.verify_auth(&auth, request_data.as_bytes()).await
         });
@@ -450,7 +455,7 @@ async fn test_resource_exhaustion_protection() -> Result<()> {
         "Rapid authentication should complete quickly"
     );
 
-    println!("100 rapid authentications completed in {:?}", total_time);
+    println!("100 rapid authentications completed in {total_time:?}");
 
     Ok(())
 }
@@ -466,9 +471,15 @@ async fn test_invalid_nonce_formats() -> Result<()> {
         (Vec::new(), "empty nonce"),
         (b"not-a-uuid".to_vec(), "invalid format"),
         (b"12345678-1234-1234-1234-12345678901".to_vec(), "too short"),
-        (b"12345678-1234-1234-1234-1234567890123".to_vec(), "too long"),
+        (
+            b"12345678-1234-1234-1234-1234567890123".to_vec(),
+            "too long",
+        ),
         (b"invalid-uuid-format-here".to_vec(), "invalid format"),
-        (b"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".to_vec(), "invalid hex chars"),
+        (
+            b"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".to_vec(),
+            "invalid hex chars",
+        ),
     ];
 
     for (invalid_nonce, description) in invalid_nonces {
@@ -480,10 +491,15 @@ async fn test_invalid_nonce_formats() -> Result<()> {
             request_id: b"test_request_id".to_vec(),
         };
 
-        let result = miner_auth.verify_auth(&auth_with_invalid_nonce, request_data).await;
-        
+        let result = miner_auth
+            .verify_auth(&auth_with_invalid_nonce, request_data)
+            .await;
+
         // Should fail with specific error message
-        assert!(result.is_err(), "Invalid nonce ({description}) should be rejected");
+        assert!(
+            result.is_err(),
+            "Invalid nonce ({description}) should be rejected"
+        );
         let error_msg = result.unwrap_err().to_string();
         assert!(
             error_msg.contains("Nonce must be a valid UUID format"),
@@ -501,7 +517,9 @@ async fn test_invalid_nonce_formats() -> Result<()> {
         request_id: b"test_request_id".to_vec(),
     };
 
-    let result = miner_auth.verify_auth(&auth_with_valid_nonce, request_data).await;
+    let result = miner_auth
+        .verify_auth(&auth_with_valid_nonce, request_data)
+        .await;
     assert!(result.is_ok(), "Valid UUID nonce should be accepted");
 
     Ok(())
