@@ -2,10 +2,12 @@
 
 use anyhow::Result;
 use basilica_common::identity::MinerUid;
-use std::collections::HashMap;
 use basilica_validator::bittensor_core::weight_allocation::NormalizedWeight;
-use basilica_validator::bittensor_core::weight_allocation::{WeightAllocationEngine, WeightDistribution};
+use basilica_validator::bittensor_core::weight_allocation::{
+    WeightAllocationEngine, WeightDistribution,
+};
 use basilica_validator::config::emission::EmissionConfig;
+use std::collections::HashMap;
 
 struct WeightSetterTester {
     weight_allocation_engine: WeightAllocationEngine,

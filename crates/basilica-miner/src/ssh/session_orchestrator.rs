@@ -4,12 +4,12 @@
 //! key management, and cleanup.
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use basilica_protocol::miner_discovery::{
     CloseSshSessionRequest, CloseSshSessionResponse, InitiateSshSessionRequest,
     InitiateSshSessionResponse, ListSshSessionsRequest, ListSshSessionsResponse,
     SshSession as ProtoSshSession, SshSessionStatus,
 };
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

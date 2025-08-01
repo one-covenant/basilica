@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use basilica_common::identity::MinerUid;
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

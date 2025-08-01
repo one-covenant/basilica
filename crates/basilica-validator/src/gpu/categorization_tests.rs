@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::gpu::categorization::*;
-    use chrono::Utc;
     use basilica_common::identity::MinerUid;
+    use chrono::Utc;
 
     #[test]
     fn test_gpu_model_normalization() {

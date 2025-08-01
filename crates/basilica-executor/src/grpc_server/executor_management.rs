@@ -1,11 +1,11 @@
 //! ExecutorManagement service implementation for miner-executor communication
 
 use super::types::SharedExecutorState;
-use chrono::{DateTime, Utc};
 use basilica_protocol::executor_management::{
     executor_management_server::ExecutorManagement, HealthCheckRequest, HealthCheckResponse,
     SshKeyUpdate, SshKeyUpdateResponse, StatusRequest, StatusResponse,
 };
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use tonic::{Request, Response, Status};
 use tracing::info;

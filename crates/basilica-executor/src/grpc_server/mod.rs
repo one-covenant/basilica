@@ -199,7 +199,8 @@ impl ExecutorControl for ExecutorControlService {
             })?;
 
         // Create SSH credentials in JSON format with correct username
-        let ssh_username = basilica_common::ssh::SimpleSshUsers::validator_username(&req.validator_hotkey);
+        let ssh_username =
+            basilica_common::ssh::SimpleSshUsers::validator_username(&req.validator_hotkey);
         let credentials = serde_json::json!({
             "ssh_username": ssh_username,
             "ssh_host": "executor.local",
@@ -315,11 +316,13 @@ impl ExecutorControl for ExecutorControlService {
         let encryption_key = basilica_common::crypto::derive_key_from_gpu_info(&gpu_info_str);
 
         // Encrypt the profile data
-        let encrypted_data = basilica_common::crypto::symmetric_encrypt(&encryption_key, profile_bytes)
-            .map_err(|e| {
-                tracing::error!("Failed to encrypt system profile: {}", e);
-                tonic::Status::internal("Failed to encrypt system profile")
-            })?;
+        let encrypted_data =
+            basilica_common::crypto::symmetric_encrypt(&encryption_key, profile_bytes).map_err(
+                |e| {
+                    tracing::error!("Failed to encrypt system profile: {}", e);
+                    tonic::Status::internal("Failed to encrypt system profile")
+                },
+            )?;
 
         // Extract nonce (first 12 bytes) and ciphertext
         let (nonce_bytes, ciphertext_bytes) =

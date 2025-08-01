@@ -10,7 +10,9 @@ use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use basilica_executor::cli::{execute_command, AppConfig, AppConfigResolver, CliContext, ExecutorArgs};
+use basilica_executor::cli::{
+    execute_command, AppConfig, AppConfigResolver, CliContext, ExecutorArgs,
+};
 use basilica_executor::grpc_server::ExecutorServer;
 use basilica_executor::{ExecutorConfig, ExecutorState};
 
@@ -32,7 +34,9 @@ async fn run_app(config: AppConfig) -> Result<()> {
     }
 }
 
-async fn run_config_generation(config: basilica_executor::cli::args::ConfigGenConfig) -> Result<()> {
+async fn run_config_generation(
+    config: basilica_executor::cli::args::ConfigGenConfig,
+) -> Result<()> {
     info!("Generating configuration file: {}", config.output_path);
 
     let executor_config = ExecutorConfig::default();

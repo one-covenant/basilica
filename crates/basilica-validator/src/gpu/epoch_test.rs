@@ -3,8 +3,8 @@ mod tests {
     use crate::gpu::MinerGpuProfile;
     use crate::persistence::gpu_profile_repository::GpuProfileRepository;
     use crate::persistence::SimplePersistence;
-    use chrono::Utc;
     use basilica_common::identity::MinerUid;
+    use chrono::Utc;
     use std::sync::Arc;
 
     #[tokio::test]

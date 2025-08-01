@@ -214,7 +214,8 @@ impl HotkeySignatureVerifier {
             .context("Failed to parse P256 public key")?;
 
         // Verify the signature using our crypto module
-        match basilica_common::crypto::verify_p256_signature(&public_key, message, signature_bytes) {
+        match basilica_common::crypto::verify_p256_signature(&public_key, message, signature_bytes)
+        {
             Ok(()) => {
                 debug!("P256 signature verification successful");
                 Ok(true)

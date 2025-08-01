@@ -502,13 +502,15 @@ impl MinerDiscovery for MinerDiscoveryService {
                     executor_id: exec.id,
                     grpc_endpoint: exec.grpc_address,
                     gpu_spec,
-                    available_resources: exec.resources.map(|r| basilica_protocol::common::ResourceLimits {
-                        max_cpu_cores: r.cpu_percent as u32,
-                        max_memory_mb: r.memory_mb,
-                        max_storage_mb: 0, // Not provided in ResourceUsageStats
-                        max_containers: 1,
-                        max_bandwidth_mbps: 0.0,
-                        max_gpus: exec.gpu_count,
+                    available_resources: exec.resources.map(|r| {
+                        basilica_protocol::common::ResourceLimits {
+                            max_cpu_cores: r.cpu_percent as u32,
+                            max_memory_mb: r.memory_mb,
+                            max_storage_mb: 0, // Not provided in ResourceUsageStats
+                            max_containers: 1,
+                            max_bandwidth_mbps: 0.0,
+                            max_gpus: exec.gpu_count,
+                        }
                     }),
                     status: "available".to_string(),
                 }
@@ -714,7 +716,9 @@ impl MinerDiscovery for MinerDiscoveryService {
 }
 
 /// Create GPU spec from available executor information
-fn create_gpu_spec_from_executor(exec: &AvailableExecutor) -> Option<basilica_protocol::common::GpuSpec> {
+fn create_gpu_spec_from_executor(
+    exec: &AvailableExecutor,
+) -> Option<basilica_protocol::common::GpuSpec> {
     if exec.gpu_count == 0 {
         return None;
     }

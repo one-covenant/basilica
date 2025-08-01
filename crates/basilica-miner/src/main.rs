@@ -4,8 +4,8 @@
 //! validator requests for GPU rental and computational challenges.
 
 use anyhow::{Context, Result};
-use clap::Parser;
 use basilica_common::identity::MinerUid;
+use clap::Parser;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,8 +29,8 @@ mod validator_comms;
 mod validator_discovery;
 
 use auth::JwtAuthService;
-use bittensor_core::ChainRegistration;
 use basilica_common::ssh::manager::DefaultSshService;
+use bittensor_core::ChainRegistration;
 use config::MinerConfig;
 use executor_manager::ExecutorManager;
 use persistence::RegistrationDb;
@@ -159,9 +159,10 @@ impl MinerState {
 
             use std::str::FromStr;
             let executor_info = executors::ExecutorInfo {
-                id: basilica_common::identity::ExecutorId::from_str(&executor_id.uuid.to_string()).map_err(
-                    |e| anyhow::anyhow!("Invalid executor ID '{}': {}", executor_id.uuid, e),
-                )?,
+                id: basilica_common::identity::ExecutorId::from_str(&executor_id.uuid.to_string())
+                    .map_err(|e| {
+                        anyhow::anyhow!("Invalid executor ID '{}': {}", executor_id.uuid, e)
+                    })?,
                 host: executor_config.host.clone(),
                 ssh_port: executor_config.ssh_port,
                 ssh_username: executor_config.ssh_username.clone(),

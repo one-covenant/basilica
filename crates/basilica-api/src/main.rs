@@ -1,17 +1,12 @@
 //! Main entry point for the Basilica API Gateway
 
-use clap::Parser;
 use basilica_api::{config::Config, server::Server, Result};
+use clap::Parser;
 use std::path::PathBuf;
 use tracing::{error, info};
 
 #[derive(Parser)]
-#[command(
-    name = "basilica-api",
-    about = "Basilica API Gateway",
-    version,
-    author
-)]
+#[command(name = "basilica-api", about = "Basilica API Gateway", version, author)]
 struct Args {
     /// Path to configuration file
     #[arg(short, long, value_name = "FILE")]
@@ -44,10 +39,7 @@ async fn main() -> Result<()> {
         .json()
         .init();
 
-    info!(
-        "Starting Basilica API Gateway v{}",
-        basilica_api::VERSION
-    );
+    info!("Starting Basilica API Gateway v{}", basilica_api::VERSION);
 
     // Handle config generation
     if args.gen_config {
