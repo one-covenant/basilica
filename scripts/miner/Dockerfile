@@ -46,15 +46,15 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
     fi && \
     if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
-            cargo build --release -p miner --features "$FEATURES"; \
+            cargo build --release -p basilica-miner --features "$FEATURES"; \
         else \
-            cargo build --release -p miner; \
+            cargo build --release -p basilica-miner; \
         fi; \
     else \
         if [ -n "$FEATURES" ]; then \
-            cargo build -p miner --features "$FEATURES"; \
+            cargo build -p basilica-miner --features "$FEATURES"; \
         else \
-            cargo build -p miner; \
+            cargo build -p basilica-miner; \
         fi; \
     fi && \
     # Clean up intermediate build artifacts to save space
@@ -74,10 +74,10 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the built binary
 ARG BUILD_MODE=release
-COPY --from=builder /tmp/target/${BUILD_MODE}/miner /usr/local/bin/miner
+COPY --from=builder /tmp/target/${BUILD_MODE}/basilica-miner /usr/local/bin/basilica-miner
 
 # Make binary executable
-RUN chmod +x /usr/local/bin/miner
+RUN chmod +x /usr/local/bin/basilica-miner
 
 # Create data directory for SQLite database and configuration
 RUN mkdir -p /var/lib/basilica/miner && \
@@ -102,4 +102,4 @@ WORKDIR /var/lib/basilica/miner
 EXPOSE 8092 8091 9092
 
 # Default command
-ENTRYPOINT ["/usr/local/bin/miner"]
+ENTRYPOINT ["/usr/local/bin/basilica-miner"]

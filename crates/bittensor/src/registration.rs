@@ -257,7 +257,7 @@ impl ChainRegistration {
         } else {
             // For production without external_ip, auto-detect public IP
             info!("No external_ip configured, auto-detecting public IP address...");
-            let detected_ip = common::network::get_public_ip_with_timeout(5).await;
+            let detected_ip = basilica_common::network::get_public_ip_with_timeout(5).await;
 
             if detected_ip == "<unknown-ip>" {
                 error!("Failed to auto-detect public IP address");
