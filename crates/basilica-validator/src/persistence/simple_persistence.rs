@@ -19,6 +19,10 @@ impl SimplePersistence {
 }
 
 impl SimplePersistence {
+    pub fn with_pool(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
     pub async fn new(
         database_path: &str,
         _validator_hotkey: String,
@@ -140,7 +144,6 @@ impl SimplePersistence {
 
             CREATE TABLE IF NOT EXISTS miner_gpu_profiles (
                 miner_uid INTEGER PRIMARY KEY,
-                primary_gpu_model TEXT NOT NULL,
                 gpu_counts_json TEXT NOT NULL,
                 total_score REAL NOT NULL,
                 verification_count INTEGER NOT NULL,
@@ -204,7 +207,6 @@ impl SimplePersistence {
 
         sqlx::query(
             r#"
-            CREATE INDEX IF NOT EXISTS idx_gpu_profiles_model ON miner_gpu_profiles(primary_gpu_model);
             CREATE INDEX IF NOT EXISTS idx_gpu_profiles_score ON miner_gpu_profiles(total_score DESC);
             CREATE INDEX IF NOT EXISTS idx_gpu_profiles_updated ON miner_gpu_profiles(last_updated);
             CREATE INDEX IF NOT EXISTS idx_emission_metrics_timestamp ON emission_metrics(timestamp);

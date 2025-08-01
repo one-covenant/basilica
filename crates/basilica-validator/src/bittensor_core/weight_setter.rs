@@ -465,9 +465,8 @@ impl WeightSetter {
             Ok(profile) => {
                 info!(
                     miner_uid = miner_uid.as_u16(),
-                    "Successfully updated GPU profile for miner {}: gpu_model={}, total_gpus={}, score={:.4}, gpu_distribution={:?}",
+                    "Successfully updated GPU profile for miner {}: total_gpus={}, score={:.4}, gpu_distribution={:?}",
                     miner_uid.as_u16(),
-                    profile.primary_gpu_model,
                     profile.total_gpu_count(),
                     profile.total_score,
                     profile.gpu_counts
@@ -773,7 +772,12 @@ impl WeightSetter {
 
             // Get miner's GPU profile to determine category
             if let Ok(Some(profile)) = self.gpu_profile_repo.get_gpu_profile(miner_uid).await {
-                let category = &profile.primary_gpu_model;
+                // Determine category from the GPU with the highest count
+                let gpu_models = profile.gpu_models_by_count();
+                let category = gpu_models
+                    .first()
+                    .map(|(model, _)| model.as_str())
+                    .unwrap_or("UNKNOWN");
 
                 // Get category allocation info
                 if let Some(category_allocation) =

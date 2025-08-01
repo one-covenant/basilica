@@ -144,7 +144,6 @@ mod tests {
         // Old profile (40 days old)
         let old_profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
-            primary_gpu_model: "H100".to_string(),
             gpu_counts: gpu_counts.clone(),
             total_score: 0.5,
             verification_count: 1,
@@ -155,14 +154,13 @@ mod tests {
         // Manually insert old profile
         let query = r#"
             INSERT INTO miner_gpu_profiles (
-                miner_uid, primary_gpu_model, gpu_counts_json, 
+                miner_uid, gpu_counts_json, 
                 total_score, verification_count, last_updated, last_successful_validation, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         "#;
 
         sqlx::query(query)
             .bind(old_profile.miner_uid.as_u16() as i64)
-            .bind(&old_profile.primary_gpu_model)
             .bind(serde_json::to_string(&old_profile.gpu_counts).unwrap())
             .bind(old_profile.total_score)
             .bind(old_profile.verification_count as i64)
@@ -179,7 +177,6 @@ mod tests {
         // Recent profile
         let recent_profile = MinerGpuProfile {
             miner_uid: MinerUid::new(2),
-            primary_gpu_model: "H200".to_string(),
             gpu_counts,
             total_score: 0.8,
             verification_count: 1,

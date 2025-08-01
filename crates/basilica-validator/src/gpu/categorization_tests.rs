@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn test_primary_gpu_determination() {
+    fn test_gpu_distribution_calculation() {
         // Test single GPU type
         let validations = vec![
             ExecutorValidationResult::new_for_testing(
@@ -116,10 +116,10 @@ mod tests {
             ),
         ];
 
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        assert_eq!(primary, "H100");
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("H100"), Some(&3));
 
-        // Test multiple GPU types (should pick most common by count)
+        // Test multiple GPU types
         let validations = vec![
             ExecutorValidationResult::new_for_testing(
                 "exec1".to_string(),
@@ -144,10 +144,11 @@ mod tests {
             ),
         ];
 
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        assert_eq!(primary, "H200"); // 3 H200 vs 1 H100
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("H100"), Some(&1));
+        assert_eq!(gpu_counts.get("H200"), Some(&3));
 
-        // Test tie scenarios - should return the first one found
+        // Test tie scenarios
         let validations = vec![
             ExecutorValidationResult::new_for_testing(
                 "exec1".to_string(),
@@ -165,14 +166,14 @@ mod tests {
             ),
         ];
 
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        // Should be either H100 or H200 (both have count 2)
-        assert!(primary == "H100" || primary == "H200");
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("H100"), Some(&2));
+        assert_eq!(gpu_counts.get("H200"), Some(&2));
 
         // Test empty validation results
         let validations = vec![];
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        assert_eq!(primary, "OTHER");
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert!(gpu_counts.is_empty());
 
         // Test all invalid validations
         let validations = vec![
@@ -192,107 +193,8 @@ mod tests {
             ),
         ];
 
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        assert_eq!(primary, "OTHER");
-    }
-
-    #[test]
-    fn test_gpu_distribution_calculation() {
-        // Test single GPU model
-        let validations = vec![
-            ExecutorValidationResult::new_for_testing(
-                "exec1".to_string(),
-                "H100".to_string(),
-                2,
-                true,
-                true,
-            ),
-            ExecutorValidationResult::new_for_testing(
-                "exec2".to_string(),
-                "NVIDIA H100".to_string(),
-                1,
-                true,
-                true,
-            ),
-        ];
-
-        let distribution = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(distribution.get("H100"), Some(&3));
-        assert_eq!(distribution.len(), 1);
-
-        // Test multiple GPU models
-        let validations = vec![
-            ExecutorValidationResult::new_for_testing(
-                "exec1".to_string(),
-                "H100".to_string(),
-                1,
-                true,
-                true,
-            ),
-            ExecutorValidationResult::new_for_testing(
-                "exec2".to_string(),
-                "H200".to_string(),
-                2,
-                true,
-                true,
-            ),
-            ExecutorValidationResult::new_for_testing(
-                "exec3".to_string(),
-                "UNKNOWN".to_string(),
-                1,
-                true,
-                true,
-            ),
-        ];
-
-        let distribution = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(distribution.get("H100"), Some(&1));
-        assert_eq!(distribution.get("H200"), Some(&2));
-        assert_eq!(distribution.get("OTHER"), Some(&1));
-        assert_eq!(distribution.len(), 3);
-
-        // Test mixed valid/invalid validations
-        let validations = vec![
-            ExecutorValidationResult::new_for_testing(
-                "exec1".to_string(),
-                "H100".to_string(),
-                1,
-                true,
-                true,
-            ),
-            ExecutorValidationResult::new_for_testing(
-                "exec2".to_string(),
-                "H200".to_string(),
-                1,
-                false,
-                true,
-            ),
-            ExecutorValidationResult::new_for_testing(
-                "exec3".to_string(),
-                "OTHER".to_string(),
-                1,
-                true,
-                false,
-            ),
-        ];
-
-        let distribution = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(distribution.get("H100"), Some(&1));
-        assert_eq!(distribution.get("H200"), None);
-        assert_eq!(distribution.get("OTHER"), None);
-        assert_eq!(distribution.len(), 1);
-
-        // Test zero GPU counts
-        let validations = vec![ExecutorValidationResult::new_for_testing(
-            "exec1".to_string(),
-            "H100".to_string(),
-            0,
-            true,
-            true,
-        )];
-
-        let distribution = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(distribution.get("H100"), Some(&0));
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert!(gpu_counts.is_empty());
     }
 
     #[test]
@@ -318,7 +220,6 @@ mod tests {
         let profile = MinerGpuProfile::new(miner_uid, &validations, 0.85);
 
         assert_eq!(profile.miner_uid, miner_uid);
-        assert_eq!(profile.primary_gpu_model, "H100"); // More GPUs
         assert_eq!(profile.total_score, 0.85);
         assert_eq!(profile.verification_count, 2);
         assert_eq!(profile.total_gpu_count(), 3);
@@ -340,7 +241,6 @@ mod tests {
 
         profile.update_with_validations(&new_validations, 0.92);
 
-        assert_eq!(profile.primary_gpu_model, "H200");
         assert_eq!(profile.total_score, 0.92);
         assert_eq!(profile.verification_count, 1);
         assert_eq!(profile.total_gpu_count(), 4);
@@ -400,8 +300,8 @@ mod tests {
             true,
             true,
         )];
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        assert_eq!(primary, "H100");
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("H100"), Some(&1));
 
         // Test very long GPU names
         let long_name = "A".repeat(1000) + " H100";
@@ -412,8 +312,8 @@ mod tests {
             true,
             true,
         )];
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        assert_eq!(primary, "H100");
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("H100"), Some(&1));
 
         // Test special characters
         let validations = vec![ExecutorValidationResult::new_for_testing(
@@ -423,8 +323,8 @@ mod tests {
             true,
             true,
         )];
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        assert_eq!(primary, "H100");
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("H100"), Some(&1));
 
         // Test null/empty strings
         let validations = vec![ExecutorValidationResult::new_for_testing(
@@ -434,8 +334,8 @@ mod tests {
             true,
             true,
         )];
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        assert_eq!(primary, "OTHER");
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("OTHER"), Some(&1));
 
         // Test whitespace-only strings
         let validations = vec![ExecutorValidationResult::new_for_testing(
@@ -445,8 +345,8 @@ mod tests {
             true,
             true,
         )];
-        let primary = GpuCategorizer::determine_primary_gpu_model(&validations);
-        assert_eq!(primary, "OTHER");
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("OTHER"), Some(&1));
     }
 
     #[test]
@@ -537,7 +437,6 @@ mod tests {
         let profile = MinerGpuProfile::new(miner_uid, &validations, 0.0);
 
         assert_eq!(profile.total_gpu_count(), 0);
-        assert_eq!(profile.primary_gpu_model, "H100");
         assert!(profile.has_gpu_model("H100"));
         assert_eq!(profile.get_gpu_count("H100"), 0);
     }

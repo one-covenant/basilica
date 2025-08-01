@@ -361,8 +361,13 @@ async fn start_validator_services(
         (None, None, None)
     };
 
-    let api_handler =
-        crate::api::ApiHandler::new(config.api.clone(), persistence_arc.clone(), storage.clone());
+    let api_handler = crate::api::ApiHandler::new(
+        config.api.clone(),
+        persistence_arc.clone(),
+        gpu_profile_repo.clone(),
+        storage.clone(),
+        config.clone(),
+    );
 
     // Store metrics for cleanup (if needed)
     let _validator_metrics = validator_metrics;
