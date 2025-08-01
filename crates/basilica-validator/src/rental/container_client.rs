@@ -109,13 +109,13 @@ impl ContainerClient {
 
         // Add container name with sanitized rental ID
         let sanitized_rental_id = self.sanitize_rental_id(rental_id);
-        let container_name = format!("basilica-rental-{}", sanitized_rental_id);
+        let container_name = format!("basilica-rental-{sanitized_rental_id}");
         docker_cmd_parts.push("--name");
         docker_cmd_parts.push(&container_name);
 
         // Add labels
         docker_cmd_parts.push("--label");
-        let rental_label = format!("basilica.rental_id={}", sanitized_rental_id);
+        let rental_label = format!("basilica.rental_id={sanitized_rental_id}");
         docker_cmd_parts.push(&rental_label);
 
         // Collect all label strings first
@@ -276,7 +276,7 @@ impl ContainerClient {
 
         // Get container info
         let validated_container_id = self.validate_container_id(&container_id)?;
-        let inspect_cmd = format!("docker inspect {}", validated_container_id);
+        let inspect_cmd = format!("docker inspect {validated_container_id}");
         let inspect_output = self
             .execute_ssh_command(&inspect_cmd)
             .await
@@ -330,7 +330,7 @@ impl ContainerClient {
     /// Get container status
     pub async fn get_container_status(&self, container_id: &str) -> Result<ContainerStatus> {
         let validated_container_id = self.validate_container_id(container_id)?;
-        let inspect_cmd = format!("docker inspect {}", validated_container_id);
+        let inspect_cmd = format!("docker inspect {validated_container_id}");
         let output = self
             .execute_ssh_command(&inspect_cmd)
             .await
@@ -366,10 +366,7 @@ impl ContainerClient {
     /// Get container resource usage
     pub async fn get_resource_usage(&self, container_id: &str) -> Result<ResourceUsage> {
         let validated_container_id = self.validate_container_id(container_id)?;
-        let stats_cmd = format!(
-            "docker stats {} --no-stream --format json",
-            validated_container_id
-        );
+        let stats_cmd = format!("docker stats {validated_container_id} --no-stream --format json");
         let output = self
             .execute_ssh_command(&stats_cmd)
             .await
@@ -412,9 +409,9 @@ impl ContainerClient {
     pub async fn stop_container(&self, container_id: &str, force: bool) -> Result<()> {
         let validated_container_id = self.validate_container_id(container_id)?;
         let stop_cmd = if force {
-            format!("docker kill {}", validated_container_id)
+            format!("docker kill {validated_container_id}")
         } else {
-            format!("docker stop {}", validated_container_id)
+            format!("docker stop {validated_container_id}")
         };
 
         self.execute_ssh_command(&stop_cmd)
@@ -428,7 +425,7 @@ impl ContainerClient {
     /// Remove a container
     pub async fn remove_container(&self, container_id: &str) -> Result<()> {
         let validated_container_id = self.validate_container_id(container_id)?;
-        let rm_cmd = format!("docker rm -f {}", validated_container_id);
+        let rm_cmd = format!("docker rm -f {validated_container_id}");
 
         self.execute_ssh_command(&rm_cmd)
             .await

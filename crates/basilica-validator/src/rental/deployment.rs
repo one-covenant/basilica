@@ -397,10 +397,8 @@ impl DeploymentManager {
         debug!("Configuring SSH access for container {}", container_id);
 
         // Create .ssh directory in container
-        let mkdir_cmd = format!(
-            "docker exec {} mkdir -p /root/.ssh && chmod 700 /root/.ssh",
-            container_id
-        );
+        let mkdir_cmd =
+            format!("docker exec {container_id} mkdir -p /root/.ssh && chmod 700 /root/.ssh");
         client
             .execute_ssh_command(&mkdir_cmd)
             .await
@@ -409,8 +407,7 @@ impl DeploymentManager {
         use base64::Engine;
         let encoded_key = base64::engine::general_purpose::STANDARD.encode(ssh_public_key);
         let add_key_cmd = format!(
-            "docker exec {} sh -c 'echo \"{}\" | base64 -d >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'",
-            container_id, encoded_key
+            "docker exec {container_id} sh -c 'echo \"{encoded_key}\" | base64 -d >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'"
         );
         client
             .execute_ssh_command(&add_key_cmd)
