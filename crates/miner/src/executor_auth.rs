@@ -343,8 +343,8 @@ mod tests {
         let auth_max = MinerAuthentication {
             miner_hotkey: "hotkey".to_string(),
             timestamp_ms: u64::MAX,
-            nonce: "n".repeat(1000).into_bytes(),      // Long nonce
-            signature: "s".repeat(1000).into_bytes(),  // Long signature
+            nonce: "n".repeat(1000).into_bytes(), // Long nonce
+            signature: "s".repeat(1000).into_bytes(), // Long signature
             request_id: "r".repeat(1000).into_bytes(), // Long request id
         };
 
