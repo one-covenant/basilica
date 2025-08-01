@@ -284,7 +284,7 @@ basilica/
 │   ├── basilica-common/ # Shared utilities (crypto, config, storage, SSH)
 │   ├── protocol/        # Protocol definitions (gRPC/protobuf)
 │   ├── validator/       # Validator service
-│   ├── miner/          # Miner service
+│   ├── basilica-miner/  # Miner service
 │   ├── executor/        # Executor service
 │   ├── bittensor/       # Network integration
 │   ├── basilica-api/    # HTTP gateway service

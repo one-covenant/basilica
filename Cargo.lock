@@ -1062,6 +1062,7 @@ dependencies = [
  "async-trait",
  "axum 0.7.9",
  "basilica-common",
+ "basilica-protocol",
  "bittensor",
  "chrono",
  "clap",
@@ -1080,7 +1081,6 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "pin-project",
- "protocol",
  "rand 0.8.5",
  "redis",
  "reqwest",
@@ -1142,6 +1142,157 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "basilica-executor"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "async-trait",
+ "base64 0.21.7",
+ "basilica-common",
+ "basilica-protocol",
+ "blake3",
+ "bollard",
+ "chrono",
+ "clap",
+ "figment",
+ "fs_extra",
+ "futures-util",
+ "hex",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "mockall 0.11.4",
+ "num_cpus",
+ "nvml-wrapper",
+ "prost",
+ "prost-types",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sqlx",
+ "sysinfo",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "toml 0.8.23",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "basilica-miner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "basilica-common",
+ "basilica-protocol",
+ "bittensor",
+ "blake3",
+ "chrono",
+ "clap",
+ "cron",
+ "deadpool",
+ "figment",
+ "futures",
+ "governor",
+ "jsonwebtoken",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "mockall 0.11.4",
+ "prost",
+ "prost-types",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "socket2 0.5.10",
+ "sqlx",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "toml 0.8.23",
+ "tonic",
+ "tonic-health",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "basilica-protocol"
+version = "0.1.0"
+dependencies = [
+ "basilica-common",
+ "prost",
+ "prost-types",
+ "serde",
+ "thiserror 1.0.69",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tracing",
+]
+
+[[package]]
+name = "basilica-validator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum 0.7.9",
+ "base64 0.21.7",
+ "basilica-common",
+ "basilica-protocol",
+ "bittensor",
+ "blake3",
+ "chrono",
+ "clap",
+ "fastrand",
+ "figment",
+ "futures",
+ "hex",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "mockall 0.11.4",
+ "nalgebra 0.32.6",
+ "p256",
+ "prost",
+ "prost-types",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.10.9",
+ "signature",
+ "sqlx",
+ "ssh-key",
+ "sysinfo",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "toml 0.8.23",
+ "tonic",
+ "tower 0.4.13",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
 ]
 
 [[package]]
@@ -3278,49 +3429,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "executor"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "async-trait",
- "base64 0.21.7",
- "basilica-common",
- "blake3",
- "bollard",
- "chrono",
- "clap",
- "figment",
- "fs_extra",
- "futures-util",
- "hex",
- "metrics",
- "metrics-exporter-prometheus",
- "mockall 0.11.4",
- "num_cpus",
- "nvml-wrapper",
- "prost",
- "prost-types",
- "protocol",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "serial_test",
- "sqlx",
- "sysinfo",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "toml 0.8.23",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "expander"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4794,6 +4902,8 @@ dependencies = [
  "anyhow",
  "base64 0.21.7",
  "basilica-common",
+ "basilica-protocol",
+ "basilica-validator",
  "chrono",
  "criterion",
  "dirs",
@@ -4801,7 +4911,6 @@ dependencies = [
  "hex",
  "num_cpus",
  "prost-types",
- "protocol",
  "rand 0.8.5",
  "reqwest",
  "serde",
@@ -4811,7 +4920,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "validator",
 ]
 
 [[package]]
@@ -5486,49 +5594,6 @@ checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
 dependencies = [
  "mime",
  "unicase",
-]
-
-[[package]]
-name = "miner"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "basilica-common",
- "bittensor",
- "blake3",
- "chrono",
- "clap",
- "cron",
- "deadpool",
- "figment",
- "futures",
- "governor",
- "jsonwebtoken",
- "metrics",
- "metrics-exporter-prometheus",
- "mockall 0.11.4",
- "prost",
- "prost-types",
- "protocol",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "serial_test",
- "socket2 0.5.10",
- "sqlx",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "toml 0.8.23",
- "tonic",
- "tonic-health",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
 ]
 
 [[package]]
@@ -9307,21 +9372,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9091c90b0a32608e984ff2fa4091273cbdd755d54935c51d520887f4a1dbd5b0"
 dependencies = [
  "prost",
-]
-
-[[package]]
-name = "protocol"
-version = "0.1.0"
-dependencies = [
- "basilica-common",
- "prost",
- "prost-types",
- "serde",
- "thiserror 1.0.69",
- "tokio",
- "tonic",
- "tonic-build",
- "tracing",
 ]
 
 [[package]]
@@ -13695,56 +13745,6 @@ dependencies = [
  "js-sys",
  "serde",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "validator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum 0.7.9",
- "base64 0.21.7",
- "basilica-common",
- "bittensor",
- "blake3",
- "chrono",
- "clap",
- "fastrand",
- "figment",
- "futures",
- "hex",
- "metrics",
- "metrics-exporter-prometheus",
- "mockall 0.11.4",
- "nalgebra 0.32.6",
- "p256",
- "prost",
- "prost-types",
- "protocol",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "reqwest",
- "serde",
- "serde_json",
- "serial_test",
- "sha2 0.10.9",
- "signature",
- "sqlx",
- "ssh-key",
- "sysinfo",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "toml 0.8.23",
- "tonic",
- "tower 0.4.13",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
 ]
 
 [[package]]

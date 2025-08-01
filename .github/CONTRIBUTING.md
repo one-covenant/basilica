@@ -24,9 +24,9 @@ Thanks for your interest in contributing to Basilica. We welcome contributions f
 cargo build
 
 # Build specific crate
-cargo build -p validator
-cargo build -p miner
-cargo build -p executor
+cargo build -p basilica-validator
+cargo build -p basilica-miner
+cargo build -p basilica-executor
 
 # Build with release optimizations
 cargo build --release

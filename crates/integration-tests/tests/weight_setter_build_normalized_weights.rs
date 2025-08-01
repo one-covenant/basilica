@@ -3,9 +3,9 @@
 use anyhow::Result;
 use basilica_common::identity::MinerUid;
 use std::collections::HashMap;
-use validator::bittensor_core::weight_allocation::NormalizedWeight;
-use validator::bittensor_core::weight_allocation::{WeightAllocationEngine, WeightDistribution};
-use validator::config::emission::EmissionConfig;
+use basilica_validator::bittensor_core::weight_allocation::NormalizedWeight;
+use basilica_validator::bittensor_core::weight_allocation::{WeightAllocationEngine, WeightDistribution};
+use basilica_validator::config::emission::EmissionConfig;
 
 struct WeightSetterTester {
     weight_allocation_engine: WeightAllocationEngine,

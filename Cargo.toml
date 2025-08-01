@@ -1,10 +1,10 @@
 [workspace]
 members = [
     "crates/basilica-common",
-    "crates/protocol", 
-    "crates/executor",
-    "crates/miner", 
-    "crates/validator",
+    "crates/basilica-protocol", 
+    "crates/basilica-executor",
+    "crates/basilica-miner", 
+    "crates/basilica-validator",
     "crates/bittensor",
     "crates/basilica-api", 
     "crates/integration-tests",

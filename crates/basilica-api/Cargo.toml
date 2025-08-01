@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
 bittensor = { path = "../bittensor" }
-protocol = { path = "../protocol" }
+basilica-protocol = { path = "../basilica-protocol" }
 
 # Async runtime
 tokio = { workspace = true }

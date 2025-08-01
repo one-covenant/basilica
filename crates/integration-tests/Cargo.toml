@@ -23,8 +23,8 @@ dirs = "5.0"
 rand = "0.8"
 
 # Internal dependencies
-validator = { path = "../validator" }
-protocol = { path = "../protocol" }
+basilica-validator = { path = "../basilica-validator" }
+basilica-protocol = { path = "../basilica-protocol" }
 basilica-common = { path = "../basilica-common" }
 
 [dev-dependencies]
