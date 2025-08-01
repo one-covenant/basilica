@@ -1,4 +1,4 @@
-//! # Basilica Public API Gateway
+//! # Basilica API Gateway
 //!
 //! A smart HTTP gateway that provides centralized access to the Basilica validator network.
 //!
@@ -26,7 +26,7 @@ pub use config::Config;
 pub use error::{Error, Result};
 pub use server::Server;
 
-/// Version of the public-api crate
+/// Version of the basilica-api crate
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Protocol version for API compatibility

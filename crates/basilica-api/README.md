@@ -1,4 +1,4 @@
-# Basilica Public API
+# Basilica API
 
 HTTP gateway for accessing Basilica validators.
 
@@ -6,19 +6,19 @@ HTTP gateway for accessing Basilica validators.
 
 ```bash
 # Build
-cargo build -p public-api --release
+cargo build -p basilica-api --release
 
 # Generate config
-./target/release/public-api --gen-config > config.toml
+./target/release/basilica-api --gen-config > config.toml
 
 # Run
-./target/release/public-api --config config.toml
+./target/release/basilica-api --config config.toml
 ```
 
 ## Testing
 
 ```bash
-cd scripts/public-api
+cd scripts/basilica-api
 ./test-run.sh  # Generates test wallet and runs the service
 ```
 
@@ -26,10 +26,10 @@ cd scripts/public-api
 
 ```bash
 # Build and extract binary
-./scripts/public-api/build.sh
+./scripts/basilica-api/build.sh
 
 # Run
-./public-api --config config.toml
+./basilica-api --config config.toml
 ```
 
 ## Configuration

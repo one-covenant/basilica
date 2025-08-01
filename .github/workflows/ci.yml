@@ -25,7 +25,7 @@ jobs:
       executor: ${{ steps.changes.outputs.executor }}
       validator: ${{ steps.changes.outputs.validator }}
       miner: ${{ steps.changes.outputs.miner }}
-      public-api: ${{ steps.changes.outputs.public-api }}
+      basilica-api: ${{ steps.changes.outputs.basilica-api }}
       workspace: ${{ steps.changes.outputs.workspace }}
     steps:
       - uses: actions/checkout@v4
@@ -55,11 +55,11 @@ jobs:
               - 'scripts/miner/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
-            public-api:
-              - 'crates/public-api/**'
+            basilica-api:
+              - 'crates/basilica-api/**'
               - 'crates/common/**'
               - 'crates/protocol/**'
-              - 'scripts/public-api/**'
+              - 'scripts/basilica-api/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             workspace:
@@ -145,8 +145,8 @@ jobs:
           cargo clippy -p miner --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
           # Run clippy on validator
           cargo clippy -p validator --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
-          # Run clippy on public-api
-          cargo clippy -p public-api --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+          # Run clippy on basilica-api
+          cargo clippy -p basilica-api --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
 
   # Build and test executor
   build-executor:
@@ -322,11 +322,11 @@ jobs:
           chmod +x scripts/miner/build.sh
           BITTENSOR_NETWORK=finney ./scripts/miner/build.sh --no-extract
 
-  # Build and test public-api
-  build-public-api:
+  # Build and test basilica-api
+  build-basilica-api:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.public-api == 'true' || needs.changes.outputs.workspace == 'true'
+    if: needs.changes.outputs.basilica-api == 'true' || needs.changes.outputs.workspace == 'true'
     strategy:
       matrix:
         rust-version: [stable]
@@ -343,7 +343,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /var/cache/apt
-          key: apt-cache-${{ runner.os }}-public-api
+          key: apt-cache-${{ runner.os }}-basilica-api
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -359,27 +359,27 @@ jobs:
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
-      - name: Check public-api builds
+      - name: Check basilica-api builds
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p public-api
-      - name: Test public-api crate (unit tests only)
+          cargo check -p basilica-api
+      - name: Test basilica-api crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo test -p public-api --lib
-      - name: Test public-api CLI functionality
+          cargo test -p basilica-api --lib
+      - name: Test basilica-api CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo build -p public-api
-          ./target/debug/public-api --help
+          cargo build -p basilica-api
+          ./target/debug/basilica-api --help
       - name: Clean up space before Docker build
         run: |
           docker system prune -af
           df -h
       - name: Test Docker build script
         run: |
-          chmod +x scripts/public-api/build.sh
-          BITTENSOR_NETWORK=finney ./scripts/public-api/build.sh --no-extract
+          chmod +x scripts/basilica-api/build.sh
+          BITTENSOR_NETWORK=finney ./scripts/basilica-api/build.sh --no-extract
 
   # Final status check
   ci-success:
@@ -390,7 +390,7 @@ jobs:
       - build-executor
       - build-validator
       - build-miner
-      - build-public-api
+      - build-basilica-api
     if: always()
     steps:
       - name: Check if all jobs succeeded
@@ -400,7 +400,7 @@ jobs:
                 ("${{ needs.build-executor.result }}" == "success" || "${{ needs.build-executor.result }}" == "skipped") && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
-                ("${{ needs.build-public-api.result }}" == "success" || "${{ needs.build-public-api.result }}" == "skipped") ]]; then
+                ("${{ needs.build-basilica-api.result }}" == "success" || "${{ needs.build-basilica-api.result }}" == "skipped") ]]; then
             echo "All CI checks passed!"
             exit 0
           else

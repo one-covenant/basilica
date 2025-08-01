@@ -1,4 +1,4 @@
-# Basilica Public API
+# Basilica API
 
 External HTTP API service for the Basilica network.
 
@@ -28,7 +28,7 @@ docker-compose -f compose.dev.yml up
 
 Copy and edit the configuration:
 ```bash
-cp ../../config/public-api.toml.example ../../config/public-api.toml
+cp ../../config/basilica-api.toml.example ../../config/basilica-api.toml
 ```
 
 Key settings:
@@ -70,7 +70,7 @@ RUST_BACKTRACE=1
 ./deploy.sh root@api.basilica.ai 22
 
 # Check logs
-ssh root@api.basilica.ai 'cd /opt/basilica && docker-compose logs -f public-api'
+ssh root@api.basilica.ai 'cd /opt/basilica && docker-compose logs -f basilica-api'
 ```
 
 ## Rate Limiting
@@ -78,4 +78,4 @@ ssh root@api.basilica.ai 'cd /opt/basilica && docker-compose logs -f public-api'
 Default limits:
 - 100 requests/minute per IP
 - 10 requests/minute for compute submissions
-- Configurable per endpoint in `public-api.toml`
+- Configurable per endpoint in `basilica-api.toml`

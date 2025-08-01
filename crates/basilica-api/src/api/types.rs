@@ -1,4 +1,4 @@
-//! API types for the Public API Gateway
+//! API types for the Basilica API Gateway
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

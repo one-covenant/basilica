@@ -1,4 +1,4 @@
-//! Main server implementation for the Public API Gateway
+//! Main server implementation for the Basilica API Gateway
 
 use crate::{
     api,
@@ -43,7 +43,7 @@ pub struct AppState {
 impl Server {
     /// Create a new server instance
     pub async fn new(config: Config) -> Result<Self> {
-        info!("Initializing Public API Gateway server");
+        info!("Initializing Basilica API Gateway server");
 
         let config = Arc::new(config);
 
@@ -123,7 +123,7 @@ impl Server {
                 message: format!("Failed to bind to address {addr}: {e}"),
             })?;
 
-        info!("Public API Gateway listening on {}", addr);
+        info!("Basilica API Gateway listening on {}", addr);
 
         axum::serve(listener, self.app)
             .with_graceful_shutdown(shutdown_signal())

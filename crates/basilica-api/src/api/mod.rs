@@ -1,4 +1,4 @@
-//! API module for the Public API Gateway
+//! API module for the Basilica API Gateway
 
 pub mod middleware;
 pub mod routes;
@@ -99,9 +99,9 @@ pub fn docs_routes() -> Router<AppState> {
         (name = "health", description = "Health and monitoring"),
     ),
     info(
-        title = "Basilica Public API",
+        title = "Basilica API",
         version = "1.0.0",
-        description = "Public API Gateway for the Basilica validator network",
+        description = "API Gateway for the Basilica validator network",
         contact(
             name = "Basilica Team",
             email = "support@tplr.ai",

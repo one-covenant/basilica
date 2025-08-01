@@ -80,7 +80,7 @@ scripts/localnet/
 
 1. **No Registration**: Services bypass Bittensor registration for local testing
 2. **No Funding**: Wallets have no balance (not needed with skip_registration)
-3. **Public API**: Currently has issues with localnet (metadata compatibility and route conflicts)
+3. **Basilica API**: Currently has issues with localnet (metadata compatibility and route conflicts)
 
 ## GPU Support
 

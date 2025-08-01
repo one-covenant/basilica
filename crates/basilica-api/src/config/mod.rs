@@ -1,4 +1,4 @@
-//! Configuration module for the Public API gateway
+//! Configuration module for the Basilica API gateway
 
 mod auth;
 mod cache;
@@ -57,7 +57,7 @@ impl Default for BittensorIntegrationConfig {
     }
 }
 
-/// Main configuration structure for the Public API
+/// Main configuration structure for the Basilica API
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     /// Server configuration
@@ -133,7 +133,7 @@ impl Config {
             network: self.bittensor.network.clone(),
             netuid: self.bittensor.netuid,
             chain_endpoint: self.bittensor.chain_endpoint.clone(),
-            wallet_name: "public-api".to_string(),
+            wallet_name: "basilica-api".to_string(),
             hotkey_name: "default".to_string(),
             weight_interval_secs: 300, // 5 minutes default
         }
@@ -145,10 +145,10 @@ impl ConfigLoader<Config> for Config {
         let figment = match path {
             Some(p) => Figment::from(Serialized::defaults(Config::default()))
                 .merge(Toml::file(p))
-                .merge(Env::prefixed("PUBLIC_API_").split("__")),
+                .merge(Env::prefixed("BASILICA_API_").split("__")),
             None => Figment::from(Serialized::defaults(Config::default()))
-                .merge(Toml::file("public-api.toml"))
-                .merge(Env::prefixed("PUBLIC_API_").split("__")),
+                .merge(Toml::file("basilica-api.toml"))
+                .merge(Env::prefixed("BASILICA_API_").split("__")),
         };
 
         figment.extract().map_err(|e| ConfigError::ParseError {
@@ -159,7 +159,7 @@ impl ConfigLoader<Config> for Config {
     fn load_from_file(path: &Path) -> Result<Config, ConfigError> {
         let figment = Figment::from(Serialized::defaults(Config::default()))
             .merge(Toml::file(path))
-            .merge(Env::prefixed("PUBLIC_API_").split("__"));
+            .merge(Env::prefixed("BASILICA_API_").split("__"));
 
         figment.extract().map_err(|e| ConfigError::ParseError {
             details: e.to_string(),
@@ -215,6 +215,6 @@ mod tests {
 
         assert_eq!(bt_config.network, config.bittensor.network);
         assert_eq!(bt_config.netuid, config.bittensor.netuid);
-        assert_eq!(bt_config.wallet_name, "public-api");
+        assert_eq!(bt_config.wallet_name, "basilica-api");
     }
 }

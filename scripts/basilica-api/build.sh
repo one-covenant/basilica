@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-IMAGE_NAME="basilica/public-api"
+IMAGE_NAME="basilica/basilica-api"
 IMAGE_TAG="latest"
 EXTRACT_BINARY=true
 BUILD_IMAGE=true
@@ -41,7 +41,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [--image-name NAME] [--image-tag TAG] [--no-extract] [--no-image] [--debug] [--features FEATURES]"
             echo ""
             echo "Options:"
-            echo "  --image-name NAME     Docker image name (default: basilica/public-api)"
+            echo "  --image-name NAME     Docker image name (default: basilica/basilica-api)"
             echo "  --image-tag TAG       Docker image tag (default: latest)"
             echo "  --no-extract          Don't extract binary to local filesystem"
             echo "  --no-image            Skip Docker image creation"
@@ -75,19 +75,19 @@ if [[ "$BUILD_IMAGE" == "true" ]]; then
     echo "Building Docker image: $IMAGE_NAME:$IMAGE_TAG"
     docker build \
         $BUILD_ARGS \
-        -f scripts/public-api/Dockerfile \
+        -f scripts/basilica-api/Dockerfile \
         -t "$IMAGE_NAME:$IMAGE_TAG" \
         .
     echo "Docker image built successfully"
 fi
 
 if [[ "$EXTRACT_BINARY" == "true" ]]; then
-    echo "Extracting public-api binary..."
+    echo "Extracting basilica-api binary..."
     container_id=$(docker create "$IMAGE_NAME:$IMAGE_TAG")
-    docker cp "$container_id:/usr/local/bin/public-api" ./public-api
+    docker cp "$container_id:/usr/local/bin/basilica-api" ./basilica-api
     docker rm "$container_id"
-    chmod +x ./public-api
-    echo "Binary extracted to: ./public-api"
+    chmod +x ./basilica-api
+    echo "Binary extracted to: ./basilica-api"
 fi
 
 echo "Build completed successfully!"

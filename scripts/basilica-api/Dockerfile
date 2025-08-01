@@ -35,18 +35,18 @@ ENV CARGO_TARGET_DIR=/tmp/target
 ENV CARGO_INCREMENTAL=0
 ENV RUST_BACKTRACE=1
 
-# Build the public-api binary
+# Build the basilica-api binary
 RUN if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
-            cargo build --release -p public-api --features "$FEATURES"; \
+            cargo build --release -p basilica-api --features "$FEATURES"; \
         else \
-            cargo build --release -p public-api; \
+            cargo build --release -p basilica-api; \
         fi; \
     else \
         if [ -n "$FEATURES" ]; then \
-            cargo build -p public-api --features "$FEATURES"; \
+            cargo build -p basilica-api --features "$FEATURES"; \
         else \
-            cargo build -p public-api; \
+            cargo build -p basilica-api; \
         fi; \
     fi && \
     # Clean up intermediate build artifacts to save space
@@ -65,10 +65,10 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the built binary
 ARG BUILD_MODE=release
-COPY --from=builder /tmp/target/${BUILD_MODE}/public-api /usr/local/bin/public-api
+COPY --from=builder /tmp/target/${BUILD_MODE}/basilica-api /usr/local/bin/basilica-api
 
 # Make binary executable
-RUN chmod +x /usr/local/bin/public-api
+RUN chmod +x /usr/local/bin/basilica-api
 
 # Create non-root user
 RUN useradd -m -u 1000 -s /bin/bash basilica
@@ -87,4 +87,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Default command
-ENTRYPOINT ["/usr/local/bin/public-api"]
+ENTRYPOINT ["/usr/local/bin/basilica-api"]

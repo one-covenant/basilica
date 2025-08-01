@@ -1,5 +1,5 @@
-# Basilica Public API Configuration Example
-# Copy this file to public-api.toml and customize for your environment
+# Basilica API Configuration Example
+# Copy this file to basilica-api.toml and customize for your environment
 
 [server]
 host = "0.0.0.0"
@@ -101,7 +101,7 @@ request_id_header = "X-Request-ID"
 [docs]
 enabled = true
 path = "/docs"
-title = "Basilica Public API"
+title = "Basilica API"
 version = "1.0.0"
 
 # Webhook Configuration

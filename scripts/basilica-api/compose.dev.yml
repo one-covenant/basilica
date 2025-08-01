@@ -1,9 +1,9 @@
 services:
-  public-api:
+  basilica-api:
     build:
       context: ../..
-      dockerfile: scripts/public-api/Dockerfile
-    container_name: basilica-public-api-dev
+      dockerfile: scripts/basilica-api/Dockerfile
+    container_name: basilica-api-dev
     restart: unless-stopped
     
     environment:
@@ -11,8 +11,8 @@ services:
       - RUST_BACKTRACE=1
     
     volumes:
-      - ../../config/public-api.toml:/app/public-api.toml:ro
-      - public-api-data-dev:/app/data
+      - ../../config/basilica-api.toml:/app/basilica-api.toml:ro
+      - basilica-api-data-dev:/app/data
       - ../../crates:/app/crates:ro
       - ../../Cargo.toml:/app/Cargo.toml:ro
       - ../../Cargo.lock:/app/Cargo.lock:ro
@@ -24,7 +24,7 @@ services:
     networks:
       - basilica_network_dev
     
-    command: ["--config", "/app/public-api.toml"]
+    command: ["--config", "/app/basilica-api.toml"]
     
     depends_on:
       - redis
@@ -44,5 +44,5 @@ networks:
     driver: bridge
 
 volumes:
-  public-api-data-dev:
+  basilica-api-data-dev:
   redis-data-dev:

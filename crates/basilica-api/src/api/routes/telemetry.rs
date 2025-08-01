@@ -63,37 +63,37 @@ impl TelemetryTracker {
         times.push(duration_us);
 
         // Update metrics
-        counter!("public_api_requests_total").increment(1);
+        counter!("basilica_api_requests_total").increment(1);
         if success {
-            counter!("public_api_requests_success").increment(1);
+            counter!("basilica_api_requests_success").increment(1);
         } else {
-            counter!("public_api_requests_failed").increment(1);
+            counter!("basilica_api_requests_failed").increment(1);
         }
-        histogram!("public_api_response_time_us").record(duration_us as f64);
+        histogram!("basilica_api_response_time_us").record(duration_us as f64);
     }
 
     /// Record cache hit
     pub fn record_cache_hit(&self) {
         self.cache_hits.fetch_add(1, Ordering::Relaxed);
-        counter!("public_api_cache_hits").increment(1);
+        counter!("basilica_api_cache_hits").increment(1);
     }
 
     /// Record cache miss
     pub fn record_cache_miss(&self) {
         self.cache_misses.fetch_add(1, Ordering::Relaxed);
-        counter!("public_api_cache_misses").increment(1);
+        counter!("basilica_api_cache_misses").increment(1);
     }
 
     /// Increment active connections
     pub fn increment_connections(&self) {
         let count = self.active_connections.fetch_add(1, Ordering::Relaxed) + 1;
-        gauge!("public_api_active_connections").set(count as f64);
+        gauge!("basilica_api_active_connections").set(count as f64);
     }
 
     /// Decrement active connections
     pub fn decrement_connections(&self) {
         let count = self.active_connections.fetch_sub(1, Ordering::Relaxed) - 1;
-        gauge!("public_api_active_connections").set(count as f64);
+        gauge!("basilica_api_active_connections").set(count as f64);
     }
 
     /// Get current telemetry data

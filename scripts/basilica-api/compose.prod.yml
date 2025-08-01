@@ -1,7 +1,7 @@
 services:
-  public-api:
-    image: ghcr.io/tplr-ai/basilica/public-api:latest
-    container_name: basilica-public-api
+  basilica-api:
+    image: ghcr.io/tplr-ai/basilica/basilica-api:latest
+    container_name: basilica-api
     restart: unless-stopped
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
@@ -11,8 +11,8 @@ services:
       - RUST_BACKTRACE=1
 
     volumes:
-      - ../../config/public-api.toml:/app/public-api.toml:ro
-      - public-api-data:/app/data
+      - ../../config/basilica-api.toml:/app/basilica-api.toml:ro
+      - basilica-api-data:/app/data
 
     ports:
       - "8000:8000"    # HTTP API
@@ -21,7 +21,7 @@ services:
     networks:
       - basilica_network
 
-    command: ["--config", "/app/public-api.toml"]
+    command: ["--config", "/app/basilica-api.toml"]
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -60,5 +60,5 @@ networks:
     driver: bridge
 
 volumes:
-  public-api-data:
+  basilica-api-data:
   redis-data:

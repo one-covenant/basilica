@@ -1,4 +1,4 @@
-//! Error types for the Public API gateway
+//! Error types for the Basilica API gateway
 
 use axum::{
     http::StatusCode,
@@ -9,7 +9,7 @@ use common::BasilcaError;
 use serde_json::json;
 use thiserror::Error;
 
-/// Main error type for the Public API
+/// Main error type for the Basilica API
 #[derive(Debug, Error)]
 pub enum Error {
     /// Configuration error
@@ -94,24 +94,24 @@ impl Error {
     /// Get error code for this error
     pub fn error_code(&self) -> &'static str {
         match self {
-            Error::Config(_) => "PUBLIC_API_CONFIG_ERROR",
-            Error::Bittensor(_) => "PUBLIC_API_BITTENSOR_ERROR",
-            Error::HttpClient(_) => "PUBLIC_API_HTTP_CLIENT_ERROR",
-            Error::ValidatorCommunication { .. } => "PUBLIC_API_VALIDATOR_COMM_ERROR",
-            Error::NoValidatorsAvailable => "PUBLIC_API_NO_VALIDATORS",
-            Error::LoadBalancer { .. } => "PUBLIC_API_LOAD_BALANCER_ERROR",
-            Error::Authentication { .. } => "PUBLIC_API_AUTH_ERROR",
-            Error::Authorization { .. } => "PUBLIC_API_AUTHZ_ERROR",
-            Error::RateLimitExceeded => "PUBLIC_API_RATE_LIMIT",
-            Error::InvalidRequest { .. } => "PUBLIC_API_INVALID_REQUEST",
-            Error::Aggregation { .. } => "PUBLIC_API_AGGREGATION_ERROR",
-            Error::Cache { .. } => "PUBLIC_API_CACHE_ERROR",
-            Error::Timeout => "PUBLIC_API_TIMEOUT",
-            Error::Internal { .. } => "PUBLIC_API_INTERNAL_ERROR",
-            Error::ServiceUnavailable => "PUBLIC_API_SERVICE_UNAVAILABLE",
-            Error::NotFound { .. } => "PUBLIC_API_NOT_FOUND",
-            Error::Serialization(_) => "PUBLIC_API_SERIALIZATION_ERROR",
-            Error::Other(_) => "PUBLIC_API_OTHER_ERROR",
+            Error::Config(_) => "BASILICA_API_CONFIG_ERROR",
+            Error::Bittensor(_) => "BASILICA_API_BITTENSOR_ERROR",
+            Error::HttpClient(_) => "BASILICA_API_HTTP_CLIENT_ERROR",
+            Error::ValidatorCommunication { .. } => "BASILICA_API_VALIDATOR_COMM_ERROR",
+            Error::NoValidatorsAvailable => "BASILICA_API_NO_VALIDATORS",
+            Error::LoadBalancer { .. } => "BASILICA_API_LOAD_BALANCER_ERROR",
+            Error::Authentication { .. } => "BASILICA_API_AUTH_ERROR",
+            Error::Authorization { .. } => "BASILICA_API_AUTHZ_ERROR",
+            Error::RateLimitExceeded => "BASILICA_API_RATE_LIMIT",
+            Error::InvalidRequest { .. } => "BASILICA_API_INVALID_REQUEST",
+            Error::Aggregation { .. } => "BASILICA_API_AGGREGATION_ERROR",
+            Error::Cache { .. } => "BASILICA_API_CACHE_ERROR",
+            Error::Timeout => "BASILICA_API_TIMEOUT",
+            Error::Internal { .. } => "BASILICA_API_INTERNAL_ERROR",
+            Error::ServiceUnavailable => "BASILICA_API_SERVICE_UNAVAILABLE",
+            Error::NotFound { .. } => "BASILICA_API_NOT_FOUND",
+            Error::Serialization(_) => "BASILICA_API_SERIALIZATION_ERROR",
+            Error::Other(_) => "BASILICA_API_OTHER_ERROR",
         }
     }
 
@@ -210,11 +210,11 @@ mod tests {
     fn test_error_codes() {
         assert_eq!(
             Error::NoValidatorsAvailable.error_code(),
-            "PUBLIC_API_NO_VALIDATORS"
+            "BASILICA_API_NO_VALIDATORS"
         );
         assert_eq!(
             Error::RateLimitExceeded.error_code(),
-            "PUBLIC_API_RATE_LIMIT"
+            "BASILICA_API_RATE_LIMIT"
         );
     }
 

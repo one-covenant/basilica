@@ -6,7 +6,7 @@ members = [
     "crates/miner", 
     "crates/validator",
     "crates/bittensor",
-    "crates/public-api", 
+    "crates/basilica-api", 
     "crates/integration-tests",
 ]
 resolver = "2"

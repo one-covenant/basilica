@@ -1,14 +1,14 @@
-//! Main entry point for the Basilica Public API Gateway
+//! Main entry point for the Basilica API Gateway
 
 use clap::Parser;
-use public_api::{config::Config, server::Server, Result};
+use basilica_api::{config::Config, server::Server, Result};
 use std::path::PathBuf;
 use tracing::{error, info};
 
 #[derive(Parser)]
 #[command(
-    name = "public-api",
-    about = "Basilica Public API Gateway",
+    name = "basilica-api",
+    about = "Basilica API Gateway",
     version,
     author
 )]
@@ -45,8 +45,8 @@ async fn main() -> Result<()> {
         .init();
 
     info!(
-        "Starting Basilica Public API Gateway v{}",
-        public_api::VERSION
+        "Starting Basilica API Gateway v{}",
+        basilica_api::VERSION
     );
 
     // Handle config generation
@@ -66,16 +66,16 @@ async fn main() -> Result<()> {
     // Create and run server
     let server = Server::new(config).await?;
 
-    info!("Public API Gateway initialized successfully");
+    info!("Basilica API Gateway initialized successfully");
 
     // Run until shutdown signal
     match server.run().await {
         Ok(()) => {
-            info!("Public API Gateway shut down gracefully");
+            info!("Basilica API Gateway shut down gracefully");
             Ok(())
         }
         Err(e) => {
-            error!("Public API Gateway error: {}", e);
+            error!("Basilica API Gateway error: {}", e);
             Err(e)
         }
     }

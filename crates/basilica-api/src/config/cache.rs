@@ -39,7 +39,7 @@ impl Default for CacheConfig {
             default_ttl: 300,
             max_size: 10000,
             redis_url: None,
-            key_prefix: "basilica:public-api:".to_string(),
+            key_prefix: "basilica:api:".to_string(),
         }
     }
 }

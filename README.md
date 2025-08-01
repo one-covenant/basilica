@@ -22,14 +22,14 @@ Basilica creates a trustless marketplace for GPU compute by:
 - **Remote Validation**: SSH-based verification of computational tasks and hardware specifications
 - **Bittensor Integration**: Native participation in Bittensor's consensus mechanism with weight allocation
 - **Fleet Management**: Efficient orchestration of distributed GPU resources with assignment management
-- **Public API Gateway**: Smart HTTP gateway providing load-balanced access to the validator network
+- **Basilica API Gateway**: Smart HTTP gateway providing load-balanced access to the validator network
 
 ## Key Components
 
 - **Validator**: Verifies hardware capabilities, maintains GPU profiles, and scores miner performance
 - **Miner**: Manages GPU executor fleets, handles assignments, and serves compute requests via Axon
 - **Executor**: GPU machine agent with container management, system monitoring, and secure task execution
-- **Public API**: HTTP gateway with authentication, caching, rate limiting, and request aggregation
+- **Basilica API**: HTTP gateway with authentication, caching, rate limiting, and request aggregation
 - **Common**: Shared utilities including crypto, SSH management, storage, and configuration
 - **Protocol**: gRPC/protobuf definitions for inter-component communication
 - **Bittensor**: Network integration for registration, discovery, and weight management

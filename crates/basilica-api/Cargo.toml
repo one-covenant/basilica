@@ -1,5 +1,5 @@
 [package]
-name = "public-api"
+name = "basilica-api"
 version = "0.1.0"
 edition = "2021"
 authors = ["Basilica Team"]
@@ -93,5 +93,5 @@ default = ["redis-cache"]
 redis-cache = ["redis"]
 
 [[bin]]
-name = "public-api"
+name = "basilica-api"
 path = "src/main.rs"
