@@ -56,15 +56,16 @@ log() {
     echo "[$(date '+%H:%M:%S')] $*"
 }
 
+
 ssh_cmd() {
     local cmd="$1"
-    timeout "$TIMEOUT" ssh -o ConnectTimeout=30 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "$cmd"
+    ssh -o ConnectTimeout=30 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "$cmd"
 }
 
 scp_file() {
     local src="$1"
     local dest="$2"
-    timeout "$TIMEOUT" scp -o ConnectTimeout=30 -P "$SERVER_PORT" "$src" "$SERVER_USER@$SERVER_HOST:$dest"
+    scp -o ConnectTimeout=30 -P "$SERVER_PORT" "$src" "$SERVER_USER@$SERVER_HOST:$dest"
 }
 
 rsync_wallet() {
@@ -78,7 +79,7 @@ rsync_wallet() {
 
     log "Syncing wallet $wallet_name to miner server"
     ssh_cmd "mkdir -p ~/.bittensor/wallets/$wallet_name"
-    timeout "$TIMEOUT" rsync -avz -e "ssh -p $SERVER_PORT -o ConnectTimeout=30" "$wallet_path/" "$SERVER_USER@$SERVER_HOST:~/.bittensor/wallets/$wallet_name/"
+    rsync -avz -e "ssh -p $SERVER_PORT -o ConnectTimeout=30" "$wallet_path/" "$SERVER_USER@$SERVER_HOST:~/.bittensor/wallets/$wallet_name/"
     ssh_cmd "chmod -R 700 ~/.bittensor/wallets/$wallet_name"
     ssh_cmd "find ~/.bittensor/wallets/$wallet_name -name '*.json' -exec chmod 600 {} +"
 }
@@ -115,12 +116,12 @@ deploy_binary() {
     log "Deploying miner in binary mode"
 
     log "Stopping existing miner processes"
-    timeout 10 ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "pkill -f '/opt/basilica/miner' 2>/dev/null || true" || log "WARNING: Could not connect to stop miner processes"
+    ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "pkill -f '/opt/basilica/miner' 2>/dev/null || true" || log "WARNING: Could not connect to stop miner processes"
 
     sleep 2
 
     # Force kill with shorter timeout
-    timeout 10 ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "pkill -9 -f '/opt/basilica/miner' 2>/dev/null || true" || log "WARNING: Could not connect for force kill"
+    ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "pkill -9 -f '/opt/basilica/miner' 2>/dev/null || true" || log "WARNING: Could not connect for force kill"
 
     sleep 3
 
@@ -146,7 +147,7 @@ deploy_binary() {
     local start_cmd="cd /opt/basilica && RUST_LOG=debug nohup ./miner --config config/miner.toml > miner.log 2>&1 &"
 
     log "Starting miner"
-    timeout 15 ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "$start_cmd" || true
+    ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "$start_cmd" || true
 
     sleep 5
     if ssh_cmd "pgrep -f miner > /dev/null"; then

@@ -85,6 +85,7 @@ fi
 if [[ "$BUILD_IMAGE" == "true" ]]; then
     echo "Building Docker image: $IMAGE_NAME:$IMAGE_TAG"
     docker build \
+        --platform linux/amd64 \
         $BUILD_ARGS \
         -f scripts/miner/Dockerfile \
         -t "$IMAGE_NAME:$IMAGE_TAG" \

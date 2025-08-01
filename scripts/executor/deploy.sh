@@ -59,15 +59,16 @@ log() {
     echo "[$(date '+%H:%M:%S')] $*"
 }
 
+
 ssh_cmd() {
     local cmd="$1"
-    timeout "$TIMEOUT" ssh -o ConnectTimeout=30 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "$cmd"
+    ssh -o ConnectTimeout=30 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "$cmd"
 }
 
 scp_file() {
     local src="$1"
     local dest="$2"
-    timeout "$TIMEOUT" scp -o ConnectTimeout=30 -P "$SERVER_PORT" "$src" "$SERVER_USER@$SERVER_HOST:$dest"
+    scp -o ConnectTimeout=30 -P "$SERVER_PORT" "$src" "$SERVER_USER@$SERVER_HOST:$dest"
 }
 
 validate_config() {
@@ -137,12 +138,12 @@ deploy_binary() {
     log "Deploying executor in binary mode"
 
     log "Stopping existing executor processes"
-    timeout 10 ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "pkill -f '/opt/basilica/executor' 2>/dev/null || true" || log "WARNING: Could not connect to stop executor processes"
+    ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "pkill -f '/opt/basilica/executor' 2>/dev/null || true" || log "WARNING: Could not connect to stop executor processes"
 
     sleep 2
 
     # Force kill with shorter timeout
-    timeout 10 ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "pkill -9 -f '/opt/basilica/executor' 2>/dev/null || true" || log "WARNING: Could not connect for force kill"
+    ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "pkill -9 -f '/opt/basilica/executor' 2>/dev/null || true" || log "WARNING: Could not connect for force kill"
 
     sleep 3
 
@@ -169,7 +170,7 @@ deploy_binary() {
 
     log "Starting executor"
     # IMPORTANT: Executor must be started with sudo for proper permissions
-    timeout 15 ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "$start_cmd" || true
+    ssh -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" -p "$SERVER_PORT" "$start_cmd" || true
 
     sleep 5
     if ssh_cmd "pgrep -f executor > /dev/null"; then
