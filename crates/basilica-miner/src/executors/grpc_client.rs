@@ -51,6 +51,7 @@ impl ExecutorGrpcClient {
         validator_hotkey: &str,
         ssh_public_key: &str,
         duration_seconds: u64,
+        metadata: Option<String>,
     ) -> Result<ProvisionAccessResponse> {
         let grpc_endpoint = self.build_grpc_endpoint(executor_endpoint)?;
         info!(
@@ -67,13 +68,19 @@ impl ExecutorGrpcClient {
             .await
             .with_context(|| format!("Failed to connect to executor at {grpc_endpoint}"))?;
 
+        // Build configuration with metadata if provided
+        let mut config = std::collections::HashMap::new();
+        if let Some(metadata_str) = metadata {
+            config.insert("metadata".to_string(), metadata_str);
+        }
+
         let request = ProvisionAccessRequest {
             validator_hotkey: validator_hotkey.to_string(),
             ssh_public_key: ssh_public_key.to_string(),
             access_token: String::new(), // Not needed for SSH access
             duration_seconds,
             access_type: "ssh".to_string(),
-            config: std::collections::HashMap::new(),
+            config,
         };
 
         debug!(
@@ -119,40 +126,6 @@ impl ExecutorGrpcClient {
         );
 
         Ok(response)
-    }
-
-    /// Health check executor
-    pub async fn health_check(&self, executor_endpoint: &str) -> Result<HealthCheckResponse> {
-        let grpc_endpoint = self.build_grpc_endpoint(executor_endpoint)?;
-
-        let channel = Channel::from_shared(grpc_endpoint.clone())
-            .with_context(|| format!("Invalid gRPC endpoint: {grpc_endpoint}"))?
-            .connect_timeout(self.config.timeout)
-            .timeout(self.config.timeout)
-            .connect()
-            .await
-            .with_context(|| format!("Failed to connect to executor at {grpc_endpoint}"))?;
-
-        let request = HealthCheckRequest {
-            requester: "miner".to_string(),
-            check_type: "basic".to_string(),
-        };
-
-        let response = self
-            .retry_grpc_call(|| {
-                let channel = channel.clone();
-                let request = request.clone();
-                async move {
-                    let mut client = ExecutorControlClient::new(channel);
-                    client
-                        .health_check(request)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Health check failed: {}", e))
-                }
-            })
-            .await?;
-
-        Ok(response.into_inner())
     }
 
     /// Build gRPC endpoint from executor address

@@ -44,6 +44,15 @@ impl ValidationSessionService {
 
         SimpleSshUsers::create_user(&username).await?;
 
+        // Add user to docker group for container management
+        tokio::process::Command::new("usermod")
+            .args(["-a", "-G", "docker", &username])
+            .output()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to add user to docker group: {}", e))?;
+
+        info!("successfully added user {} to docker group", username);
+
         // Use empty restrictions for better compatibility
         let restrictions = Vec::<&str>::new();
 

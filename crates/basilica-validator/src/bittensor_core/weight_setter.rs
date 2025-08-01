@@ -62,34 +62,9 @@ pub struct WeightSetter {
 }
 
 impl WeightSetter {
-    /// Create a new WeightSetter instance
-    pub fn new(
-        config: BittensorConfig,
-        bittensor_service: Arc<BittensorService>,
-        storage: MemoryStorage,
-        persistence: Arc<SimplePersistence>,
-        min_score_threshold: f64,
-        blocks_per_weight_set: u64,
-        gpu_scoring_engine: Arc<GpuScoringEngine>,
-        emission_config: EmissionConfig,
-        gpu_profile_repo: Arc<GpuProfileRepository>,
-    ) -> Result<Self> {
-        Self::with_metrics(
-            config,
-            bittensor_service,
-            storage,
-            persistence,
-            min_score_threshold,
-            blocks_per_weight_set,
-            gpu_scoring_engine,
-            emission_config,
-            gpu_profile_repo,
-            None,
-        )
-    }
-
     /// Create a new WeightSetter instance with metrics support
-    pub fn with_metrics(
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
         config: BittensorConfig,
         bittensor_service: Arc<BittensorService>,
         storage: MemoryStorage,

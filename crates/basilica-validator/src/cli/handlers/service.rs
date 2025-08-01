@@ -340,7 +340,7 @@ async fn start_validator_services(
             Arc::new(crate::gpu::GpuScoringEngine::new(gpu_profile_repo.clone()))
         };
 
-        let weight_setter = crate::bittensor_core::WeightSetter::with_metrics(
+        let weight_setter = crate::bittensor_core::WeightSetter::new(
             config.bittensor.common.clone(),
             bittensor_service.clone(),
             storage.clone(),
@@ -361,12 +361,26 @@ async fn start_validator_services(
         (None, None, None)
     };
 
+    // Create validator hotkey for API handler
+    let validator_hotkey = if let Some(ref bittensor_service) = _bittensor_service {
+        // Get the account ID from bittensor service and convert to SS58 string
+        let account_id = bittensor_service.get_account_id();
+        let ss58_address = format!("{account_id}");
+        basilica_common::identity::Hotkey::new(ss58_address)
+            .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?
+    } else {
+        // In local test mode, create a dummy hotkey
+        basilica_common::identity::Hotkey::new("local-test-validator".to_string())
+            .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?
+    };
+
     let api_handler = crate::api::ApiHandler::new(
         config.api.clone(),
         persistence_arc.clone(),
         gpu_profile_repo.clone(),
         storage.clone(),
         config.clone(),
+        validator_hotkey,
     );
 
     // Store metrics for cleanup (if needed)

@@ -433,6 +433,7 @@ impl GpuProfileRepository {
     }
 
     /// Store weight allocation history for auditing
+    #[allow(clippy::too_many_arguments)]
     pub async fn store_weight_allocation(
         &self,
         emission_metrics_id: i64,

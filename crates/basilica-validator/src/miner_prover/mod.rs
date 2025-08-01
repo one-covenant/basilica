@@ -19,12 +19,12 @@ mod test_discovery;
 pub use discovery::MinerDiscovery;
 // pub use crate::gpu::{GpuScoringEngine, CategoryStats};
 pub use scheduler::VerificationScheduler;
-pub use types::VerificationStats;
 pub use verification::VerificationEngine;
 
 use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::SimplePersistence;
+use crate::ssh::ValidatorSshClient;
 use anyhow::Result;
 use bittensor::Service as BittensorService;
 use std::sync::Arc;
@@ -63,7 +63,8 @@ impl MinerProver {
                 persistence,
                 metrics,
             )
-            .with_bittensor_service(bittensor_service.clone());
+            .with_bittensor_service(bittensor_service.clone())
+            .with_ssh_client(Arc::new(ValidatorSshClient::new()));
 
         // Build verification engine with proper SSH key manager
         let verification = tokio::task::block_in_place(|| {
@@ -93,10 +94,5 @@ impl MinerProver {
         self.scheduler
             .start(self.discovery.clone(), self.verification.clone())
             .await
-    }
-
-    /// Get current verification statistics
-    pub fn get_verification_stats(&self) -> VerificationStats {
-        self.scheduler.get_stats()
     }
 }
