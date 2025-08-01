@@ -38,15 +38,15 @@ ENV RUST_BACKTRACE=1
 # Build the basilica-api binary
 RUN if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
-            cargo build --release -p basilica-api --features "$FEATURES"; \
+            cargo build --locked --release -p basilica-api --features "$FEATURES"; \
         else \
-            cargo build --release -p basilica-api; \
+            cargo build --locked --release -p basilica-api; \
         fi; \
     else \
         if [ -n "$FEATURES" ]; then \
-            cargo build -p basilica-api --features "$FEATURES"; \
+            cargo build --locked -p basilica-api --features "$FEATURES"; \
         else \
-            cargo build -p basilica-api; \
+            cargo build --locked -p basilica-api; \
         fi; \
     fi && \
     # Clean up intermediate build artifacts to save space
