@@ -140,7 +140,7 @@ impl GpuProfileRepository {
                 .map(|(_, count, name)| (name.clone(), *count))
                 .collect();
 
-            let latest_succesfull_validation_query = r#"
+            let latest_successfull_validation_query = r#"
                 SELECT
                     vl.executor_id AS executor_id,
                     MAX(vl.timestamp) AS latest_timestamp
@@ -156,18 +156,18 @@ impl GpuProfileRepository {
                     vl.executor_id
                 LIMIT 1;
             "#;
-            let latest_succesfull_validation = sqlx::query(latest_succesfull_validation_query)
+            let latest_successfull_validation = sqlx::query(latest_successfull_validation_query)
                 .bind(miner_id_str)
                 .fetch_optional(&self.pool)
                 .await?;
 
-            let last_successful_validation = if let Some(row) = latest_succesfull_validation {
-                let latest_succesfull_validation_timestamp =
+            let last_successful_validation = if let Some(row) = latest_successfull_validation {
+                let latest_successfull_validation_timestamp =
                     row.get::<String, _>("latest_timestamp");
-                let latest_succesfull_validation_timestamp =
-                    DateTime::parse_from_rfc3339(&latest_succesfull_validation_timestamp)?
+                let latest_successfull_validation_timestamp =
+                    DateTime::parse_from_rfc3339(&latest_successfull_validation_timestamp)?
                         .with_timezone(&Utc);
-                Some(latest_succesfull_validation_timestamp)
+                Some(latest_successfull_validation_timestamp)
             } else {
                 None
             };
@@ -219,7 +219,7 @@ impl GpuProfileRepository {
                 .map(|(_, count, name)| (name.clone(), *count))
                 .collect();
 
-            let latest_succesfull_validation_query = r#"
+            let latest_successfull_validation_query = r#"
                 SELECT
                     vl.executor_id AS executor_id,
                     MAX(vl.timestamp) AS latest_timestamp
@@ -235,18 +235,18 @@ impl GpuProfileRepository {
                     vl.executor_id
                 LIMIT 1;
             "#;
-            let latest_succesfull_validation = sqlx::query(latest_succesfull_validation_query)
+            let latest_successfull_validation = sqlx::query(latest_successfull_validation_query)
                 .bind(&miner_id_str)
                 .fetch_optional(&self.pool)
                 .await?;
 
-            let last_successful_validation = if let Some(row) = latest_succesfull_validation {
-                let latest_succesfull_validation_timestamp =
+            let last_successful_validation = if let Some(row) = latest_successfull_validation {
+                let latest_successfull_validation_timestamp =
                     row.get::<String, _>("latest_timestamp");
-                let latest_succesfull_validation_timestamp =
-                    DateTime::parse_from_rfc3339(&latest_succesfull_validation_timestamp)?
+                let latest_successfull_validation_timestamp =
+                    DateTime::parse_from_rfc3339(&latest_successfull_validation_timestamp)?
                         .with_timezone(&Utc);
-                Some(latest_succesfull_validation_timestamp)
+                Some(latest_successfull_validation_timestamp)
             } else {
                 None
             };
