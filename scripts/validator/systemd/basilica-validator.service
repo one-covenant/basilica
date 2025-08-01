@@ -10,7 +10,7 @@ User=root
 Group=root
 WorkingDirectory=/opt/basilica
 Environment=RUST_LOG=debug
-ExecStart=/opt/basilica/validator --config /opt/basilica/config/validator.toml start
+ExecStart=/opt/basilica/basilica-validator --config /opt/basilica/config/validator.toml start
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure

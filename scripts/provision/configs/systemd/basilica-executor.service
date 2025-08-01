@@ -13,7 +13,7 @@ SupplementaryGroups=docker
 WorkingDirectory=/var/lib/basilica/executor
 Environment=RUST_LOG=info
 Environment=RUST_BACKTRACE=1
-ExecStart=/usr/local/bin/executor --server --config /etc/basilica/executor.toml
+ExecStart=/usr/local/bin/basilica-executor --server --config /etc/basilica/executor.toml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=10

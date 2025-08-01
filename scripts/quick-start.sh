@@ -131,7 +131,7 @@ run_miner() {
     # Build if needed
     if [ ! -f "target/release/basilica-miner" ]; then
         echo -e "${YELLOW}Building miner...${NC}"
-        cargo build --release -p miner
+        cargo build --release -p basilica-miner
     fi
     
     # Run miner
@@ -151,7 +151,7 @@ run_executor() {
     # Build if needed
     if [ ! -f "target/release/basilica-executor" ]; then
         echo -e "${YELLOW}Building executor...${NC}"
-        cargo build --release -p executor
+        cargo build --release -p basilica-executor
     fi
     
     # Set environment variables

@@ -24,7 +24,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/lib/basilica/validator && touch /var/lib/basilica/validator/validator.db && exec /usr/local/bin/validator start --config /etc/basilica/validator.toml --local-test"]
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/lib/basilica/validator && touch /var/lib/basilica/validator/validator.db && exec /usr/local/bin/basilica-validator start --config /etc/basilica/validator.toml --local-test"]
 
   # Local Subtensor (blockchain) for testing
   subtensor:
