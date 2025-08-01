@@ -4,7 +4,7 @@
 
 use crate::error::BittensorError;
 use crate::AccountId;
-use common::identity::Hotkey;
+use basilica_common::identity::Hotkey;
 use std::str::FromStr;
 use subxt::ext::sp_core::{sr25519, Pair};
 

@@ -129,7 +129,7 @@ run_miner() {
     mkdir -p /var/lib/basilica
     
     # Build if needed
-    if [ ! -f "target/release/miner" ]; then
+    if [ ! -f "target/release/basilica-miner" ]; then
         echo -e "${YELLOW}Building miner...${NC}"
         cargo build --release -p miner
     fi
@@ -137,7 +137,7 @@ run_miner() {
     # Run miner
     export BASILCA_CONFIG_FILE=config/miner.toml
     echo -e "${GREEN}Starting miner on port 8080...${NC}"
-    ./target/release/miner
+    ./target/release/basilica-miner
 }
 
 # Run executor
@@ -149,7 +149,7 @@ run_executor() {
     create_default_config "executor"
     
     # Build if needed
-    if [ ! -f "target/release/executor" ]; then
+    if [ ! -f "target/release/basilica-executor" ]; then
         echo -e "${YELLOW}Building executor...${NC}"
         cargo build --release -p executor
     fi
@@ -158,7 +158,7 @@ run_executor() {
     export BASILCA_CONFIG_FILE=config/executor.toml
     
     echo -e "${GREEN}Starting executor on port 50051...${NC}"
-    ./target/release/executor
+    ./target/release/basilica-executor
 }
 
 # Run with Docker

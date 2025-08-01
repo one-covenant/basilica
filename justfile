@@ -152,11 +152,11 @@ deploy-validator HOST PORT="22":
     chmod +x scripts/validator/deploy.sh
     ./scripts/validator/deploy.sh {{HOST}} {{PORT}}
 
-# Deploy public-api to remote server
-deploy-public-api HOST PORT="22":
+# Deploy basilica-api to remote server
+deploy-basilica-api HOST PORT="22":
     #!/usr/bin/env bash
-    chmod +x scripts/public-api/deploy.sh
-    ./scripts/public-api/deploy.sh {{HOST}} {{PORT}}
+    chmod +x scripts/basilica-api/deploy.sh
+    ./scripts/basilica-api/deploy.sh {{HOST}} {{PORT}}
 
 # Set docker compose command (use v2 by default)
 docker_compose := "docker compose"

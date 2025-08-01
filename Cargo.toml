@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    "crates/common",
-    "crates/protocol", 
-    "crates/executor",
-    "crates/miner", 
-    "crates/validator",
+    "crates/basilica-common",
+    "crates/basilica-protocol", 
+    "crates/basilica-executor",
+    "crates/basilica-miner", 
+    "crates/basilica-validator",
     "crates/bittensor",
-    "crates/public-api", 
+    "crates/basilica-api", 
     "crates/integration-tests",
 ]
 resolver = "2"
@@ -38,7 +38,13 @@ metrics-exporter-prometheus = "0.13"
 figment = { version = "0.10", features = ["toml", "env"] }
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "uuid", "chrono", "json"] }
+sqlx = { version = "0.7", features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "uuid",
+    "chrono",
+    "json",
+] }
 
 # gRPC and networking
 tonic = "0.10"

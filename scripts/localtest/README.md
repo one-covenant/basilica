@@ -36,7 +36,7 @@ scripts/localtest/
 ├── data/                     # Generated test data (gitignored)
 └── keys/                     # Generated test keys (gitignored)
 
-crates/miner/tests/integration/
+crates/basilica-miner/tests/integration/
 ├── bittensor_chain_integration_test.rs    # Bittensor chain integration
 ├── executor_deployment_integration_test.rs # Executor fleet management
 ├── validator_grpc_integration_test.rs     # gRPC communication testing
@@ -229,7 +229,7 @@ Run the comprehensive integration test suite:
 
 ```bash
 # From project root
-cd crates/miner
+cd crates/basilica-miner
 
 # Run all integration tests
 cargo test --test '*' -- --nocapture
@@ -345,10 +345,10 @@ rm -rf data/ keys/
 
 ```bash
 # 1. Verify all test files exist
-ls -la crates/miner/tests/integration/
+ls -la crates/basilica-miner/tests/integration/
 
 # 2. Check test compilation
-cd crates/miner && cargo check --tests
+cd crates/basilica-miner && cargo check --tests
 
 # 3. List available tests
 cargo test --test '*' -- --list

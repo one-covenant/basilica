@@ -39,7 +39,7 @@ Each component has its own directory with:
 - **miner/** - Bittensor miner neuron
 - **validator/** - Bittensor validator neuron
 - **gpu-attestor/** - GPU verification tool
-- **public-api/** - External HTTP API
+- **basilica-api/** - External HTTP API
 
 ## Usage
 

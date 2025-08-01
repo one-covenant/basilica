@@ -49,15 +49,15 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
     fi && \
     if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
-            cargo build --release -p validator --bin validator --features "$FEATURES"; \
+            cargo build --release -p basilica-validator --bin basilica-validator --features "$FEATURES"; \
         else \
-            cargo build --release -p validator --bin validator; \
+            cargo build --release -p basilica-validator --bin basilica-validator; \
         fi; \
     else \
         if [ -n "$FEATURES" ]; then \
-            cargo build -p validator --bin validator --features "$FEATURES"; \
+            cargo build -p basilica-validator --bin basilica-validator --features "$FEATURES"; \
         else \
-            cargo build -p validator --bin validator; \
+            cargo build -p basilica-validator --bin basilica-validator; \
         fi; \
     fi && \
     # List what was built for debugging
@@ -80,7 +80,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the built binary
 ARG BUILD_MODE=release
-COPY --from=builder /tmp/target/${BUILD_MODE}/validator /usr/local/bin/validator
+COPY --from=builder /tmp/target/${BUILD_MODE}/basilica-validator /usr/local/bin/basilica-validator
 
 # Create basilica bin directory
 RUN mkdir -p /opt/basilica/bin
@@ -90,15 +90,15 @@ COPY executor-binary /opt/basilica/bin/executor-binary
 COPY validator-binary /opt/basilica/bin/validator-binary
 
 # Make binaries executable
-RUN chmod +x /usr/local/bin/validator && \
+RUN chmod +x /usr/local/bin/basilica-validator && \
     chmod +x /opt/basilica/bin/executor-binary 2>/dev/null || true && \
     chmod +x /opt/basilica/bin/validator-binary 2>/dev/null || true
 
 # Create data directory for SQLite database
-RUN mkdir -p /var/lib/basilica/validator && \
-    chmod 755 /var/lib/basilica/validator
+RUN mkdir -p /var/lib/basilica/basilica-validator && \
+    chmod 755 /var/lib/basilica/basilica-validator
 
 EXPOSE 8080 9090
 
 # Default command
-ENTRYPOINT ["/usr/local/bin/validator"]
+ENTRYPOINT ["/usr/local/bin/basilica-validator"]

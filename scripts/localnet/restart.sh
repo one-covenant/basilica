@@ -33,7 +33,7 @@ done
 
 # If no specific services provided, restart all Basilica services
 if [ -z "$SERVICES" ]; then
-    SERVICES="executor miner validator public-api"
+    SERVICES="executor miner validator basilica-api"
 fi
 
 echo "Services to restart: $SERVICES"
