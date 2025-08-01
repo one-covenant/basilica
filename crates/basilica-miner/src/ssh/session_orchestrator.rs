@@ -145,6 +145,11 @@ impl SshSessionOrchestrator {
 
         // Check if this is a rental session and adjust permissions accordingly
         let permissions = if request.rental_mode {
+            if request.rental_id.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Rental ID is required when rental_mode is true"
+                ));
+            }
             info!("Creating rental session for rental {}", request.rental_id);
             "rental"
         } else {

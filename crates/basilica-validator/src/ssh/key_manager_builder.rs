@@ -402,6 +402,8 @@ mod tests {
             ssh_command_timeout: Duration::from_secs(60),
             ssh_retry_attempts: 3,
             ssh_retry_delay: Duration::from_secs(2),
+            strict_host_key_checking: false,
+            known_hosts_file: None,
         }
     }
 

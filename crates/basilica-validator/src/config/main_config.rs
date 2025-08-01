@@ -250,6 +250,14 @@ fn default_ssh_retry_delay() -> Duration {
     Duration::from_secs(2)
 }
 
+fn default_strict_host_key_checking() -> bool {
+    false
+}
+
+fn default_known_hosts_file() -> Option<PathBuf> {
+    None
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
     /// Storage directory path
@@ -264,6 +272,13 @@ pub struct ApiConfig {
     pub max_body_size: usize,
     /// Bind address for the API server
     pub bind_address: String,
+    /// Default port for miner connections
+    #[serde(default = "default_miner_port")]
+    pub miner_port: u16,
+}
+
+fn default_miner_port() -> u16 {
+    8091
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -321,6 +336,14 @@ pub struct SshSessionConfig {
     /// Delay between SSH retry attempts
     #[serde(default = "default_ssh_retry_delay")]
     pub ssh_retry_delay: Duration,
+
+    /// Enable strict host key checking for SSH connections
+    #[serde(default = "default_strict_host_key_checking")]
+    pub strict_host_key_checking: bool,
+
+    /// Path to known hosts file for SSH host key verification
+    #[serde(default = "default_known_hosts_file")]
+    pub known_hosts_file: Option<PathBuf>,
 }
 
 impl Default for SshSessionConfig {
@@ -341,6 +364,8 @@ impl Default for SshSessionConfig {
             ssh_command_timeout: default_ssh_command_timeout(),
             ssh_retry_attempts: default_ssh_retry_attempts(),
             ssh_retry_delay: default_ssh_retry_delay(),
+            strict_host_key_checking: default_strict_host_key_checking(),
+            known_hosts_file: default_known_hosts_file(),
         }
     }
 }
@@ -396,6 +421,7 @@ impl Default for ValidatorConfig {
                 api_key: None,
                 max_body_size: 1024 * 1024, // 1MB
                 bind_address: "0.0.0.0:8080".to_string(),
+                miner_port: default_miner_port(),
             },
             ssh_session: SshSessionConfig::default(),
             emission: super::emission::EmissionConfig::default(),

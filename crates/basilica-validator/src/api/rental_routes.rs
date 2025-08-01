@@ -33,6 +33,8 @@ pub struct StartRentalRequest {
     pub command: Vec<String>,
     #[serde(default)]
     pub volumes: Vec<VolumeMountRequest>,
+    /// Optional miner endpoint override (host:port)
+    pub miner_endpoint: Option<String>,
 }
 
 /// Port mapping request
@@ -82,6 +84,45 @@ pub struct LogStreamQuery {
     pub tail: Option<u32>,
 }
 
+/// Validate SSH public key
+fn is_valid_ssh_public_key(key: &str) -> bool {
+    if key.trim().is_empty() {
+        return false;
+    }
+
+    // Must start with ssh- prefix (all SSH keys do)
+    if !key.starts_with("ssh-") {
+        return false;
+    }
+
+    // Must have at least 2 parts (algorithm and key data)
+    let parts: Vec<&str> = key.split_whitespace().collect();
+    if parts.len() < 2 {
+        return false;
+    }
+
+    true
+}
+
+/// Validate container image
+fn is_valid_container_image(image: &str) -> bool {
+    if image.trim().is_empty() || image.trim().len() < 3 || image.trim().len() > 1024 {
+        return false;
+    }
+
+    if image.contains("..") || image.contains('\0') {
+        return false;
+    }
+
+    for ch in image.chars() {
+        if !ch.is_alphanumeric() && ch != '.' && ch != '-' && ch != '_' && ch != ':' && ch != '/' {
+            return false;
+        }
+    }
+
+    true
+}
+
 /// Start a new rental
 pub async fn start_rental(
     State(state): State<ApiState>,
@@ -92,21 +133,57 @@ pub async fn start_rental(
         request.executor_id, request.miner_id
     );
 
-    // Get rental manager from state
+    if !is_valid_ssh_public_key(&request.ssh_public_key) {
+        error!("Invalid SSH public key provided");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if !is_valid_container_image(&request.container_image) {
+        error!("Invalid container image provided");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     let rental_manager = state.rental_manager.as_ref().ok_or_else(|| {
         error!("Rental manager not initialized");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Get miner client and establish connection
     let miner_client = state.miner_client.as_ref().ok_or_else(|| {
         error!("Miner client not initialized");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Determine miner endpoint
+    let miner_endpoint = match request.miner_endpoint {
+        Some(endpoint) => {
+            if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
+                endpoint
+            } else {
+                format!("http://{}", endpoint)
+            }
+        }
+        None => {
+            let miner_data = state
+                .persistence
+                .get_miner_by_id(&request.miner_id)
+                .await
+                .map_err(|e| {
+                    error!("Failed to look up miner: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .ok_or_else(|| {
+                    error!("Miner with ID {} not found", request.miner_id);
+                    StatusCode::NOT_FOUND
+                })?;
+            miner_data.endpoint
+        }
+    };
+
+    info!("Connecting to miner at endpoint: {}", miner_endpoint);
+
     // Connect to miner
     let mut miner_connection = miner_client
-        .connect_and_authenticate(&format!("http://{}:8091", request.miner_id))
+        .connect_and_authenticate(&miner_endpoint)
         .await
         .map_err(|e| {
             error!("Failed to connect to miner: {}", e);

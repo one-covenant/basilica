@@ -20,6 +20,8 @@ pub use types::*;
 
 use crate::miner_prover::miner_client::{AuthenticatedMinerConnection, MinerClient};
 use crate::persistence::{SimplePersistence, ValidatorPersistence};
+use crate::ssh::ValidatorSshKeyManager;
+use protocol::basilca::miner::v1::CloseSshSessionRequest;
 
 /// Rental manager for coordinating container deployments
 pub struct RentalManager {
@@ -35,6 +37,8 @@ pub struct RentalManager {
     health_monitor: Arc<HealthMonitor>,
     /// Miner client for reconnections
     miner_client: Arc<MinerClient>,
+    /// SSH key manager for validator keys
+    ssh_key_manager: Option<Arc<ValidatorSshKeyManager>>,
 }
 
 impl RentalManager {
@@ -51,7 +55,19 @@ impl RentalManager {
             log_streamer: log_streamer.clone(),
             health_monitor: health_monitor.clone(),
             miner_client,
+            ssh_key_manager: None,
         }
+    }
+
+    /// Create a new rental manager with SSH key manager
+    pub fn with_ssh_key_manager(
+        miner_client: Arc<MinerClient>,
+        persistence: Arc<SimplePersistence>,
+        ssh_key_manager: Arc<ValidatorSshKeyManager>,
+    ) -> Self {
+        let mut manager = Self::new(miner_client, persistence);
+        manager.ssh_key_manager = Some(ssh_key_manager);
+        manager
     }
 
     /// Start a new rental
@@ -63,27 +79,57 @@ impl RentalManager {
         // Generate rental ID
         let rental_id = format!("rental-{}", Uuid::new_v4());
 
+        let (validator_public_key, validator_private_key_path) = self
+            .ssh_key_manager
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SSH key manager is required for rentals"))?
+            .get_persistent_key()
+            .ok_or_else(|| anyhow::anyhow!("No persistent validator SSH key available"))?
+            .clone();
+
         // Request SSH session from miner with rental mode
         let ssh_session = miner_connection
             .initiate_rental_ssh_session(
                 &request.executor_id,
                 &request.validator_hotkey,
-                &request.ssh_public_key,
+                &validator_public_key,
                 &rental_id,
             )
             .await?;
 
-        // Create container client with SSH credentials
+        // Create container client with SSH credentials and validator's private key
         let container_client = ContainerClient::new(
             ssh_session.access_credentials.clone(),
-            request.ssh_public_key.clone(),
+            Some(validator_private_key_path),
         )?;
 
-        // Deploy container
-        let container_info = self
+        // Deploy container with end-user's SSH public key
+        let container_info = match self
             .deployment_manager
-            .deploy_container(&container_client, &request.container_spec, &rental_id)
-            .await?;
+            .deploy_container(
+                &container_client,
+                &request.container_spec,
+                &rental_id,
+                &request.ssh_public_key,
+            )
+            .await
+        {
+            Ok(info) => info,
+            Err(e) => {
+                let close_request = CloseSshSessionRequest {
+                    session_id: ssh_session.session_id.clone(),
+                    validator_hotkey: request.validator_hotkey.clone(),
+                    reason: "Deployment failed".to_string(),
+                };
+                if let Err(cleanup_err) = miner_connection.close_ssh_session(close_request).await {
+                    tracing::error!(
+                        "Failed to cleanup SSH session after deployment failure: {}",
+                        cleanup_err
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         // Store rental info
         let rental_info = RentalInfo {
@@ -99,19 +145,31 @@ impl RentalManager {
             miner_id: request.miner_id.clone(),
         };
 
-        // Save to persistence
-        self.persistence.save_rental(&rental_info).await?;
-
-        // Store in active rentals
+        // Store in active rentals first
         {
             let mut rentals = self.active_rentals.write().await;
             rentals.insert(rental_id.clone(), rental_info.clone());
         }
 
+        if let Err(e) = self.persistence.save_rental(&rental_info).await {
+            // Rollback: remove from active rentals
+            let mut rentals = self.active_rentals.write().await;
+            rentals.remove(&rental_id);
+            return Err(e);
+        }
+
         // Start health monitoring
-        self.health_monitor
+        if let Err(e) = self
+            .health_monitor
             .start_monitoring(&rental_id, &container_client)
-            .await?;
+            .await
+        {
+            // Rollback: remove from both persistence and active rentals
+            let _ = self.persistence.delete_rental(&rental_id).await;
+            let mut rentals = self.active_rentals.write().await;
+            rentals.remove(&rental_id);
+            return Err(e);
+        }
 
         Ok(RentalResponse {
             rental_id,
@@ -130,7 +188,10 @@ impl RentalManager {
         // Get container status
         let container_client = ContainerClient::new(
             rental_info.ssh_credentials.clone(),
-            String::new(), // SSH key not needed for status check
+            self.ssh_key_manager
+                .as_ref()
+                .and_then(|km| km.get_persistent_key())
+                .map(|(_, path)| path.clone()),
         )?;
 
         let container_status = container_client
@@ -154,18 +215,24 @@ impl RentalManager {
     /// Stop a rental
     pub async fn stop_rental(&self, rental_id: &str, force: bool) -> Result<()> {
         let rental_info = {
-            let mut rentals = self.active_rentals.write().await;
+            let rentals = self.active_rentals.read().await;
             rentals
-                .remove(rental_id)
+                .get(rental_id)
                 .ok_or_else(|| anyhow::anyhow!("Rental not found"))?
+                .clone()
         };
 
         // Stop health monitoring
         self.health_monitor.stop_monitoring(rental_id).await?;
 
         // Stop container
-        let container_client =
-            ContainerClient::new(rental_info.ssh_credentials.clone(), String::new())?;
+        let container_client = ContainerClient::new(
+            rental_info.ssh_credentials.clone(),
+            self.ssh_key_manager
+                .as_ref()
+                .and_then(|km| km.get_persistent_key())
+                .map(|(_, path)| path.clone()),
+        )?;
 
         self.deployment_manager
             .stop_container(&container_client, &rental_info.container_id, force)
@@ -187,6 +254,12 @@ impl RentalManager {
         updated_rental.state = RentalState::Stopped;
         self.persistence.save_rental(&updated_rental).await?;
 
+        // Now remove from active rentals after all cleanup is done
+        {
+            let mut rentals = self.active_rentals.write().await;
+            rentals.remove(rental_id);
+        }
+
         Ok(())
     }
 
@@ -202,8 +275,13 @@ impl RentalManager {
             .get(rental_id)
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
-        let container_client =
-            ContainerClient::new(rental_info.ssh_credentials.clone(), String::new())?;
+        let container_client = ContainerClient::new(
+            rental_info.ssh_credentials.clone(),
+            self.ssh_key_manager
+                .as_ref()
+                .and_then(|km| km.get_persistent_key())
+                .map(|(_, path)| path.clone()),
+        )?;
 
         self.log_streamer
             .stream_logs(

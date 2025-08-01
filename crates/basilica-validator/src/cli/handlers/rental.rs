@@ -3,7 +3,6 @@
 //! Handles CLI commands for container rental operations
 
 use anyhow::{Context, Result};
-use std::fs;
 use std::sync::Arc;
 use tracing::info;
 
@@ -29,7 +28,7 @@ pub async fn handle_rental_command(
             container,
             ports,
             env,
-            ssh_key,
+            ssh_public_key,
             command,
             cpu_cores,
             memory_mb,
@@ -44,7 +43,7 @@ pub async fn handle_rental_command(
                 container,
                 ports,
                 env,
-                ssh_key,
+                ssh_public_key,
                 command,
                 cpu_cores,
                 memory_mb,
@@ -74,7 +73,7 @@ async fn handle_start_rental(
     container: String,
     ports: Vec<String>,
     env: Vec<String>,
-    ssh_key_path: std::path::PathBuf,
+    ssh_public_key: String,
     command: Option<String>,
     cpu_cores: Option<f64>,
     memory_mb: Option<i64>,
@@ -108,23 +107,15 @@ async fn handle_start_rental(
         executor, miner_id, actual_endpoint
     );
 
-    // Read SSH public key
-    let ssh_public_key = fs::read_to_string(&ssh_key_path)
-        .with_context(|| format!("Failed to read SSH key from {ssh_key_path:?}"))?;
-
-    // Parse port mappings
     let port_mappings = parse_port_mappings(&ports)?;
 
-    // Parse environment variables
     let environment = parse_environment_variables(&env)?;
 
-    // Create miner client
     let miner_client = Arc::new(MinerClient::new(
         MinerClientConfig::default(),
         validator_hotkey.clone(),
     ));
 
-    // Create rental manager
     let rental_manager = RentalManager::new(miner_client.clone(), persistence.clone());
 
     let mut miner_connection = miner_client
@@ -132,7 +123,6 @@ async fn handle_start_rental(
         .await
         .context("Failed to connect to miner")?;
 
-    // Create rental request
     let rental_request = RentalRequest {
         validator_hotkey: validator_hotkey.to_string(),
         miner_id,
@@ -142,8 +132,6 @@ async fn handle_start_rental(
             environment,
             ports: port_mappings,
             resources: ResourceRequirements {
-                // this needs to be revised to be removed or be taken into account,
-                // it's reminiscence of an old code flow
                 cpu_cores: cpu_cores.unwrap_or(1.0),
                 memory_mb: memory_mb.unwrap_or(1024),
                 storage_mb: 0,
@@ -164,7 +152,6 @@ async fn handle_start_rental(
         metadata: std::collections::HashMap::new(),
     };
 
-    // Start rental
     let rental_response = rental_manager
         .start_rental(rental_request, &mut miner_connection)
         .await
@@ -296,13 +283,45 @@ fn parse_port_mappings(ports: &[String]) -> Result<Vec<PortMapping>> {
             ));
         }
 
-        let host_port = parts[0]
-            .parse::<u32>()
-            .context("Invalid host port number")?;
-        let container_port = parts[1]
-            .parse::<u32>()
-            .context("Invalid container port number")?;
-        let protocol = parts.get(2).unwrap_or(&"tcp").to_string();
+        let host_port = parts[0].parse::<u32>().with_context(|| {
+            format!(
+                "Invalid host port number '{}' in mapping '{}'",
+                parts[0], port_str
+            )
+        })?;
+        let container_port = parts[1].parse::<u32>().with_context(|| {
+            format!(
+                "Invalid container port number '{}' in mapping '{}'",
+                parts[1], port_str
+            )
+        })?;
+
+        if host_port == 0 || host_port > 65535 {
+            return Err(anyhow::anyhow!(
+                "Host port {} is out of valid range (1-65535) in mapping '{}'",
+                host_port,
+                port_str
+            ));
+        }
+        if container_port == 0 || container_port > 65535 {
+            return Err(anyhow::anyhow!(
+                "Container port {} is out of valid range (1-65535) in mapping '{}'",
+                container_port,
+                port_str
+            ));
+        }
+
+        let protocol = match parts.get(2) {
+            Some(p) if p.to_lowercase() == "tcp" => "tcp".to_string(),
+            Some(p) if p.to_lowercase() == "udp" => "udp".to_string(),
+            Some(p) => {
+                return Err(anyhow::anyhow!(
+                    "Invalid protocol '{}'. Only 'tcp' and 'udp' are supported",
+                    p
+                ));
+            }
+            None => "tcp".to_string(), // Default to tcp
+        };
 
         mappings.push(PortMapping {
             host_port,

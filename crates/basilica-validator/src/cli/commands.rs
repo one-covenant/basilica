@@ -174,9 +174,9 @@ pub enum RentalAction {
         #[arg(long)]
         env: Vec<String>,
 
-        /// SSH public key path
+        /// End-user's SSH public key (e.g., "ssh-rsa AAAA...")
         #[arg(long)]
-        ssh_key: PathBuf,
+        ssh_public_key: String,
 
         /// Command to run in container
         #[arg(long)]

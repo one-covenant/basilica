@@ -94,6 +94,7 @@ impl DeploymentManager {
         client: &ContainerClient,
         spec: &ContainerSpec,
         rental_id: &str,
+        ssh_public_key: &str,
     ) -> Result<ContainerInfo> {
         info!("Starting container deployment for rental {}", rental_id);
 
@@ -109,6 +110,10 @@ impl DeploymentManager {
             .deploy_container(&secured_spec, rental_id)
             .await
             .context("Failed to deploy container")?;
+
+        self.configure_container_ssh_access(client, &container_info.container_id, ssh_public_key)
+            .await
+            .context("Failed to configure SSH access for container")?;
 
         info!(
             "Container {} deployed successfully for rental {}",
@@ -188,9 +193,19 @@ impl DeploymentManager {
             }
         }
 
-        // Check if registry is allowed
         if !self.config.allowed_registries.is_empty() {
-            let registry = image.split('/').next().unwrap_or("docker.io");
+            let registry = if image.contains('/') {
+                let first_part = image.split('/').next().unwrap_or("docker.io");
+                if first_part.contains('.') || first_part.contains(':') || first_part == "localhost"
+                {
+                    first_part
+                } else {
+                    "docker.io"
+                }
+            } else {
+                "docker.io"
+            };
+
             if !self
                 .config
                 .allowed_registries
@@ -276,8 +291,13 @@ impl DeploymentManager {
                 "/dev",
             ];
 
+            let canonical_path = match std::fs::canonicalize(&volume.host_path) {
+                Ok(path) => path.to_string_lossy().to_string(),
+                Err(_) => volume.host_path.clone(),
+            };
+
             for sensitive_path in sensitive_paths {
-                if volume.host_path.starts_with(sensitive_path) {
+                if canonical_path.starts_with(sensitive_path) {
                     return Err(anyhow::anyhow!(
                         "Mounting {} is not allowed",
                         sensitive_path
@@ -365,5 +385,39 @@ impl DeploymentManager {
         debug!("Applied security policies to container specification");
 
         Ok(secured_spec)
+    }
+
+    /// Configure SSH access for the container
+    async fn configure_container_ssh_access(
+        &self,
+        client: &ContainerClient,
+        container_id: &str,
+        ssh_public_key: &str,
+    ) -> Result<()> {
+        debug!("Configuring SSH access for container {}", container_id);
+
+        // Create .ssh directory in container
+        let mkdir_cmd = format!(
+            "docker exec {} mkdir -p /root/.ssh && chmod 700 /root/.ssh",
+            container_id
+        );
+        client
+            .execute_ssh_command(&mkdir_cmd)
+            .await
+            .context("Failed to create .ssh directory in container")?;
+
+        use base64::Engine;
+        let encoded_key = base64::engine::general_purpose::STANDARD.encode(ssh_public_key);
+        let add_key_cmd = format!(
+            "docker exec {} sh -c 'echo \"{}\" | base64 -d >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'",
+            container_id, encoded_key
+        );
+        client
+            .execute_ssh_command(&add_key_cmd)
+            .await
+            .context("Failed to add SSH key to container")?;
+
+        info!("SSH access configured for container {}", container_id);
+        Ok(())
     }
 }

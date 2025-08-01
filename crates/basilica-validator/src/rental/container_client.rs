@@ -7,51 +7,73 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::process::Stdio;
 use tokio::process::Command;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use super::types::{ContainerInfo, ContainerSpec, ContainerStatus, PortMapping, ResourceUsage};
+use std::path::PathBuf;
 
 /// SSH-based Docker client for container management
+#[derive(Clone)]
 pub struct ContainerClient {
     /// SSH connection string (user@host:port)
     pub(crate) ssh_connection: String,
-    /// SSH private key path
-    pub(crate) ssh_key_path: Option<String>,
+    /// SSH private key path for validator authentication
+    pub(crate) ssh_private_key_path: Option<PathBuf>,
+    /// Enable strict host key checking
+    pub(crate) strict_host_key_checking: bool,
+    /// Path to known hosts file
+    pub(crate) known_hosts_file: Option<PathBuf>,
 }
 
 impl ContainerClient {
-    /// Create a new container client
-    pub fn new(ssh_connection: String, ssh_public_key: String) -> Result<Self> {
-        // If SSH key is provided, save it to a temporary file
-        let ssh_key_path = if !ssh_public_key.is_empty() {
-            let key_path = format!("/tmp/basilica_rental_key_{}", uuid::Uuid::new_v4());
-            std::fs::write(&key_path, ssh_public_key)?;
-            std::fs::set_permissions(
-                &key_path,
-                std::os::unix::fs::PermissionsExt::from_mode(0o600),
-            )?;
-            Some(key_path)
-        } else {
-            None
-        };
-
+    /// Create a new container client with validator's private key
+    pub fn new(ssh_connection: String, ssh_private_key_path: Option<PathBuf>) -> Result<Self> {
         Ok(Self {
             ssh_connection,
-            ssh_key_path,
+            ssh_private_key_path,
+            strict_host_key_checking: false,
+            known_hosts_file: None,
+        })
+    }
+
+    /// Create a new container client with full SSH configuration
+    pub fn with_ssh_config(
+        ssh_connection: String,
+        ssh_private_key_path: Option<PathBuf>,
+        strict_host_key_checking: bool,
+        known_hosts_file: Option<PathBuf>,
+    ) -> Result<Self> {
+        Ok(Self {
+            ssh_connection,
+            ssh_private_key_path,
+            strict_host_key_checking,
+            known_hosts_file,
         })
     }
 
     /// Execute a command over SSH
-    async fn execute_ssh_command(&self, command: &str) -> Result<String> {
+    pub async fn execute_ssh_command(&self, command: &str) -> Result<String> {
         let mut ssh_cmd = Command::new("ssh");
 
-        // Add SSH options
-        ssh_cmd.arg("-o").arg("StrictHostKeyChecking=no");
-        ssh_cmd.arg("-o").arg("UserKnownHostsFile=/dev/null");
-        ssh_cmd.arg("-o").arg("ConnectTimeout=10");
+        // Add SSH options based on configuration
+        if self.strict_host_key_checking {
+            ssh_cmd.arg("-o").arg("StrictHostKeyChecking=yes");
 
-        // Add SSH key if provided
-        if let Some(ref key_path) = self.ssh_key_path {
+            if let Some(ref known_hosts) = self.known_hosts_file {
+                ssh_cmd
+                    .arg("-o")
+                    .arg(format!("UserKnownHostsFile={}", known_hosts.display()));
+            }
+        } else {
+            ssh_cmd.arg("-o").arg("StrictHostKeyChecking=no");
+            ssh_cmd.arg("-o").arg("UserKnownHostsFile=/dev/null");
+        }
+
+        ssh_cmd.arg("-o").arg("ConnectTimeout=10");
+        ssh_cmd.arg("-o").arg("BatchMode=yes");
+
+        // Add SSH private key if provided
+        if let Some(ref key_path) = self.ssh_private_key_path {
             ssh_cmd.arg("-i").arg(key_path);
         }
 
@@ -85,14 +107,15 @@ impl ContainerClient {
         // Build docker run command as a string directly
         let mut docker_cmd_parts = vec!["docker", "run", "-d"];
 
-        // Add container name
-        let container_name = format!("basilica-rental-{rental_id}");
+        // Add container name with sanitized rental ID
+        let sanitized_rental_id = self.sanitize_rental_id(rental_id);
+        let container_name = format!("basilica-rental-{}", sanitized_rental_id);
         docker_cmd_parts.push("--name");
         docker_cmd_parts.push(&container_name);
 
         // Add labels
         docker_cmd_parts.push("--label");
-        let rental_label = format!("basilica.rental_id={rental_id}");
+        let rental_label = format!("basilica.rental_id={}", sanitized_rental_id);
         docker_cmd_parts.push(&rental_label);
 
         // Collect all label strings first
@@ -116,10 +139,11 @@ impl ContainerClient {
             .flat_map(|port| {
                 vec![
                     "-p".to_string(),
-                    format!(
-                        "{}:{}:{}",
-                        port.host_port, port.container_port, port.protocol
-                    ),
+                    if port.protocol.to_lowercase() == "udp" {
+                        format!("{}:{}/udp", port.host_port, port.container_port)
+                    } else {
+                        format!("{}:{}", port.host_port, port.container_port)
+                    },
                 ]
             })
             .collect();
@@ -251,7 +275,8 @@ impl ContainerClient {
         );
 
         // Get container info
-        let inspect_cmd = format!("docker inspect {container_id}");
+        let validated_container_id = self.validate_container_id(&container_id)?;
+        let inspect_cmd = format!("docker inspect {}", validated_container_id);
         let inspect_output = self
             .execute_ssh_command(&inspect_cmd)
             .await
@@ -304,7 +329,8 @@ impl ContainerClient {
 
     /// Get container status
     pub async fn get_container_status(&self, container_id: &str) -> Result<ContainerStatus> {
-        let inspect_cmd = format!("docker inspect {container_id}");
+        let validated_container_id = self.validate_container_id(container_id)?;
+        let inspect_cmd = format!("docker inspect {}", validated_container_id);
         let output = self
             .execute_ssh_command(&inspect_cmd)
             .await
@@ -339,7 +365,11 @@ impl ContainerClient {
 
     /// Get container resource usage
     pub async fn get_resource_usage(&self, container_id: &str) -> Result<ResourceUsage> {
-        let stats_cmd = format!("docker stats {container_id} --no-stream --format json");
+        let validated_container_id = self.validate_container_id(container_id)?;
+        let stats_cmd = format!(
+            "docker stats {} --no-stream --format json",
+            validated_container_id
+        );
         let output = self
             .execute_ssh_command(&stats_cmd)
             .await
@@ -380,10 +410,11 @@ impl ContainerClient {
 
     /// Stop a container
     pub async fn stop_container(&self, container_id: &str, force: bool) -> Result<()> {
+        let validated_container_id = self.validate_container_id(container_id)?;
         let stop_cmd = if force {
-            format!("docker kill {container_id}")
+            format!("docker kill {}", validated_container_id)
         } else {
-            format!("docker stop {container_id}")
+            format!("docker stop {}", validated_container_id)
         };
 
         self.execute_ssh_command(&stop_cmd)
@@ -396,7 +427,8 @@ impl ContainerClient {
 
     /// Remove a container
     pub async fn remove_container(&self, container_id: &str) -> Result<()> {
-        let rm_cmd = format!("docker rm -f {container_id}");
+        let validated_container_id = self.validate_container_id(container_id)?;
+        let rm_cmd = format!("docker rm -f {}", validated_container_id);
 
         self.execute_ssh_command(&rm_cmd)
             .await
@@ -425,17 +457,32 @@ impl ContainerClient {
         }
 
         docker_cmd_parts.push("--timestamps".to_string());
-        docker_cmd_parts.push(container_id.to_string());
+
+        // Validate container ID before using it
+        let validated_container_id = self.validate_container_id(container_id)?;
+        docker_cmd_parts.push(validated_container_id.to_string());
 
         let docker_cmd = docker_cmd_parts.join(" ");
 
         let mut ssh_cmd = Command::new("ssh");
 
-        // Add SSH options
-        ssh_cmd.arg("-o").arg("StrictHostKeyChecking=no");
-        ssh_cmd.arg("-o").arg("UserKnownHostsFile=/dev/null");
+        // Add SSH options based on configuration
+        if self.strict_host_key_checking {
+            ssh_cmd.arg("-o").arg("StrictHostKeyChecking=yes");
 
-        if let Some(ref key_path) = self.ssh_key_path {
+            if let Some(ref known_hosts) = self.known_hosts_file {
+                ssh_cmd
+                    .arg("-o")
+                    .arg(format!("UserKnownHostsFile={}", known_hosts.display()));
+            }
+        } else {
+            ssh_cmd.arg("-o").arg("StrictHostKeyChecking=no");
+            ssh_cmd.arg("-o").arg("UserKnownHostsFile=/dev/null");
+        }
+
+        ssh_cmd.arg("-o").arg("BatchMode=yes");
+
+        if let Some(ref key_path) = self.ssh_private_key_path {
             ssh_cmd.arg("-i").arg(key_path);
         }
 
@@ -478,6 +525,32 @@ impl ContainerClient {
         self.parse_network_io(block_io)
     }
 
+    /// Validate and sanitize container ID to prevent command injection
+    fn validate_container_id<'a>(&self, container_id: &'a str) -> Result<&'a str> {
+        if container_id.is_empty() {
+            return Err(anyhow::anyhow!("Container ID cannot be empty"));
+        }
+
+        if !container_id.chars().all(|c| c.is_alphanumeric()) {
+            return Err(anyhow::anyhow!("Invalid container ID format"));
+        }
+
+        if container_id.len() > 64 {
+            return Err(anyhow::anyhow!("Container ID too long"));
+        }
+
+        Ok(container_id)
+    }
+
+    /// Sanitize rental ID for use in container names
+    fn sanitize_rental_id(&self, rental_id: &str) -> String {
+        rental_id
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '-')
+            .take(32) // Limit length
+            .collect()
+    }
+
     /// Parse size string with units (e.g., "100MB", "1.5GiB")
     fn parse_size_string(&self, size_str: &str) -> i64 {
         let size_str = size_str.trim();
@@ -500,16 +573,5 @@ impl ContainerClient {
         };
 
         (num * multiplier as f64) as i64
-    }
-}
-
-impl Drop for ContainerClient {
-    fn drop(&mut self) {
-        // Clean up temporary SSH key file
-        if let Some(ref key_path) = self.ssh_key_path {
-            if let Err(e) = std::fs::remove_file(key_path) {
-                error!("Failed to remove temporary SSH key file: {}", e);
-            }
-        }
     }
 }

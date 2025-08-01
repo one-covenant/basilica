@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::{Row, SqlitePool};
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::persistence::entities::{Rental, RentalStatus, VerificationLog};
@@ -693,6 +693,24 @@ impl SimplePersistence {
         Ok(())
     }
 
+    /// Helper function to parse rental state from string
+    fn parse_rental_state(state_str: &str, rental_id: &str) -> crate::rental::RentalState {
+        match state_str {
+            "provisioning" => crate::rental::RentalState::Provisioning,
+            "active" => crate::rental::RentalState::Active,
+            "stopping" => crate::rental::RentalState::Stopping,
+            "stopped" => crate::rental::RentalState::Stopped,
+            "failed" => crate::rental::RentalState::Failed,
+            unknown => {
+                warn!(
+                    "Unknown rental state '{}' for rental {}, defaulting to Failed",
+                    unknown, rental_id
+                );
+                crate::rental::RentalState::Failed
+            }
+        }
+    }
+
     /// Helper function to convert database row to Rental
     fn row_to_rental(&self, row: sqlx::sqlite::SqliteRow) -> Result<Rental, anyhow::Error> {
         let id_str: String = row.get("id");
@@ -1257,18 +1275,12 @@ impl ValidatorPersistence for SimplePersistence {
             let state_str: String = row.get("state");
             let created_at_str: String = row.get("created_at");
             let container_spec_str: String = row.get("container_spec");
+            let rental_id: String = row.get("id");
 
-            let state = match state_str.as_str() {
-                "provisioning" => crate::rental::RentalState::Provisioning,
-                "active" => crate::rental::RentalState::Active,
-                "stopping" => crate::rental::RentalState::Stopping,
-                "stopped" => crate::rental::RentalState::Stopped,
-                "failed" => crate::rental::RentalState::Failed,
-                _ => crate::rental::RentalState::Failed,
-            };
+            let state = Self::parse_rental_state(&state_str, &rental_id);
 
             Ok(Some(RentalInfo {
-                rental_id: row.get("id"),
+                rental_id,
                 validator_hotkey: row.get("validator_hotkey"),
                 executor_id: row.get("executor_id"),
                 container_id: row.get("container_id"),
@@ -1300,18 +1312,12 @@ impl ValidatorPersistence for SimplePersistence {
             let state_str: String = row.get("state");
             let created_at_str: String = row.get("created_at");
             let container_spec_str: String = row.get("container_spec");
+            let rental_id: String = row.get("id");
 
-            let state = match state_str.as_str() {
-                "provisioning" => crate::rental::RentalState::Provisioning,
-                "active" => crate::rental::RentalState::Active,
-                "stopping" => crate::rental::RentalState::Stopping,
-                "stopped" => crate::rental::RentalState::Stopped,
-                "failed" => crate::rental::RentalState::Failed,
-                _ => crate::rental::RentalState::Failed,
-            };
+            let state = Self::parse_rental_state(&state_str, &rental_id);
 
             rentals.push(RentalInfo {
-                rental_id: row.get("id"),
+                rental_id,
                 validator_hotkey: row.get("validator_hotkey"),
                 executor_id: row.get("executor_id"),
                 container_id: row.get("container_id"),

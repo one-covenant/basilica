@@ -1,7 +1,7 @@
 // Rental Protocol - Container rental operations
 syntax = "proto3";
 
-package basilca.rental.v1;
+package basilica.rental.v1;
 
 import "common.proto";
 
@@ -9,16 +9,16 @@ import "common.proto";
 service RentalService {
   // Start a new rental
   rpc StartRental(RentalRequest) returns (RentalResponse);
-  
+
   // Get rental status
   rpc GetRentalStatus(RentalStatusRequest) returns (RentalStatusResponse);
-  
+
   // Stop a rental
   rpc StopRental(StopRentalRequest) returns (StopRentalResponse);
-  
+
   // Stream container logs
   rpc StreamLogs(LogStreamRequest) returns (stream LogEntry);
-  
+
   // Update container state
   rpc UpdateContainerState(ContainerStateUpdate) returns (ContainerStateResponse);
 }

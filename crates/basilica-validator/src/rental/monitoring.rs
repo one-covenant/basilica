@@ -10,15 +10,19 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, Duration};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::container_client::ContainerClient;
 use super::types::LogEntry;
 
+/// Type alias for monitoring task with cancellation token
+type MonitoringTask = (tokio::task::JoinHandle<()>, CancellationToken);
+
 /// Health monitor for containers
 pub struct HealthMonitor {
-    /// Active monitoring tasks
-    monitoring_tasks: Arc<RwLock<HashMap<String, tokio::task::JoinHandle<()>>>>,
+    /// Active monitoring tasks with cancellation tokens
+    monitoring_tasks: Arc<RwLock<HashMap<String, MonitoringTask>>>,
     /// Health check configuration
     config: HealthCheckConfig,
 }
@@ -72,6 +76,8 @@ impl HealthMonitor {
         let rental_id_str = rental_id.to_string();
         let client = client.clone();
         let config = self.config.clone();
+        let cancellation_token = CancellationToken::new();
+        let task_token = cancellation_token.clone();
 
         // Spawn monitoring task
         let task = tokio::spawn(async move {
@@ -79,41 +85,47 @@ impl HealthMonitor {
             let mut consecutive_failures = 0;
 
             loop {
-                check_interval.tick().await;
+                tokio::select! {
+                    _ = task_token.cancelled() => {
+                        info!("Health monitoring for container {} cancelled", rental_id_str);
+                        break;
+                    }
+                    _ = check_interval.tick() => {
+                        // Perform health check
+                        match Self::perform_health_check(&client, &rental_id_str).await {
+                            Ok(healthy) => {
+                                if healthy {
+                                    consecutive_failures = 0;
+                                    debug!("Container {} is healthy", rental_id_str);
+                                } else {
+                                    consecutive_failures += 1;
+                                    warn!(
+                                        "Container {} health check failed ({}/{})",
+                                        rental_id_str, consecutive_failures, config.failure_threshold
+                                    );
 
-                // Perform health check
-                match Self::perform_health_check(&client, &rental_id_str).await {
-                    Ok(healthy) => {
-                        if healthy {
-                            consecutive_failures = 0;
-                            debug!("Container {} is healthy", rental_id_str);
-                        } else {
-                            consecutive_failures += 1;
-                            warn!(
-                                "Container {} health check failed ({}/{})",
-                                rental_id_str, consecutive_failures, config.failure_threshold
-                            );
-
-                            if consecutive_failures >= config.failure_threshold {
-                                error!(
-                                    "Container {} marked as unhealthy after {} consecutive failures",
-                                    rental_id_str, consecutive_failures
-                                );
-                                // Trigger unhealthy event notification
+                                    if consecutive_failures >= config.failure_threshold {
+                                        error!(
+                                            "Container {} marked as unhealthy after {} consecutive failures",
+                                            rental_id_str, consecutive_failures
+                                        );
+                                        // Trigger unhealthy event notification
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!("Health check error for container {}: {}", rental_id_str, e);
+                                consecutive_failures += 1;
                             }
                         }
-                    }
-                    Err(e) => {
-                        error!("Health check error for container {}: {}", rental_id_str, e);
-                        consecutive_failures += 1;
                     }
                 }
             }
         });
 
-        // Store task handle
+        // Store task handle with cancellation token
         let mut tasks = self.monitoring_tasks.write().await;
-        tasks.insert(rental_id.to_string(), task);
+        tasks.insert(rental_id.to_string(), (task, cancellation_token));
 
         info!("Started health monitoring for rental {}", rental_id);
         Ok(())
@@ -123,9 +135,27 @@ impl HealthMonitor {
     pub async fn stop_monitoring(&self, rental_id: &str) -> Result<()> {
         let mut tasks = self.monitoring_tasks.write().await;
 
-        if let Some(task) = tasks.remove(rental_id) {
-            task.abort();
-            info!("Stopped health monitoring for rental {}", rental_id);
+        if let Some((task, cancellation_token)) = tasks.remove(rental_id) {
+            // Signal cancellation
+            cancellation_token.cancel();
+
+            // Wait for task to finish gracefully
+            match tokio::time::timeout(Duration::from_secs(5), task).await {
+                Ok(Ok(())) => info!(
+                    "Health monitoring for rental {} stopped gracefully",
+                    rental_id
+                ),
+                Ok(Err(e)) => warn!(
+                    "Health monitoring task for rental {} failed: {}",
+                    rental_id, e
+                ),
+                Err(_) => {
+                    warn!(
+                        "Health monitoring task for rental {} did not stop within timeout",
+                        rental_id
+                    );
+                }
+            }
         }
 
         Ok(())
@@ -296,16 +326,6 @@ impl LogStreamer {
             stream: stream.to_string(),
             message,
             container_id: container_id.to_string(),
-        }
-    }
-}
-
-/// Container client clone implementation for async operations
-impl Clone for ContainerClient {
-    fn clone(&self) -> Self {
-        Self {
-            ssh_connection: self.ssh_connection.clone(),
-            ssh_key_path: self.ssh_key_path.clone(),
         }
     }
 }
