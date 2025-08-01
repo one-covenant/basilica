@@ -153,7 +153,10 @@ async fn test_malicious_input_handling() -> Result<()> {
     };
 
     let start = Instant::now();
-    let result = miner_auth.verify_auth(&malicious_auth2, request_data).await;
+    let result = miner_auth
+        .verify_auth(&malicious_auth2, request_data)
+        .await
+        .unwrap();
     let elapsed = start.elapsed();
 
     // Should not take excessively long to process
@@ -162,7 +165,7 @@ async fn test_malicious_input_handling() -> Result<()> {
         "Large nonce processing should be fast"
     );
 
-    // Test 3: Invalid UTF-8 in hotkey
+    // Test 3: Invalid hotkey
     let malicious_auth3 = MinerAuthentication {
         miner_hotkey: "invalid hotkey".to_string(),
         timestamp_ms: Utc::now().timestamp_millis() as u64,

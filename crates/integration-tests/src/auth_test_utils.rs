@@ -4,10 +4,8 @@
 //! for testing authentication functionality across integration tests.
 
 use anyhow::Result;
-use base64::Engine;
 use chrono::{Duration, Utc};
 use protocol::common::MinerAuthentication;
-use std::sync::Arc;
 
 /// Mock Bittensor service for testing
 #[derive(Clone)]
@@ -162,9 +160,7 @@ pub fn assert_auth_error_contains(result: &Result<(), anyhow::Error>, expected_m
     let error_msg = result.as_ref().unwrap_err().to_string();
     assert!(
         error_msg.contains(expected_message),
-        "Expected error message to contain '{}', got: {}",
-        expected_message,
-        error_msg
+        "Expected error message to contain '{expected_message}', got: {error_msg}"
     );
 }
 
@@ -174,10 +170,51 @@ pub fn assert_grpc_error_contains(result: &Result<(), tonic::Status>, expected_m
     let error_msg = result.as_ref().unwrap_err().message();
     assert!(
         error_msg.contains(expected_message),
-        "Expected error message to contain '{}', got: {}",
-        expected_message,
-        error_msg
+        "Expected error message to contain '{expected_message}', got: {error_msg}"
     );
+}
+
+/// Creates an authenticated request by serializing the request without auth field,
+/// creating authentication based on that data, and then adding auth to the request.
+/// This prevents the circular dependency issue where auth field is included in signature.
+pub fn create_authenticated_request<T>(
+    request: T,
+    miner_hotkey: &str,
+) -> Result<T>
+where
+    T: prost::Message + miner::executor_auth::AuthenticatedRequest + Clone,
+{
+    // Serialize request without auth field for signature calculation
+    let request_bytes = request.encode_to_vec();
+    
+    // Create authentication based on request data without auth
+    let auth = create_valid_auth(miner_hotkey, &request_bytes)?;
+    
+    // Add auth to request and return
+    Ok(request.with_auth(auth))
+}
+
+/// Creates an authenticated request with expired timestamp for testing
+pub fn create_expired_authenticated_request<T>(
+    request: T,
+    miner_hotkey: &str,
+    hours_ago: i64,
+) -> Result<T>
+where
+    T: prost::Message + miner::executor_auth::AuthenticatedRequest + Clone,
+{
+    let _request_bytes = request.encode_to_vec();
+    
+    // Create expired auth
+    let expired_timestamp = (Utc::now() - Duration::hours(hours_ago)).timestamp_millis() as u64;
+    let auth = create_test_auth(
+        miner_hotkey,
+        Some(expired_timestamp),
+        None,
+        None,
+    );
+    
+    Ok(request.with_auth(auth))
 }
 
 #[cfg(test)]
