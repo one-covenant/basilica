@@ -36,9 +36,9 @@ fn create_test_auth() -> MinerAuthentication {
     MinerAuthentication {
         miner_hotkey: TEST_MINER_HOTKEY.to_string(),
         timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-        nonce: uuid::Uuid::new_v4().to_string(),
-        signature: "test_signature".to_string(), // For test, signature verification is disabled
-        request_id: uuid::Uuid::new_v4().to_string(),
+        nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
+        signature: "test_signature".to_string().into_bytes(), // For test, signature verification is disabled
+        request_id: uuid::Uuid::new_v4().to_string().into_bytes(),
     }
 }
 

@@ -566,11 +566,11 @@ message MinerAuthentication {
   uint64 timestamp_ms = 2;
   
   // Nonce to prevent replay attacks
-  string nonce = 3;
+  bytes nonce = 3;
   
   // Signature of the request payload
-  string signature = 4;
+  bytes signature = 4;
   
   // Request ID for tracking
-  string request_id = 5;
+  bytes request_id = 5;
 } 

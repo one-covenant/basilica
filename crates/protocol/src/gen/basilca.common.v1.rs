@@ -639,12 +639,12 @@ pub struct MinerAuthentication {
     #[prost(uint64, tag = "2")]
     pub timestamp_ms: u64,
     /// Nonce to prevent replay attacks
-    #[prost(string, tag = "3")]
-    pub nonce: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "3")]
+    pub nonce: ::prost::alloc::vec::Vec<u8>,
     /// Signature of the request payload
-    #[prost(string, tag = "4")]
-    pub signature: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "4")]
+    pub signature: ::prost::alloc::vec::Vec<u8>,
     /// Request ID for tracking
-    #[prost(string, tag = "5")]
-    pub request_id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "5")]
+    pub request_id: ::prost::alloc::vec::Vec<u8>,
 }

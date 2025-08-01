@@ -4,6 +4,7 @@
 //! This ensures that only the authorized miner can control its executors.
 
 use anyhow::{anyhow, Result};
+use base64::Engine;
 use blake3::Hasher;
 use chrono::Utc;
 use protocol::common::MinerAuthentication;
@@ -57,12 +58,17 @@ impl ExecutorAuthService {
             request_id, self.miner_hotkey
         );
 
+        // Convert signature from base64 string to bytes
+        let signature_bytes = base64::engine::general_purpose::STANDARD
+            .decode(&signature)
+            .map_err(|e| anyhow!("Failed to decode signature: {}", e))?;
+
         Ok(MinerAuthentication {
             miner_hotkey: self.miner_hotkey.clone(),
             timestamp_ms,
-            nonce,
-            signature,
-            request_id,
+            nonce: nonce.into_bytes(),
+            signature: signature_bytes,
+            request_id: request_id.into_bytes(),
         })
     }
 
@@ -232,9 +238,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
             timestamp_ms: 1234567890,
-            nonce: uuid::Uuid::new_v4().to_string(),
-            signature: "deadbeef".repeat(16),
-            request_id: uuid::Uuid::new_v4().to_string(),
+            nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
+            signature: "deadbeef".repeat(16).into_bytes(),
+            request_id: uuid::Uuid::new_v4().to_string().into_bytes(),
         };
 
         let request = protocol::executor_control::ProvisionAccessRequest {
@@ -264,9 +270,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: "miner".to_string(),
             timestamp_ms: 1000,
-            nonce: "nonce".to_string(),
-            signature: "sig".to_string(),
-            request_id: "req".to_string(),
+            nonce: "nonce".to_string().into_bytes(),
+            signature: "sig".to_string().into_bytes(),
+            request_id: "req".to_string().into_bytes(),
         };
 
         // Test SystemProfileRequest
@@ -324,9 +330,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: String::new(),
             timestamp_ms: 0,
-            nonce: String::new(),
-            signature: String::new(),
-            request_id: String::new(),
+            nonce: String::new().into_bytes(),
+            signature: String::new().into_bytes(),
+            request_id: String::new().into_bytes(),
         };
 
         assert!(auth.miner_hotkey.is_empty());
@@ -337,9 +343,9 @@ mod tests {
         let auth_max = MinerAuthentication {
             miner_hotkey: "hotkey".to_string(),
             timestamp_ms: u64::MAX,
-            nonce: "n".repeat(1000),      // Long nonce
-            signature: "s".repeat(1000),  // Long signature
-            request_id: "r".repeat(1000), // Long request id
+            nonce: "n".repeat(1000).into_bytes(),      // Long nonce
+            signature: "s".repeat(1000).into_bytes(),  // Long signature
+            request_id: "r".repeat(1000).into_bytes(), // Long request id
         };
 
         assert_eq!(auth_max.timestamp_ms, u64::MAX);
@@ -367,9 +373,9 @@ mod tests {
             auth: Some(MinerAuthentication {
                 miner_hotkey: "miner".to_string(),
                 timestamp_ms: 123456,
-                nonce: "nonce123".to_string(),
-                signature: "sig123".to_string(),
-                request_id: "req123".to_string(),
+                nonce: "nonce123".to_string().into_bytes(),
+                signature: "sig123".to_string().into_bytes(),
+                request_id: "req123".to_string().into_bytes(),
             }),
         };
 

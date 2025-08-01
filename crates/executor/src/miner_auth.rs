@@ -4,6 +4,7 @@
 //! This ensures that only the authorized miner can control this executor.
 
 use anyhow::{anyhow, Result};
+use base64::Engine;
 use blake3::Hasher;
 use chrono::{Duration, Utc};
 use common::identity::Hotkey;
@@ -41,7 +42,7 @@ impl MinerAuthConfig {
 pub struct MinerAuthService {
     config: MinerAuthConfig,
     /// Used nonces to prevent replay attacks
-    used_nonces: Arc<RwLock<HashMap<String, chrono::DateTime<Utc>>>>,
+    used_nonces: Arc<RwLock<HashMap<Vec<u8>, chrono::DateTime<Utc>>>>,
 }
 
 impl MinerAuthService {
@@ -99,18 +100,21 @@ impl MinerAuthService {
         // Verify signature if enabled
         if self.config.verify_signatures {
             // Create canonical data to verify
+            let nonce_str = String::from_utf8_lossy(&auth.nonce);
+            let request_id_str = String::from_utf8_lossy(&auth.request_id);
             let canonical_data = self.create_canonical_data(
                 &auth.miner_hotkey,
                 auth.timestamp_ms,
-                &auth.nonce,
-                &auth.request_id,
+                &nonce_str,
+                &request_id_str,
                 request_data,
             );
 
             // Verify signature using common crypto
+            let signature_str = base64::engine::general_purpose::STANDARD.encode(&auth.signature);
             if let Err(e) = common::crypto::verify_bittensor_signature(
                 &self.config.managing_miner_hotkey,
-                &auth.signature,
+                &signature_str,
                 canonical_data.as_bytes(),
             ) {
                 warn!(
@@ -253,9 +257,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: miner_hotkey.to_string(),
             timestamp_ms: Utc::now().timestamp_millis() as u64,
-            nonce: uuid::Uuid::new_v4().to_string(),
-            signature: "test_signature".to_string(),
-            request_id: uuid::Uuid::new_v4().to_string(),
+            nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
+            signature: "test_signature".to_string().into_bytes(),
+            request_id: uuid::Uuid::new_v4().to_string().into_bytes(),
         };
 
         let request_data = b"test request data";
@@ -287,9 +291,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM".to_string(), // Different hotkey
             timestamp_ms: Utc::now().timestamp_millis() as u64,
-            nonce: uuid::Uuid::new_v4().to_string(),
-            signature: "test_signature".to_string(),
-            request_id: uuid::Uuid::new_v4().to_string(),
+            nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
+            signature: "test_signature".to_string().into_bytes(),
+            request_id: uuid::Uuid::new_v4().to_string().into_bytes(),
         };
 
         let request_data = b"test request data";
@@ -318,9 +322,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: miner_hotkey.to_string(),
             timestamp_ms: (Utc::now() - Duration::minutes(10)).timestamp_millis() as u64, // Old timestamp
-            nonce: uuid::Uuid::new_v4().to_string(),
-            signature: "test_signature".to_string(),
-            request_id: uuid::Uuid::new_v4().to_string(),
+            nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
+            signature: "test_signature".to_string().into_bytes(),
+            request_id: uuid::Uuid::new_v4().to_string().into_bytes(),
         };
 
         let request_data = b"test request data";
@@ -347,9 +351,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: miner_hotkey.to_string(),
             timestamp_ms: (Utc::now() + Duration::seconds(30)).timestamp_millis() as u64,
-            nonce: uuid::Uuid::new_v4().to_string(),
-            signature: "test_signature".to_string(),
-            request_id: uuid::Uuid::new_v4().to_string(),
+            nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
+            signature: "test_signature".to_string().into_bytes(),
+            request_id: uuid::Uuid::new_v4().to_string().into_bytes(),
         };
 
         let request_data = b"test request data";
@@ -374,9 +378,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: miner_hotkey.to_string(),
             timestamp_ms: (Utc::now() + Duration::minutes(2)).timestamp_millis() as u64,
-            nonce: uuid::Uuid::new_v4().to_string(),
-            signature: "test_signature".to_string(),
-            request_id: uuid::Uuid::new_v4().to_string(),
+            nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
+            signature: "test_signature".to_string().into_bytes(),
+            request_id: uuid::Uuid::new_v4().to_string().into_bytes(),
         };
 
         let request_data = b"test request data";
@@ -407,9 +411,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: miner_hotkey.to_string(),
             timestamp_ms: old_timestamp,
-            nonce: "test-nonce-123".to_string(),
-            signature: "test_signature".to_string(),
-            request_id: "test-request".to_string(),
+            nonce: "test-nonce-123".to_string().into_bytes(),
+            signature: "test_signature".to_string().into_bytes(),
+            request_id: "test-request".to_string().into_bytes(),
         };
 
         // This should fail because the timestamp is too old
@@ -419,7 +423,7 @@ mod tests {
         {
             let mut used_nonces = service.used_nonces.write().await;
             used_nonces.insert(
-                "test-nonce-123".to_string(),
+                "test-nonce-123".to_string().into_bytes(),
                 Utc::now() - Duration::hours(2),
             );
         }
@@ -428,9 +432,9 @@ mod tests {
         let auth2 = MinerAuthentication {
             miner_hotkey: miner_hotkey.to_string(),
             timestamp_ms: Utc::now().timestamp_millis() as u64,
-            nonce: "test-nonce-456".to_string(),
-            signature: "test_signature".to_string(),
-            request_id: "test-request-2".to_string(),
+            nonce: "test-nonce-456".to_string().into_bytes(),
+            signature: "test_signature".to_string().into_bytes(),
+            request_id: "test-request-2".to_string().into_bytes(),
         };
 
         assert!(service.verify_auth(&auth2, b"data").await.is_ok());
@@ -438,8 +442,8 @@ mod tests {
         // Check that the old nonce was cleaned up
         {
             let used_nonces = service.used_nonces.read().await;
-            assert!(!used_nonces.contains_key("test-nonce-123"));
-            assert!(used_nonces.contains_key("test-nonce-456"));
+            assert!(!used_nonces.contains_key(&"test-nonce-123".to_string().into_bytes()));
+            assert!(used_nonces.contains_key(&"test-nonce-456".to_string().into_bytes()));
         }
     }
 
@@ -494,9 +498,9 @@ mod tests {
             auth: Some(MinerAuthentication {
                 miner_hotkey: miner_hotkey.to_string(),
                 timestamp_ms: Utc::now().timestamp_millis() as u64,
-                nonce: uuid::Uuid::new_v4().to_string(),
-                signature: "test_signature".to_string(),
-                request_id: uuid::Uuid::new_v4().to_string(),
+                nonce: uuid::Uuid::new_v4().to_string().into_bytes(),
+                signature: "test_signature".to_string().into_bytes(),
+                request_id: uuid::Uuid::new_v4().to_string().into_bytes(),
             }),
         };
 
@@ -532,9 +536,9 @@ mod tests {
         let auth = MinerAuthentication {
             miner_hotkey: "miner".to_string(),
             timestamp_ms: 1000,
-            nonce: "nonce".to_string(),
-            signature: "sig".to_string(),
-            request_id: "req".to_string(),
+            nonce: "nonce".to_string().into_bytes(),
+            signature: "sig".to_string().into_bytes(),
+            request_id: "req".to_string().into_bytes(),
         };
 
         // ProvisionAccessRequest
