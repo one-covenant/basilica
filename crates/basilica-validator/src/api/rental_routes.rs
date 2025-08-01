@@ -114,8 +114,18 @@ fn is_valid_container_image(image: &str) -> bool {
         return false;
     }
 
+    // Prevent command injection attempts
+    if image.contains('\'') || image.contains('`') || image.contains(';') || image.contains('&') || image.contains('|') {
+        return false;
+    }
+
+    let parts: Vec<&str> = image.split('/').collect();
+    if parts.len() > 3 {
+        return false;
+    }
+
     for ch in image.chars() {
-        if !ch.is_alphanumeric() && ch != '.' && ch != '-' && ch != '_' && ch != ':' && ch != '/' {
+        if !ch.is_alphanumeric() && ch != '.' && ch != '-' && ch != '_' && ch != ':' && ch != '/' && ch != '@' {
             return false;
         }
     }
@@ -218,6 +228,9 @@ pub async fn start_rental(
             volumes: request
                 .volumes
                 .into_iter()
+                .filter(|v| {
+                    !v.host_path.contains("..") && !v.container_path.contains("..")
+                })
                 .map(|v| crate::rental::VolumeMount {
                     host_path: v.host_path,
                     container_path: v.container_path,
