@@ -9,16 +9,18 @@ mod tests {
     use miner::config::MinerConfig;
     use rand::Rng;
 
-    /// export BASILCA_MINER_CONTRACT__PRIVATE_KEY="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    const TESTNET_URL: &str = "https://test.finney.opentensor.ai";
+
     /// 0xa8b2b82247e3f2b49ee8858b088405e35755c096 deployed in testnet
-    /// chain id is 945, minCollateralIncrease is 1, decisionTimeout is 1, trustee is 0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
+    /// minCollateralIncrease is 1, decisionTimeout is 1, trustee is 0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
     ///
-    /// 0x119ecacb1322cd9d581d550b52e199ec97a33e2e
+    /// 0x119ecacb1322cd9d581d550b52e199ec97a33e2e deployed in testnet
     /// decisionTimeout is 20 for the reclaim deny testing
+    /// ~/.basilca/private_key is default for private key file path
     async fn get_contract() -> anyhow::Result<CollateralInstance<impl alloy_provider::Provider>> {
         let config = MinerConfig::load()?;
-        let rpc_url = "https://test.finney.opentensor.ai";
-        let private_key = config.miner_contract.private_key;
+        let rpc_url = TESTNET_URL;
+        let private_key = config.security.get_private_key()?;
         let contract_address = address!("0xa8b2b82247e3f2b49ee8858b088405e35755c096");
 
         let mut signer: PrivateKeySigner = private_key.parse().unwrap();
