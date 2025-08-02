@@ -455,7 +455,7 @@ fn validate_private_key_config(
 
     let private_key = private_key.trim_start_matches("0x");
     if private_key.len() != 64 {
-        errors.push("private_key must be ex 64 characters long".to_string());
+        errors.push("private_key must be exactly 64 characters long".to_string());
         return;
     }
 
