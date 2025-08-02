@@ -35,6 +35,11 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 blake3 = { workspace = true }
 clap = { workspace = true }
+alloy = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-sol-types = { workspace = true }
+collateral = { path = "../collateral" }
 # Storage functionality (if needed in future)
 # memmap2 = { workspace = true }
 

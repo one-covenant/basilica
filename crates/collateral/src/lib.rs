@@ -38,6 +38,23 @@ impl From<(FixedBytes<16>, Address, U256, u64)> for Reclaim {
     }
 }
 
+// get the collateral contract instance
+pub async fn get_collateral(
+    private_key: &str,
+) -> Result<Collateral::CollateralInstance<impl alloy_provider::Provider>, anyhow::Error> {
+    let mut signer: PrivateKeySigner = private_key.parse()?;
+    signer.set_chain_id(Some(CHAIN_ID));
+
+    let provider = ProviderBuilder::new()
+        .wallet(signer)
+        .connect(RPC_URL)
+        .await?;
+
+    let contract = Collateral::new(COLLATERAL_ADDRESS, provider);
+
+    Ok(contract)
+}
+
 // transactions
 pub async fn deposit(
     private_key: &str,
@@ -227,16 +244,20 @@ pub async fn reclaims(reclaim_request_id: U256) -> Result<Reclaim, anyhow::Error
 }
 
 #[cfg(test)]
+// The unit tests are for testing against local network
+// Just can be executed if local subtensor node is running
 mod test {
     use super::*;
     use bittensor::api::api::{self as bittensorapi};
     use subxt::{OnlineClient, PolkadotConfig};
     use subxt_signer::sr25519::dev;
+    const LOCAL_RPC_URL: &str = "http://localhost:9944";
+    const LOCAL_WS_URL: &str = "ws://localhost:9944";
 
     #[allow(dead_code)]
     async fn disable_whitelist() -> Result<(), anyhow::Error> {
         // Connect to local node
-        let client = OnlineClient::<PolkadotConfig>::from_url("ws://127.0.0.1:9944").await?;
+        let client = OnlineClient::<PolkadotConfig>::from_url(LOCAL_WS_URL).await?;
 
         // Create signer from Alice's dev account
         let signer = dev::alice();
@@ -275,16 +296,17 @@ mod test {
     // export BITTENSOR_NETWORK=local
     #[ignore]
     async fn test_collateral_deploy() {
+        const LOCAL_CHAIN_ID: u64 = 42;
         disable_whitelist().await.unwrap();
 
         // get sudo alice signer
         let alithe_private_key = "5fb92d6e98884f76de468fa3f6278f8807c48bebc13595d45af5bdc4da702133";
         let mut signer: PrivateKeySigner = alithe_private_key.parse().unwrap();
-        signer.set_chain_id(Some(CHAIN_ID));
+        signer.set_chain_id(Some(LOCAL_CHAIN_ID));
 
         let provider = ProviderBuilder::new()
             .wallet(signer.clone())
-            .connect("http://localhost:9944")
+            .connect(LOCAL_RPC_URL)
             .await
             .unwrap();
 

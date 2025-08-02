@@ -121,6 +121,7 @@ enable_mtls = false
 jwt_secret = "0f340697e18b0c88329c8d3366b867d5d02bff18089e62f0a12adffd24cabd3e"
 allowed_validators = []
 verify_signatures = true
+private_key_file = "~/.basilca/private_key"
 
 [security.token_expiration]
 secs = 3600
