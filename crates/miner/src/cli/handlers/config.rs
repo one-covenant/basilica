@@ -436,7 +436,7 @@ fn validate_security_config(
             validate_private_key_config(&private_key, errors, warnings, suggestions);
         }
         Err(e) => {
-            errors.push(format!("Failed to get private key: {}", e));
+            errors.push(format!("Failed to get private key: {e}"));
         }
     }
 }
