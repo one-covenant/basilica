@@ -793,7 +793,7 @@ impl SecurityConfig {
                     Err(anyhow::anyhow!("private key file does not exist"))
                 } else {
                     match fs::read_to_string(path) {
-                        Ok(private_key) => Ok(private_key),
+                        Ok(private_key) => Ok(private_key.trim().to_string()),
                         Err(e) => Err(anyhow::anyhow!("Failed to read private key file: {}", e)),
                     }
                 }
