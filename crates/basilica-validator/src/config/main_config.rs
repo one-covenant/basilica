@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use basilica_common::config::{
@@ -545,7 +545,7 @@ impl ValidatorConfig {
     }
 
     /// Load configuration from specific file
-    pub fn load_from_file(path: &std::path::Path) -> Result<Self> {
+    pub fn load_from_file(path: &Path) -> Result<Self> {
         Ok(loader::load_from_file::<Self>(path)?)
     }
 }
