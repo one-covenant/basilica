@@ -501,11 +501,13 @@ impl AssignmentStrategy for HighestStakeAssignment {
     }
 }
 
+#[cfg(test)]
 /// Manual assignment strategy that reads from the database
 pub struct ManualAssignment {
     pool: SqlitePool,
 }
 
+#[cfg(test)]
 impl ManualAssignment {
     /// Create a new manual assignment strategy
     pub fn new(pool: SqlitePool) -> Self {
@@ -513,6 +515,7 @@ impl ManualAssignment {
     }
 }
 
+#[cfg(test)]
 #[async_trait]
 impl AssignmentStrategy for ManualAssignment {
     async fn assign_executors(
