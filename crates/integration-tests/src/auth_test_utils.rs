@@ -4,8 +4,10 @@
 //! for testing authentication functionality across integration tests.
 
 use anyhow::Result;
+use basilica_executor::miner_auth;
+use basilica_miner::executor_auth;
+use basilica_protocol::common::MinerAuthentication;
 use chrono::{Duration, Utc};
-use protocol::common::MinerAuthentication;
 
 /// Mock Bittensor service for testing
 #[derive(Clone)]
@@ -60,7 +62,7 @@ impl MockExecutorAuthService {
         let request_id = uuid::Uuid::new_v4().to_string();
 
         // Create canonical data to sign
-        let canonical_data = miner::executor_auth::create_canonical_data(
+        let canonical_data = executor_auth::create_canonical_data(
             &self.miner_hotkey,
             timestamp_ms,
             &nonce,
@@ -98,9 +100,7 @@ pub fn create_valid_auth(miner_hotkey: &str, request_data: &[u8]) -> Result<Mine
 }
 
 /// Test helper to create miner auth service with default config (signature verification disabled)
-pub fn create_miner_auth_service(
-    expected_miner_hotkey: &str,
-) -> executor::miner_auth::MinerAuthService {
+pub fn create_miner_auth_service(expected_miner_hotkey: &str) -> miner_auth::MinerAuthService {
     create_miner_auth_service_with_config(expected_miner_hotkey, Duration::minutes(5), false)
 }
 
@@ -109,14 +109,16 @@ pub fn create_miner_auth_service_with_config(
     expected_miner_hotkey: &str,
     max_request_age: Duration,
     verify_signatures: bool,
-) -> executor::miner_auth::MinerAuthService {
-    let config = executor::miner_auth::MinerAuthConfig {
-        managing_miner_hotkey: common::identity::Hotkey::new(expected_miner_hotkey.to_string())
-            .unwrap(),
+) -> miner_auth::MinerAuthService {
+    let config = miner_auth::MinerAuthConfig {
+        managing_miner_hotkey: basilica_common::identity::Hotkey::new(
+            expected_miner_hotkey.to_string(),
+        )
+        .unwrap(),
         max_request_age,
         verify_signatures,
     };
-    executor::miner_auth::MinerAuthService::new(config)
+    miner_auth::MinerAuthService::new(config)
 }
 
 /// Common test hotkeys for consistency across tests
@@ -179,7 +181,7 @@ pub fn assert_grpc_error_contains(result: &Result<(), tonic::Status>, expected_m
 /// This prevents the circular dependency issue where auth field is included in signature.
 pub fn create_authenticated_request<T>(request: T, miner_hotkey: &str) -> Result<T>
 where
-    T: prost::Message + miner::executor_auth::AuthenticatedRequest + Clone,
+    T: prost::Message + executor_auth::AuthenticatedRequest + Clone,
 {
     // Serialize request without auth field for signature calculation
     let request_bytes = request.encode_to_vec();
@@ -198,7 +200,7 @@ pub fn create_expired_authenticated_request<T>(
     hours_ago: i64,
 ) -> Result<T>
 where
-    T: prost::Message + miner::executor_auth::AuthenticatedRequest + Clone,
+    T: prost::Message + executor_auth::AuthenticatedRequest + Clone,
 {
     let _request_bytes = request.encode_to_vec();
 

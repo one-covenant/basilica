@@ -12,7 +12,7 @@ Group=basilica
 WorkingDirectory=/var/lib/basilica/validator
 Environment=RUST_LOG=info
 Environment=RUST_BACKTRACE=1
-ExecStart=/usr/local/bin/validator start --config /etc/basilica/validator.toml
+ExecStart=/usr/local/bin/basilica-validator start --config /etc/basilica/validator.toml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=10

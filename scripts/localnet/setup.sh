@@ -42,10 +42,10 @@ echo " Ready!"
 # Build and start Basilica services
 echo ""
 echo "4. Starting Basilica services..."
-docker compose -f compose.yml build executor miner validator public-api
+docker compose -f compose.yml build executor miner validator basilica-api
 docker compose -f compose.yml up -d executor redis prometheus grafana
 sleep 5  # Wait for executor to be healthy
-docker compose -f compose.yml up -d miner validator public-api
+docker compose -f compose.yml up -d miner validator basilica-api
 
 echo ""
 echo "=== Setup Complete! ==="
@@ -55,7 +55,7 @@ echo "  - Subtensor (Alice): ws://localhost:9944"
 echo "  - Executor: localhost:50052 (gRPC), http://localhost:8082/metrics"
 echo "  - Miner: localhost:8092 (gRPC), http://localhost:8090/metrics"
 echo "  - Validator: localhost:50053 (gRPC), http://localhost:3002 (API)"
-echo "  - Public API: http://localhost:8000 (may have issues with localnet)"
+echo "  - Basilica API: http://localhost:8000 (may have issues with localnet)"
 echo "  - Redis: localhost:6379"
 echo "  - Prometheus: http://localhost:9090"
 echo "  - Grafana: http://localhost:3000"

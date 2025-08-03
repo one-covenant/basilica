@@ -23,11 +23,11 @@ dirs = "5.0"
 rand = "0.8"
 
 # Internal dependencies
-validator = { path = "../validator" }
-miner = { path = "../miner" }
-executor = { path = "../executor" }
-protocol = { path = "../protocol" }
-common = { path = "../common" }
+basilica-validator = { path = "../basilica-validator" }
+basilica-miner = { path = "../basilica-miner" }
+basilica-executor = { path = "../basilica-executor" }
+basilica-protocol = { path = "../basilica-protocol" }
+basilica-common = { path = "../basilica-common" }
 uuid = { version = "1.0", features = ["v4"] }
 prost = "0.12"
 tonic = "0.10"

@@ -11,7 +11,7 @@ User=root
 Group=root
 WorkingDirectory=/opt/basilica
 Environment=RUST_LOG=debug
-ExecStart=/opt/basilica/executor --server --config /opt/basilica/config/executor.toml
+ExecStart=/opt/basilica/basilica-executor --server --config /opt/basilica/config/executor.toml
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure

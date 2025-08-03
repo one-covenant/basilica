@@ -58,19 +58,20 @@ log() {
     echo "[$(date '+%H:%M:%S')] $*"
 }
 
+
 ssh_cmd() {
     local service="$1"
     local cmd="$2"
 
     case $service in
         validator)
-            timeout "$TIMEOUT" ssh -o ConnectTimeout=30 "$VALIDATOR_USER@$VALIDATOR_HOST" -p "$VALIDATOR_PORT" "$cmd"
+            ssh -o ConnectTimeout=30 "$VALIDATOR_USER@$VALIDATOR_HOST" -p "$VALIDATOR_PORT" "$cmd"
             ;;
         miner)
-            timeout "$TIMEOUT" ssh -o ConnectTimeout=30 "$MINER_USER@$MINER_HOST" -p "$MINER_PORT" "$cmd"
+            ssh -o ConnectTimeout=30 "$MINER_USER@$MINER_HOST" -p "$MINER_PORT" "$cmd"
             ;;
         executor)
-            timeout "$TIMEOUT" ssh -o ConnectTimeout=30 "$EXECUTOR_USER@$EXECUTOR_HOST" -p "$EXECUTOR_PORT" "$cmd"
+            ssh -o ConnectTimeout=30 "$EXECUTOR_USER@$EXECUTOR_HOST" -p "$EXECUTOR_PORT" "$cmd"
             ;;
     esac
 }
