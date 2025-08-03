@@ -3,10 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
-    Start {
-        #[arg(long)]
-        config: Option<PathBuf>,
-    },
+    Start,
 
     Stop,
 

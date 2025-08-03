@@ -6,9 +6,8 @@
 use anyhow::{Context, Result};
 use basilica_common::identity::MinerUid;
 use clap::Parser;
-use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
+use std::{path::PathBuf, sync::Arc};
 use tokio::signal;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -384,7 +383,7 @@ async fn main() -> Result<()> {
         let config = MinerConfig::default();
         let toml_content = toml::to_string_pretty(&config)?;
         std::fs::write(&args.config, toml_content)?;
-        println!("Generated configuration file: {}", args.config);
+        println!("Generated configuration file: {}", args.config.display());
         return Ok(());
     }
 
@@ -393,7 +392,7 @@ async fn main() -> Result<()> {
 
     // Load configuration
     let config = load_config(&args.config)?;
-    info!("Loaded configuration from: {}", args.config);
+    info!("Loaded configuration from: {}", args.config.display());
 
     // Handle CLI commands if provided
     if let Some(command) = args.command {
@@ -561,12 +560,12 @@ fn init_logging(level: &str) -> Result<()> {
 }
 
 /// Load configuration from file and environment
-fn load_config(config_path: &str) -> Result<MinerConfig> {
+fn load_config(config_path: &PathBuf) -> Result<MinerConfig> {
     use basilica_common::config::ConfigValidation;
 
-    let path = PathBuf::from(config_path);
+    let path = config_path;
     let config = if path.exists() {
-        MinerConfig::load_from_file(&path)?
+        MinerConfig::load_from_file(path)?
     } else {
         MinerConfig::load()?
     };
