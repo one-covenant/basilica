@@ -12,6 +12,8 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
+  RUSTFLAGS: "-Clink-arg=-fuse-ld=mold"
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: "clang"
 
 permissions:
   contents: read
@@ -77,20 +79,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
-      - name: Cache system dependencies
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt
-          key: apt-cache-${{ runner.os }}-format-lint
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev xxd
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
@@ -118,20 +120,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
-      - name: Cache system dependencies
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt
-          key: apt-cache-${{ runner.os }}-lint-complex
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev xxd
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
@@ -165,20 +167,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
-      - name: Cache system dependencies
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt
-          key: apt-cache-${{ runner.os }}-executor
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev xxd
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
       - name: Generate test key
@@ -192,7 +194,7 @@ jobs:
       - name: Test executor crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo test -p basilica-executor --lib
+          cargo nextest run -p basilica-executor --lib
       - name: Test executor CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
@@ -225,15 +227,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
-      - name: Cache system dependencies
-        uses: actions/cache@v4
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          path: /var/cache/apt
-          key: apt-cache-${{ runner.os }}-validator
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler pkg-config libssl-dev xxd
+          packages: protobuf-compiler pkg-config libssl-dev xxd mold clang
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
       - name: Generate test key
@@ -247,7 +249,7 @@ jobs:
       - name: Test validator crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo test -p basilica-validator --lib
+          cargo nextest run -p basilica-validator --lib
       - name: Test validator CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
@@ -280,20 +282,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
-      - name: Cache system dependencies
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt
-          key: apt-cache-${{ runner.os }}-miner
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev xxd
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
       - name: Generate test key
@@ -307,7 +309,7 @@ jobs:
       - name: Test miner crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo test -p basilica-miner --lib
+          cargo nextest run -p basilica-miner --lib
       - name: Test miner CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
@@ -323,7 +325,7 @@ jobs:
           BITTENSOR_NETWORK=finney ./scripts/miner/build.sh --no-extract
 
   # Build and test basilica-api
-  build-basilica-api:
+  build-api:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.basilica-api == 'true' || needs.changes.outputs.workspace == 'true'
@@ -339,20 +341,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
-      - name: Cache system dependencies
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt
-          key: apt-cache-${{ runner.os }}-basilica-api
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev xxd
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
       - name: Generate test key
@@ -366,7 +368,7 @@ jobs:
       - name: Test basilica-api crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo test -p basilica-api --lib
+          cargo nextest run -p basilica-api --lib
       - name: Test basilica-api CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
@@ -390,7 +392,7 @@ jobs:
       - build-executor
       - build-validator
       - build-miner
-      - build-basilica-api
+      - build-api
     if: always()
     steps:
       - name: Check if all jobs succeeded
@@ -400,7 +402,7 @@ jobs:
                 ("${{ needs.build-executor.result }}" == "success" || "${{ needs.build-executor.result }}" == "skipped") && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
-                ("${{ needs.build-basilica-api.result }}" == "success" || "${{ needs.build-basilica-api.result }}" == "skipped") ]]; then
+                ("${{ needs.build-api.result }}" == "success" || "${{ needs.build-api.result }}" == "skipped") ]]; then
             echo "All CI checks passed!"
             exit 0
           else
