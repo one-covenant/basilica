@@ -104,7 +104,7 @@ jobs:
       - name: Run clippy on core packages
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo clippy -p basilica-common -p basilica-protocol -p bittensor --all-targets -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+          cargo clippy -p basilica-common -p basilica-protocol -p bittensor --all-targets -- -D warnings
 
   # Lint complex packages
   lint-complex:
@@ -140,13 +140,13 @@ jobs:
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           # Run clippy without vulkan feature to avoid shaderc-sys CMake requirement
-          cargo clippy -p basilica-executor --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+          cargo clippy -p basilica-executor --all-targets --all-features -- -D warnings
           # Run clippy on miner
-          cargo clippy -p basilica-miner --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+          cargo clippy -p basilica-miner --all-targets --all-features -- -D warnings
           # Run clippy on validator
-          cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+          cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
           # Run clippy on basilica-api
-          cargo clippy -p basilica-api --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+          cargo clippy -p basilica-api --all-targets --all-features -- -D warnings
 
   # Build and test executor
   build-executor:

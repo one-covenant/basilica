@@ -6,8 +6,9 @@
 use anyhow::{Context, Result};
 use basilica_common::identity::MinerUid;
 use clap::Parser;
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
-use std::{path::PathBuf, sync::Arc};
 use tokio::signal;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -560,7 +561,7 @@ fn init_logging(level: &str) -> Result<()> {
 }
 
 /// Load configuration from file and environment
-fn load_config(config_path: &PathBuf) -> Result<MinerConfig> {
+fn load_config(config_path: &Path) -> Result<MinerConfig> {
     use basilica_common::config::ConfigValidation;
 
     let path = config_path;
