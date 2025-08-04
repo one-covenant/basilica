@@ -7,44 +7,52 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::cli::commands::RentalAction;
-use crate::miner_prover::miner_client::{MinerClient, MinerClientConfig};
-use crate::persistence::SimplePersistence;
+use crate::config::ValidatorConfig;
+use crate::miner_prover::miner_client::{BittensorServiceSigner, MinerClient, MinerClientConfig};
+use crate::persistence::{SimplePersistence, ValidatorPersistence};
 use crate::rental::{
     ContainerSpec, NetworkConfig, PortMapping, RentalManager, RentalRequest, ResourceRequirements,
 };
+use crate::ssh::ValidatorSshKeyManager;
 use basilica_common::identity::Hotkey;
 
 /// Handle rental commands
 pub async fn handle_rental_command(
     action: RentalAction,
+    config: &ValidatorConfig,
     validator_hotkey: Hotkey,
     persistence: Arc<SimplePersistence>,
+    bittensor_service: Arc<bittensor::Service>,
 ) -> Result<()> {
     match action {
         RentalAction::Start {
             miner_uid,
             miner_endpoint,
             executor,
-            container,
+            image,
             ports,
             env,
             ssh_public_key,
             command,
+            entrypoint,
             cpu_cores,
             memory_mb,
             gpu_count,
         } => {
             handle_start_rental(
+                config,
                 validator_hotkey,
                 persistence,
+                bittensor_service,
                 miner_uid,
                 miner_endpoint,
                 executor,
-                container,
+                image,
                 ports,
                 env,
                 ssh_public_key,
                 command,
+                entrypoint,
                 cpu_cores,
                 memory_mb,
                 gpu_count,
@@ -52,29 +60,52 @@ pub async fn handle_rental_command(
             .await
         }
         RentalAction::Status { id } => {
-            handle_rental_status(validator_hotkey, persistence, id).await
+            handle_rental_status(config, validator_hotkey, persistence, bittensor_service, id).await
         }
         RentalAction::Logs { id, follow, tail } => {
-            handle_rental_logs(validator_hotkey, persistence, id, follow, tail).await
+            handle_rental_logs(
+                config,
+                validator_hotkey,
+                persistence,
+                bittensor_service,
+                id,
+                follow,
+                tail,
+            )
+            .await
         }
         RentalAction::Stop { id, force } => {
-            handle_stop_rental(validator_hotkey, persistence, id, force).await
+            handle_stop_rental(
+                config,
+                validator_hotkey,
+                persistence,
+                bittensor_service,
+                id,
+                force,
+            )
+            .await
+        }
+        RentalAction::List { state } => {
+            handle_list_rentals(validator_hotkey, persistence, state).await
         }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn handle_start_rental(
+    config: &ValidatorConfig,
     validator_hotkey: Hotkey,
     persistence: Arc<SimplePersistence>,
+    bittensor_service: Arc<bittensor::Service>,
     miner_uid: Option<u16>,
     miner_endpoint: Option<String>,
     executor: String,
-    container: String,
+    image: String,
     ports: Vec<String>,
     env: Vec<String>,
     ssh_public_key: String,
     command: Option<String>,
+    entrypoint: String,
     cpu_cores: Option<f64>,
     memory_mb: Option<i64>,
     gpu_count: Option<u32>,
@@ -111,12 +142,28 @@ async fn handle_start_rental(
 
     let environment = parse_environment_variables(&env)?;
 
-    let miner_client = Arc::new(MinerClient::new(
+    let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
+
+    let miner_client = Arc::new(MinerClient::with_signer(
         MinerClientConfig::default(),
         validator_hotkey.clone(),
+        signer,
     ));
 
-    let rental_manager = RentalManager::new(miner_client.clone(), persistence.clone());
+    let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
+    let mut ssh_key_manager = ValidatorSshKeyManager::new(ssh_key_dir).await?;
+
+    ssh_key_manager
+        .load_or_generate_persistent_key(None)
+        .await?;
+
+    let ssh_key_manager = Arc::new(ssh_key_manager);
+
+    let rental_manager = RentalManager::with_ssh_key_manager(
+        miner_client.clone(),
+        persistence.clone(),
+        ssh_key_manager,
+    );
 
     let mut miner_connection = miner_client
         .connect_and_authenticate(&actual_endpoint)
@@ -128,7 +175,7 @@ async fn handle_start_rental(
         miner_id,
         executor_id: executor,
         container_spec: ContainerSpec {
-            image: container,
+            image,
             environment,
             ports: port_mappings,
             resources: ResourceRequirements {
@@ -138,7 +185,9 @@ async fn handle_start_rental(
                 gpu_count: gpu_count.unwrap_or(0),
                 gpu_types: Vec::new(),
             },
-            command: command.map(|c| vec![c]).unwrap_or_default(),
+            command: command
+                .map(|c| vec![c])
+                .unwrap_or_else(|| vec![entrypoint.clone()]),
             volumes: Vec::new(),
             labels: std::collections::HashMap::new(),
             capabilities: Vec::new(),
@@ -169,20 +218,33 @@ async fn handle_start_rental(
 }
 
 async fn handle_rental_status(
+    config: &ValidatorConfig,
     validator_hotkey: Hotkey,
     persistence: Arc<SimplePersistence>,
+    bittensor_service: Arc<bittensor::Service>,
     rental_id: String,
 ) -> Result<()> {
     info!("Getting status for rental {}", rental_id);
 
-    // Create miner client (we'll need to determine which miner from rental info)
-    let miner_client = Arc::new(MinerClient::new(
+    let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
+
+    let miner_client = Arc::new(MinerClient::with_signer(
         MinerClientConfig::default(),
         validator_hotkey.clone(),
+        signer,
     ));
 
-    // Create rental manager
-    let rental_manager = RentalManager::new(miner_client, persistence.clone());
+    let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
+    let mut ssh_key_manager = ValidatorSshKeyManager::new(ssh_key_dir).await?;
+
+    ssh_key_manager
+        .load_or_generate_persistent_key(None)
+        .await?;
+
+    let ssh_key_manager = Arc::new(ssh_key_manager);
+
+    let rental_manager =
+        RentalManager::with_ssh_key_manager(miner_client, persistence.clone(), ssh_key_manager);
 
     // Get rental status
     let status = rental_manager
@@ -208,22 +270,35 @@ async fn handle_rental_status(
 }
 
 async fn handle_rental_logs(
+    config: &ValidatorConfig,
     validator_hotkey: Hotkey,
     persistence: Arc<SimplePersistence>,
+    bittensor_service: Arc<bittensor::Service>,
     rental_id: String,
     follow: bool,
     tail: Option<u32>,
 ) -> Result<()> {
     info!("Streaming logs for rental {}", rental_id);
 
-    // Create miner client
-    let miner_client = Arc::new(MinerClient::new(
+    let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
+
+    let miner_client = Arc::new(MinerClient::with_signer(
         MinerClientConfig::default(),
         validator_hotkey.clone(),
+        signer,
     ));
 
-    // Create rental manager
-    let rental_manager = RentalManager::new(miner_client, persistence.clone());
+    let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
+    let mut ssh_key_manager = ValidatorSshKeyManager::new(ssh_key_dir).await?;
+
+    ssh_key_manager
+        .load_or_generate_persistent_key(None)
+        .await?;
+
+    let ssh_key_manager = Arc::new(ssh_key_manager);
+
+    let rental_manager =
+        RentalManager::with_ssh_key_manager(miner_client, persistence.clone(), ssh_key_manager);
 
     // Stream logs
     let mut log_receiver = rental_manager
@@ -243,21 +318,34 @@ async fn handle_rental_logs(
 }
 
 async fn handle_stop_rental(
+    config: &ValidatorConfig,
     validator_hotkey: Hotkey,
     persistence: Arc<SimplePersistence>,
+    bittensor_service: Arc<bittensor::Service>,
     rental_id: String,
     force: bool,
 ) -> Result<()> {
     info!("Stopping rental {}", rental_id);
 
-    // Create miner client
-    let miner_client = Arc::new(MinerClient::new(
+    let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
+
+    let miner_client = Arc::new(MinerClient::with_signer(
         MinerClientConfig::default(),
         validator_hotkey.clone(),
+        signer,
     ));
 
-    // Create rental manager
-    let rental_manager = RentalManager::new(miner_client, persistence.clone());
+    let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
+    let mut ssh_key_manager = ValidatorSshKeyManager::new(ssh_key_dir).await?;
+
+    ssh_key_manager
+        .load_or_generate_persistent_key(None)
+        .await?;
+
+    let ssh_key_manager = Arc::new(ssh_key_manager);
+
+    let rental_manager =
+        RentalManager::with_ssh_key_manager(miner_client, persistence.clone(), ssh_key_manager);
 
     // Stop rental
     rental_manager
@@ -266,6 +354,59 @@ async fn handle_stop_rental(
         .context("Failed to stop rental")?;
 
     info!("Rental {} stopped successfully", rental_id);
+
+    Ok(())
+}
+
+async fn handle_list_rentals(
+    validator_hotkey: Hotkey,
+    persistence: Arc<SimplePersistence>,
+    state_filter: String,
+) -> Result<()> {
+    info!("Listing rentals with filter: {}", state_filter);
+
+    let rentals = persistence
+        .list_validator_rentals(&validator_hotkey.to_string())
+        .await?;
+
+    if rentals.is_empty() {
+        info!("No rentals found for validator {}", validator_hotkey);
+        return Ok(());
+    }
+
+    let filtered_rentals: Vec<_> = match state_filter.as_str() {
+        "active" => rentals
+            .into_iter()
+            .filter(|r| matches!(r.state, crate::rental::RentalState::Active))
+            .collect(),
+        "stopped" => rentals
+            .into_iter()
+            .filter(|r| matches!(r.state, crate::rental::RentalState::Stopped))
+            .collect(),
+        _ => rentals, // "all" or any other value shows all rentals
+    };
+
+    info!("Found {} rentals:", filtered_rentals.len());
+    info!("");
+    info!("ID                                    | Container ID         | State   | Executor                             | Created");
+    info!("--------------------------------------+----------------------+---------+--------------------------------------+-------------------------");
+
+    for rental in filtered_rentals {
+        let container_id_short = if rental.container_id.len() > 12 {
+            &rental.container_id[..12]
+        } else {
+            &rental.container_id
+        };
+
+        info!(
+            "{:<36} | {:<20} | {:<7} | {:<36} | {}",
+            rental.rental_id,
+            container_id_short,
+            format!("{:?}", rental.state),
+            rental.executor_id,
+            rental.created_at
+        );
+    }
 
     Ok(())
 }

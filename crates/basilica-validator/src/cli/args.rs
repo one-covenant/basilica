@@ -67,7 +67,7 @@ impl Args {
                     ).await?
                 );
 
-                rental::handle_rental_command(action, validator_hotkey, persistence).await
+                rental::handle_rental_command(action, &config, validator_hotkey, persistence, std::sync::Arc::new(bittensor_service)).await
             }
         }
     }
