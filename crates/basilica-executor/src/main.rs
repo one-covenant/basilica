@@ -6,7 +6,7 @@
 
 use anyhow::Result;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::Path;
 use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -182,7 +182,7 @@ fn init_logging(level: &str) -> Result<()> {
     Ok(())
 }
 
-fn load_config(path: &PathBuf) -> Result<ExecutorConfig> {
+fn load_config(path: &Path) -> Result<ExecutorConfig> {
     let config = if path.exists() {
         ExecutorConfig::load_from_file(path)?
     } else {
