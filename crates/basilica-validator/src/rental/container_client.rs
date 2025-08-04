@@ -86,7 +86,7 @@ impl ContainerClient {
                 let host = &host_port[..colon_pos];
                 let port_str = &host_port[colon_pos + 1..];
                 if let Ok(port_num) = port_str.parse::<u16>() {
-                    (format!("{}{}", user_part, host), Some(port_num))
+                    (format!("{user_part}{host}"), Some(port_num))
                 } else {
                     (self.ssh_connection.clone(), None)
                 }
