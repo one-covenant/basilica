@@ -46,9 +46,10 @@ port = 8092
 max_connections = 100
 
 [ssh_session]
-# ssh session limits
+# Maximum concurrent SSH sessions allowed per validator
 max_sessions_per_validator = 100
-session_rate_limit = 200
+# Allowed SSH session **creations per second** (rate-limit burst handled by validator)
+session_rate_limit = 200   # sessions / second
 
 [database]
 url = "sqlite:./data/miner.db"
