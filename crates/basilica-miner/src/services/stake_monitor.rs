@@ -39,12 +39,14 @@ impl StakeMonitor {
 
         let assignment_db = AssignmentDb::new(pool);
 
+        let min_stake_threshold = config.validator_assignment.min_stake_threshold;
+
         Ok(Self {
             bittensor_service,
             netuid: config.bittensor.common.netuid,
             assignment_db,
             update_interval: Duration::from_secs(300), // 5 minutes default
-            min_stake_threshold: 100.0,                // 100 TAO minimum
+            min_stake_threshold,
         })
     }
 

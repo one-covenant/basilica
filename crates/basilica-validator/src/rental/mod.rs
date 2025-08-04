@@ -5,7 +5,6 @@
 
 use anyhow::Result;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 pub mod container_client;
@@ -27,8 +26,6 @@ use basilica_protocol::basilca::miner::v1::CloseSshSessionRequest;
 pub struct RentalManager {
     /// Persistence layer
     persistence: Arc<SimplePersistence>,
-    /// Active rentals
-    active_rentals: Arc<RwLock<std::collections::HashMap<String, RentalInfo>>>,
     /// Deployment manager
     deployment_manager: Arc<DeploymentManager>,
     /// Log streamer
@@ -50,7 +47,6 @@ impl RentalManager {
 
         Self {
             persistence,
-            active_rentals: Arc::new(RwLock::new(std::collections::HashMap::new())),
             deployment_manager: deployment_manager.clone(),
             log_streamer: log_streamer.clone(),
             health_monitor: health_monitor.clone(),
@@ -145,18 +141,8 @@ impl RentalManager {
             miner_id: request.miner_id.clone(),
         };
 
-        // Store in active rentals first
-        {
-            let mut rentals = self.active_rentals.write().await;
-            rentals.insert(rental_id.clone(), rental_info.clone());
-        }
-
-        if let Err(e) = self.persistence.save_rental(&rental_info).await {
-            // Rollback: remove from active rentals
-            let mut rentals = self.active_rentals.write().await;
-            rentals.remove(&rental_id);
-            return Err(e);
-        }
+        // Save to persistence
+        self.persistence.save_rental(&rental_info).await?;
 
         // Start health monitoring
         if let Err(e) = self
@@ -164,10 +150,7 @@ impl RentalManager {
             .start_monitoring(&rental_id, &container_client)
             .await
         {
-            // Rollback: remove from both persistence and active rentals
             let _ = self.persistence.delete_rental(&rental_id).await;
-            let mut rentals = self.active_rentals.write().await;
-            rentals.remove(&rental_id);
             return Err(e);
         }
 
@@ -180,9 +163,10 @@ impl RentalManager {
 
     /// Get rental status
     pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatus> {
-        let rentals = self.active_rentals.read().await;
-        let rental_info = rentals
-            .get(rental_id)
+        let rental_info = self
+            .persistence
+            .load_rental(rental_id)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
         // Get container status
@@ -214,13 +198,11 @@ impl RentalManager {
 
     /// Stop a rental
     pub async fn stop_rental(&self, rental_id: &str, force: bool) -> Result<()> {
-        let rental_info = {
-            let rentals = self.active_rentals.read().await;
-            rentals
-                .get(rental_id)
-                .ok_or_else(|| anyhow::anyhow!("Rental not found"))?
-                .clone()
-        };
+        let rental_info = self
+            .persistence
+            .load_rental(rental_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
         // Stop health monitoring
         self.health_monitor.stop_monitoring(rental_id).await?;
@@ -254,12 +236,6 @@ impl RentalManager {
         updated_rental.state = RentalState::Stopped;
         self.persistence.save_rental(&updated_rental).await?;
 
-        // Now remove from active rentals after all cleanup is done
-        {
-            let mut rentals = self.active_rentals.write().await;
-            rentals.remove(rental_id);
-        }
-
         Ok(())
     }
 
@@ -270,9 +246,10 @@ impl RentalManager {
         follow: bool,
         tail_lines: Option<u32>,
     ) -> Result<tokio::sync::mpsc::Receiver<LogEntry>> {
-        let rentals = self.active_rentals.read().await;
-        let rental_info = rentals
-            .get(rental_id)
+        let rental_info = self
+            .persistence
+            .load_rental(rental_id)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
         let container_client = ContainerClient::new(
@@ -325,5 +302,11 @@ impl RentalManager {
         );
 
         Ok(())
+    }
+
+    pub async fn list_rentals(&self, validator_hotkey: &str) -> Result<Vec<RentalInfo>> {
+        self.persistence
+            .list_validator_rentals(validator_hotkey)
+            .await
     }
 }

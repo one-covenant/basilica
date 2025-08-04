@@ -1098,10 +1098,12 @@ impl WeightSetter {
         // Only match executor_ids that belong to this specific miner
         // New format: "miner{uid}__{original_executor_id}" prevents cross-miner matches
         let query = r#"
-            SELECT vl.*, me.miner_id
+            SELECT vl.*, me.miner_id, me.status
             FROM verification_logs vl
             JOIN miner_executors me ON vl.executor_id = me.executor_id
-            WHERE me.miner_id = ? AND vl.timestamp >= ?
+            WHERE me.miner_id = ?
+                AND vl.timestamp >= ?
+                AND me.status IN ('online', 'verified')
             ORDER BY vl.timestamp DESC
         "#;
 

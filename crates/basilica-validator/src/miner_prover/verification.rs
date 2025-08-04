@@ -447,6 +447,9 @@ impl VerificationEngine {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#;
 
+        let now = chrono::Utc::now().to_rfc3339();
+        let success = verification_log.success;
+
         if let Err(e) = sqlx::query(query)
             .bind(verification_log.id.to_string())
             .bind(&verification_log.executor_id)
@@ -454,7 +457,7 @@ impl VerificationEngine {
             .bind(&verification_log.verification_type)
             .bind(verification_log.timestamp.to_rfc3339())
             .bind(verification_log.score)
-            .bind(if verification_log.success { 1 } else { 0 })
+            .bind(if success { 1 } else { 0 })
             .bind(
                 serde_json::to_string(&verification_log.details)
                     .unwrap_or_else(|_| "{}".to_string()),
@@ -468,6 +471,22 @@ impl VerificationEngine {
         {
             error!("Failed to store verification log: {}", e);
             return Err(anyhow::anyhow!("Database storage failed: {}", e));
+        }
+
+        let status = if success { "online" } else { "offline" };
+        if let Err(e) = sqlx::query(
+            "UPDATE miner_executors
+             SET status = ?, last_health_check = ?, updated_at = ?
+             WHERE executor_id = ?",
+        )
+        .bind(status)
+        .bind(&now)
+        .bind(&now)
+        .bind(&verification_log.executor_id)
+        .execute(self.persistence.pool())
+        .await
+        {
+            warn!("Failed to update executor health status: {}", e);
         }
 
         // Extract GPU infos from executor result if available
@@ -680,16 +699,16 @@ impl VerificationEngine {
                     let dup_executor_id: String = duplicate.get("executor_id");
 
                     warn!(
-                        "Removing duplicate executor {} (id: {}) with same grpc_address as {} for miner {}",
+                        "Marking duplicate executor {} (id: {}) as offline with same grpc_address as {} for miner {}",
                         dup_executor_id, dup_id, executor_id, miner_id
                     );
 
-                    sqlx::query("DELETE FROM miner_executors WHERE id = ?")
+                    sqlx::query("UPDATE miner_executors SET status = 'offline', last_health_check = datetime('now'), updated_at = datetime('now') WHERE id = ?")
                         .bind(&dup_id)
                         .execute(self.persistence.pool())
                         .await
                         .map_err(|e| {
-                            anyhow::anyhow!("Failed to delete duplicate executor: {}", e)
+                            anyhow::anyhow!("Failed to update duplicate executor status: {}", e)
                         })?;
 
                     // Also clean up associated GPU assignments for the duplicate
@@ -1816,29 +1835,156 @@ impl VerificationEngine {
         )
     }
 
-    /// Clean up stale executors that haven't been verified in a long time
-    pub async fn cleanup_stale_executors(&self, days_inactive: i64) -> Result<()> {
-        let query = r#"
-            DELETE FROM miner_executors
-            WHERE executor_id IN (
-                SELECT me.executor_id
-                FROM miner_executors me
-                LEFT JOIN verification_logs vl ON me.executor_id = vl.executor_id
-                LEFT JOIN gpu_uuid_assignments ga ON me.executor_id = ga.executor_id
-                WHERE vl.timestamp < datetime('now', ? || ' days')
-                OR vl.timestamp IS NULL
-                GROUP BY me.executor_id
-                HAVING COUNT(DISTINCT ga.gpu_uuid) = 0
-            )
+    /// Clean up executors that have failed validation or are stale for more than N epochs
+    pub async fn cleanup_failed_executors_after_epoch(
+        &self,
+        failed_epochs_threshold: i32,
+    ) -> Result<()> {
+        // Get the last N distinct validation batch timestamps
+        let batch_query = r#"
+            SELECT DISTINCT datetime(substr(timestamp, 1, 13) || ':00:00') as batch_time
+            FROM verification_logs
+            ORDER BY batch_time DESC
+            LIMIT ?
         "#;
 
-        let result = sqlx::query(query)
-            .bind(format!("-{days_inactive}"))
-            .execute(self.persistence.pool())
+        let batch_times = sqlx::query(batch_query)
+            .bind(failed_epochs_threshold + 1)
+            .fetch_all(self.persistence.pool())
             .await?;
 
-        if result.rows_affected() > 0 {
-            info!("Cleaned up {} stale executors", result.rows_affected());
+        if batch_times.len() <= failed_epochs_threshold as usize {
+            debug!(
+                "Not enough validation batches yet to cleanup (need {} batches)",
+                failed_epochs_threshold
+            );
+            return Ok(());
+        }
+
+        // Get the cutoff batch time
+        let cutoff_batch: String =
+            batch_times[failed_epochs_threshold as usize].try_get("batch_time")?;
+
+        // Find executors that have only failures OR no recent verifications since the cutoff
+        let failed_executors_query = r#"
+            SELECT
+                me.executor_id,
+                COUNT(CASE WHEN vl.success = 1 AND substr(vl.timestamp, 1, 19) >= ? THEN 1 END) as recent_successes,
+                COUNT(CASE WHEN vl.success = 0 AND substr(vl.timestamp, 1, 19) >= ? THEN 1 END) as recent_failures,
+                MAX(vl.timestamp) as last_seen,
+                CASE
+                    WHEN MAX(vl.timestamp) IS NULL OR substr(MAX(vl.timestamp), 1, 19) < ? THEN 1
+                    ELSE 0
+                END as is_stale
+            FROM miner_executors me
+            LEFT JOIN verification_logs vl ON me.executor_id = vl.executor_id
+            WHERE me.status != 'offline'
+            GROUP BY me.executor_id
+            HAVING (recent_failures > 0 AND recent_successes = 0)
+                OR is_stale = 1
+        "#;
+
+        let failed_executors = sqlx::query(failed_executors_query)
+            .bind(&cutoff_batch)
+            .bind(&cutoff_batch)
+            .bind(&cutoff_batch)
+            .fetch_all(self.persistence.pool())
+            .await?;
+
+        let mut marked_offline = 0;
+        let mut deleted = 0;
+        let mut stale_marked = 0;
+
+        for row in failed_executors {
+            let executor_id: String = row.try_get("executor_id")?;
+            let recent_failures: i32 = row.try_get("recent_failures")?;
+            let is_stale: i32 = row.try_get("is_stale")?;
+            let last_seen: Option<String> = row.try_get("last_seen")?;
+
+            // Handle stale executors (not verified recently)
+            if is_stale == 1 {
+                info!(
+                    "Executor {} is stale (last seen: {}), marking as offline",
+                    executor_id,
+                    last_seen.as_deref().unwrap_or("never")
+                );
+
+                // Mark as offline
+                sqlx::query(
+                    "UPDATE miner_executors
+                     SET status = 'offline',
+                         last_health_check = datetime('now'),
+                         updated_at = datetime('now')
+                     WHERE executor_id = ?",
+                )
+                .bind(&executor_id)
+                .execute(self.persistence.pool())
+                .await?;
+
+                stale_marked += 1;
+                marked_offline += 1;
+
+                // For stale executors, delete after 2x threshold without any verification
+                if last_seen.is_none() {
+                    sqlx::query("DELETE FROM miner_executors WHERE executor_id = ?")
+                        .bind(&executor_id)
+                        .execute(self.persistence.pool())
+                        .await?;
+                    deleted += 1;
+                    info!("Removed executor {} - never verified", executor_id);
+                }
+            }
+            // Handle executors with explicit failures
+            else if recent_failures >= failed_epochs_threshold {
+                // Mark as offline first
+                sqlx::query(
+                    "UPDATE miner_executors
+                     SET status = 'offline',
+                         last_health_check = datetime('now'),
+                         updated_at = datetime('now')
+                     WHERE executor_id = ?",
+                )
+                .bind(&executor_id)
+                .execute(self.persistence.pool())
+                .await?;
+
+                marked_offline += 1;
+
+                // If it's been failing for 2x the threshold, actually delete it
+                if recent_failures >= (failed_epochs_threshold * 2) {
+                    sqlx::query("DELETE FROM miner_executors WHERE executor_id = ?")
+                        .bind(&executor_id)
+                        .execute(self.persistence.pool())
+                        .await?;
+
+                    deleted += 1;
+                    info!(
+                        "Removed executor {} after {} consecutive failed epochs",
+                        executor_id, recent_failures
+                    );
+                }
+            }
+        }
+
+        if stale_marked > 0 {
+            info!(
+                "Marked {} stale executors as offline (not verified in {} epochs)",
+                stale_marked, failed_epochs_threshold
+            );
+        }
+
+        if marked_offline > 0 {
+            info!(
+                "Marked {} total executors as offline after {} validation epochs",
+                marked_offline, failed_epochs_threshold
+            );
+        }
+
+        if deleted > 0 {
+            info!(
+                "Permanently removed {} executors after extended offline period",
+                deleted
+            );
         }
 
         Ok(())

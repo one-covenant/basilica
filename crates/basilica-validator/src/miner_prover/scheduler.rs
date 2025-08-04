@@ -74,8 +74,9 @@ impl VerificationScheduler {
                     }
                 }
                 _ = cleanup_interval.tick() => {
-                    if let Err(e) = verification.cleanup_stale_executors(1).await {
-                        error!("Stale executor cleanup failed: {}", e);
+                    // Clean up executors that have failed for more than 2 epochs
+                    if let Err(e) = verification.cleanup_failed_executors_after_epoch(2).await {
+                        error!("Failed executor cleanup failed: {}", e);
                     }
                 }
             }
@@ -188,22 +189,14 @@ impl VerificationScheduler {
             "[EVAL_FLOW] Miner details"
         );
 
-        // Check if miner was recently verified
+        // Log when miner was last verified
         if let Some(last_verified) = miner_info.last_verified {
             let time_since_verification = chrono::Utc::now().signed_duration_since(last_verified);
             info!(
                 miner_uid = miner_uid,
                 time_since_last_verification = ?time_since_verification,
-                "[EVAL_FLOW] Miner was last verified ago"
+                "[EVAL_FLOW] Miner was last verified ago, proceeding to verify all executors"
             );
-            if time_since_verification < chrono::Duration::hours(1) {
-                info!(
-                    miner_uid = miner_uid,
-                    time_since_last_verification = ?time_since_verification,
-                    "[EVAL_FLOW] Miner was verified recently, skipping"
-                );
-                return Ok(());
-            }
         } else {
             info!(
                 miner_uid = miner_uid,
@@ -511,6 +504,10 @@ impl VerificationScheduler {
                         miners.len(),
                         result.overall_score
                     );
+
+                    if let Err(e) = verification.cleanup_failed_executors_after_epoch(2).await {
+                        warn!("Failed to cleanup executors after batch: {}", e);
+                    }
                 }
                 Err(e) => {
                     error!(
