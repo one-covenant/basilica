@@ -358,7 +358,7 @@ impl AuthenticatedMinerConnection {
             executor_id: executor_id.to_string(),
             purpose: "rental".to_string(),
             validator_public_key: validator_public_key.to_string(),
-            session_duration_secs: 0, // No predetermined duration for rentals
+            session_duration_secs: 3600, // No predetermined duration for rentals
             session_metadata: serde_json::json!({
                 "rental_id": rental_id,
                 "type": "container_deployment"
