@@ -1,3 +1,5 @@
+use crate::config::ValidatorConfig;
+
 use super::HandlerUtils;
 use anyhow::Result;
 use bittensor::Service as BittensorService;
@@ -11,13 +13,10 @@ use tracing::debug;
 use tracing::error;
 use tracing::info;
 
-pub async fn handle_start(config_path: Option<PathBuf>, local_test: bool) -> Result<()> {
+pub async fn handle_start(config_path: PathBuf, local_test: bool) -> Result<()> {
     HandlerUtils::print_info("Starting Basilica Validator...");
 
-    let config = match config_path.as_ref() {
-        Some(path) => HandlerUtils::load_config(Some(path.to_str().unwrap()))?,
-        None => HandlerUtils::load_config(None)?,
-    };
+    let config = HandlerUtils::load_config(config_path)?;
 
     HandlerUtils::validate_config(&config)?;
 
@@ -140,7 +139,7 @@ pub async fn handle_stop() -> Result<()> {
     Ok(())
 }
 
-pub async fn handle_status() -> Result<()> {
+pub async fn handle_status(config_path: PathBuf) -> Result<()> {
     println!("=== Basilica Validator Status ===");
     println!("Version: {}", env!("CARGO_PKG_VERSION"));
 
@@ -148,7 +147,7 @@ pub async fn handle_status() -> Result<()> {
     let mut all_healthy = true;
 
     // Load config to show actual configuration being used
-    let config = HandlerUtils::load_config(None)?;
+    let config = HandlerUtils::load_config(config_path)?;
 
     println!("\nConfiguration:");
     println!("  Wallet: {}", config.bittensor.common.wallet_name);
@@ -200,7 +199,7 @@ pub async fn handle_status() -> Result<()> {
 
     // 4. Check Bittensor network connection
     println!("\nBittensor Network Status:");
-    match test_bittensor_connectivity().await {
+    match test_bittensor_connectivity(&config).await {
         Ok(block_number) => {
             println!("  Bittensor network connected (block: {block_number})");
         }
@@ -538,12 +537,9 @@ async fn test_api_health(config: &crate::config::ValidatorConfig) -> Result<u64>
 }
 
 /// Test Bittensor network connectivity
-async fn test_bittensor_connectivity() -> Result<u64> {
-    // Load actual config to get Bittensor settings
-    let config = HandlerUtils::load_config(None)?;
-
+async fn test_bittensor_connectivity(config: &ValidatorConfig) -> Result<u64> {
     // Create a temporary Bittensor service to test connectivity
-    let service = bittensor::Service::new(config.bittensor.common)
+    let service = bittensor::Service::new(config.bittensor.common.clone())
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create Bittensor service: {}", e))?;
 

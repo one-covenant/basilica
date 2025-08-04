@@ -39,29 +39,34 @@ impl StakeMonitor {
 
         let assignment_db = AssignmentDb::new(pool);
 
+        let min_stake_threshold = config.validator_assignment.min_stake_threshold;
+
         Ok(Self {
             bittensor_service,
             netuid: config.bittensor.common.netuid,
             assignment_db,
             update_interval: Duration::from_secs(300), // 5 minutes default
-            min_stake_threshold: 100.0,                // 100 TAO minimum
+            min_stake_threshold,
         })
     }
 
-    /// Configure update interval (useful for testing)
-    pub fn with_update_interval(mut self, interval: Duration) -> Self {
+    #[cfg(test)]
+    /// Configure update interval
+    fn with_update_interval(mut self, interval: Duration) -> Self {
         self.update_interval = interval;
         self
     }
 
-    /// Configure minimum stake threshold (useful for testing)
-    pub fn with_min_stake_threshold(mut self, threshold: f64) -> Self {
+    #[cfg(test)]
+    /// Configure minimum stake threshold
+    fn with_min_stake_threshold(mut self, threshold: f64) -> Self {
         self.min_stake_threshold = threshold;
         self
     }
 
-    /// Force an immediate stake update (useful for testing)
-    pub async fn force_update(&self) -> Result<usize> {
+    #[cfg(test)]
+    /// Force an immediate stake update
+    async fn force_update(&self) -> Result<usize> {
         self.update_validator_stakes().await
     }
 

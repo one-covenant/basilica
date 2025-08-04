@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use super::Commands;
 use clap::Parser;
@@ -8,7 +9,7 @@ use clap::Parser;
 pub struct Args {
     /// Configuration file path
     #[arg(short, long, default_value = "miner.toml")]
-    pub config: String,
+    pub config: PathBuf,
 
     /// Log level (trace, debug, info, warn, error)
     #[arg(short, long, default_value = "info")]

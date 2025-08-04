@@ -3,10 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
-    Start {
-        #[arg(long)]
-        config: Option<PathBuf>,
-    },
+    Start,
 
     Stop,
 
@@ -138,7 +135,7 @@ pub enum DatabaseAction {
 }
 
 #[derive(Subcommand, Debug, Clone)]
-#[allow(dead_code, unused_imports)]
+#[allow(dead_code, unused_imports, clippy::large_enum_variant)]
 pub enum RentalAction {
     /// Start a new container rental
     Start {
@@ -162,9 +159,9 @@ pub enum RentalAction {
         #[arg(long)]
         executor: String,
 
-        /// Container image
+        /// Docker image to deploy (e.g., ubuntu:22.04, nginx:alpine)
         #[arg(long)]
-        container: String,
+        image: String,
 
         /// Port mappings (format: host:container:protocol)
         #[arg(long)]
@@ -181,6 +178,10 @@ pub enum RentalAction {
         /// Command to run in container
         #[arg(long)]
         command: Option<String>,
+
+        /// Entrypoint for the container (e.g., /bin/bash, /bin/sh)
+        #[arg(long, default_value = "/bin/bash")]
+        entrypoint: String,
 
         /// CPU cores
         #[arg(long)]
@@ -226,5 +227,12 @@ pub enum RentalAction {
         /// Force stop
         #[arg(long)]
         force: bool,
+    },
+
+    /// List all rentals
+    List {
+        /// Filter by state (active, stopped, all)
+        #[arg(long, default_value = "all")]
+        state: String,
     },
 }

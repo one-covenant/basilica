@@ -6,6 +6,7 @@
 
 use anyhow::Result;
 use std::net::SocketAddr;
+use std::path::Path;
 use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -37,13 +38,19 @@ async fn run_app(config: AppConfig) -> Result<()> {
 async fn run_config_generation(
     config: basilica_executor::cli::args::ConfigGenConfig,
 ) -> Result<()> {
-    info!("Generating configuration file: {}", config.output_path);
+    info!(
+        "Generating configuration file: {}",
+        config.output_path.display()
+    );
 
     let executor_config = ExecutorConfig::default();
     let toml_content = toml::to_string_pretty(&executor_config)?;
     std::fs::write(&config.output_path, toml_content)?;
 
-    println!("Generated configuration file: {}", config.output_path);
+    println!(
+        "Generated configuration file: {}",
+        config.output_path.display()
+    );
     Ok(())
 }
 
@@ -51,7 +58,10 @@ async fn run_server_mode(config: basilica_executor::cli::args::ServerConfig) -> 
     init_logging(&config.log_level)?;
 
     let executor_config = load_config(&config.config_path)?;
-    info!("Loaded configuration from: {}", config.config_path);
+    info!(
+        "Loaded configuration from: {}",
+        config.config_path.display()
+    );
 
     if config.metrics_enabled {
         init_metrics(config.metrics_addr).await?;
@@ -141,7 +151,7 @@ async fn run_cli_mode(config: basilica_executor::cli::args::CliConfig) -> Result
     init_logging("info")?;
 
     if let Some(command) = config.command {
-        let context = CliContext::new(config.config_path);
+        let context = CliContext::new(config.config_path.to_string_lossy().to_string());
         execute_command(command, &context).await
     } else {
         eprintln!("No command provided. Use --help for available commands or --server to start server mode.");
@@ -172,12 +182,9 @@ fn init_logging(level: &str) -> Result<()> {
     Ok(())
 }
 
-fn load_config(config_path: &str) -> Result<ExecutorConfig> {
-    use std::path::PathBuf;
-
-    let path = PathBuf::from(config_path);
+fn load_config(path: &Path) -> Result<ExecutorConfig> {
     let config = if path.exists() {
-        ExecutorConfig::load_from_file(&path)?
+        ExecutorConfig::load_from_file(path)?
     } else {
         ExecutorConfig::load()?
     };

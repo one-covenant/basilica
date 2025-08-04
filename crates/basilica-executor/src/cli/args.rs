@@ -9,6 +9,7 @@ use super::Commands;
 use anyhow::Result;
 use clap::Parser;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 /// Main application arguments
 #[derive(Parser, Debug)]
@@ -16,7 +17,7 @@ use std::net::SocketAddr;
 pub struct ExecutorArgs {
     /// Configuration file path
     #[arg(short, long, default_value = "executor.toml")]
-    pub config: String,
+    pub config: PathBuf,
 
     /// Log level (trace, debug, info, warn, error)
     #[arg(short, long, default_value = "info")]
@@ -105,7 +106,7 @@ pub enum ApplicationMode {
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub log_level: String,
-    pub config_path: String,
+    pub config_path: PathBuf,
     pub metrics_enabled: bool,
     pub metrics_addr: SocketAddr,
 }
@@ -113,14 +114,14 @@ pub struct ServerConfig {
 /// CLI mode configuration
 #[derive(Debug, Clone)]
 pub struct CliConfig {
-    pub config_path: String,
+    pub config_path: PathBuf,
     pub command: Option<Commands>,
 }
 
 /// Configuration generation settings
 #[derive(Debug, Clone)]
 pub struct ConfigGenConfig {
-    pub output_path: String,
+    pub output_path: PathBuf,
 }
 
 /// Application configuration resolver
@@ -186,7 +187,7 @@ impl AppConfig {
     }
 
     /// Get config file path if applicable
-    pub fn config_path(&self) -> Option<&str> {
+    pub fn config_path(&self) -> Option<&PathBuf> {
         match self {
             AppConfig::Server(config) => Some(&config.config_path),
             AppConfig::Cli(config) => Some(&config.config_path),
@@ -203,7 +204,7 @@ mod tests {
     #[test]
     fn test_application_mode_detection() {
         let args = ExecutorArgs {
-            config: "test.toml".to_string(),
+            config: "test.toml".into(),
             log_level: "debug".to_string(),
             metrics: false,
             metrics_addr: "127.0.0.1:9090".parse().unwrap(),
@@ -227,7 +228,7 @@ mod tests {
     #[test]
     fn test_config_resolution() {
         let args = ExecutorArgs {
-            config: "test.toml".to_string(),
+            config: "test.toml".into(),
             log_level: "debug".to_string(),
             metrics: true,
             metrics_addr: "127.0.0.1:9090".parse().unwrap(),

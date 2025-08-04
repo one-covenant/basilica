@@ -111,9 +111,28 @@ impl DeploymentManager {
             .await
             .context("Failed to deploy container")?;
 
-        self.configure_container_ssh_access(client, &container_info.container_id, ssh_public_key)
-            .await
-            .context("Failed to configure SSH access for container")?;
+        // Only configure SSH if the container is expected to stay running
+        let should_configure_ssh = secured_spec.command.is_empty()
+            || (secured_spec.command.len() == 1 && secured_spec.command[0] == "/bin/bash")
+            || secured_spec.ports.iter().any(|p| p.container_port == 22);
+
+        if should_configure_ssh {
+            // Give container a moment to fully start
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+            if let Err(e) = self
+                .configure_container_ssh_access(
+                    client,
+                    &container_info.container_id,
+                    ssh_public_key,
+                )
+                .await
+            {
+                warn!("Failed to configure SSH access for container: {}", e);
+            }
+        } else {
+            debug!("Skipping SSH configuration for container with custom command");
+        }
 
         info!(
             "Container {} deployed successfully for rental {}",
@@ -396,23 +415,146 @@ impl DeploymentManager {
     ) -> Result<()> {
         debug!("Configuring SSH access for container {}", container_id);
 
-        // Create .ssh directory in container
-        let mkdir_cmd =
-            format!("docker exec {container_id} mkdir -p /root/.ssh && chmod 700 /root/.ssh");
-        client
-            .execute_ssh_command(&mkdir_cmd)
+        // First, check if container is running
+        let check_running = format!("docker inspect -f '{{{{.State.Running}}}}' {container_id}");
+        let is_running = client
+            .execute_ssh_command(&check_running)
             .await
-            .context("Failed to create .ssh directory in container")?;
+            .unwrap_or_default()
+            .trim()
+            .eq("true");
 
-        use base64::Engine;
-        let encoded_key = base64::engine::general_purpose::STANDARD.encode(ssh_public_key);
-        let add_key_cmd = format!(
-            "docker exec {container_id} sh -c 'echo \"{encoded_key}\" | base64 -d >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'"
-        );
-        client
-            .execute_ssh_command(&add_key_cmd)
+        if !is_running {
+            debug!(
+                "Container {} is not running, skipping SSH configuration",
+                container_id
+            );
+            return Ok(());
+        }
+
+        // Check if SSH is available in the container
+        let check_ssh =
+            format!("docker exec {container_id} which sshd 2>/dev/null || echo 'not_found'");
+        let ssh_check_result = client
+            .execute_ssh_command(&check_ssh)
             .await
-            .context("Failed to add SSH key to container")?;
+            .unwrap_or_else(|_| "not_found".to_string());
+
+        let needs_ssh_install =
+            ssh_check_result.trim() == "not_found" || ssh_check_result.trim().is_empty();
+
+        if needs_ssh_install {
+            info!(
+                "SSH not found in container {}, attempting to install...",
+                container_id
+            );
+
+            // Try to detect the package manager and install SSH
+            let detect_pkg_manager = format!(
+                "docker exec {container_id} sh -c 'if command -v apt-get >/dev/null 2>&1; then echo apt; \
+                elif command -v yum >/dev/null 2>&1; then echo yum; \
+                elif command -v apk >/dev/null 2>&1; then echo apk; \
+                else echo unknown; fi'"
+            );
+
+            let pkg_manager = client
+                .execute_ssh_command(&detect_pkg_manager)
+                .await
+                .unwrap_or_else(|_| "unknown".to_string())
+                .trim()
+                .to_string();
+
+            match pkg_manager.as_str() {
+                "apt" => {
+                    // Ubuntu/Debian based
+                    info!("Installing OpenSSH on Ubuntu/Debian container");
+                    let install_cmd = format!(
+                        "docker exec {container_id} bash -c 'apt-get update && \
+                         DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server && \
+                         mkdir -p /var/run/sshd'"
+                    );
+                    if let Err(e) = client.execute_ssh_command(&install_cmd).await {
+                        debug!("Failed to install SSH via apt: {}", e);
+                    }
+                }
+                "yum" => {
+                    // RHEL/CentOS based
+                    info!("Installing OpenSSH on RHEL/CentOS container");
+                    let install_cmd = format!(
+                        "docker exec {container_id} bash -c 'yum install -y openssh-server && \
+                         ssh-keygen -A && mkdir -p /var/run/sshd'"
+                    );
+                    if let Err(e) = client.execute_ssh_command(&install_cmd).await {
+                        debug!("Failed to install SSH via yum: {}", e);
+                    }
+                }
+                "apk" => {
+                    // Alpine based
+                    info!("Installing OpenSSH on Alpine container");
+                    let install_cmd = format!(
+                        "docker exec {container_id} sh -c 'apk add --no-cache openssh-server && \
+                         ssh-keygen -A && mkdir -p /var/run/sshd'"
+                    );
+                    if let Err(e) = client.execute_ssh_command(&install_cmd).await {
+                        debug!("Failed to install SSH via apk: {}", e);
+                    }
+                }
+                _ => {
+                    debug!("Unknown package manager or unable to install SSH automatically");
+                }
+            }
+        }
+
+        info!("Setting up SSH key for container {}", container_id);
+
+        let mkdir_cmd = format!(
+            "docker exec {container_id} bash -c 'mkdir -p /root/.ssh && chmod 700 /root/.ssh'"
+        );
+        if let Err(e) = client.execute_ssh_command(&mkdir_cmd).await {
+            debug!("Failed to create .ssh directory: {}", e);
+            let mkdir_alt = format!(
+                "docker exec {container_id} sh -c 'mkdir -p /root/.ssh && chmod 700 /root/.ssh'"
+            );
+            client.execute_ssh_command(&mkdir_alt).await?;
+        }
+
+        // Add the SSH public key
+        let add_key_cmd = format!(
+            "docker exec {container_id} bash -c 'echo \"{ssh_public_key}\" > /root/.ssh/authorized_keys && \
+             chmod 600 /root/.ssh/authorized_keys'"
+        );
+        if let Err(e) = client.execute_ssh_command(&add_key_cmd).await {
+            debug!("Failed to add SSH key with bash: {}", e);
+            // Try without bash
+            let add_key_alt = format!(
+                "docker exec {container_id} sh -c 'echo \"{ssh_public_key}\" > /root/.ssh/authorized_keys && \
+                 chmod 600 /root/.ssh/authorized_keys'"
+            );
+            client.execute_ssh_command(&add_key_alt).await?;
+        }
+
+        // Configure SSH to allow root login with key
+        let config_ssh = format!(
+            "docker exec {container_id} bash -c 'echo \"PermitRootLogin prohibit-password\" >> /etc/ssh/sshd_config && \
+             echo \"PubkeyAuthentication yes\" >> /etc/ssh/sshd_config && \
+             echo \"PasswordAuthentication no\" >> /etc/ssh/sshd_config'"
+        );
+        let _ = client.execute_ssh_command(&config_ssh).await;
+
+        // Start SSH service (try multiple methods)
+        info!("Starting SSH service in container {}", container_id);
+
+        // Try systemctl first (for systemd-based systems)
+        let start_systemctl = format!("docker exec {container_id} systemctl start ssh 2>/dev/null || systemctl start sshd 2>/dev/null");
+        if client.execute_ssh_command(&start_systemctl).await.is_err() {
+            // Try service command
+            let start_service = format!("docker exec {container_id} service ssh start 2>/dev/null || service sshd start 2>/dev/null");
+            if client.execute_ssh_command(&start_service).await.is_err() {
+                // Try running sshd directly
+                let start_direct = format!("docker exec -d {container_id} /usr/sbin/sshd -D");
+                let _ = client.execute_ssh_command(&start_direct).await;
+            }
+        }
 
         info!("SSH access configured for container {}", container_id);
         Ok(())

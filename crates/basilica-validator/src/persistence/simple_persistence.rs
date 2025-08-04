@@ -1184,17 +1184,19 @@ impl SimplePersistence {
         Ok(count as u32)
     }
 
-    /// Get the actual gpu_count for all executors of a miner from gpu_uuid_assignments
+    /// Get the actual gpu_count for all ONLINE executors of a miner from gpu_uuid_assignments
     pub async fn get_miner_gpu_counts_from_assignments(
         &self,
         miner_id: &str,
     ) -> Result<Vec<(String, u32, String)>, anyhow::Error> {
         let rows = sqlx::query(
-            "SELECT executor_id, COUNT(DISTINCT gpu_uuid) as gpu_count, gpu_name
-             FROM gpu_uuid_assignments
-             WHERE miner_id = ?
-             GROUP BY executor_id, gpu_name
-             HAVING COUNT(DISTINCT gpu_uuid) > 0",
+            "SELECT ga.executor_id, COUNT(DISTINCT ga.gpu_uuid) as gpu_count, ga.gpu_name
+             FROM gpu_uuid_assignments ga
+             JOIN miner_executors me ON ga.executor_id = me.executor_id
+             WHERE ga.miner_id = ?
+                AND me.status IN ('online', 'verified')
+             GROUP BY ga.executor_id, ga.gpu_name
+             HAVING COUNT(DISTINCT ga.gpu_uuid) > 0",
         )
         .bind(miner_id)
         .fetch_all(&self.pool)

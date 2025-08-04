@@ -13,8 +13,8 @@ pub struct Args {
     #[command(subcommand)]
     pub command: Command,
 
-    #[arg(short, long, global = true)]
-    pub config: Option<PathBuf>,
+    #[arg(short, long, global = true, default_value = "validator.toml")]
+    pub config: PathBuf,
 
     #[arg(short, long, global = true)]
     pub verbose: bool,
@@ -29,11 +29,9 @@ pub struct Args {
 impl Args {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
-            Command::Start { config } => {
-                service::handle_start(self.config.or(config), self.local_test).await
-            }
+            Command::Start => service::handle_start(self.config, self.local_test).await,
             Command::Stop => service::handle_stop().await,
-            Command::Status => service::handle_status().await,
+            Command::Status => service::handle_status(self.config).await,
             Command::GenConfig { output } => service::handle_gen_config(output).await,
 
             // Validation commands removed with HardwareValidator
@@ -54,11 +52,8 @@ impl Args {
             Command::Database { action } => database::handle_database(action).await,
 
             Command::Rental { action } => {
-                let config = if let Some(config_path) = self.config {
-                    crate::config::ValidatorConfig::load_from_file(&config_path)?
-                } else {
-                    return Err(anyhow::anyhow!("Configuration required for rental commands"));
-                };
+                // TODO: for now can we use HandlerUtils::load_config to be consistent with other commands
+                let config = crate::config::ValidatorConfig::load_from_file(&self.config)?;
 
                 let bittensor_service = bittensor::Service::new(config.bittensor.common.clone()).await?;
                 let account_id = bittensor_service.get_account_id();
@@ -72,7 +67,7 @@ impl Args {
                     ).await?
                 );
 
-                rental::handle_rental_command(action, validator_hotkey, persistence, Arc::new(bittensor_service)).await
+                rental::handle_rental_command(action, &config, validator_hotkey, persistence, std::sync::Arc::new(bittensor_service)).await
             }
         }
     }

@@ -77,8 +77,33 @@ impl ContainerClient {
             ssh_cmd.arg("-i").arg(key_path);
         }
 
+        // Parse connection string to handle user@host:port format
+        let (connection_str, port) = if let Some(at_pos) = self.ssh_connection.rfind('@') {
+            let user_part = &self.ssh_connection[..=at_pos];
+            let host_port = &self.ssh_connection[at_pos + 1..];
+
+            if let Some(colon_pos) = host_port.rfind(':') {
+                let host = &host_port[..colon_pos];
+                let port_str = &host_port[colon_pos + 1..];
+                if let Ok(port_num) = port_str.parse::<u16>() {
+                    (format!("{}{}", user_part, host), Some(port_num))
+                } else {
+                    (self.ssh_connection.clone(), None)
+                }
+            } else {
+                (self.ssh_connection.clone(), None)
+            }
+        } else {
+            (self.ssh_connection.clone(), None)
+        };
+
+        // Add port if specified
+        if let Some(port) = port {
+            ssh_cmd.arg("-p").arg(port.to_string());
+        }
+
         // Add connection and command
-        ssh_cmd.arg(&self.ssh_connection);
+        ssh_cmd.arg(&connection_str);
         ssh_cmd.arg(command);
 
         debug!("Executing SSH command: {}", command);
@@ -106,6 +131,11 @@ impl ContainerClient {
 
         // Build docker run command as a string directly
         let mut docker_cmd_parts = vec!["docker", "run", "-d"];
+
+        // Add interactive and TTY flags if command is /bin/bash
+        if spec.command.len() == 1 && spec.command[0] == "/bin/bash" {
+            docker_cmd_parts.push("-it");
+        }
 
         // Add container name with sanitized rental ID
         let sanitized_rental_id = self.sanitize_rental_id(rental_id);
@@ -160,7 +190,9 @@ impl ContainerClient {
         }
         if spec.resources.gpu_count > 0 {
             resource_strings.push("--gpus".to_string());
-            resource_strings.push(spec.resources.gpu_count.to_string());
+            resource_strings.push("all".to_string());
+            resource_strings.push("--runtime".to_string());
+            resource_strings.push("nvidia".to_string());
         }
 
         // Volumes
