@@ -83,6 +83,9 @@ impl RentalManager {
             .ok_or_else(|| anyhow::anyhow!("No persistent validator SSH key available"))?
             .clone();
 
+        // Get rental session duration from miner client config
+        let session_duration = self.miner_client.get_rental_session_duration();
+
         // Request SSH session from miner with rental mode
         let ssh_session = miner_connection
             .initiate_rental_ssh_session(
@@ -90,6 +93,7 @@ impl RentalManager {
                 &request.validator_hotkey,
                 &validator_public_key,
                 &rental_id,
+                session_duration,
             )
             .await?;
 

@@ -213,6 +213,7 @@ mod tests {
             persistent_ssh_key_path: None,
             default_session_duration: 300,
             max_session_duration: 3600,
+            rental_session_duration: 0,
             key_cleanup_interval: Duration::from_secs(60),
             enable_automated_sessions: true,
             max_concurrent_sessions: 5,

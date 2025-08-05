@@ -176,12 +176,12 @@ pub enum RentalAction {
         ssh_public_key: String,
 
         /// Command to run in container
-        #[arg(long)]
-        command: Option<String>,
+        #[arg(long, num_args = 0..)]
+        command: Vec<String>,
 
-        /// Entrypoint for the container (e.g., /bin/bash, /bin/sh)
-        #[arg(long, default_value = "/bin/bash")]
-        entrypoint: String,
+        /// Entrypoint for the container (Docker ENTRYPOINT)
+        #[arg(long, num_args = 0..)]
+        entrypoint: Vec<String>,
 
         /// CPU cores
         #[arg(long)]
@@ -194,6 +194,10 @@ pub enum RentalAction {
         /// GPU count
         #[arg(long)]
         gpu_count: Option<u32>,
+
+        /// Storage size in MB (default: 102400 MB / 100 GB)
+        #[arg(long)]
+        storage_mb: Option<i64>,
     },
 
     /// Get rental status

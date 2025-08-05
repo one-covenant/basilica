@@ -27,6 +27,8 @@ pub struct MinerClientConfig {
     pub grpc_port_offset: Option<u16>,
     /// Whether to use TLS for gRPC connections
     pub use_tls: bool,
+    /// Rental session duration in seconds (0 = no predetermined duration)
+    pub rental_session_duration: u64,
 }
 
 impl Default for MinerClientConfig {
@@ -36,6 +38,7 @@ impl Default for MinerClientConfig {
             max_retries: 3,
             grpc_port_offset: None, // Will use default port 8080
             use_tls: false,
+            rental_session_duration: 0, // No predetermined duration by default
         }
     }
 }
@@ -99,6 +102,11 @@ impl MinerClient {
             validator_hotkey,
             signer: Some(signer),
         }
+    }
+
+    /// Get the configured rental session duration
+    pub fn get_rental_session_duration(&self) -> u64 {
+        self.config.rental_session_duration
     }
 
     /// Create a validator signature for authentication
@@ -180,12 +188,22 @@ impl MinerClient {
         // The miner will verify this using verify_bittensor_signature
         let signature = self.create_validator_signature(&nonce)?;
 
+        // Create current timestamp
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| anyhow::anyhow!("Failed to get system time: {}", e))?;
+
+        let timestamp = prost_types::Timestamp {
+            seconds: now.as_secs() as i64,
+            nanos: now.subsec_nanos() as i32,
+        };
+
         let auth_request = ValidatorAuthRequest {
             validator_hotkey: self.validator_hotkey.to_string(),
             signature,
             nonce,
             timestamp: Some(basilica_protocol::common::Timestamp {
-                value: None, // Handle timestamp conversion properly with matching prost versions
+                value: Some(timestamp),
             }),
         };
 
@@ -347,6 +365,7 @@ impl AuthenticatedMinerConnection {
         validator_hotkey: &str,
         validator_public_key: &str,
         rental_id: &str,
+        session_duration: u64,
     ) -> Result<InitiateSshSessionResponse> {
         info!(
             "Initiating rental SSH session for executor {} (rental: {})",
@@ -358,7 +377,7 @@ impl AuthenticatedMinerConnection {
             executor_id: executor_id.to_string(),
             purpose: "rental".to_string(),
             validator_public_key: validator_public_key.to_string(),
-            session_duration_secs: 3600, // No predetermined duration for rentals
+            session_duration_secs: session_duration as i64,
             session_metadata: serde_json::json!({
                 "rental_id": rental_id,
                 "type": "container_deployment"

@@ -14,6 +14,7 @@ fn test_axon_to_grpc_endpoint_conversion() {
         max_retries: 3,
         grpc_port_offset: None,
         use_tls: false,
+        rental_session_duration: 0,
     };
 
     let hotkey =

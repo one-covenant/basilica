@@ -112,8 +112,17 @@ impl DeploymentManager {
             .context("Failed to deploy container")?;
 
         // Only configure SSH if the container is expected to stay running
-        let should_configure_ssh = secured_spec.command.is_empty()
-            || (secured_spec.command.len() == 1 && secured_spec.command[0] == "/bin/bash")
+        let has_interactive_entrypoint = secured_spec.entrypoint.is_empty()
+            || secured_spec
+                .entrypoint
+                .iter()
+                .any(|e| e.contains("bash") || e.contains("sh"));
+        let has_interactive_command = secured_spec.command.is_empty()
+            || secured_spec
+                .command
+                .iter()
+                .any(|c| c.contains("bash") || c.contains("sh"));
+        let should_configure_ssh = (has_interactive_entrypoint && has_interactive_command)
             || secured_spec.ports.iter().any(|p| p.container_port == 22);
 
         if should_configure_ssh {

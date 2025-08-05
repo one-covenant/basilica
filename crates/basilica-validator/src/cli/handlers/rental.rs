@@ -16,6 +16,148 @@ use crate::rental::{
 use crate::ssh::ValidatorSshKeyManager;
 use basilica_common::identity::Hotkey;
 
+/// Container configuration parameters for rental requests
+struct ContainerConfig {
+    image: String,
+    ports: Vec<String>,
+    env: Vec<String>,
+    command: Vec<String>,
+    entrypoint: Vec<String>,
+    cpu_cores: Option<f64>,
+    memory_mb: Option<i64>,
+    gpu_count: Option<u32>,
+    storage_mb: Option<i64>,
+}
+
+/// Resolve miner information from either UID or endpoint
+async fn resolve_miner_info(
+    persistence: &Arc<SimplePersistence>,
+    miner_uid: Option<u16>,
+    miner_endpoint: Option<String>,
+) -> Result<(String, String)> {
+    if miner_uid.is_none() && miner_endpoint.is_none() {
+        return Err(anyhow::anyhow!(
+            "Either --miner-uid or --miner-endpoint must be provided"
+        ));
+    }
+
+    if let Some(uid) = miner_uid {
+        let miner_data = persistence
+            .get_miner_by_id(&uid.to_string())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Miner with UID {} not found", uid))?;
+        Ok((uid.to_string(), miner_data.endpoint))
+    } else if let Some(endpoint) = miner_endpoint {
+        let miners = persistence.get_all_registered_miners().await?;
+        let miner_data = miners
+            .into_iter()
+            .find(|m| m.endpoint == endpoint)
+            .ok_or_else(|| anyhow::anyhow!("No miner found with endpoint {}", endpoint))?;
+        Ok((miner_data.miner_id, endpoint))
+    } else {
+        unreachable!("Already checked that at least one is provided");
+    }
+}
+
+/// Create rental manager with all necessary setup
+async fn create_rental_manager(
+    config: &ValidatorConfig,
+    validator_hotkey: Hotkey,
+    persistence: Arc<SimplePersistence>,
+    bittensor_service: Arc<bittensor::Service>,
+) -> Result<RentalManager> {
+    // Create signer
+    let signer = Box::new(BittensorServiceSigner::new(bittensor_service));
+
+    // Create miner client with rental session duration from config
+    let miner_config = MinerClientConfig {
+        rental_session_duration: config.ssh_session.rental_session_duration,
+        ..Default::default()
+    };
+
+    let miner_client = Arc::new(MinerClient::with_signer(
+        miner_config,
+        validator_hotkey,
+        signer,
+    ));
+
+    // Create SSH key manager
+    let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
+    let mut ssh_key_manager = ValidatorSshKeyManager::new(ssh_key_dir).await?;
+    ssh_key_manager
+        .load_or_generate_persistent_key(None)
+        .await?;
+    let ssh_key_manager = Arc::new(ssh_key_manager);
+
+    // Create rental manager
+    let rental_manager =
+        RentalManager::with_ssh_key_manager(miner_client, persistence, ssh_key_manager);
+
+    Ok(rental_manager)
+}
+
+/// Create miner client for operations that need direct miner connection
+async fn create_miner_client(
+    config: &ValidatorConfig,
+    validator_hotkey: Hotkey,
+    bittensor_service: Arc<bittensor::Service>,
+) -> Arc<MinerClient> {
+    let signer = Box::new(BittensorServiceSigner::new(bittensor_service));
+
+    let miner_config = MinerClientConfig {
+        rental_session_duration: config.ssh_session.rental_session_duration,
+        ..Default::default()
+    };
+
+    Arc::new(MinerClient::with_signer(
+        miner_config,
+        validator_hotkey,
+        signer,
+    ))
+}
+
+/// Build rental request from parameters
+fn build_rental_request(
+    validator_hotkey: &Hotkey,
+    miner_id: String,
+    executor_id: String,
+    ssh_public_key: String,
+    container_config: ContainerConfig,
+) -> Result<RentalRequest> {
+    let port_mappings = parse_port_mappings(&container_config.ports)?;
+    let environment = parse_environment_variables(&container_config.env)?;
+
+    Ok(RentalRequest {
+        validator_hotkey: validator_hotkey.to_string(),
+        miner_id,
+        executor_id,
+        container_spec: ContainerSpec {
+            image: container_config.image,
+            environment,
+            ports: port_mappings,
+            resources: ResourceRequirements {
+                cpu_cores: container_config.cpu_cores.unwrap_or(1.0),
+                memory_mb: container_config.memory_mb.unwrap_or(1024),
+                storage_mb: container_config.storage_mb.unwrap_or(102400), // Default to 100GB
+                gpu_count: container_config.gpu_count.unwrap_or(0),
+                gpu_types: Vec::new(),
+            },
+            entrypoint: container_config.entrypoint,
+            command: container_config.command,
+            volumes: Vec::new(),
+            labels: std::collections::HashMap::new(),
+            capabilities: Vec::new(),
+            network: NetworkConfig {
+                mode: "bridge".to_string(),
+                dns: Vec::new(),
+                extra_hosts: std::collections::HashMap::new(),
+            },
+        },
+        ssh_public_key,
+        metadata: std::collections::HashMap::new(),
+    })
+}
+
 /// Handle rental commands
 pub async fn handle_rental_command(
     action: RentalAction,
@@ -38,6 +180,7 @@ pub async fn handle_rental_command(
             cpu_cores,
             memory_mb,
             gpu_count,
+            storage_mb,
         } => {
             handle_start_rental(
                 config,
@@ -56,6 +199,7 @@ pub async fn handle_rental_command(
                 cpu_cores,
                 memory_mb,
                 gpu_count,
+                storage_mb,
             )
             .await
         }
@@ -104,103 +248,63 @@ async fn handle_start_rental(
     ports: Vec<String>,
     env: Vec<String>,
     ssh_public_key: String,
-    command: Option<String>,
-    entrypoint: String,
+    command: Vec<String>,
+    entrypoint: Vec<String>,
     cpu_cores: Option<f64>,
     memory_mb: Option<i64>,
     gpu_count: Option<u32>,
+    storage_mb: Option<i64>,
 ) -> Result<()> {
-    if miner_uid.is_none() && miner_endpoint.is_none() {
-        return Err(anyhow::anyhow!(
-            "Either --miner-uid or --miner-endpoint must be provided"
-        ));
-    }
-
-    let (miner_id, actual_endpoint) = if let Some(uid) = miner_uid {
-        let miner_data = persistence
-            .get_miner_by_id(&uid.to_string())
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Miner with UID {} not found", uid))?;
-        (uid.to_string(), miner_data.endpoint)
-    } else if let Some(endpoint) = miner_endpoint {
-        let miners = persistence.get_all_registered_miners().await?;
-        let miner_data = miners
-            .into_iter()
-            .find(|m| m.endpoint == endpoint)
-            .ok_or_else(|| anyhow::anyhow!("No miner found with endpoint {}", endpoint))?;
-        (miner_data.miner_id, endpoint)
-    } else {
-        unreachable!("Already checked that at least one is provided");
-    };
+    // Resolve miner information
+    let (miner_id, actual_endpoint) =
+        resolve_miner_info(&persistence, miner_uid, miner_endpoint).await?;
 
     info!(
         "Starting rental on executor {} via miner {} ({})",
         executor, miner_id, actual_endpoint
     );
 
-    let port_mappings = parse_port_mappings(&ports)?;
+    // Create miner client for connection
+    let miner_client =
+        create_miner_client(config, validator_hotkey.clone(), bittensor_service.clone()).await;
 
-    let environment = parse_environment_variables(&env)?;
-
-    let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
-
-    let miner_client = Arc::new(MinerClient::with_signer(
-        MinerClientConfig::default(),
+    // Create rental manager
+    let rental_manager = create_rental_manager(
+        config,
         validator_hotkey.clone(),
-        signer,
-    ));
+        persistence,
+        bittensor_service,
+    )
+    .await?;
 
-    let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
-    let mut ssh_key_manager = ValidatorSshKeyManager::new(ssh_key_dir).await?;
-
-    ssh_key_manager
-        .load_or_generate_persistent_key(None)
-        .await?;
-
-    let ssh_key_manager = Arc::new(ssh_key_manager);
-
-    let rental_manager = RentalManager::with_ssh_key_manager(
-        miner_client.clone(),
-        persistence.clone(),
-        ssh_key_manager,
-    );
-
+    // Connect to miner
     let mut miner_connection = miner_client
         .connect_and_authenticate(&actual_endpoint)
         .await
         .context("Failed to connect to miner")?;
 
-    let rental_request = RentalRequest {
-        validator_hotkey: validator_hotkey.to_string(),
-        miner_id,
-        executor_id: executor,
-        container_spec: ContainerSpec {
-            image,
-            environment,
-            ports: port_mappings,
-            resources: ResourceRequirements {
-                cpu_cores: cpu_cores.unwrap_or(1.0),
-                memory_mb: memory_mb.unwrap_or(1024),
-                storage_mb: 0,
-                gpu_count: gpu_count.unwrap_or(0),
-                gpu_types: Vec::new(),
-            },
-            command: command
-                .map(|c| vec![c])
-                .unwrap_or_else(|| vec![entrypoint.clone()]),
-            volumes: Vec::new(),
-            labels: std::collections::HashMap::new(),
-            capabilities: Vec::new(),
-            network: NetworkConfig {
-                mode: "bridge".to_string(),
-                dns: Vec::new(),
-                extra_hosts: std::collections::HashMap::new(),
-            },
-        },
-        ssh_public_key,
-        metadata: std::collections::HashMap::new(),
+    // Build rental request
+    let container_config = ContainerConfig {
+        image,
+        ports,
+        env,
+        command,
+        entrypoint,
+        cpu_cores,
+        memory_mb,
+        gpu_count,
+        storage_mb,
     };
 
+    let rental_request = build_rental_request(
+        &validator_hotkey,
+        miner_id,
+        executor,
+        ssh_public_key,
+        container_config,
+    )?;
+
+    // Start rental
     let rental_response = rental_manager
         .start_rental(rental_request, &mut miner_connection)
         .await
@@ -226,25 +330,9 @@ async fn handle_rental_status(
 ) -> Result<()> {
     info!("Getting status for rental {}", rental_id);
 
-    let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
-
-    let miner_client = Arc::new(MinerClient::with_signer(
-        MinerClientConfig::default(),
-        validator_hotkey.clone(),
-        signer,
-    ));
-
-    let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
-    let mut ssh_key_manager = ValidatorSshKeyManager::new(ssh_key_dir).await?;
-
-    ssh_key_manager
-        .load_or_generate_persistent_key(None)
-        .await?;
-
-    let ssh_key_manager = Arc::new(ssh_key_manager);
-
+    // Create rental manager
     let rental_manager =
-        RentalManager::with_ssh_key_manager(miner_client, persistence.clone(), ssh_key_manager);
+        create_rental_manager(config, validator_hotkey, persistence, bittensor_service).await?;
 
     // Get rental status
     let status = rental_manager
@@ -280,25 +368,9 @@ async fn handle_rental_logs(
 ) -> Result<()> {
     info!("Streaming logs for rental {}", rental_id);
 
-    let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
-
-    let miner_client = Arc::new(MinerClient::with_signer(
-        MinerClientConfig::default(),
-        validator_hotkey.clone(),
-        signer,
-    ));
-
-    let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
-    let mut ssh_key_manager = ValidatorSshKeyManager::new(ssh_key_dir).await?;
-
-    ssh_key_manager
-        .load_or_generate_persistent_key(None)
-        .await?;
-
-    let ssh_key_manager = Arc::new(ssh_key_manager);
-
+    // Create rental manager
     let rental_manager =
-        RentalManager::with_ssh_key_manager(miner_client, persistence.clone(), ssh_key_manager);
+        create_rental_manager(config, validator_hotkey, persistence, bittensor_service).await?;
 
     // Stream logs
     let mut log_receiver = rental_manager
@@ -327,25 +399,9 @@ async fn handle_stop_rental(
 ) -> Result<()> {
     info!("Stopping rental {}", rental_id);
 
-    let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
-
-    let miner_client = Arc::new(MinerClient::with_signer(
-        MinerClientConfig::default(),
-        validator_hotkey.clone(),
-        signer,
-    ));
-
-    let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
-    let mut ssh_key_manager = ValidatorSshKeyManager::new(ssh_key_dir).await?;
-
-    ssh_key_manager
-        .load_or_generate_persistent_key(None)
-        .await?;
-
-    let ssh_key_manager = Arc::new(ssh_key_manager);
-
+    // Create rental manager
     let rental_manager =
-        RentalManager::with_ssh_key_manager(miner_client, persistence.clone(), ssh_key_manager);
+        create_rental_manager(config, validator_hotkey, persistence, bittensor_service).await?;
 
     // Stop rental
     rental_manager

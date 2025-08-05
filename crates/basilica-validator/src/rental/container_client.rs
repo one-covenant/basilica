@@ -280,6 +280,20 @@ impl ContainerClient {
             final_cmd.push_str(s);
         }
 
+        // Add entrypoint if specified (overrides image's default ENTRYPOINT)
+        if !spec.entrypoint.is_empty() {
+            final_cmd.push_str(" --entrypoint ");
+            // If entrypoint has multiple parts, we need to quote it properly
+            if spec.entrypoint.len() == 1 {
+                final_cmd.push_str(&spec.entrypoint[0]);
+            } else {
+                // For multiple arguments, Docker expects a JSON array
+                let entrypoint_json = serde_json::to_string(&spec.entrypoint)
+                    .unwrap_or_else(|_| spec.entrypoint.join(" "));
+                final_cmd.push_str(&entrypoint_json);
+            }
+        }
+
         // Add image
         final_cmd.push(' ');
         final_cmd.push_str(&spec.image);

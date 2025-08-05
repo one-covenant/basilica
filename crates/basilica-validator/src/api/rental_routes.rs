@@ -235,6 +235,7 @@ pub async fn start_rental(
                 gpu_count: request.resources.gpu_count,
                 gpu_types: request.resources.gpu_types,
             },
+            entrypoint: Vec::new(), // API currently doesn't support custom entrypoint
             command: request.command,
             volumes: request
                 .volumes
