@@ -25,7 +25,7 @@ basilica executor       # Run/manage executor
 
 |Category| Commands                                                        |Description|
 |---|---|---|
-|**GPU Rental**| `ls`, `up`, `exec`, `ps`, `ssh`, `cp`, `logs`, `status`, `down` |Direct API interactions for renting and managing GPU instances|
+|**GPU Rental**| `ls`, `pricing`, `up`, `exec`, `ps`, `ssh`, `cp`, `logs`, `status`, `down` |Direct API interactions for renting and managing GPU instances|
 |**Other binaries**| `validator`, `miner`, `executor`                                |Subcommands for running network infrastructure components (they keep the same argument)|
 |**Other**| `init`, `config`, `wallet`                                      |Other setup and utility subcommands|
 
@@ -33,12 +33,19 @@ basilica executor       # Run/manage executor
 
 #### `basilica init`
 
-Initialize and configure the Basilica CLI for API access.
+Initialize and configure the Basilica CLI for API access. Registers user's hotkey with the Basilica API and creates a hotwallet for holding TAO credits to pay for GPU rentals.
 
 ```bash
 # Interactive setup
 basilica init
 ```
+
+**Process:**
+- Registers user hotkey with `/register` API endpoint
+- Creates a hotwallet for holding TAO credits
+- Returns hotwallet address that needs to be funded with TAO
+- Caches hotwallet address locally for future reference
+- Stores basic configuration for subsequent API calls
 
 #### `basilica config`
 
@@ -69,6 +76,24 @@ basilica ls
 
 # List available GPUs with minimum requirements
 basilica ls --gpu-min=2 --gpu-max=8 --gpu-type=h100 --price-max=5
+```
+
+#### `basilica pricing`
+
+Display current pricing for GPU resources in a user-friendly format.
+
+```bash
+# Show all GPU pricing
+basilica pricing
+
+# Filter by GPU type
+basilica pricing --gpu-type h100
+
+# Filter by minimum memory
+basilica pricing --min-memory 40
+
+# Sort by price (cheapest first)
+basilica pricing --sort-price asc
 ```
 
 #### `basilica up`
@@ -211,6 +236,22 @@ name = "basilica/default:latest"
 [wallet]
 default_wallet = "main"
 wallet_path = "~/.basilica/wallets/"
+```
+
+## Cache File Format
+
+Place to store values like hotwallet used for funding users credit
+
+Path: `~/.basilica/cache.json`:
+
+```json
+{
+  "registration": {
+    "hotwallet": "5HpG9w8EBLe5XCrbczpwq5TSXvedjrBGCwqxK1iQ7qUsSWFc",
+    "created_at": "2024-01-15T10:30:00Z",
+    "last_updated": "2024-01-15T10:30:00Z"
+  }
+}
 ```
 
 ## Installation and Distribution
