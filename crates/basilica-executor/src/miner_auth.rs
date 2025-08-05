@@ -4,7 +4,6 @@
 //! This ensures that only the authorized miner can control this executor.
 
 use anyhow::{anyhow, Result};
-use base64::Engine;
 use basilica_common::{crypto::verify_bittensor_signature, identity::Hotkey};
 use basilica_protocol::{common::MinerAuthentication, executor_control};
 use blake3::Hasher;
@@ -56,6 +55,7 @@ impl MinerAuthService {
     }
 
     /// Verify miner authentication
+
     pub async fn verify_auth(&self, auth: &MinerAuthentication, request_data: &[u8]) -> Result<()> {
         // Check if the miner hotkey matches
         if auth.miner_hotkey != self.config.managing_miner_hotkey.to_string() {
@@ -117,10 +117,10 @@ impl MinerAuthService {
             );
 
             // Verify signature using common crypto
-            let signature_str = base64::engine::general_purpose::STANDARD.encode(&auth.signature);
+            let signature_hex = hex::encode(&auth.signature);
             if let Err(e) = verify_bittensor_signature(
                 &self.config.managing_miner_hotkey,
-                &signature_str,
+                &signature_hex,
                 canonical_data.as_bytes(),
             ) {
                 warn!(
@@ -183,6 +183,8 @@ impl MinerAuthService {
 pub trait AuthenticatedRequest {
     /// Get the authentication data from the request
     fn get_auth(&self) -> Option<&MinerAuthentication>;
+    /// Create a clone of the request without authentication for signature verification
+    fn without_auth(&self) -> Self;
 }
 
 // Implement for each request type that has authentication
@@ -190,11 +192,23 @@ impl AuthenticatedRequest for executor_control::ProvisionAccessRequest {
     fn get_auth(&self) -> Option<&MinerAuthentication> {
         self.auth.as_ref()
     }
+
+    fn without_auth(&self) -> Self {
+        let mut clone = self.clone();
+        clone.auth = None;
+        clone
+    }
 }
 
 impl AuthenticatedRequest for executor_control::SystemProfileRequest {
     fn get_auth(&self) -> Option<&MinerAuthentication> {
         self.auth.as_ref()
+    }
+
+    fn without_auth(&self) -> Self {
+        let mut clone = self.clone();
+        clone.auth = None;
+        clone
     }
 }
 
@@ -202,17 +216,35 @@ impl AuthenticatedRequest for executor_control::BenchmarkRequest {
     fn get_auth(&self) -> Option<&MinerAuthentication> {
         self.auth.as_ref()
     }
+
+    fn without_auth(&self) -> Self {
+        let mut clone = self.clone();
+        clone.auth = None;
+        clone
+    }
 }
 
 impl AuthenticatedRequest for executor_control::ContainerOpRequest {
     fn get_auth(&self) -> Option<&MinerAuthentication> {
         self.auth.as_ref()
     }
+
+    fn without_auth(&self) -> Self {
+        let mut clone = self.clone();
+        clone.auth = None;
+        clone
+    }
 }
 
 impl AuthenticatedRequest for executor_control::HealthCheckRequest {
     fn get_auth(&self) -> Option<&MinerAuthentication> {
         self.auth.as_ref()
+    }
+
+    fn without_auth(&self) -> Self {
+        let mut clone = self.clone();
+        clone.auth = None;
+        clone
     }
 }
 
@@ -222,15 +254,17 @@ pub async fn verify_miner_request<T>(
     request: &T,
 ) -> Result<(), Status>
 where
-    T: AuthenticatedRequest + prost::Message + Default,
+    T: AuthenticatedRequest + prost::Message + Default + Clone,
 {
     // Get authentication from request
     let auth = request
         .get_auth()
         .ok_or_else(|| Status::unauthenticated("Missing authentication"))?;
 
-    // Serialize request for signature verification
-    let request_bytes = request.encode_to_vec();
+    // Serialize request WITHOUT auth field for signature verification
+    // This matches how the miner creates the signature (without auth field)
+    let request_without_auth = request.without_auth();
+    let request_bytes = request_without_auth.encode_to_vec();
 
     // Verify authentication
     auth_service

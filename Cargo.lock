@@ -1806,6 +1806,7 @@ dependencies = [
  "figment",
  "futures",
  "governor",
+ "hex",
  "jsonwebtoken",
  "metrics",
  "metrics-exporter-prometheus",

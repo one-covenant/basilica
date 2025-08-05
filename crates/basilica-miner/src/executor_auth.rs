@@ -4,7 +4,6 @@
 //! This ensures that only the authorized miner can control its executors.
 
 use anyhow::{anyhow, Result};
-use base64::Engine;
 use basilica_protocol::{common::MinerAuthentication, executor_control};
 use blake3::Hasher;
 use chrono::Utc;
@@ -76,18 +75,18 @@ impl ExecutorAuthService {
             request_id, self.miner_hotkey
         );
 
-        // Convert signature from base64 string to bytes
-        let signature_bytes = base64::engine::general_purpose::STANDARD
-            .decode(&signature)
-            .map_err(|e| anyhow!("Failed to decode signature: {}", e))?;
+        let signature_bytes = hex::decode(&signature)
+            .map_err(|e| anyhow!("Failed to decode hex signature: {}", e))?;
 
-        Ok(MinerAuthentication {
+        let auth = MinerAuthentication {
             miner_hotkey: self.miner_hotkey.clone(),
             timestamp_ms,
             nonce: nonce.into_bytes(),
             signature: signature_bytes,
             request_id: request_id.into_bytes(),
-        })
+        };
+
+        Ok(auth)
     }
 
     /// Get the miner's hotkey
