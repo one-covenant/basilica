@@ -81,25 +81,6 @@ mod tests {
                 }
             }
 
-            // Seed miner_executors table
-            let gpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
-            let cpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
-            sqlx::query(
-                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            )
-            .bind(&executor_id)
-            .bind(&miner_id)
-            .bind(&executor_id)
-            .bind("127.0.0.1:8080")
-            .bind(profile.gpu_counts.values().sum::<u32>() as i64)
-            .bind(&gpu_specs)
-            .bind(&cpu_specs)
-            .bind(now.to_rfc3339())
-            .bind(now.to_rfc3339())
-            .execute(persistence.pool())
-            .await?;
-
             // Seed verification_logs table if there's a successful validation
             if let Some(last_successful) = profile.last_successful_validation {
                 let log_id = uuid::Uuid::new_v4().to_string();

@@ -98,7 +98,7 @@ impl ExecutorGrpcClient {
             access_token: String::new(), // Not needed for SSH access
             duration_seconds,
             access_type: "ssh".to_string(),
-            config: std::collections::HashMap::new(),
+            config,
             auth: None,
         };
 
