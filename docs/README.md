@@ -25,7 +25,7 @@ This directory contains comprehensive documentation for the Basilica decentraliz
 
 Comprehensive overview of Basilica's system design, including:
 
-- Core components (Validator, Miner, Executor, Public API)
+- Core components (Validator, Miner, Executor, Basilica API)
 - Communication protocols (Bittensor, gRPC, SSH, REST)
 - Security architecture with cryptographic framework
 - Data flow and deployment patterns

@@ -12,7 +12,7 @@ Group=basilica
 WorkingDirectory=/var/lib/basilica/miner
 Environment=RUST_LOG=info
 Environment=RUST_BACKTRACE=1
-ExecStart=/usr/local/bin/miner --config /etc/basilica/miner.toml
+ExecStart=/usr/local/bin/basilica-miner --config /etc/basilica/miner.toml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=10

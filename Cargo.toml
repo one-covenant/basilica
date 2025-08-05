@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    "crates/common",
-    "crates/protocol",
-    "crates/executor",
-    "crates/miner",
-    "crates/validator",
+    "crates/basilica-common",
+    "crates/basilica-protocol", 
+    "crates/basilica-executor",
+    "crates/basilica-miner", 
+    "crates/basilica-validator",
     "crates/bittensor",
-    "crates/public-api",
+    "crates/basilica-api", 
     "crates/integration-tests",
     "crates/collateral",
 ]
@@ -65,6 +65,7 @@ prost-types = "0.12"
 blake3 = "1.5"
 aes-gcm = "0.10"
 rand = "0.8"
+base64 = "0.21"
 
 # Utilities
 uuid = { version = "1.0", features = ["v4", "serde"] }

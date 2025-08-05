@@ -124,6 +124,7 @@ if [[ "$BUILD_IMAGE" == "true" ]]; then
     echo "Building Docker image: $IMAGE_NAME:$IMAGE_TAG"
 
     docker build \
+        --platform linux/amd64 \
         $BUILD_ARGS \
         -f scripts/validator/Dockerfile \
         -t "$IMAGE_NAME:$IMAGE_TAG" \
@@ -134,10 +135,10 @@ fi
 if [[ "$EXTRACT_BINARY" == "true" ]]; then
     echo "Extracting validator binary..."
     container_id=$(docker create "$IMAGE_NAME:$IMAGE_TAG")
-    docker cp "$container_id:/usr/local/bin/validator" ./validator
+    docker cp "$container_id:/usr/local/bin/basilica-validator" ./basilica-validator
     docker rm "$container_id"
-    chmod +x ./validator
-    echo "Binary extracted to: ./validator"
+    chmod +x ./basilica-validator
+    echo "Binary extracted to: ./basilica-validator"
 fi
 
 echo "Build completed successfully!"

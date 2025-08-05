@@ -15,7 +15,7 @@
 | Redis | ✅ Running | Healthy | Cache available on port 6379 |
 | Prometheus | ✅ Running | Running | Metrics collection active |
 | Grafana | ✅ Running | Healthy | Dashboard accessible on http://localhost:3000 |
-| Public API | ❌ Restarting | Failed | Route conflict and metadata compatibility issues |
+| Basilica API | ❌ Restarting | Failed | Route conflict and metadata compatibility issues |
 
 ## Key Features Verified
 
@@ -27,7 +27,7 @@
 
 ## Known Issues
 
-1. **Public API**: Crashes due to:
+1. **Basilica API**: Crashes due to:
    - Overlapping OpenAPI routes (`/api-docs/openapi.json`)
    - Metadata incompatibility with local Subtensor
    
@@ -53,4 +53,4 @@ docker logs basilica-executor-localnet --tail 20
 
 ## Conclusion
 
-The localnet setup is working correctly for development and testing purposes. The core services (Executor, Miner, Validator) are all functioning properly with registration bypass enabled. The Public API requires code fixes to work with localnet but is not critical for basic testing.
+The localnet setup is working correctly for development and testing purposes. The core services (Executor, Miner, Validator) are all functioning properly with registration bypass enabled. The Basilica API requires code fixes to work with localnet but is not critical for basic testing.

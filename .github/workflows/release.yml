@@ -40,7 +40,7 @@ jobs:
     needs: create-release
     strategy:
       matrix:
-        service: [executor, miner, validator, public-api]
+        service: [executor, miner, validator, basilica-api]
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest

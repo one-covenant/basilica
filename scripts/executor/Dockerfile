@@ -53,15 +53,15 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
     fi && \
     if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
-            cargo build --release -p executor --features "$FEATURES"; \
+            cargo build --release -p basilica-executor --features "$FEATURES"; \
         else \
-            cargo build --release -p executor; \
+            cargo build --release -p basilica-executor; \
         fi; \
     else \
         if [ -n "$FEATURES" ]; then \
-            cargo build -p executor --features "$FEATURES"; \
+            cargo build -p basilica-executor --features "$FEATURES"; \
         else \
-            cargo build -p executor; \
+            cargo build -p basilica-executor; \
         fi; \
     fi && \
     # Clean up intermediate build artifacts to save space
@@ -86,12 +86,12 @@ RUN ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu
 
 # Copy the built binary
 ARG BUILD_MODE=release
-COPY --from=builder /tmp/target/${BUILD_MODE}/executor /usr/local/bin/executor
+COPY --from=builder /tmp/target/${BUILD_MODE}/basilica-executor /usr/local/bin/basilica-executor
 
 # Make binary executable
-RUN chmod +x /usr/local/bin/executor
+RUN chmod +x /usr/local/bin/basilica-executor
 
 EXPOSE 8080 8081
 
 # Default command
-ENTRYPOINT ["/usr/local/bin/executor"]
+ENTRYPOINT ["/usr/local/bin/basilica-executor"]

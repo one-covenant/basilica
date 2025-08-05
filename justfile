@@ -32,20 +32,20 @@ fmt-check:
 fix:
     #!/usr/bin/env bash
     # First run with --fix to auto-fix what we can
-    cargo clippy --fix --allow-dirty --workspace --all-targets --all-features -- -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+    cargo clippy --fix --allow-dirty --workspace --all-targets --all-features
     # Then run without --fix to catch remaining issues (like CI does)
-    cargo clippy --workspace --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
     cargo fmt --all
 
 # Lint workspace packages
 lint: fmt-check
     #!/usr/bin/env bash
-    cargo clippy --workspace --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Full lint check (matches CI format-and-lint job)
 lint-ci: fmt-check
     #!/usr/bin/env bash
-    cargo clippy -p common -p protocol -p executor -p gpu-attestor -p bittensor --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn
+    cargo clippy -p common -p protocol -p executor -p gpu-attestor -p bittensor --all-targets --all-features -- -D warnings
 
 # =============================================================================
 # TEST COMMANDS
@@ -152,11 +152,11 @@ deploy-validator HOST PORT="22":
     chmod +x scripts/validator/deploy.sh
     ./scripts/validator/deploy.sh {{HOST}} {{PORT}}
 
-# Deploy public-api to remote server
-deploy-public-api HOST PORT="22":
+# Deploy basilica-api to remote server
+deploy-basilica-api HOST PORT="22":
     #!/usr/bin/env bash
-    chmod +x scripts/public-api/deploy.sh
-    ./scripts/public-api/deploy.sh {{HOST}} {{PORT}}
+    chmod +x scripts/basilica-api/deploy.sh
+    ./scripts/basilica-api/deploy.sh {{HOST}} {{PORT}}
 
 # Set docker compose command (use v2 by default)
 docker_compose := "docker compose"

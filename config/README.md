@@ -46,7 +46,7 @@ GPU machine agent for task execution. Key configuration sections:
 
 **Requirements**: NVIDIA GPU with 8.7+ CUDA compute capability, CUDA Toolkit 12.8
 
-### Public API (`public-api.toml`)
+### Basilica API (`basilica-api.toml`)
 
 External HTTP API service. Key configuration sections:
 
