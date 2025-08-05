@@ -466,6 +466,7 @@ impl ExecutorManager {
         let request = HealthCheckRequest {
             requester: "miner".to_string(),
             check_type: "basic".to_string(),
+            auth: None, // Auth is optional for health checks
         };
 
         match tokio::time::timeout(

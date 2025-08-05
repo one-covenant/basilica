@@ -24,6 +24,9 @@ pub struct ProvisionAccessRequest {
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
+    /// Authentication data from miner
+    #[prost(message, optional, tag = "7")]
+    pub auth: ::core::option::Option<super::super::common::v1::MinerAuthentication>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -66,6 +69,9 @@ pub struct SystemProfileRequest {
     /// Requesting validator hotkey
     #[prost(string, tag = "5")]
     pub validator_hotkey: ::prost::alloc::string::String,
+    /// Authentication data from miner
+    #[prost(message, optional, tag = "6")]
+    pub auth: ::core::option::Option<super::super::common::v1::MinerAuthentication>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -105,6 +111,9 @@ pub struct BenchmarkRequest {
     /// Requesting validator hotkey
     #[prost(string, tag = "4")]
     pub validator_hotkey: ::prost::alloc::string::String,
+    /// Authentication data from miner
+    #[prost(message, optional, tag = "5")]
+    pub auth: ::core::option::Option<super::super::common::v1::MinerAuthentication>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -150,6 +159,9 @@ pub struct ContainerOpRequest {
     /// Requesting validator hotkey
     #[prost(string, tag = "6")]
     pub validator_hotkey: ::prost::alloc::string::String,
+    /// Authentication data from miner
+    #[prost(message, optional, tag = "7")]
+    pub auth: ::core::option::Option<super::super::common::v1::MinerAuthentication>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -203,6 +215,9 @@ pub struct HealthCheckRequest {
     /// Check type (basic, detailed)
     #[prost(string, tag = "2")]
     pub check_type: ::prost::alloc::string::String,
+    /// Authentication data from miner (optional for health checks)
+    #[prost(message, optional, tag = "3")]
+    pub auth: ::core::option::Option<super::super::common::v1::MinerAuthentication>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

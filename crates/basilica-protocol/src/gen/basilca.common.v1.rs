@@ -227,6 +227,7 @@ pub struct DockerInfo {
     pub security_features: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// System resource limits and quotas
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceLimits {
@@ -625,4 +626,25 @@ pub struct GpuPerformanceBaseline {
     /// Maximum acceptable time (prevents inferior hardware)
     #[prost(uint64, tag = "6")]
     pub max_time_ms: u64,
+}
+/// Authentication data for miner-to-executor requests
+#[derive(serde::Serialize, serde::Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MinerAuthentication {
+    /// Miner's hotkey address
+    #[prost(string, tag = "1")]
+    pub miner_hotkey: ::prost::alloc::string::String,
+    /// Timestamp of the request (Unix milliseconds)
+    #[prost(uint64, tag = "2")]
+    pub timestamp_ms: u64,
+    /// Nonce to prevent replay attacks
+    #[prost(bytes = "vec", tag = "3")]
+    pub nonce: ::prost::alloc::vec::Vec<u8>,
+    /// Signature of the request payload
+    #[prost(bytes = "vec", tag = "4")]
+    pub signature: ::prost::alloc::vec::Vec<u8>,
+    /// Request ID for tracking
+    #[prost(bytes = "vec", tag = "5")]
+    pub request_id: ::prost::alloc::vec::Vec<u8>,
 }

@@ -3,7 +3,7 @@ use crate::cli::{
     Command,
 };
 use clap::Parser;
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Parser, Debug)]
 #[command(name = "validator")]
@@ -60,7 +60,7 @@ impl Args {
                 let ss58_address = format!("{account_id}");
                 let validator_hotkey = basilica_common::identity::Hotkey::new(ss58_address)
                     .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?;
-                let persistence = std::sync::Arc::new(
+                let persistence = Arc::new(
                     crate::persistence::SimplePersistence::new(
                         &config.database.url,
                         validator_hotkey.to_string(),
