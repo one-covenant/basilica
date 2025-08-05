@@ -1,10 +1,12 @@
 //! Unit tests for gRPC server
 
 use basilica_common::identity::Hotkey;
+use basilica_executor as executor;
 use basilica_executor::grpc_server::executor_management::ExecutorManagementService;
 use basilica_executor::grpc_server::{ExecutorControlService, ExecutorServer};
+use basilica_executor::miner_auth::MinerAuthConfig;
 use basilica_executor::{ExecutorConfig, ExecutorState};
-use basilica_protocol::common::Timestamp;
+use basilica_protocol::common::{MinerAuthentication, Timestamp};
 use basilica_protocol::executor_control::{
     executor_control_server::ExecutorControl, HealthCheckRequest, SystemProfileRequest,
 };

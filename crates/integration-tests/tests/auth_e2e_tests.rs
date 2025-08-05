@@ -4,6 +4,7 @@
 //! services, including request signing, verification, and error handling.
 
 use anyhow::Result;
+use basilica_miner as miner;
 use chrono::{Duration, Utc};
 use integration_tests::{
     create_miner_auth_service, create_miner_auth_service_with_config, test_hotkeys,

@@ -4,17 +4,16 @@
 //! gRPC services and that authenticated requests are handled correctly.
 
 use anyhow::Result;
+use basilica_executor as executor;
+use basilica_protocol::common::MinerAuthentication;
+use basilica_protocol::executor_control::{
+    BenchmarkRequest, ContainerOpRequest, HealthCheckRequest, ProvisionAccessRequest,
+    SystemProfileRequest,
+};
 use chrono::{Duration, Utc};
 use integration_tests::{
     create_authenticated_request, create_expired_authenticated_request, create_miner_auth_service,
     create_miner_auth_service_with_config, test_hotkeys,
-};
-use protocol::{
-    common::MinerAuthentication,
-    executor_control::{
-        BenchmarkRequest, ContainerOpRequest, HealthCheckRequest, ProvisionAccessRequest,
-        SystemProfileRequest,
-    },
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -206,7 +205,7 @@ async fn test_authenticated_request_trait_implementation() -> Result<()> {
     };
 
     // Test all request types implement AuthenticatedRequest trait
-    use miner::executor_auth::AuthenticatedRequest;
+    use basilica_miner::executor_auth::AuthenticatedRequest;
 
     // ProvisionAccessRequest
     let provision_req = ProvisionAccessRequest::default().with_auth(auth.clone());

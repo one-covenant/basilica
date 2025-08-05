@@ -4,12 +4,12 @@
 //! replay attack prevention, timing attack resistance, and malicious input handling.
 
 use anyhow::Result;
+use basilica_protocol::common::MinerAuthentication;
 use chrono::{Duration, Utc};
 use integration_tests::{
     create_miner_auth_service, create_miner_auth_service_with_config, test_hotkeys,
     MockExecutorAuthService,
 };
-use protocol::common::MinerAuthentication;
 use std::sync::Arc;
 use tokio::time::{sleep, Instant};
 

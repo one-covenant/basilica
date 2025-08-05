@@ -55,7 +55,6 @@ impl MinerAuthService {
     }
 
     /// Verify miner authentication
-
     pub async fn verify_auth(&self, auth: &MinerAuthentication, request_data: &[u8]) -> Result<()> {
         // Check if the miner hotkey matches
         if auth.miner_hotkey != self.config.managing_miner_hotkey.to_string() {

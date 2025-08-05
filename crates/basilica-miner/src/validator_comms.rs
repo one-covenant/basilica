@@ -811,6 +811,8 @@ fn create_gpu_spec_from_executor(
 
 #[cfg(test)]
 mod tests {
+    use basilica_common::{ssh::DefaultSshService, DatabaseConfig};
+
     use super::*;
     use crate::config::ExecutorConfig;
 
@@ -940,7 +942,7 @@ mod tests {
                 }],
                 ..Default::default()
             },
-            database: common::config::DatabaseConfig {
+            database: DatabaseConfig {
                 url: "sqlite::memory:".to_string(),
                 ..Default::default()
             },
@@ -959,9 +961,7 @@ mod tests {
             key_directory: std::path::PathBuf::from("/tmp/test_ssh_keys"),
             ..crate::ssh::MinerSshConfig::default()
         };
-        let ssh_service = std::sync::Arc::new(
-            common::ssh::manager::DefaultSshService::new(ssh_config.clone()).unwrap(),
-        );
+        let ssh_service = std::sync::Arc::new(DefaultSshService::new(ssh_config.clone()).unwrap());
         let ssh_access_service = crate::ssh::ValidatorAccessService::new(
             ssh_config,
             ssh_service,
