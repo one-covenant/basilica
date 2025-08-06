@@ -133,13 +133,15 @@ impl GpuProfileRepository {
 
             // HACK: since the method we need is only available in simplepersistence
             let simple_persistence = SimplePersistence::with_pool(self.pool.clone());
-            let gpu_counts = simple_persistence
+            let gpu_counts_raw = simple_persistence
                 .get_miner_gpu_counts_from_assignments(&miner_id_str)
                 .await?;
-            let gpu_counts: HashMap<String, u32> = gpu_counts
-                .iter()
-                .map(|(_, count, name)| (name.clone(), *count))
-                .collect();
+
+            // Aggregate GPU counts properly - sum counts per GPU model
+            let mut gpu_counts: HashMap<String, u32> = HashMap::new();
+            for (_, count, name) in gpu_counts_raw {
+                *gpu_counts.entry(name).or_insert(0) += count;
+            }
 
             let latest_successfull_validation_query = r#"
                 SELECT
