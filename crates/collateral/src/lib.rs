@@ -285,7 +285,7 @@ mod test {
             .fetch(&storage_query)
             .await?;
 
-        println!("Value: {:?}", result);
+        println!("Value: {result:?}");
 
         Ok(())
     }

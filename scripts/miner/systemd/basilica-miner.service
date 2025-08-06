@@ -10,7 +10,7 @@ User=root
 Group=root
 WorkingDirectory=/opt/basilica
 Environment=RUST_LOG=debug
-ExecStart=/opt/basilica/miner --config /opt/basilica/config/miner.toml
+ExecStart=/opt/basilica/basilica-miner --config /opt/basilica/config/miner.toml
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure

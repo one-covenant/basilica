@@ -82,9 +82,9 @@ create_wallet "test_validator" "hotkey" "test_hotkey"
 create_wallet "test_miner" "coldkey"
 create_wallet "test_miner" "hotkey" "default"
 
-# Public API wallet
-create_wallet "public-api" "coldkey"
-create_wallet "public-api" "hotkey" "default"
+# Basilica API wallet
+create_wallet "basilica-api" "coldkey"
+create_wallet "basilica-api" "hotkey" "default"
 
 echo ""
 echo "=== Wallet Setup Complete ==="
@@ -96,14 +96,14 @@ echo "  - miner_1 (coldkey + hotkey)"
 echo "  - miner_2 (coldkey + hotkey)"
 echo "  - test_validator (coldkey + test_hotkey)"
 echo "  - test_miner (coldkey + hotkey)"
-echo "  - public-api (coldkey + hotkey)"
+echo "  - basilica-api (coldkey + hotkey)"
 echo ""
 echo "Wallets are stored in: ${WALLETS_DIR}"
 echo ""
 
 # Display wallet addresses
 echo "=== Wallet Addresses ==="
-for wallet in owner validator miner_1 miner_2 test_validator test_miner public-api; do
+for wallet in owner validator miner_1 miner_2 test_validator test_miner basilica-api; do
     if [ -d "${WALLETS_DIR}/${wallet}" ]; then
         echo ""
         echo "${wallet}:"

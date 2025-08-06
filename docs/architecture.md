@@ -43,7 +43,7 @@ The executor is the GPU machine agent:
 - **Security Layer**: Hotkey verification and access control
 - **NVIDIA Integration**: Uses nvml-wrapper for GPU monitoring
 
-### 4. Public API
+### 4. Basilica API
 
 The smart HTTP gateway for external access:
 
@@ -66,7 +66,7 @@ The smart HTTP gateway for external access:
         ┌────────────────┼────────────────┐
         │                │                │
 ┌───────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
-│  VALIDATOR   │ │    MINER    │ │ PUBLIC API  │
+│  VALIDATOR   │ │    MINER    │ │BASILICA API │
 │              │ │             │ │  GATEWAY    │
 │ ┌──────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │
 │ │   API    │ │ │ │  Axon   │ │ │ │  Load   │ │
@@ -190,7 +190,7 @@ Access Control: Hotkey Verification → Authenticated Sessions
    - Rate limiting
 
 2. **Application Layer**
-   - JWT authentication for Public API
+   - JWT authentication for Basilica API
    - API key validation
    - Hotkey verification for executor access
    - Rate limiting per identity
@@ -281,13 +281,13 @@ GET /api/v1/status   # Detailed status
 ```text
 basilica/
 ├── crates/              # Rust workspace
-│   ├── common/          # Shared utilities (crypto, config, storage, SSH)
+│   ├── basilica-common/ # Shared utilities (crypto, config, storage, SSH)
 │   ├── protocol/        # Protocol definitions (gRPC/protobuf)
 │   ├── validator/       # Validator service
-│   ├── miner/          # Miner service
+│   ├── basilica-miner/  # Miner service
 │   ├── executor/        # Executor service
 │   ├── bittensor/       # Network integration
-│   ├── public-api/      # HTTP gateway service
+│   ├── basilica-api/    # HTTP gateway service
 │   └── integration-tests/ # End-to-end tests
 ├── scripts/             # Deployment scripts
 │   └── gpu-attestor/    # GPU attestation Docker setup

@@ -22,7 +22,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/lib/basilica/validator && touch /var/lib/basilica/validator/validator.db && exec /usr/local/bin/validator start --config /etc/basilica/validator.toml --local-test"]
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/lib/basilica/validator && touch /var/lib/basilica/validator/validator.db && exec /usr/local/bin/basilica-validator start --config /etc/basilica/validator.toml --local-test"]
 
   # Miner service using built image
   miner:
@@ -46,7 +46,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/lib/basilica/miner && touch /var/lib/basilica/miner/miner.db && exec /usr/local/bin/miner --config /etc/basilica/miner.toml --metrics --metrics-addr 0.0.0.0:9092"]
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/lib/basilica/miner && touch /var/lib/basilica/miner/miner.db && exec /usr/local/bin/basilica-miner --config /etc/basilica/miner.toml --metrics --metrics-addr 0.0.0.0:9092"]
     depends_on:
       - executor  # Miner manages executor fleet
       - subtensor  # Local chain for testing
@@ -73,7 +73,7 @@ services:
       - basilica_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "/usr/local/bin/executor", "system", "health", "--config", "/etc/basilica/executor.toml"]
+      test: ["CMD", "/usr/local/bin/basilica-executor", "system", "health", "--config", "/etc/basilica/executor.toml"]
       interval: 30s
       timeout: 15s
       retries: 3

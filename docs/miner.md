@@ -42,6 +42,14 @@ Create a `miner.toml` configuration file:
 [server]
 host = "0.0.0.0"
 port = 8092
+# connection limits
+max_connections = 100
+
+[ssh_session]
+# Maximum concurrent SSH sessions allowed per validator
+max_sessions_per_validator = 100
+# Allowed SSH session **creations per second** (rate-limit burst handled by validator)
+session_rate_limit = 200   # sessions / second
 
 [database]
 url = "sqlite:./data/miner.db"
@@ -56,12 +64,13 @@ network = "finney"  # Options: "finney", "test", or "local"
 netuid = 39  # Basilica subnet (use 387 for test network)
 chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"  # Critical for metadata compatibility
 # Network endpoints:
+# own your subtensor node: ws://x.x.x.x:9944
 # finney: wss://entrypoint-finney.opentensor.ai:443
 # test: wss://test.finney.opentensor.ai:443
 # local: ws://127.0.0.1:9944
 coldkey_name = "default"
 axon_port = 8091
-# external_ip = "your.external.ip.here"  # Optional
+# external_ip = "your.external.ip.here"  # Optional, get your IP via curl ifconfig.me && echo
 
 [executor_management]
 health_check_interval = { secs = 30, nanos = 0 }
@@ -70,12 +79,21 @@ max_retry_attempts = 3
 auto_recovery = true
 
 # Define your executor machines
-# IDs and name are auto-generated now 
 [[executor_management.executors]]
-grpc_address = "127.0.0.1:50051"
+grpc_address = "x.x.x.x:50051"
+host = "x.x.x.x"
+port = 50051
+ssh_username = "root"
+ssh_port = 22
+enabled = true
 
 [[executor_management.executors]]
-grpc_address = "executor2.example.com:50051"
+grpc_address = "y.y.y.y:50051"
+host = "y.y.y.y"
+port = 50051
+ssh_username = "root"
+ssh_port = 22
+enabled = true
 
 [validator_comms]
 request_timeout = { secs = 30, nanos = 0 }
@@ -109,6 +127,9 @@ enabled = true
 port = 9091
 
 [validator_assignment]
+# choose proper strategy for validator assignment
+# strategy = "round_robin" # round-robin between executors
+# strategy = "highest_stake" # highest stake and hardcode hotkey
 enabled = true
 strategy = "highest_stake"  # Options: "highest_stake", "round_robin"
 min_stake_threshold = 6000.0  # Minimum stake in TAO for validator eligibility
