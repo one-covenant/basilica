@@ -73,7 +73,7 @@ impl Args {
             Commands::Config { action } => {
                 handlers::config::handle_config(action, config_path).await
             }
-            Commands::Wallet => handlers::wallet::handle_wallet(config_path).await,
+            Commands::Wallet { name } => handlers::wallet::handle_wallet(config_path, name).await,
 
             // GPU rental operations
             Commands::Ls { filters } => handlers::gpu_rental::handle_ls(filters, self.json).await,

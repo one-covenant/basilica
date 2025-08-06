@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 /// CLI configuration structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CliConfig {
     /// API configuration
     pub api: ApiConfig,
@@ -22,7 +21,6 @@ pub struct CliConfig {
     /// Wallet configuration
     pub wallet: WalletConfig,
 }
-
 
 /// API configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,28 +83,26 @@ pub struct WalletConfig {
     /// Default wallet name
     pub default_wallet: String,
 
-    /// Wallet directory path
-    pub wallet_path: PathBuf,
+    /// Base wallet directory path (wallets are located at base_wallet_path/{wallet_name})
+    pub base_wallet_path: PathBuf,
 }
 
 impl Default for WalletConfig {
     fn default() -> Self {
         let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
         Self {
-            default_wallet: "main".to_string(),
-            wallet_path: home_dir.join(".basilica").join("wallets"),
+            default_wallet: "default".to_string(),
+            base_wallet_path: home_dir.join(".bittensor").join("wallets"),
         }
     }
 }
 
 /// Cache data structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CliCache {
     /// Registration information
     pub registration: Option<RegistrationCache>,
 }
-
 
 /// Registration cache data
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,21 +130,30 @@ impl CliConfig {
         debug!("Loading configuration from: {}", path.display());
 
         if !path.exists() {
-            info!(
-                "Configuration file not found, creating default: {}",
+            debug!(
+                "Configuration file not found, using defaults: {}",
                 path.display()
             );
-            let config = Self::default();
-            config.save_to_path(path).await?;
-            return Ok(config);
+            // Return default config without creating file
+            return Ok(Self::default());
         }
 
         let content = tokio::fs::read_to_string(path)
             .await
             .map_err(CliError::Io)?;
 
-        let config: Self = toml::from_str(&content)
+        let mut config: Self = toml::from_str(&content)
             .map_err(|e| CliError::internal(format!("Failed to parse config: {e}")))?;
+
+        // Expand paths with tilde and environment variables
+        if let Some(path_str) = config.wallet.base_wallet_path.to_str() {
+            let expanded = shellexpand::tilde(path_str);
+            config.wallet.base_wallet_path = PathBuf::from(expanded.as_ref());
+        }
+        if let Some(path_str) = config.ssh.key_path.to_str() {
+            let expanded = shellexpand::tilde(path_str);
+            config.ssh.key_path = PathBuf::from(expanded.as_ref());
+        }
 
         debug!("Successfully loaded configuration");
         Ok(config)
@@ -184,8 +189,8 @@ impl CliConfig {
             "ssh.key_path" | "ssh-key" => Ok(self.ssh.key_path.to_string_lossy().to_string()),
             "image.name" | "default-image" => Ok(self.image.name.clone()),
             "wallet.default_wallet" | "default-wallet" => Ok(self.wallet.default_wallet.clone()),
-            "wallet.wallet_path" | "wallet-path" => {
-                Ok(self.wallet.wallet_path.to_string_lossy().to_string())
+            "wallet.base_wallet_path" | "base-wallet-path" => {
+                Ok(self.wallet.base_wallet_path.to_string_lossy().to_string())
             }
             _ => Err(CliError::invalid_argument(format!(
                 "Unknown configuration key: {key}"
@@ -216,8 +221,8 @@ impl CliConfig {
             "wallet.default_wallet" | "default-wallet" => {
                 self.wallet.default_wallet = value.to_string();
             }
-            "wallet.wallet_path" | "wallet-path" => {
-                self.wallet.wallet_path = PathBuf::from(value);
+            "wallet.base_wallet_path" | "base-wallet-path" => {
+                self.wallet.base_wallet_path = PathBuf::from(value);
             }
             _ => {
                 return Err(CliError::invalid_argument(format!(
@@ -244,8 +249,8 @@ impl CliConfig {
             self.wallet.default_wallet.clone(),
         );
         map.insert(
-            "wallet.wallet_path".to_string(),
-            self.wallet.wallet_path.to_string_lossy().to_string(),
+            "wallet.base_wallet_path".to_string(),
+            self.wallet.base_wallet_path.to_string_lossy().to_string(),
         );
 
         map

@@ -21,6 +21,7 @@ pub mod error;
 pub mod interactive;
 pub mod output;
 pub mod ssh;
+pub mod wallet;
 
 pub use cli::*;
 pub use error::*;

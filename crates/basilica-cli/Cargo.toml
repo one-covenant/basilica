@@ -43,6 +43,11 @@ shell-escape = "0.1"
 
 # File operations
 dirs = "5.0"
+shellexpand = "3.1"
+
+# Wallet management
+bittensor_wallet = { git = "https://github.com/opentensor/btwallet", tag = "v3.1.0", default-features = false }
+sp-core = "34.0.0"
 
 # Internal crate dependencies
 basilica-common = { path = "../basilica-common" }
