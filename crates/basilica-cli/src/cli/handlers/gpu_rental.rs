@@ -22,7 +22,7 @@ pub async fn handle_ls(filters: ListFilters, json: bool) -> Result<()> {
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     let query = ListExecutorsQuery {
         min_gpu_count: filters.gpu_min,
@@ -34,7 +34,7 @@ pub async fn handle_ls(filters: ListFilters, json: bool) -> Result<()> {
     let response = api_client
         .list_available_gpus(query)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to list available GPUs: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to list available GPUs: {e}")))?;
 
     if json {
         json_output(&response)?;
@@ -57,7 +57,7 @@ pub async fn handle_up(
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     let executor_id = if let Some(target) = target {
         target
@@ -73,7 +73,7 @@ pub async fn handle_up(
         let response = api_client
             .list_available_gpus(query)
             .await
-            .map_err(|e| CliError::internal(format!("Failed to list available GPUs: {}", e)))?;
+            .map_err(|e| CliError::internal(format!("Failed to list available GPUs: {e}")))?;
 
         if response.executors.is_empty() {
             return Err(CliError::not_found(
@@ -104,7 +104,7 @@ pub async fn handle_up(
     let response = api_client
         .create_rental(request)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to create rental: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create rental: {e}")))?;
 
     println!("✅ Successfully created rental: {}", response.rental_id);
     println!("🖥️  Executor: {}", response.executor.id);
@@ -126,7 +126,7 @@ pub async fn handle_ps(filters: PsFilters, json: bool) -> Result<()> {
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     let query = ListRentalsQuery {
         status: None,
@@ -136,7 +136,7 @@ pub async fn handle_ps(filters: PsFilters, json: bool) -> Result<()> {
     let response = api_client
         .list_rentals(query)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to list rentals: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to list rentals: {e}")))?;
 
     // Apply filters
     let filtered_rentals: Vec<_> = response
@@ -173,12 +173,12 @@ pub async fn handle_status(target: String, json: bool) -> Result<()> {
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     let status = api_client
         .get_rental_status(&target)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to get rental status: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
 
     if json {
         json_output(&status)?;
@@ -198,21 +198,21 @@ pub async fn handle_logs(target: String, options: LogsOptions) -> Result<()> {
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     if options.follow {
         // TODO: Implement proper SSE streaming when the server fully supports it
         let logs = api_client
             .get_logs(&target, options.tail)
             .await
-            .map_err(|e| CliError::internal(format!("Failed to get logs: {}", e)))?;
-        print!("{}", logs);
+            .map_err(|e| CliError::internal(format!("Failed to get logs: {e}")))?;
+        print!("{logs}");
     } else {
         let logs = api_client
             .get_logs(&target, options.tail)
             .await
-            .map_err(|e| CliError::internal(format!("Failed to get logs: {}", e)))?;
-        print!("{}", logs);
+            .map_err(|e| CliError::internal(format!("Failed to get logs: {e}")))?;
+        print!("{logs}");
     }
 
     Ok(())
@@ -225,7 +225,7 @@ pub async fn handle_down(targets: Vec<String>, config_path: PathBuf) -> Result<(
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     let rental_ids = if targets.is_empty() {
         // Interactive mode - let user select from active rentals
@@ -237,7 +237,7 @@ pub async fn handle_down(targets: Vec<String>, config_path: PathBuf) -> Result<(
         let response = api_client
             .list_rentals(query)
             .await
-            .map_err(|e| CliError::internal(format!("Failed to list rentals: {}", e)))?;
+            .map_err(|e| CliError::internal(format!("Failed to list rentals: {e}")))?;
 
         if response.rentals.is_empty() {
             println!("No active rentals to terminate.");
@@ -256,10 +256,10 @@ pub async fn handle_down(targets: Vec<String>, config_path: PathBuf) -> Result<(
         match api_client
             .terminate_rental(&rental_id, None)
             .await
-            .map_err(|e| CliError::internal(format!("Failed to terminate rental: {}", e)))
+            .map_err(|e| CliError::internal(format!("Failed to terminate rental: {e}")))
         {
-            Ok(_) => println!("✅ Successfully terminated rental: {}", rental_id),
-            Err(e) => eprintln!("❌ Failed to terminate rental {}: {}", rental_id, e),
+            Ok(_) => println!("✅ Successfully terminated rental: {rental_id}"),
+            Err(e) => eprintln!("❌ Failed to terminate rental {rental_id}: {e}"),
         }
     }
 
@@ -275,13 +275,13 @@ pub async fn handle_exec(target: String, command: String, config_path: PathBuf) 
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     // Get rental details for SSH access
     let rental = api_client
         .get_rental_status(&target)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to get rental status: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
 
     // Create SSH client and execute command
     let ssh_client = SshClient::new(&config.ssh)?;
@@ -303,13 +303,13 @@ pub async fn handle_ssh(
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     // Get rental details for SSH access
     let rental = api_client
         .get_rental_status(&target)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to get rental status: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
 
     // Create SSH client and open interactive session
     let ssh_client = SshClient::new(&config.ssh)?;
@@ -331,11 +331,11 @@ pub async fn handle_cp(source: String, destination: String, config_path: PathBuf
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
     let rental = api_client
         .get_rental_status(&rental_id)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to get rental status: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
 
     let ssh_client = SshClient::new(&config.ssh)?;
 
@@ -344,16 +344,14 @@ pub async fn handle_cp(source: String, destination: String, config_path: PathBuf
             .upload_file(&rental, &local_path, &remote_path)
             .await?;
         println!(
-            "✅ Successfully uploaded {} to {}:{}",
-            local_path, rental_id, remote_path
+            "✅ Successfully uploaded {local_path} to {rental_id}:{remote_path}"
         );
     } else {
         ssh_client
             .download_file(&rental, &remote_path, &local_path)
             .await?;
         println!(
-            "✅ Successfully downloaded {}:{} to {}",
-            rental_id, remote_path, local_path
+            "✅ Successfully downloaded {rental_id}:{remote_path} to {local_path}"
         );
     }
 
@@ -366,7 +364,7 @@ fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result
     let path = key_path.as_ref().unwrap_or(&config.ssh.key_path);
 
     std::fs::read_to_string(path)
-        .map_err(|e| CliError::invalid_argument(format!("Failed to read SSH key: {}", e)))
+        .map_err(|e| CliError::invalid_argument(format!("Failed to read SSH key: {e}")))
 }
 
 fn parse_env_vars(env_vars: &[String]) -> Result<std::collections::HashMap<String, String>> {
@@ -377,8 +375,7 @@ fn parse_env_vars(env_vars: &[String]) -> Result<std::collections::HashMap<Strin
             result.insert(key.to_string(), value.to_string());
         } else {
             return Err(CliError::invalid_argument(format!(
-                "Invalid environment variable format: {}. Expected KEY=VALUE",
-                env_var
+                "Invalid environment variable format: {env_var}. Expected KEY=VALUE"
             )));
         }
     }
@@ -443,6 +440,6 @@ fn display_rental_status(status: &RentalStatusResponse) {
     println!("  Memory: {} GB", status.executor.cpu_specs.memory_gb);
 
     if let Some(location) = &status.executor.location {
-        println!("  Location: {}", location);
+        println!("  Location: {location}");
     }
 }

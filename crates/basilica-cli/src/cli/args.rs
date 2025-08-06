@@ -1,7 +1,7 @@
 use crate::cli::{commands::Commands, handlers};
 use crate::error::Result;
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Basilica CLI - Unified GPU rental and network management
 #[derive(Parser, Debug)]
@@ -110,13 +110,13 @@ impl Args {
 }
 
 /// Expand tilde (~) in file paths to home directory
-fn expand_tilde(path: &PathBuf) -> PathBuf {
+fn expand_tilde(path: &Path) -> PathBuf {
     if let Some(path_str) = path.to_str() {
-        if path_str.starts_with("~/") {
+        if let Some(stripped) = path_str.strip_prefix("~/") {
             if let Some(home_dir) = dirs::home_dir() {
-                return home_dir.join(&path_str[2..]);
+                return home_dir.join(stripped);
             }
         }
     }
-    path.clone()
+    path.to_path_buf()
 }

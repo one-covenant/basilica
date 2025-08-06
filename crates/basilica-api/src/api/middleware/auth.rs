@@ -12,8 +12,10 @@ use sha2::{Digest, Sha256};
 
 /// Authentication middleware for Bittensor wallet signatures
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct WalletAuthMiddleware;
 
+#[allow(dead_code)]
 impl WalletAuthMiddleware {
     /// Create new wallet authentication middleware
     pub fn new() -> Self {
@@ -107,7 +109,7 @@ impl WalletAuthMiddleware {
             .unwrap_or("/");
 
         // Create canonical message format: METHOD:PATH:TIMESTAMP
-        format!("{}:{}:{}", method, path, timestamp)
+        format!("{method}:{path}:{timestamp}")
     }
 
     /// Verify Ed25519 signature

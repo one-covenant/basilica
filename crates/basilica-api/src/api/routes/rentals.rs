@@ -157,7 +157,7 @@ pub async fn get_rental_status(
     let rental_status = get_rental_details(&state, &rental_id, "anonymous")
         .await?
         .ok_or_else(|| Error::NotFound {
-            resource: format!("Rental {}", rental_id),
+            resource: format!("Rental {rental_id}"),
         })?;
 
     Ok(Json(rental_status))
@@ -189,7 +189,7 @@ pub async fn terminate_rental(
 
     if !success {
         return Err(Error::NotFound {
-            resource: format!("Rental {}", rental_id),
+            resource: format!("Rental {rental_id}"),
         });
     }
 

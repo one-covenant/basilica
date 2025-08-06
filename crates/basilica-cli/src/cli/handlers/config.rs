@@ -42,7 +42,7 @@ async fn handle_config_set(
     config.save_to_path(config_path.as_ref()).await?;
 
     info!("Configuration updated: {} = {}", key, value);
-    println!("✅ Configuration updated: {} = {}", key, value);
+    println!("✅ Configuration updated: {key} = {value}");
 
     Ok(())
 }
@@ -54,7 +54,7 @@ async fn handle_config_get(key: String, config_path: impl AsRef<Path>) -> Result
     let config = CliConfig::load_from_path(config_path.as_ref()).await?;
     let value = config.get(&key)?;
 
-    println!("{}", value);
+    println!("{value}");
 
     Ok(())
 }

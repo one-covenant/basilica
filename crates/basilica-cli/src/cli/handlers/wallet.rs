@@ -13,13 +13,13 @@ pub async fn handle_wallet(config_path: impl AsRef<Path>) -> Result<()> {
     let cache = CliCache::load().await?;
 
     println!("💳 Basilica Wallet Information");
-    println!("");
+    println!();
 
     // Show wallet configuration
     println!("📁 Wallet Configuration:");
     println!("   Default wallet: {}", config.wallet.default_wallet);
     println!("   Wallet path: {}", config.wallet.wallet_path.display());
-    println!("");
+    println!();
 
     // Show registration information if available
     if let Some(registration) = cache.registration {
@@ -33,7 +33,7 @@ pub async fn handle_wallet(config_path: impl AsRef<Path>) -> Result<()> {
             "   Last updated: {}",
             registration.last_updated.format("%Y-%m-%d %H:%M:%S UTC")
         );
-        println!("");
+        println!();
 
         // TODO: Query actual balance
         println!("💰 Balance:");

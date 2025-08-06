@@ -42,7 +42,7 @@ impl SshClient {
             .arg("-c")
             .arg(&ssh_command)
             .status()
-            .map_err(|e| CliError::ssh(format!("Failed to execute SSH command: {}", e)))?;
+            .map_err(|e| CliError::ssh(format!("Failed to execute SSH command: {e}")))?;
 
         if !status.success() {
             return Err(CliError::ssh("SSH command failed"));
@@ -68,7 +68,7 @@ impl SshClient {
             .arg("-c")
             .arg(&ssh_command)
             .status()
-            .map_err(|e| CliError::ssh(format!("Failed to start SSH session: {}", e)))?;
+            .map_err(|e| CliError::ssh(format!("Failed to start SSH session: {e}")))?;
 
         if !status.success() {
             return Err(CliError::ssh("SSH session failed"));
@@ -101,7 +101,7 @@ impl SshClient {
             .arg("-c")
             .arg(&scp_command)
             .status()
-            .map_err(|e| CliError::ssh(format!("Failed to upload file: {}", e)))?;
+            .map_err(|e| CliError::ssh(format!("Failed to upload file: {e}")))?;
 
         if !status.success() {
             return Err(CliError::ssh("File upload failed"));
@@ -134,7 +134,7 @@ impl SshClient {
             .arg("-c")
             .arg(&scp_command)
             .status()
-            .map_err(|e| CliError::ssh(format!("Failed to download file: {}", e)))?;
+            .map_err(|e| CliError::ssh(format!("Failed to download file: {e}")))?;
 
         if !status.success() {
             return Err(CliError::ssh("File download failed"));

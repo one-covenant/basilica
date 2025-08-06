@@ -42,7 +42,7 @@ pub async fn handle_init(config_path: impl AsRef<Path>) -> Result<()> {
                 println!("❌ Registration is no longer valid, re-registering...");
             }
             Err(e) => {
-                println!("⚠️  Could not validate registration: {}, continuing...", e);
+                println!("⚠️  Could not validate registration: {e}, continuing...");
                 return Ok(());
             }
         }
@@ -55,7 +55,7 @@ pub async fn handle_init(config_path: impl AsRef<Path>) -> Result<()> {
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
     let hotwallet = register_user(&api_client).await?;
 
     // Save registration to cache
@@ -69,11 +69,11 @@ pub async fn handle_init(config_path: impl AsRef<Path>) -> Result<()> {
     cache.save().await?;
 
     println!("✅ Registration successful!");
-    println!("📋 Hotwallet address: {}", hotwallet);
-    println!("");
+    println!("📋 Hotwallet address: {hotwallet}");
+    println!();
     println!("💰 To start using Basilica, fund your hotwallet with TAO:");
-    println!("   Address: {}", hotwallet);
-    println!("");
+    println!("   Address: {hotwallet}");
+    println!();
     println!("🎯 Next steps:");
     println!("   1. Fund your hotwallet with TAO tokens");
     println!("   2. Run 'basilica ls' to see available GPUs");
@@ -91,7 +91,7 @@ async fn register_user(api_client: &BasilicaClient) -> Result<String> {
     let mut auth_token = String::new();
     io::stdin()
         .read_line(&mut auth_token)
-        .map_err(|e| CliError::internal(format!("Failed to read auth token: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to read auth token: {e}")))?;
     let auth_token = auth_token.trim().to_string();
 
     let request = RegisterRequest {
@@ -101,7 +101,7 @@ async fn register_user(api_client: &BasilicaClient) -> Result<String> {
     let response = api_client
         .register(request)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to register: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to register: {e}")))?;
 
     Ok(response.credit_wallet_address)
 }
@@ -114,7 +114,7 @@ async fn validate_registration(config: &CliConfig, hotwallet: &str) -> Result<bo
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     // TODO: Implement actual validation API call
     // For now, assume registration is valid

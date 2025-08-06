@@ -8,6 +8,7 @@ use tracing::{debug, info};
 
 /// CLI configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CliConfig {
     /// API configuration
     pub api: ApiConfig,
@@ -22,16 +23,6 @@ pub struct CliConfig {
     pub wallet: WalletConfig,
 }
 
-impl Default for CliConfig {
-    fn default() -> Self {
-        Self {
-            api: ApiConfig::default(),
-            ssh: SshConfig::default(),
-            image: ImageConfig::default(),
-            wallet: WalletConfig::default(),
-        }
-    }
-}
 
 /// API configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,16 +101,12 @@ impl Default for WalletConfig {
 
 /// Cache data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CliCache {
     /// Registration information
     pub registration: Option<RegistrationCache>,
 }
 
-impl Default for CliCache {
-    fn default() -> Self {
-        Self { registration: None }
-    }
-}
 
 /// Registration cache data
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,10 +145,10 @@ impl CliConfig {
 
         let content = tokio::fs::read_to_string(path)
             .await
-            .map_err(|e| CliError::Io(e))?;
+            .map_err(CliError::Io)?;
 
         let config: Self = toml::from_str(&content)
-            .map_err(|e| CliError::internal(format!("Failed to parse config: {}", e)))?;
+            .map_err(|e| CliError::internal(format!("Failed to parse config: {e}")))?;
 
         debug!("Successfully loaded configuration");
         Ok(config)
@@ -175,15 +162,15 @@ impl CliConfig {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| CliError::Io(e))?;
+                .map_err(CliError::Io)?;
         }
 
         let content = toml::to_string_pretty(self)
-            .map_err(|e| CliError::internal(format!("Failed to serialize config: {}", e)))?;
+            .map_err(|e| CliError::internal(format!("Failed to serialize config: {e}")))?;
 
         tokio::fs::write(path, content)
             .await
-            .map_err(|e| CliError::Io(e))?;
+            .map_err(CliError::Io)?;
 
         info!("Configuration saved successfully");
         Ok(())
@@ -201,8 +188,7 @@ impl CliConfig {
                 Ok(self.wallet.wallet_path.to_string_lossy().to_string())
             }
             _ => Err(CliError::invalid_argument(format!(
-                "Unknown configuration key: {}",
-                key
+                "Unknown configuration key: {key}"
             ))),
         }
     }
@@ -235,8 +221,7 @@ impl CliConfig {
             }
             _ => {
                 return Err(CliError::invalid_argument(format!(
-                    "Unknown configuration key: {}",
-                    key
+                    "Unknown configuration key: {key}"
                 )));
             }
         }
@@ -295,9 +280,9 @@ impl CliCache {
 
         let content = tokio::fs::read_to_string(path)
             .await
-            .map_err(|e| CliError::Io(e))?;
+            .map_err(CliError::Io)?;
 
-        let cache: Self = serde_json::from_str(&content).map_err(|e| CliError::Serialization(e))?;
+        let cache: Self = serde_json::from_str(&content).map_err(CliError::Serialization)?;
 
         Ok(cache)
     }
@@ -314,14 +299,14 @@ impl CliCache {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| CliError::Io(e))?;
+                .map_err(CliError::Io)?;
         }
 
-        let content = serde_json::to_string_pretty(self).map_err(|e| CliError::Serialization(e))?;
+        let content = serde_json::to_string_pretty(self).map_err(CliError::Serialization)?;
 
         tokio::fs::write(path, content)
             .await
-            .map_err(|e| CliError::Io(e))?;
+            .map_err(CliError::Io)?;
 
         Ok(())
     }

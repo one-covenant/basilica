@@ -40,7 +40,7 @@ pub async fn stream_rental_logs(
     // TODO: In production, verify user owns this rental
     if !verify_rental_ownership(&state, &rental_id, "anonymous").await? {
         return Err(Error::NotFound {
-            resource: format!("Rental {}", rental_id),
+            resource: format!("Rental {rental_id}"),
         });
     }
 

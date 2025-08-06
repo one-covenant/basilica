@@ -51,7 +51,7 @@ pub fn display_executors(executors: &[ExecutorDetails]) -> Result<()> {
         .collect();
 
     let table = Table::new(rows);
-    println!("{}", table);
+    println!("{table}");
 
     Ok(())
 }
@@ -106,7 +106,7 @@ pub fn display_available_executors(executors: &[AvailableExecutor]) -> Result<()
         .collect();
 
     let table = Table::new(rows);
-    println!("{}", table);
+    println!("{table}");
 
     Ok(())
 }
@@ -142,7 +142,7 @@ pub fn display_rental_list(rentals: &[RentalInfo]) -> Result<()> {
         .collect();
 
     let table = Table::new(rows);
-    println!("{}", table);
+    println!("{table}");
 
     Ok(())
 }
@@ -175,7 +175,7 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
         .collect();
 
     let table = Table::new(rows);
-    println!("{}", table);
+    println!("{table}");
 
     Ok(())
 }
@@ -201,7 +201,7 @@ pub fn display_config(config: &HashMap<String, String>) -> Result<()> {
     rows.sort_by(|a, b| a.key.cmp(&b.key));
 
     let table = Table::new(rows);
-    println!("{}", table);
+    println!("{table}");
 
     Ok(())
 }

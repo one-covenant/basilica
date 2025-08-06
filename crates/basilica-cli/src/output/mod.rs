@@ -8,6 +8,6 @@ use serde::Serialize;
 /// Output data as JSON
 pub fn json_output<T: Serialize>(data: &T) -> Result<()> {
     let json = serde_json::to_string_pretty(data)?;
-    println!("{}", json);
+    println!("{json}");
     Ok(())
 }

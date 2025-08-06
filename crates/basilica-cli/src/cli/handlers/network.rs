@@ -37,8 +37,7 @@ async fn delegate_to_binary(binary_name: &str, args: Vec<String>) -> Result<()> 
 
     // If we reach this point, exec() failed
     Err(CliError::network_component(format!(
-        "Failed to execute {}: {}. Make sure {} is installed and in PATH.",
-        binary_name, error, binary_name
+        "Failed to execute {binary_name}: {error}. Make sure {binary_name} is installed and in PATH."
     )))
 }
 

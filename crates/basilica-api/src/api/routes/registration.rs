@@ -83,7 +83,7 @@ pub async fn get_credit_wallet(
         get_user_credit_wallet(&state, &user_id)
             .await?
             .ok_or_else(|| Error::NotFound {
-                resource: format!("Registration for user {}", user_id),
+                resource: format!("Registration for user {user_id}"),
             })?;
 
     let response = CreditWalletResponse {

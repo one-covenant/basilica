@@ -8,7 +8,7 @@ async fn main() {
     let args = Args::parse();
 
     if let Err(e) = args.run().await {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {e}");
         std::process::exit(1);
     }
 }

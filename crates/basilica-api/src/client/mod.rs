@@ -53,16 +53,16 @@ impl BasilicaClient {
         let mut params = vec![];
 
         if let Some(min_gpu_count) = query.min_gpu_count {
-            params.push(format!("min_gpu_count={}", min_gpu_count));
+            params.push(format!("min_gpu_count={min_gpu_count}"));
         }
         if let Some(gpu_type) = &query.gpu_type {
-            params.push(format!("gpu_type={}", gpu_type));
+            params.push(format!("gpu_type={gpu_type}"));
         }
         if let Some(page) = query.page {
-            params.push(format!("page={}", page));
+            params.push(format!("page={page}"));
         }
         if let Some(page_size) = query.page_size {
-            params.push(format!("page_size={}", page_size));
+            params.push(format!("page_size={page_size}"));
         }
 
         if !params.is_empty() {
@@ -83,7 +83,7 @@ impl BasilicaClient {
 
     /// Get rental status
     pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusResponse> {
-        let path = format!("/api/v1/rentals/{}", rental_id);
+        let path = format!("/api/v1/rentals/{rental_id}");
         self.get(&path).await
     }
 
@@ -93,7 +93,7 @@ impl BasilicaClient {
         rental_id: &str,
         reason: Option<String>,
     ) -> Result<TerminateRentalResponse> {
-        let path = format!("/api/v1/rentals/{}", rental_id);
+        let path = format!("/api/v1/rentals/{rental_id}");
         let request = TerminateRentalRequest { reason };
         self.delete_with_body(&path, &request).await
     }
@@ -104,13 +104,13 @@ impl BasilicaClient {
         let mut params = vec![];
 
         if let Some(status) = &query.status {
-            params.push(format!("status={}", status));
+            params.push(format!("status={status}"));
         }
         if let Some(page) = query.page {
-            params.push(format!("page={}", page));
+            params.push(format!("page={page}"));
         }
         if let Some(page_size) = query.page_size {
-            params.push(format!("page_size={}", page_size));
+            params.push(format!("page_size={page_size}"));
         }
 
         if !params.is_empty() {
@@ -125,10 +125,10 @@ impl BasilicaClient {
 
     /// Get logs for a rental
     pub async fn get_logs(&self, rental_id: &str, tail: Option<u32>) -> Result<String> {
-        let mut path = format!("/api/v1/rentals/{}/logs", rental_id);
+        let mut path = format!("/api/v1/rentals/{rental_id}/logs");
 
         if let Some(tail) = tail {
-            path.push_str(&format!("?tail={}", tail));
+            path.push_str(&format!("?tail={tail}"));
         }
 
         let url = format!("{}{}", self.base_url, path);
@@ -149,7 +149,7 @@ impl BasilicaClient {
     /// Note: This is a placeholder that returns an error. The actual implementation
     /// would require Server-Sent Events parsing.
     pub async fn follow_logs(&self, rental_id: &str) -> Result<impl Stream<Item = Result<String>>> {
-        let path = format!("/api/v1/rentals/{}/logs?follow=true", rental_id);
+        let path = format!("/api/v1/rentals/{rental_id}/logs?follow=true");
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.get(&url);
         let request = self.apply_auth(request);
@@ -183,16 +183,16 @@ impl BasilicaClient {
         let mut params = vec![];
 
         if let Some(min_gpu_count) = query.min_gpu_count {
-            params.push(format!("min_gpu_count={}", min_gpu_count));
+            params.push(format!("min_gpu_count={min_gpu_count}"));
         }
         if let Some(min_score) = query.min_score {
-            params.push(format!("min_score={}", min_score));
+            params.push(format!("min_score={min_score}"));
         }
         if let Some(page) = query.page {
-            params.push(format!("page={}", page));
+            params.push(format!("page={page}"));
         }
         if let Some(page_size) = query.page_size {
-            params.push(format!("page_size={}", page_size));
+            params.push(format!("page_size={page_size}"));
         }
 
         if !params.is_empty() {
@@ -209,16 +209,16 @@ impl BasilicaClient {
         let mut params = vec![];
 
         if let Some(min_gpu_count) = query.min_gpu_count {
-            params.push(format!("min_gpu_count={}", min_gpu_count));
+            params.push(format!("min_gpu_count={min_gpu_count}"));
         }
         if let Some(gpu_type) = &query.gpu_type {
-            params.push(format!("gpu_type={}", gpu_type));
+            params.push(format!("gpu_type={gpu_type}"));
         }
         if let Some(page) = query.page {
-            params.push(format!("page={}", page));
+            params.push(format!("page={page}"));
         }
         if let Some(page_size) = query.page_size {
-            params.push(format!("page_size={}", page_size));
+            params.push(format!("page_size={page_size}"));
         }
 
         if !params.is_empty() {
@@ -337,7 +337,7 @@ impl BasilicaClient {
                     message: error_text,
                 }),
                 _ => Err(Error::Internal {
-                    message: format!("Request failed with status {}: {}", status, error_text),
+                    message: format!("Request failed with status {status}: {error_text}"),
                 }),
             }
         }

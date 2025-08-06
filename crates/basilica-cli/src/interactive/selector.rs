@@ -47,7 +47,7 @@ impl InteractiveSelector {
                     executor
                         .location
                         .as_ref()
-                        .map(|l| format!(" - {}", l))
+                        .map(|l| format!(" - {l}"))
                         .unwrap_or_default(),
                     if executor.available {
                         ""
@@ -63,7 +63,7 @@ impl InteractiveSelector {
             .items(&items)
             .default(0)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {}", e)))?;
+            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
 
         Ok(executors[selection].executor_id.clone())
     }
@@ -88,7 +88,7 @@ impl InteractiveSelector {
             .with_prompt("Select rentals to terminate (Space to select, Enter to confirm)")
             .items(&items)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {}", e)))?;
+            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
 
         if selections.is_empty() {
             return Err(CliError::interactive("No rentals selected"));
@@ -123,7 +123,7 @@ impl InteractiveSelector {
             .with_prompt("Select rentals to terminate (Space to select, Enter to confirm)")
             .items(&items)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {}", e)))?;
+            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
 
         if selections.is_empty() {
             return Err(CliError::interactive("No rentals selected"));
@@ -143,7 +143,7 @@ impl InteractiveSelector {
             .with_prompt(message)
             .default(false)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Confirmation failed: {}", e)))?;
+            .map_err(|e| CliError::interactive(format!("Confirmation failed: {e}")))?;
 
         Ok(confirmed)
     }
