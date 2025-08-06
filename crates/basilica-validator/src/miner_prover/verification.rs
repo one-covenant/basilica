@@ -786,8 +786,9 @@ impl VerificationEngine {
             .map(|g| g.gpu_uuid.clone())
             .collect();
 
-        // Clean up any GPU assignments for this executor that are no longer reported
+        // Clean up GPU assignments based on what's reported
         if !reported_gpu_uuids.is_empty() {
+            // Some GPUs reported - clean up any that are no longer reported
             let placeholders = reported_gpu_uuids
                 .iter()
                 .map(|_| "?")
@@ -796,8 +797,7 @@ impl VerificationEngine {
             let query = format!(
                 "DELETE FROM gpu_uuid_assignments
                  WHERE miner_id = ? AND executor_id = ?
-                 AND gpu_uuid NOT IN ({})",
-                placeholders
+                 AND gpu_uuid NOT IN ({placeholders})"
             );
 
             let mut q = sqlx::query(&query).bind(&miner_id).bind(executor_id);
@@ -811,6 +811,24 @@ impl VerificationEngine {
             if deleted.rows_affected() > 0 {
                 info!(
                     "Cleaned up {} stale GPU assignments for {}/{}",
+                    deleted.rows_affected(),
+                    miner_id,
+                    executor_id
+                );
+            }
+        } else {
+            // No GPUs reported - clean up all assignments for this executor
+            let deleted = sqlx::query(
+                "DELETE FROM gpu_uuid_assignments WHERE miner_id = ? AND executor_id = ?",
+            )
+            .bind(&miner_id)
+            .bind(executor_id)
+            .execute(self.persistence.pool())
+            .await?;
+
+            if deleted.rows_affected() > 0 {
+                info!(
+                    "Cleaned up {} GPU assignments for {}/{} (no GPUs reported)",
                     deleted.rows_affected(),
                     miner_id,
                     executor_id
