@@ -837,31 +837,63 @@ impl VerificationEngine {
                 let existing_executor_id: String = row.get("executor_id");
 
                 if existing_miner_id != miner_id || existing_executor_id != executor_id {
-                    // GPU reassignment - update to new owner
-                    info!(
-                        "GPU {} reassigned from {}/{} to {}/{}",
-                        gpu_info.gpu_uuid,
-                        existing_miner_id,
-                        existing_executor_id,
-                        miner_id,
-                        executor_id
-                    );
+                    // Check if the existing executor is still active
+                    let executor_status_query =
+                        "SELECT status FROM miner_executors WHERE executor_id = ? AND miner_id = ?";
+                    let status_row = sqlx::query(executor_status_query)
+                        .bind(&existing_executor_id)
+                        .bind(&existing_miner_id)
+                        .fetch_optional(self.persistence.pool())
+                        .await?;
 
-                    sqlx::query(
-                        "UPDATE gpu_uuid_assignments
-                         SET miner_id = ?, executor_id = ?, gpu_index = ?, gpu_name = ?,
-                             last_verified = ?, updated_at = ?
-                         WHERE gpu_uuid = ?",
-                    )
-                    .bind(&miner_id)
-                    .bind(executor_id)
-                    .bind(gpu_info.index as i32)
-                    .bind(&gpu_info.gpu_name)
-                    .bind(&now)
-                    .bind(&now)
-                    .bind(&gpu_info.gpu_uuid)
-                    .execute(self.persistence.pool())
-                    .await?;
+                    let can_reassign = if let Some(row) = status_row {
+                        let status: String = row.get("status");
+                        // Allow reassignment if executor is offline, failed, or stale
+                        status == "offline" || status == "failed" || status == "stale"
+                    } else {
+                        // Executor doesn't exist in miner_executors table - allow reassignment
+                        true
+                    };
+
+                    if can_reassign {
+                        // GPU reassignment allowed - previous executor is inactive
+                        info!(
+                            "GPU {} reassigned from {}/{} to {}/{} (previous executor inactive)",
+                            gpu_info.gpu_uuid,
+                            existing_miner_id,
+                            existing_executor_id,
+                            miner_id,
+                            executor_id
+                        );
+
+                        sqlx::query(
+                            "UPDATE gpu_uuid_assignments
+                             SET miner_id = ?, executor_id = ?, gpu_index = ?, gpu_name = ?,
+                                 last_verified = ?, updated_at = ?
+                             WHERE gpu_uuid = ?",
+                        )
+                        .bind(&miner_id)
+                        .bind(executor_id)
+                        .bind(gpu_info.index as i32)
+                        .bind(&gpu_info.gpu_name)
+                        .bind(&now)
+                        .bind(&now)
+                        .bind(&gpu_info.gpu_uuid)
+                        .execute(self.persistence.pool())
+                        .await?;
+                    } else {
+                        // Executor is still active - reject the reassignment
+                        warn!(
+                            "GPU UUID {} still owned by active executor {}/{}, rejecting claim from {}/{}",
+                            gpu_info.gpu_uuid,
+                            existing_miner_id,
+                            existing_executor_id,
+                            miner_id,
+                            executor_id
+                        );
+                        // Skip this GPU - don't store it for the new claimant
+                        continue;
+                    }
                 } else {
                     // Same owner - just update last_verified
                     sqlx::query(
