@@ -5,8 +5,8 @@ mod tests {
     use alloy_primitives::{address, FixedBytes, U256};
     use alloy_provider::ProviderBuilder;
     use alloy_sol_types::SolEvent;
+    use basilica_miner::config::MinerConfig;
     use collateral::Collateral::{self, CollateralInstance};
-    use miner::config::MinerConfig;
     use rand::Rng;
 
     const TESTNET_URL: &str = "https://test.finney.opentensor.ai";
@@ -37,7 +37,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    // cargo test --package miner --test mod -- tests::test_deposit --exact --nocapture
+    // cargo test --package basilica-miner --test mod -- tests::test_deposit --exact --nocapture
     async fn test_deposit() -> anyhow::Result<()> {
         let contract = get_contract().await?;
         println!("trustee: {:?}", contract.TRUSTEE().call().await.unwrap());
@@ -78,7 +78,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    // cargo test --package miner --test mod -- tests::test_reclaim_finalize --exact --nocapture
+    // cargo test --package basilica-miner --test mod -- tests::test_reclaim_finalize --exact --nocapture
     async fn test_reclaim_finalize() -> anyhow::Result<()> {
         let contract = get_contract().await?;
 
@@ -121,7 +121,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    // cargo test --package miner --test mod -- tests::test_reclaim_deny --exact --nocapture
+    // cargo test --package basilica-miner --test mod -- tests::test_reclaim_deny --exact --nocapture
     // to test deny, need set the decision timeout to a bigger number
     async fn test_reclaim_deny() -> anyhow::Result<()> {
         let contract = get_contract().await?;
@@ -163,7 +163,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    // cargo test --package miner --test mod -- tests::test_slash --exact --nocapture
+    // cargo test --package basilica-miner --test mod -- tests::test_slash --exact --nocapture
     async fn test_slash() -> anyhow::Result<()> {
         let contract = get_contract().await?;
 
