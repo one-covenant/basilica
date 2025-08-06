@@ -446,8 +446,8 @@ fn validate_security_config(
 fn validate_private_key_config(
     private_key: &str,
     errors: &mut Vec<String>,
-    _warnings: &mut Vec<String>,
-    _suggestions: &mut Vec<String>,
+    _warnings: &mut [String],
+    _suggestions: &mut [String],
 ) {
     if private_key.is_empty() {
         errors.push("private_key cannot be empty".to_string());
