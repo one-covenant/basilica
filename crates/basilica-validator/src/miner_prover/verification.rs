@@ -474,7 +474,7 @@ impl VerificationEngine {
         }
 
         let status = if success { "online" } else { "offline" };
-        let miner_id = format!("miner_{}", miner_uid);
+        let miner_id = format!("miner_{miner_uid}");
 
         // Use transaction to ensure atomic updates
         let mut tx = self.persistence.pool().begin().await?;
