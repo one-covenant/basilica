@@ -1095,24 +1095,29 @@ impl WeightSetter {
         let cutoff_time = chrono::Utc::now() - chrono::Duration::hours(hours as i64);
 
         // Query verification logs for executors belonging to this miner
-        // Only match executor_ids that belong to this specific miner
-        // New format: "miner{uid}__{original_executor_id}" prevents cross-miner matches
+        // We verify:
+        //  1) executor is online,
+        //  2) has recent verification,
+        //  3) has GPU assignments
         let query = r#"
             SELECT vl.*, me.miner_id, me.status
             FROM verification_logs vl
-            JOIN miner_executors me ON vl.executor_id = me.executor_id
+            INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
             WHERE me.miner_id = ?
                 AND vl.timestamp >= ?
                 AND me.status IN ('online', 'verified')
+                AND EXISTS (
+                    SELECT 1 FROM gpu_uuid_assignments ga
+                    WHERE ga.executor_id = vl.executor_id
+                    AND ga.miner_id = me.miner_id
+                )
             ORDER BY vl.timestamp DESC
         "#;
 
         let miner_id = format!("miner_{}", miner_uid.as_u16());
-        let executor_id_pattern = format!("miner{}__%", miner_uid.as_u16());
         let rows = sqlx::query(query)
             .bind(&miner_id)
             .bind(cutoff_time.to_rfc3339())
-            .bind(&executor_id_pattern)
             .fetch_all(self.persistence.pool())
             .await
             .map_err(|e| anyhow::anyhow!("Failed to query verification logs: {}", e))?;
@@ -1121,18 +1126,12 @@ impl WeightSetter {
         for row in rows {
             let executor_id_str: String = row.get("executor_id");
 
-            // Extract the original executor ID from format: "miner{uid}__{original_executor_id}"
-            let executor_id = if let Some(separator_pos) = executor_id_str.find("__") {
-                let uuid_part = &executor_id_str[separator_pos + 2..];
-                uuid_part.parse::<ExecutorId>().map_err(|e| {
-                    anyhow::anyhow!("Failed to parse executor ID from '{}': {}", uuid_part, e)
-                })?
-            } else {
-                return Err(anyhow::anyhow!(
-                    "Invalid executor ID format: '{}'. Expected format: 'miner{{uid}}__{{uuid}}'",
-                    executor_id_str
-                ));
-            };
+            // Extract the UUID part from executor_id format: "miner{uid}__{uuid}"
+            let executor_id = executor_id_str
+                .split("__")
+                .nth(1)
+                .ok_or_else(|| anyhow::anyhow!("Invalid executor_id format: {}", executor_id_str))?
+                .parse::<ExecutorId>()?;
 
             let log = VerificationLog {
                 id: Uuid::parse_str(&row.get::<String, _>("id"))
