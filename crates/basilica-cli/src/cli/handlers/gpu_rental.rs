@@ -1,7 +1,7 @@
 //! GPU rental command handlers
 
 use crate::api::ApiClient;
-use crate::cli::commands::{ListFilters, LogsOptions, PricingFilters, PsFilters, UpOptions};
+use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
@@ -30,26 +30,8 @@ pub async fn handle_ls(filters: ListFilters, json: bool) -> Result<()> {
     if json {
         json_output(&response)?;
     } else {
-        table_output::display_executors(&response.executors)?;
+        table_output::display_available_executors(&response.executors)?;
         println!("\nTotal: {} executors available", response.total_count);
-    }
-
-    Ok(())
-}
-
-/// Handle the `pricing` command - display pricing information
-pub async fn handle_pricing(filters: PricingFilters, json: bool) -> Result<()> {
-    debug!("Displaying pricing with filters: {:?}", filters);
-
-    let config = CliConfig::load_default().await?;
-    let api_client = ApiClient::new(&config).await?;
-
-    let pricing = api_client.get_pricing().await?;
-
-    if json {
-        json_output(&pricing)?;
-    } else {
-        table_output::display_pricing(&pricing, &filters)?;
     }
 
     Ok(())

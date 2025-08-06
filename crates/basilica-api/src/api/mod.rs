@@ -26,8 +26,6 @@ pub fn routes(state: AppState) -> Router<AppState> {
             "/rentals/available",
             get(routes::rentals::list_available_gpus),
         )
-        // Pricing endpoint
-        .route("/pricing", get(routes::pricing::get_pricing))
         // Rental management endpoints
         .route("/rentals", post(routes::rentals::create_rental))
         .route("/rentals", get(routes::rentals::list_user_rentals))
@@ -70,9 +68,6 @@ pub fn docs_routes() -> Router<AppState> {
         // GPU discovery
         routes::rentals::list_available_gpus,
 
-        // Pricing
-        routes::pricing::get_pricing,
-
         // Rental management
         routes::rentals::create_rental,
         routes::rentals::list_user_rentals,
@@ -95,10 +90,6 @@ pub fn docs_routes() -> Router<AppState> {
         // GPU discovery types
         types::AvailableGpuResponse,
         types::AvailableExecutor,
-
-        // Pricing types
-        types::PricingResponse,
-        types::GpuPricing,
 
         // Rental types
         types::CreateRentalRequest,
@@ -125,7 +116,6 @@ pub fn docs_routes() -> Router<AppState> {
     tags(
         (name = "registration", description = "User registration and wallet management"),
         (name = "rentals", description = "GPU rental management"),
-        (name = "pricing", description = "GPU pricing information"),
         (name = "logs", description = "Log streaming"),
         (name = "health", description = "Health and monitoring"),
     ),

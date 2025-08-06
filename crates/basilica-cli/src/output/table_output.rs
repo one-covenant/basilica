@@ -1,9 +1,7 @@
 //! Table formatting for CLI output
 
-use crate::api::client::PricingResponse;
-use crate::cli::commands::PricingFilters;
 use crate::error::Result;
-use basilica_api::api::types::{ExecutorDetails, RentalStatusResponse};
+use basilica_api::api::types::{AvailableExecutor, ExecutorDetails, RentalStatusResponse};
 use std::collections::HashMap;
 use tabled::{Table, Tabled};
 
@@ -56,78 +54,54 @@ pub fn display_executors(executors: &[ExecutorDetails]) -> Result<()> {
     Ok(())
 }
 
-/// Display pricing information in table format
-pub fn display_pricing(pricing: &PricingResponse, filters: &PricingFilters) -> Result<()> {
+/// Display available executors in table format with pricing information
+pub fn display_available_executors(executors: &[AvailableExecutor]) -> Result<()> {
     #[derive(Tabled)]
-    struct PricingRow {
-        #[tabled(rename = "GPU Type")]
-        gpu_type: String,
+    struct AvailableExecutorRow {
+        #[tabled(rename = "ID")]
+        id: String,
+        #[tabled(rename = "GPUs")]
+        gpus: String,
+        #[tabled(rename = "CPU")]
+        cpu: String,
         #[tabled(rename = "Memory")]
         memory: String,
+        #[tabled(rename = "Location")]
+        location: String,
         #[tabled(rename = "Price/Hour")]
         price: String,
         #[tabled(rename = "Available")]
-        available: u32,
-        #[tabled(rename = "Compute")]
-        compute: String,
+        available: String,
     }
 
-    let mut rows: Vec<PricingRow> = pricing
-        .gpu_types
+    let rows: Vec<AvailableExecutorRow> = executors
         .iter()
-        .filter(|(gpu_type, _)| {
-            if let Some(ref filter_type) = filters.gpu_type {
-                gpu_type
-                    .to_lowercase()
-                    .contains(&filter_type.to_lowercase())
+        .map(|executor| {
+            let gpu_info = if executor.gpu_specs.is_empty() {
+                "None".to_string()
             } else {
-                true
+                format!(
+                    "{} x {} ({}GB)",
+                    executor.gpu_specs.len(),
+                    executor.gpu_specs[0].name,
+                    executor.gpu_specs[0].memory_gb
+                )
+            };
+
+            AvailableExecutorRow {
+                id: executor.executor_id.clone(),
+                gpus: gpu_info,
+                cpu: format!("{} cores", executor.cpu_specs.cores),
+                memory: format!("{}GB", executor.cpu_specs.memory_gb),
+                location: executor
+                    .location
+                    .clone()
+                    .unwrap_or_else(|| "Unknown".to_string()),
+                price: format!("${:.2}", executor.price_per_hour),
+                available: if executor.available { "Yes" } else { "No" }.to_string(),
             }
-        })
-        .filter(|(_, pricing)| {
-            if let Some(min_memory) = filters.min_memory {
-                pricing.memory_gb >= min_memory
-            } else {
-                true
-            }
-        })
-        .map(|(gpu_type, pricing)| PricingRow {
-            gpu_type: gpu_type.clone(),
-            memory: format!("{}GB", pricing.memory_gb),
-            price: format!("${:.4}", pricing.base_price_per_hour),
-            available: pricing.available_count,
-            compute: pricing.compute_capability.clone(),
         })
         .collect();
-
-    // Sort based on filter
-    match filters.sort.as_str() {
-        "price-asc" => rows.sort_by(|a, b| {
-            let price_a: f64 = a.price[1..].parse().unwrap_or(0.0);
-            let price_b: f64 = b.price[1..].parse().unwrap_or(0.0);
-            price_a
-                .partial_cmp(&price_b)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }),
-        "price-desc" => rows.sort_by(|a, b| {
-            let price_a: f64 = a.price[1..].parse().unwrap_or(0.0);
-            let price_b: f64 = b.price[1..].parse().unwrap_or(0.0);
-            price_b
-                .partial_cmp(&price_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }),
-        "memory-asc" => rows.sort_by(|a, b| {
-            let mem_a: u32 = a.memory.trim_end_matches("GB").parse().unwrap_or(0);
-            let mem_b: u32 = b.memory.trim_end_matches("GB").parse().unwrap_or(0);
-            mem_a.cmp(&mem_b)
-        }),
-        "memory-desc" => rows.sort_by(|a, b| {
-            let mem_a: u32 = a.memory.trim_end_matches("GB").parse().unwrap_or(0);
-            let mem_b: u32 = b.memory.trim_end_matches("GB").parse().unwrap_or(0);
-            mem_b.cmp(&mem_a)
-        }),
-        _ => {} // No sorting
-    }
 
     let table = Table::new(rows);
     println!("{}", table);

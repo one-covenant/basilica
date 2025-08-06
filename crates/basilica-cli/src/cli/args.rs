@@ -19,8 +19,7 @@ QUICK START:
   basilica down                     # Interactive termination
 
 GPU RENTAL:
-  basilica ls                       # List available GPUs
-  basilica pricing                  # View pricing information
+  basilica ls                       # List available GPUs with pricing
   basilica ps                       # List active rentals
   basilica status <uid>             # Check rental status
   basilica logs <uid>               # Stream logs
@@ -78,9 +77,6 @@ impl Args {
 
             // GPU rental operations
             Commands::Ls { filters } => handlers::gpu_rental::handle_ls(filters, self.json).await,
-            Commands::Pricing { filters } => {
-                handlers::gpu_rental::handle_pricing(filters, self.json).await
-            }
             Commands::Up { target, options } => {
                 handlers::gpu_rental::handle_up(target, options, config_path).await
             }

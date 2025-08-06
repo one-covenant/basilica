@@ -1,7 +1,7 @@
 //! Interactive selection utilities
 
 use crate::error::{CliError, Result};
-use basilica_api::api::types::{ExecutorDetails, RentalStatusResponse};
+use basilica_api::api::types::{AvailableExecutor, RentalStatusResponse};
 use dialoguer::{theme::ColorfulTheme, MultiSelect, Select};
 
 /// Interactive selector for CLI operations
@@ -18,7 +18,7 @@ impl InteractiveSelector {
     }
 
     /// Let user select an executor from available options
-    pub fn select_executor(&self, executors: &[ExecutorDetails]) -> Result<String> {
+    pub fn select_executor(&self, executors: &[AvailableExecutor]) -> Result<String> {
         if executors.is_empty() {
             return Err(CliError::not_found("No executors available"));
         }
@@ -38,16 +38,22 @@ impl InteractiveSelector {
                 };
 
                 format!(
-                    "{} - {} - CPU: {}c/{}GB{}",
-                    executor.id,
+                    "{} - {} - CPU: {}c/{}GB - ${:.2}/hr{}{}",
+                    executor.executor_id,
                     gpu_info,
                     executor.cpu_specs.cores,
                     executor.cpu_specs.memory_gb,
+                    executor.price_per_hour,
                     executor
                         .location
                         .as_ref()
                         .map(|l| format!(" - {}", l))
-                        .unwrap_or_default()
+                        .unwrap_or_default(),
+                    if executor.available {
+                        ""
+                    } else {
+                        " (Unavailable)"
+                    }
                 )
             })
             .collect();
@@ -59,7 +65,7 @@ impl InteractiveSelector {
             .interact()
             .map_err(|e| CliError::interactive(format!("Selection failed: {}", e)))?;
 
-        Ok(executors[selection].id.clone())
+        Ok(executors[selection].executor_id.clone())
     }
 
     /// Let user select rentals for termination

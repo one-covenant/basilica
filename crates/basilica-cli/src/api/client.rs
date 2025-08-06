@@ -4,14 +4,13 @@ use crate::api::auth::BittensorAuth;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use basilica_api::api::types::{
-    ListExecutorsQuery, ListExecutorsResponse, RentCapacityRequest, RentCapacityResponse,
+    AvailableGpuResponse, ListExecutorsQuery, RentCapacityRequest, RentCapacityResponse,
     RentalStatusResponse, TerminateRentalRequest, TerminateRentalResponse,
 };
 use futures_util::stream::TryStreamExt;
 use reqwest::{Client, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::collections::HashMap;
 use tokio_util::io::StreamReader;
 use tracing::{debug, error, info};
 
@@ -43,7 +42,7 @@ impl ApiClient {
     pub async fn list_available_executors(
         &self,
         query: ListExecutorsQuery,
-    ) -> Result<ListExecutorsResponse> {
+    ) -> Result<AvailableGpuResponse> {
         let mut url = format!("{}/api/v1/rentals/available", self.base_url);
         let mut params = Vec::new();
 
@@ -65,12 +64,6 @@ impl ApiClient {
             url.push_str(&params.join("&"));
         }
 
-        self.get(&url).await
-    }
-
-    /// Get pricing information
-    pub async fn get_pricing(&self) -> Result<PricingResponse> {
-        let url = format!("{}/api/v1/pricing", self.base_url);
         self.get(&url).await
     }
 
@@ -258,18 +251,4 @@ impl ApiClient {
             }
         }
     }
-}
-
-/// Pricing response structure
-#[derive(serde::Deserialize, serde::Serialize, Debug)]
-pub struct PricingResponse {
-    pub gpu_types: HashMap<String, GpuPricing>,
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug)]
-pub struct GpuPricing {
-    pub base_price_per_hour: f64,
-    pub memory_gb: u32,
-    pub compute_capability: String,
-    pub available_count: u32,
 }

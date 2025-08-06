@@ -397,35 +397,6 @@ pub struct AvailableExecutor {
     pub available: bool,
 }
 
-/// Pricing information
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct PricingResponse {
-    /// GPU pricing by type
-    pub gpu_pricing: HashMap<String, GpuPricing>,
-
-    /// Base pricing information
-    pub base_price_per_hour: f64,
-
-    /// Currency unit
-    pub currency: String,
-}
-
-/// GPU pricing details
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct GpuPricing {
-    /// GPU type/model
-    pub gpu_type: String,
-
-    /// Price per GPU per hour
-    pub price_per_hour: f64,
-
-    /// Memory in GB
-    pub memory_gb: u32,
-
-    /// Availability count
-    pub available_count: u32,
-}
-
 /// Create rental request
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateRentalRequest {

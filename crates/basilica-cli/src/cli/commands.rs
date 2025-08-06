@@ -22,12 +22,6 @@ pub enum Commands {
         filters: ListFilters,
     },
 
-    /// Display current pricing for GPU resources
-    Pricing {
-        #[command(flatten)]
-        filters: PricingFilters,
-    },
-
     /// Provision and start GPU instances
     Up {
         /// Target executor UID/HUID (optional for interactive mode)
@@ -160,22 +154,6 @@ pub struct ListFilters {
     /// Minimum memory in GB
     #[arg(long)]
     pub memory_min: Option<u32>,
-}
-
-/// Filters for pricing display
-#[derive(clap::Args, Debug)]
-pub struct PricingFilters {
-    /// GPU type filter
-    #[arg(long)]
-    pub gpu_type: Option<String>,
-
-    /// Minimum memory in GB
-    #[arg(long)]
-    pub min_memory: Option<u32>,
-
-    /// Sort order (price-asc, price-desc, memory-asc, memory-desc)
-    #[arg(long, default_value = "price-asc")]
-    pub sort: String,
 }
 
 /// Options for provisioning instances
