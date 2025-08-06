@@ -62,7 +62,7 @@ pub async fn register_user(
 /// Get wallet address for registered user
 #[utoipa::path(
     get,
-    path = "/api/v1/credit-wallet/{user_id}",
+    path = "/api/v1/register/wallet/{user_id}",
     params(
         ("user_id" = String, Path, description = "User identifier")
     ),

@@ -1,8 +1,10 @@
 //! Initialization and setup command handlers
 
-use crate::api::ApiClient;
 use crate::config::{CliCache, CliConfig, RegistrationCache};
-use crate::error::Result;
+use crate::error::{CliError, Result};
+use basilica_api::api::types::RegisterRequest;
+use basilica_api::{BasilicaClient, ClientBuilder};
+use std::io;
 use std::path::Path;
 use tracing::debug;
 
@@ -49,7 +51,11 @@ pub async fn handle_init(config_path: impl AsRef<Path>) -> Result<()> {
     // Perform registration
     println!("📝 Registering with Basilica API...");
 
-    let api_client = ApiClient::new(&config).await?;
+    let api_client = ClientBuilder::default()
+        .base_url(&config.api.base_url)
+        .api_key(config.api.api_key.clone().unwrap_or_default())
+        .build()
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
     let hotwallet = register_user(&api_client).await?;
 
     // Save registration to cache
@@ -77,25 +83,38 @@ pub async fn handle_init(config_path: impl AsRef<Path>) -> Result<()> {
 }
 
 /// Register user with the API
-async fn register_user(_api_client: &ApiClient) -> Result<String> {
-    // TODO: Implement actual registration API call
-    // For now, return a placeholder hotwallet address
+async fn register_user(api_client: &BasilicaClient) -> Result<String> {
     debug!("Registering user with API");
 
-    // This should call POST /api/v1/register endpoint
-    // The API will create a hotwallet and return the address
+    // Prompt user for auth token
+    println!("Please enter your authentication token:");
+    let mut auth_token = String::new();
+    io::stdin()
+        .read_line(&mut auth_token)
+        .map_err(|e| CliError::internal(format!("Failed to read auth token: {}", e)))?;
+    let auth_token = auth_token.trim().to_string();
 
-    // Placeholder implementation
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let request = RegisterRequest {
+        user_identifier: auth_token,
+    };
 
-    Ok("5HpG9w8EBLe5XCrbczpwq5TSXvedjrBGCwqxK1iQ7qUsSWFc".to_string())
+    let response = api_client
+        .register(request)
+        .await
+        .map_err(|e| CliError::internal(format!("Failed to register: {}", e)))?;
+
+    Ok(response.credit_wallet_address)
 }
 
 /// Validate that registration is still active
 async fn validate_registration(config: &CliConfig, hotwallet: &str) -> Result<bool> {
     debug!("Validating registration for hotwallet: {}", hotwallet);
 
-    let _api_client = ApiClient::new(config).await?;
+    let _api_client = ClientBuilder::default()
+        .base_url(&config.api.base_url)
+        .api_key(config.api.api_key.clone().unwrap_or_default())
+        .build()
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {}", e)))?;
 
     // TODO: Implement actual validation API call
     // For now, assume registration is valid

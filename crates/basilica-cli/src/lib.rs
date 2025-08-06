@@ -15,7 +15,6 @@
 //! - Shared configuration and error handling
 //! - Integration with existing basilica-common utilities
 
-pub mod api;
 pub mod cli;
 pub mod config;
 pub mod error;

@@ -74,7 +74,10 @@ impl BasilicaClient {
     }
 
     /// Create a new rental
-    pub async fn create_rental(&self, request: CreateRentalRequest) -> Result<RentCapacityResponse> {
+    pub async fn create_rental(
+        &self,
+        request: CreateRentalRequest,
+    ) -> Result<RentCapacityResponse> {
         self.post("/api/v1/rentals", &request).await
     }
 
@@ -142,13 +145,10 @@ impl BasilicaClient {
     }
 
     /// Follow logs in real-time (returns a stream)
-    /// 
+    ///
     /// Note: This is a placeholder that returns an error. The actual implementation
     /// would require Server-Sent Events parsing.
-    pub async fn follow_logs(
-        &self,
-        rental_id: &str,
-    ) -> Result<impl Stream<Item = Result<String>>> {
+    pub async fn follow_logs(&self, rental_id: &str) -> Result<impl Stream<Item = Result<String>>> {
         let path = format!("/api/v1/rentals/{}/logs?follow=true", rental_id);
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.get(&url);
@@ -357,15 +357,13 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/api/v1/health"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "status": "healthy",
-                    "version": "1.0.0",
-                    "timestamp": "2024-01-01T00:00:00Z",
-                    "healthy_validators": 10,
-                    "total_validators": 10,
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "healthy",
+                "version": "1.0.0",
+                "timestamp": "2024-01-01T00:00:00Z",
+                "healthy_validators": 10,
+                "total_validators": 10,
+            })))
             .mount(&mock_server)
             .await;
 
@@ -383,15 +381,13 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/api/v1/health"))
             .and(header("Authorization", "Bearer test-key"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "status": "healthy",
-                    "version": "1.0.0",
-                    "timestamp": "2024-01-01T00:00:00Z",
-                    "healthy_validators": 10,
-                    "total_validators": 10,
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "healthy",
+                "version": "1.0.0",
+                "timestamp": "2024-01-01T00:00:00Z",
+                "healthy_validators": 10,
+                "total_validators": 10,
+            })))
             .mount(&mock_server)
             .await;
 
@@ -411,16 +407,14 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/api/v1/health"))
-            .respond_with(
-                ResponseTemplate::new(401).set_body_json(json!({
-                    "error": {
-                        "code": "UNAUTHORIZED",
-                        "message": "Authentication required",
-                        "timestamp": "2024-01-01T00:00:00Z",
-                        "retryable": false,
-                    }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(401).set_body_json(json!({
+                "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "Authentication required",
+                    "timestamp": "2024-01-01T00:00:00Z",
+                    "retryable": false,
+                }
+            })))
             .mount(&mock_server)
             .await;
 

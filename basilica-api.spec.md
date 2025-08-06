@@ -12,7 +12,6 @@ This section shows how Basilica CLI commands map to API endpoints:
 |-------------|--------------|---------|-------------|
 | `basilica init` | `POST /api/v1/register` | POST | Register user and setup account for credits |
 | `basilica ls` | `GET /api/v1/rentals/available` | GET | List available GPU resources with filtering |
-| `basilica pricing` | `GET /api/v1/pricing` | GET | Get current pricing for all GPU types |
 | `basilica up` | `POST /api/v1/rentals` | POST | Provision and start GPU instances |
 | `basilica ps` | `GET /api/v1/rentals` | GET | List active rentals and their status |
 | `basilica status <uid>` | `GET /api/v1/rentals/{rental_id}` | GET | Check specific rental status |
@@ -25,20 +24,17 @@ This section shows how Basilica CLI commands map to API endpoints:
 **Notes:**
 - Commands like `exec`, `ssh`, and `cp` use SSH access provided in the rental response rather than direct API calls
 - `basilica up <uid>` maps to `POST /api/v1/rentals` with the executor ID specified in the request body
-- `basilica ls` with filters maps to `GET /api/v1/executors?gpu_type=X&min_gpu_count=Y` etc.
+- `basilica ls` with filters maps to `GET /api/v1/rentals/available?gpu_type=X&min_gpu_count=Y` etc.
 - Interactive commands (`basilica up`, `basilica down`) without parameters use `GET` endpoints first to present options
 
 ## API Endpoints
 
 ### Registration
 - `POST /api/v1/register` - Register user and create account for holding credits
-- `GET /api/v1/credit-wallet` - Get wallet address for registered user
+- `GET /api/v1/credit-wallet/{user_id}` - Get wallet address for registered user
 
 ### GPU Discovery
 - `GET /api/v1/rentals/available` - List available GPU executors with filtering options
-
-### Pricing
-- `GET /api/v1/pricing` - Get current pricing for all available GPU types and configurations
 
 ### Rental Management
 - `POST /api/v1/rentals` - Create new GPU rental with executor ID, Docker image, SSH key
@@ -48,3 +44,9 @@ This section shows how Basilica CLI commands map to API endpoints:
 
 ### Log Streaming
 - `GET /api/v1/rentals/{rental_id}/logs` - Stream rental logs via Server-Sent Events
+
+## TODO
+
+1. **Fix path inconsistency**: Client uses `/api/v1/register/wallet` but server has `/credit-wallet/:user_id`
+2. **Migrate basilica-cli**: Replace custom ApiClient with BasilicaClient from basilica-api crate
+3. **Complete SSE implementation**: Implement proper Server-Sent Events parsing for `follow_logs` method in client

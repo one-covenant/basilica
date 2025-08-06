@@ -18,7 +18,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
         // Registration endpoints
         .route("/register", post(routes::registration::register_user))
         .route(
-            "/credit-wallet/:user_id",
+            "/register/wallet/:user_id",
             get(routes::registration::get_credit_wallet),
         )
         // GPU discovery endpoint

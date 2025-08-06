@@ -69,10 +69,7 @@ impl InteractiveSelector {
     }
 
     /// Let user select rentals for termination (from list)
-    pub fn select_rentals_for_termination(
-        &self,
-        rentals: &[RentalInfo],
-    ) -> Result<Vec<String>> {
+    pub fn select_rentals_for_termination(&self, rentals: &[RentalInfo]) -> Result<Vec<String>> {
         if rentals.is_empty() {
             return Err(CliError::not_found("No active rentals"));
         }

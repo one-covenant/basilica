@@ -1,7 +1,9 @@
 //! Table formatting for CLI output
 
 use crate::error::Result;
-use basilica_api::api::types::{AvailableExecutor, ExecutorDetails, RentalInfo, RentalStatusResponse};
+use basilica_api::api::types::{
+    AvailableExecutor, ExecutorDetails, RentalInfo, RentalStatusResponse,
+};
 use std::collections::HashMap;
 use tabled::{Table, Tabled};
 
