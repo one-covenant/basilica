@@ -1946,6 +1946,7 @@ dependencies = [
  "fastrand",
  "figment",
  "futures",
+ "futures-util",
  "hex",
  "metrics",
  "metrics-exporter-prometheus",

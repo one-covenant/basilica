@@ -3,9 +3,15 @@
 //! Clean, modular HTTP/REST API server for external services to interact with the Validator.
 //! Follows SOLID principles with separation of concerns.
 
+#[cfg(feature = "client")]
+pub mod client;
+
 pub mod rental_routes;
 pub mod routes;
 pub mod types;
+
+#[cfg(feature = "client")]
+pub use client::ValidatorClient;
 
 use crate::config::ApiConfig;
 use crate::rental;

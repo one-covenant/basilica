@@ -39,6 +39,7 @@ tower-http = { workspace = true, features = ["limit"] }
 
 # Additional dependencies for validator
 futures = "0.3"
+futures-util = { version = "0.3", optional = true }
 async-trait = "0.1"
 toml = "0.8"
 url = "2.5"
@@ -55,7 +56,7 @@ bittensor = { path = "../bittensor" }
 # bittensor-rs = "0.1"
 
 # HTTP client for external communications
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
 
 # Temporary file handling
 tempfile = "3.8"
@@ -86,6 +87,8 @@ mockall = "0.11"
 
 [features]
 default = []
+# Enable HTTP client for external services
+client = ["futures-util"]
 # Enable test utilities
 test-utils = []
 # Enable development mode with additional debugging
