@@ -2,8 +2,9 @@
 
 use crate::error::{CliError, Result};
 use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
 use std::process::Command;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Handle validator delegation
 pub async fn handle_validator(args: Vec<String>) -> Result<()> {
@@ -25,19 +26,39 @@ pub async fn handle_executor(args: Vec<String>) -> Result<()> {
 
 /// Delegate execution to another binary using exec syscall
 async fn delegate_to_binary(binary_name: &str, args: Vec<String>) -> Result<()> {
-    info!(
-        "Delegating to {} with {} arguments",
-        binary_name,
-        args.len()
-    );
+    // First check if the binary exists in the same directory as the current executable
+    let binary_path = if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            let local_path = exe_dir.join(binary_name);
+            if local_path.exists() {
+                debug!(
+                    "Found binary in same directory as basilica CLI: {:?}",
+                    local_path
+                );
+                local_path
+            } else {
+                debug!("Binary not found in same directory as basilica CLI, using PATH lookup");
+                PathBuf::from(binary_name)
+            }
+        } else {
+            debug!("Could not determine basilica CLI directory, using PATH lookup");
+            PathBuf::from(binary_name)
+        }
+    } else {
+        debug!("Could not determine current executable path, using PATH lookup");
+        PathBuf::from(binary_name)
+    };
 
     // On Unix systems, use exec() to replace the current process
     // This provides seamless handoff with no overhead
-    let error = Command::new(binary_name).args(&args).exec(); // This replaces the current process
+    let error = Command::new(&binary_path).args(&args).exec(); // This replaces the current process
 
     // If we reach this point, exec() failed
     Err(CliError::network_component(format!(
-        "Failed to execute {binary_name}: {error}. Make sure {binary_name} is installed and in PATH."
+        "Failed to execute {}: {}. Make sure {} is installed in the same directory as basilica or in PATH.",
+        binary_path.display(),
+        error,
+        binary_name
     )))
 }
 

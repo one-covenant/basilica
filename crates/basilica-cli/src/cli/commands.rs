@@ -90,23 +90,26 @@ pub enum Commands {
     },
 
     /// Run validator (delegates to basilica-validator)
+    #[command(disable_help_flag = true)]
     Validator {
         /// Arguments to pass to basilica-validator
-        #[arg(last = true)]
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
     /// Run miner (delegates to basilica-miner)
+    #[command(disable_help_flag = true)]
     Miner {
         /// Arguments to pass to basilica-miner
-        #[arg(last = true)]
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
     /// Run executor (delegates to basilica-executor)
+    #[command(disable_help_flag = true)]
     Executor {
         /// Arguments to pass to basilica-executor
-        #[arg(last = true)]
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 }
