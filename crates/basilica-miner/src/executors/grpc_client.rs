@@ -37,6 +37,7 @@ impl Default for ExecutorGrpcConfig {
 }
 
 /// gRPC client for communicating with executors
+#[derive(Clone)]
 pub struct ExecutorGrpcClient {
     config: ExecutorGrpcConfig,
     auth_service: Option<Arc<ExecutorAuthService>>,
