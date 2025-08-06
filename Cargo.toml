@@ -7,6 +7,7 @@ members = [
     "crates/basilica-validator",
     "crates/bittensor",
     "crates/basilica-api", 
+    "crates/basilica-cli",
     "crates/integration-tests",
     "crates/collateral",
 ]

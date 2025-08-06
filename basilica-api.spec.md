@@ -1,15 +1,8 @@
-# Basilica Centralized API Service
+# Basilica API Service
 
 ## Overview
 
-Centralized API service that provides a simple interface to the Basilica GPU network. Handles GPU discovery, rental management, and log streaming with Bittensor wallet authentication.
-
-## Authentication
-
-Uses Bittensor wallet signatures with headers:
-- `X-Wallet-Address` - Wallet address
-- `X-Signature` - Signed request signature  
-- `X-Timestamp` - Request timestamp
+API service that provides a simple interface to the Basilica GPU network. Handles GPU discovery, rental management, and log streaming.
 
 ## Command-to-Endpoint Mapping
 
@@ -17,7 +10,7 @@ This section shows how Basilica CLI commands map to API endpoints:
 
 | CLI Command | API Endpoint | Method | Description |
 |-------------|--------------|---------|-------------|
-| `basilica init` | `POST /api/v1/register` | POST | Register user hotkey and create hotwallet for credits |
+| `basilica init` | `POST /api/v1/register` | POST | Register user and setup account for credits |
 | `basilica ls` | `GET /api/v1/rentals/available` | GET | List available GPU resources with filtering |
 | `basilica pricing` | `GET /api/v1/pricing` | GET | Get current pricing for all GPU types |
 | `basilica up` | `POST /api/v1/rentals` | POST | Provision and start GPU instances |
@@ -38,8 +31,8 @@ This section shows how Basilica CLI commands map to API endpoints:
 ## API Endpoints
 
 ### Registration
-- `POST /api/v1/register` - Register user hotkey and create hotwallet for holding TAO credits should error if already exists
-- `GET /api/v1/credit-wallet` - Get hotwallet address for already registered user
+- `POST /api/v1/register` - Register user and create account for holding credits
+- `GET /api/v1/credit-wallet` - Get wallet address for registered user
 
 ### GPU Discovery
 - `GET /api/v1/rentals/available` - List available GPU executors with filtering options

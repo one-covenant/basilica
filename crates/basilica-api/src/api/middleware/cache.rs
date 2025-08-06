@@ -80,11 +80,8 @@ impl CacheStorage {
             String::new()
         };
 
-        // Extract API key from extensions (set by auth middleware)
-        let api_key = req
-            .extensions()
-            .get::<Arc<crate::api::types::ApiKeyInfo>>()
-            .map(|info| info.key_id.clone());
+        // No user-specific caching without authentication
+        let api_key: Option<String> = None;
 
         CacheKey {
             method,

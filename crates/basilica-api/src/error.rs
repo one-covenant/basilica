@@ -76,6 +76,10 @@ pub enum Error {
     #[error("Resource not found: {resource}")]
     NotFound { resource: String },
 
+    /// Bad request with message
+    #[error("Bad request: {message}")]
+    BadRequest { message: String },
+
     /// Serialization error
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
@@ -110,6 +114,7 @@ impl Error {
             Error::Internal { .. } => "BASILICA_API_INTERNAL_ERROR",
             Error::ServiceUnavailable => "BASILICA_API_SERVICE_UNAVAILABLE",
             Error::NotFound { .. } => "BASILICA_API_NOT_FOUND",
+            Error::BadRequest { .. } => "BASILICA_API_BAD_REQUEST",
             Error::Serialization(_) => "BASILICA_API_SERIALIZATION_ERROR",
             Error::Other(_) => "BASILICA_API_OTHER_ERROR",
         }
@@ -136,6 +141,7 @@ impl Error {
                 | Error::RateLimitExceeded
                 | Error::InvalidRequest { .. }
                 | Error::NotFound { .. }
+                | Error::BadRequest { .. }
         )
     }
 }
@@ -162,6 +168,7 @@ impl IntoResponse for Error {
             Error::Internal { .. } => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             Error::ServiceUnavailable => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
             Error::NotFound { .. } => (StatusCode::NOT_FOUND, self.to_string()),
+            Error::BadRequest { .. } => (StatusCode::BAD_REQUEST, self.to_string()),
             Error::Serialization(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             Error::Other(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };

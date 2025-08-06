@@ -1,5 +1,6 @@
 //! API types for the Basilica API Gateway
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
@@ -337,28 +338,169 @@ pub struct TelemetryResponse {
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
-/// API key info (for authenticated requests)
-#[derive(Debug, Clone)]
-pub struct ApiKeyInfo {
-    /// API key ID
-    pub key_id: String,
-
-    /// API key tier
-    pub tier: ApiKeyTier,
-
-    /// Rate limit override
-    pub rate_limit_override: Option<u32>,
+/// Registration request
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct RegisterRequest {
+    /// User identifier (email, username, etc.)
+    pub user_identifier: String,
 }
 
-/// API key tiers
-#[derive(Debug, Clone, PartialEq)]
-pub enum ApiKeyTier {
-    /// Free tier
-    Free,
+/// Registration response
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct RegisterResponse {
+    /// Success flag
+    pub success: bool,
 
-    /// Premium tier
-    Premium,
+    /// Credit wallet address
+    pub credit_wallet_address: String,
 
-    /// Enterprise tier
-    Enterprise,
+    /// Message
+    pub message: String,
+}
+
+/// Credit wallet response
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreditWalletResponse {
+    /// Credit wallet address
+    pub credit_wallet_address: String,
+}
+
+/// Available GPU resources
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct AvailableGpuResponse {
+    /// List of available executors
+    pub executors: Vec<AvailableExecutor>,
+
+    /// Total count
+    pub total_count: usize,
+}
+
+/// Available executor info
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AvailableExecutor {
+    /// Executor ID
+    pub executor_id: String,
+
+    /// GPU specifications
+    pub gpu_specs: Vec<GpuSpec>,
+
+    /// CPU specifications  
+    pub cpu_specs: CpuSpec,
+
+    /// Location (optional)
+    pub location: Option<String>,
+
+    /// Price per hour in TAO
+    pub price_per_hour: f64,
+
+    /// Availability status
+    pub available: bool,
+}
+
+/// Pricing information
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct PricingResponse {
+    /// GPU pricing by type
+    pub gpu_pricing: HashMap<String, GpuPricing>,
+
+    /// Base pricing information
+    pub base_price_per_hour: f64,
+
+    /// Currency unit
+    pub currency: String,
+}
+
+/// GPU pricing details
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct GpuPricing {
+    /// GPU type/model
+    pub gpu_type: String,
+
+    /// Price per GPU per hour
+    pub price_per_hour: f64,
+
+    /// Memory in GB
+    pub memory_gb: u32,
+
+    /// Availability count
+    pub available_count: u32,
+}
+
+/// Create rental request
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateRentalRequest {
+    /// Executor ID to rent
+    pub executor_id: String,
+
+    /// Docker image to run
+    pub docker_image: String,
+
+    /// SSH public key for access
+    pub ssh_public_key: String,
+
+    /// Environment variables
+    pub env_vars: Option<HashMap<String, String>>,
+
+    /// Maximum rental duration in hours
+    pub max_duration_hours: u32,
+}
+
+/// List rentals query
+#[derive(Debug, Deserialize)]
+pub struct ListRentalsQuery {
+    /// Status filter
+    pub status: Option<String>,
+
+    /// Page number
+    pub page: Option<u32>,
+
+    /// Page size  
+    pub page_size: Option<u32>,
+}
+
+/// List rentals response
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ListRentalsResponse {
+    /// List of rentals
+    pub rentals: Vec<RentalInfo>,
+
+    /// Total count
+    pub total_count: usize,
+
+    /// Current page
+    pub page: u32,
+
+    /// Page size
+    pub page_size: u32,
+}
+
+/// Rental information
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RentalInfo {
+    /// Rental ID
+    pub rental_id: String,
+
+    /// Executor ID
+    pub executor_id: String,
+
+    /// Status
+    pub status: RentalStatus,
+
+    /// Docker image
+    pub docker_image: String,
+
+    /// SSH access info
+    pub ssh_access: Option<SshAccess>,
+
+    /// Created timestamp
+    pub created_at: DateTime<Utc>,
+
+    /// Updated timestamp
+    pub updated_at: DateTime<Utc>,
+
+    /// Cost per hour
+    pub cost_per_hour: f64,
+
+    /// Total cost incurred
+    pub total_cost: f64,
 }

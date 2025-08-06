@@ -4,7 +4,6 @@ mod auth;
 mod cache;
 mod rate_limit;
 
-pub use auth::AuthMiddleware;
 pub use cache::CacheMiddleware;
 pub use rate_limit::RateLimitMiddleware;
 
@@ -42,10 +41,6 @@ pub fn apply_middleware(router: Router<AppState>, state: AppState) -> Router<App
             state.clone(),
             rate_limit_handler,
         ))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            auth_handler,
-        ))
         .layer(axum::middleware::from_fn_with_state(state, cache_handler))
 }
 
@@ -68,16 +63,6 @@ async fn rate_limit_handler(
             message: "Rate limit check failed".to_string(),
         }),
     }
-}
-
-/// Auth handler function
-async fn auth_handler(
-    State(state): axum::extract::State<AppState>,
-    req: Request<Body>,
-    next: Next,
-) -> Result<Response<Body>, crate::error::Error> {
-    // Handle authentication
-    auth::AuthMiddleware::handle(State(state), req, next).await
 }
 
 /// Cache handler function
