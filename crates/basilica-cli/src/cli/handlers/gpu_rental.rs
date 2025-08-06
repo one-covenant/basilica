@@ -7,7 +7,7 @@ use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
 use crate::output::{json_output, table_output};
 use crate::ssh::SshClient;
-use basilica_api::api::types::{ListExecutorsQuery, RentCapacityRequest, RentalStatusResponse};
+use basilica_api::api::types::{CreateRentalRequest, ListExecutorsQuery, RentalStatusResponse};
 use std::path::PathBuf;
 use tracing::{debug, info};
 
@@ -77,12 +77,8 @@ pub async fn handle_up(
 
     let env_vars = parse_env_vars(&options.env)?;
 
-    let request = RentCapacityRequest {
-        gpu_requirements: basilica_api::api::types::GpuRequirements {
-            min_memory_gb: 0, // Will be filled based on executor specs
-            gpu_type: options.gpu_type,
-            gpu_count: options.gpu_min.unwrap_or(1),
-        },
+    let request = CreateRentalRequest {
+        executor_id,
         ssh_public_key,
         docker_image,
         env_vars: Some(env_vars),
@@ -109,10 +105,10 @@ pub async fn handle_ps(filters: PsFilters, json: bool) -> Result<()> {
     let config = CliConfig::load_default().await?;
     let api_client = ApiClient::new(&config).await?;
 
-    let rentals = api_client.list_rentals().await?;
+    let response = api_client.list_rentals().await?;
 
     // Apply filters
-    let filtered_rentals: Vec<_> = rentals
+    let filtered_rentals: Vec<_> = response.rentals
         .into_iter()
         .filter(|rental| {
             if let Some(ref status_filter) = filters.status {
@@ -129,7 +125,7 @@ pub async fn handle_ps(filters: PsFilters, json: bool) -> Result<()> {
     if json {
         json_output(&filtered_rentals)?;
     } else {
-        table_output::display_rentals(&filtered_rentals)?;
+        table_output::display_rental_list(&filtered_rentals)?;
         println!("\nTotal: {} active rentals", filtered_rentals.len());
     }
 
@@ -178,15 +174,15 @@ pub async fn handle_down(targets: Vec<String>, config_path: PathBuf) -> Result<(
 
     let rental_ids = if targets.is_empty() {
         // Interactive mode - let user select from active rentals
-        let rentals = api_client.list_rentals().await?;
+        let response = api_client.list_rentals().await?;
 
-        if rentals.is_empty() {
+        if response.rentals.is_empty() {
             println!("No active rentals to terminate.");
             return Ok(());
         }
 
         let selector = InteractiveSelector::new();
-        selector.select_rentals_for_termination(&rentals)?
+        selector.select_rentals_for_termination(&response.rentals)?
     } else {
         targets
     };

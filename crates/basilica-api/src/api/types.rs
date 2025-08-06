@@ -298,7 +298,7 @@ pub struct ListMinersResponse {
 }
 
 /// Health check response
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct HealthCheckResponse {
     /// Service status
     pub status: String,
@@ -317,7 +317,7 @@ pub struct HealthCheckResponse {
 }
 
 /// Telemetry response
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TelemetryResponse {
     /// Request count
     pub request_count: u64,

@@ -1,7 +1,7 @@
 //! Table formatting for CLI output
 
 use crate::error::Result;
-use basilica_api::api::types::{AvailableExecutor, ExecutorDetails, RentalStatusResponse};
+use basilica_api::api::types::{AvailableExecutor, ExecutorDetails, RentalInfo, RentalStatusResponse};
 use std::collections::HashMap;
 use tabled::{Table, Tabled};
 
@@ -109,7 +109,43 @@ pub fn display_available_executors(executors: &[AvailableExecutor]) -> Result<()
     Ok(())
 }
 
-/// Display active rentals in table format
+/// Display active rentals in table format (for RentalInfo)
+pub fn display_rental_list(rentals: &[RentalInfo]) -> Result<()> {
+    #[derive(Tabled)]
+    struct RentalRow {
+        #[tabled(rename = "Rental ID")]
+        rental_id: String,
+        #[tabled(rename = "Status")]
+        status: String,
+        #[tabled(rename = "Executor")]
+        executor: String,
+        #[tabled(rename = "Created")]
+        created: String,
+        #[tabled(rename = "Cost/hr")]
+        cost_per_hour: String,
+        #[tabled(rename = "Total Cost")]
+        total_cost: String,
+    }
+
+    let rows: Vec<RentalRow> = rentals
+        .iter()
+        .map(|rental| RentalRow {
+            rental_id: rental.rental_id.clone(),
+            status: format!("{:?}", rental.status),
+            executor: rental.executor_id.clone(),
+            created: rental.created_at.format("%Y-%m-%d %H:%M").to_string(),
+            cost_per_hour: format!("${:.4}", rental.cost_per_hour),
+            total_cost: format!("${:.4}", rental.total_cost),
+        })
+        .collect();
+
+    let table = Table::new(rows);
+    println!("{}", table);
+
+    Ok(())
+}
+
+/// Display active rentals in table format (for RentalStatusResponse - legacy)
 pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
     #[derive(Tabled)]
     struct RentalRow {

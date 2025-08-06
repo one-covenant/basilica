@@ -1,7 +1,7 @@
 //! Interactive selection utilities
 
 use crate::error::{CliError, Result};
-use basilica_api::api::types::{AvailableExecutor, RentalStatusResponse};
+use basilica_api::api::types::{AvailableExecutor, RentalInfo, RentalStatusResponse};
 use dialoguer::{theme::ColorfulTheme, MultiSelect, Select};
 
 /// Interactive selector for CLI operations
@@ -68,8 +68,43 @@ impl InteractiveSelector {
         Ok(executors[selection].executor_id.clone())
     }
 
-    /// Let user select rentals for termination
+    /// Let user select rentals for termination (from list)
     pub fn select_rentals_for_termination(
+        &self,
+        rentals: &[RentalInfo],
+    ) -> Result<Vec<String>> {
+        if rentals.is_empty() {
+            return Err(CliError::not_found("No active rentals"));
+        }
+
+        let items: Vec<String> = rentals
+            .iter()
+            .map(|rental| {
+                format!(
+                    "{} - {:?} - {} - ${:.4}",
+                    rental.rental_id, rental.status, rental.executor_id, rental.total_cost
+                )
+            })
+            .collect();
+
+        let selections = MultiSelect::with_theme(&self.theme)
+            .with_prompt("Select rentals to terminate (Space to select, Enter to confirm)")
+            .items(&items)
+            .interact()
+            .map_err(|e| CliError::interactive(format!("Selection failed: {}", e)))?;
+
+        if selections.is_empty() {
+            return Err(CliError::interactive("No rentals selected"));
+        }
+
+        Ok(selections
+            .into_iter()
+            .map(|idx| rentals[idx].rental_id.clone())
+            .collect())
+    }
+
+    /// Let user select rentals for termination (legacy - for RentalStatusResponse)
+    pub fn select_rentals_for_termination_legacy(
         &self,
         rentals: &[RentalStatusResponse],
     ) -> Result<Vec<String>> {

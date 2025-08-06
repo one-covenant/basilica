@@ -41,6 +41,10 @@ pub struct ApiConfig {
 
     /// Network (mainnet/testnet)
     pub network: String,
+
+    /// Optional API key for authentication
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
 }
 
 impl Default for ApiConfig {
@@ -48,6 +52,7 @@ impl Default for ApiConfig {
         Self {
             base_url: "https://api.basilica.network".to_string(),
             network: "mainnet".to_string(),
+            api_key: None,
         }
     }
 }
