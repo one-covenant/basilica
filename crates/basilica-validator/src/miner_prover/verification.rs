@@ -779,6 +779,45 @@ impl VerificationEngine {
         let miner_id = format!("miner_{miner_uid}");
         let now = chrono::Utc::now().to_rfc3339();
 
+        // Collect all valid GPU UUIDs being reported
+        let reported_gpu_uuids: Vec<String> = gpu_infos
+            .iter()
+            .filter(|g| !g.gpu_uuid.is_empty() && g.gpu_uuid != "Unknown UUID")
+            .map(|g| g.gpu_uuid.clone())
+            .collect();
+
+        // Clean up any GPU assignments for this executor that are no longer reported
+        if !reported_gpu_uuids.is_empty() {
+            let placeholders = reported_gpu_uuids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(", ");
+            let query = format!(
+                "DELETE FROM gpu_uuid_assignments
+                 WHERE miner_id = ? AND executor_id = ?
+                 AND gpu_uuid NOT IN ({})",
+                placeholders
+            );
+
+            let mut q = sqlx::query(&query).bind(&miner_id).bind(executor_id);
+
+            for uuid in &reported_gpu_uuids {
+                q = q.bind(uuid);
+            }
+
+            let deleted = q.execute(self.persistence.pool()).await?;
+
+            if deleted.rows_affected() > 0 {
+                info!(
+                    "Cleaned up {} stale GPU assignments for {}/{}",
+                    deleted.rows_affected(),
+                    miner_id,
+                    executor_id
+                );
+            }
+        }
+
         for gpu_info in gpu_infos {
             // Skip invalid UUIDs
             if gpu_info.gpu_uuid.is_empty() || gpu_info.gpu_uuid == "Unknown UUID" {
@@ -879,6 +918,31 @@ impl VerificationEngine {
         .bind(executor_id)
         .execute(self.persistence.pool())
         .await?;
+
+        // Validate that the GPU count matches the expected count
+        let expected_gpu_count = gpu_infos
+            .iter()
+            .filter(|g| !g.gpu_uuid.is_empty() && g.gpu_uuid != "Unknown UUID")
+            .count() as i64;
+
+        if gpu_count != expected_gpu_count {
+            warn!(
+                "GPU assignment mismatch for {}/{}: stored {} GPUs but expected {}",
+                miner_id, executor_id, gpu_count, expected_gpu_count
+            );
+        }
+
+        // Fail verification if executor claims GPUs but none were stored
+        if expected_gpu_count > 0 && gpu_count == 0 {
+            error!(
+                "Failed to store GPU assignments for {}/{}: expected {} GPUs but stored 0",
+                miner_id, executor_id, expected_gpu_count
+            );
+            return Err(anyhow::anyhow!(
+                "GPU assignment validation failed: no valid GPU UUIDs stored despite {} GPUs reported",
+                expected_gpu_count
+            ));
+        }
 
         Ok(())
     }
@@ -1917,6 +1981,85 @@ impl VerificationEngine {
             .await?;
 
             gpu_assignments_cleaned += cleanup_result.rows_affected();
+        }
+
+        // Step 1b: Clean up executors with mismatched GPU counts
+        let mismatched_gpu_query = r#"
+            SELECT me.executor_id, me.miner_id, me.gpu_count, me.status
+            FROM miner_executors me
+            WHERE me.gpu_count > 0
+            AND NOT EXISTS (
+                SELECT 1 FROM gpu_uuid_assignments ga
+                WHERE ga.executor_id = me.executor_id AND ga.miner_id = me.miner_id
+            )
+        "#;
+
+        let mismatched_executors = sqlx::query(mismatched_gpu_query)
+            .fetch_all(self.persistence.pool())
+            .await?;
+
+        for row in mismatched_executors {
+            let executor_id: String = row.try_get("executor_id")?;
+            let miner_id: String = row.try_get("miner_id")?;
+            let gpu_count: i32 = row.try_get("gpu_count")?;
+            let status: String = row.try_get("status")?;
+
+            warn!(
+                "Executor {} (miner: {}) claims {} GPUs but has no assignments, status: {}. Resetting GPU count to 0",
+                executor_id, miner_id, gpu_count, status
+            );
+
+            // Reset GPU count to 0 to reflect reality
+            sqlx::query(
+                "UPDATE miner_executors SET gpu_count = 0, updated_at = datetime('now')
+                 WHERE executor_id = ? AND miner_id = ?",
+            )
+            .bind(&executor_id)
+            .bind(&miner_id)
+            .execute(self.persistence.pool())
+            .await?;
+
+            // Mark offline if they claim GPUs but have none
+            if status == "online" {
+                sqlx::query(
+                    "UPDATE miner_executors SET status = 'offline', updated_at = datetime('now')
+                     WHERE executor_id = ? AND miner_id = ?",
+                )
+                .bind(&executor_id)
+                .bind(&miner_id)
+                .execute(self.persistence.pool())
+                .await?;
+
+                info!(
+                    "Marked executor {} as offline due to GPU count mismatch",
+                    executor_id
+                );
+            }
+        }
+
+        // Step 1c: Clean up stale GPU assignments (GPUs that haven't been verified recently)
+        let stale_gpu_cleanup_query = r#"
+            DELETE FROM gpu_uuid_assignments
+            WHERE last_verified < datetime('now', '-1 hour')
+            OR (
+                EXISTS (
+                    SELECT 1 FROM miner_executors me
+                    WHERE me.executor_id = gpu_uuid_assignments.executor_id
+                    AND me.miner_id = gpu_uuid_assignments.miner_id
+                    AND me.status = 'offline'
+                )
+            )
+        "#;
+
+        let stale_gpu_result = sqlx::query(stale_gpu_cleanup_query)
+            .execute(self.persistence.pool())
+            .await?;
+
+        if stale_gpu_result.rows_affected() > 0 {
+            info!(
+                "Cleaned up {} stale GPU assignments (not verified in last hour or belonging to offline executors)",
+                stale_gpu_result.rows_affected()
+            );
         }
 
         // Step 2: Find and delete executors with consecutive failures
