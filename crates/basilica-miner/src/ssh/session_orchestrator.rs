@@ -629,7 +629,7 @@ impl Clone for SshSessionOrchestrator {
             sessions: self.sessions.clone(),
             sessions_by_validator: self.sessions_by_validator.clone(),
             executor_manager: self.executor_manager.clone(),
-            executor_grpc_client: ExecutorGrpcClient::new(ExecutorGrpcConfig::default()),
+            executor_grpc_client: self.executor_grpc_client.clone(),
             rate_limits: self.rate_limits.clone(),
             config: self.config.clone(),
         }
