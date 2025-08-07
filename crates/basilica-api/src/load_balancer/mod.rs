@@ -85,6 +85,11 @@ impl LoadBalancer {
     pub fn get_total_connections(&self) -> usize {
         self.pool.total_connections()
     }
+
+    /// Get all healthy validators (for special cases like listing all resources)
+    pub fn get_all_healthy_validators(&self) -> Vec<ValidatorInfo> {
+        self.pool.get_healthy_validators()
+    }
 }
 
 /// Pool statistics

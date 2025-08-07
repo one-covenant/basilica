@@ -14,7 +14,8 @@ use axum::{
     Json,
 };
 use basilica_validator::{api::types as validator_types, ValidatorClient};
-use tracing::{debug, info};
+use futures::future::join_all;
+use tracing::{debug, info, warn};
 
 /// List available GPU executors
 #[utoipa::path(
@@ -36,64 +37,106 @@ pub async fn list_available_gpus(
     State(state): State<AppState>,
     Query(query): Query<ListExecutorsQuery>,
 ) -> Result<Json<AvailableGpuResponse>> {
-    info!("Listing available GPUs");
+    info!("Listing available GPUs from all validators");
 
-    // Select validator using load balancer
-    let validator = state.load_balancer.read().await.select_validator().await?;
+    // Always query all validators for complete network view
+    // Query all validators in parallel
+    let validators = state.load_balancer.read().await.get_all_healthy_validators();
+    
+    if validators.is_empty() {
+        warn!("No healthy validators available");
+        return Ok(Json(AvailableGpuResponse {
+            total_count: 0,
+            executors: vec![],
+        }));
+    }
 
-    // Create client
-    let client = ValidatorClient::new(&validator.endpoint)?;
+    info!("Querying {} validators in parallel", validators.len());
 
-    // Query capacity
-    let capacity_query = validator_types::ListCapacityQuery {
-        min_gpu_memory: None, // Could map from query params if needed
-        gpu_type: query.gpu_type,
-        min_gpu_count: query.min_gpu_count,
-        max_cost_per_hour: None,
-    };
+    // Create futures for parallel queries
+    let query_futures = validators.iter().map(|validator| {
+        let endpoint = validator.endpoint.clone();
+        let uid = validator.uid;
+        let state = state.clone();
+        let gpu_type = query.gpu_type.clone();
+        let min_gpu_count = query.min_gpu_count;
+        
+        async move {
+            match ValidatorClient::new(&endpoint) {
+                Ok(client) => {
+                    // Build capacity query for this validator
+                    let capacity_query = validator_types::ListCapacityQuery {
+                        min_gpu_memory: None,
+                        gpu_type,
+                        min_gpu_count,
+                        max_cost_per_hour: None,
+                    };
+                    
+                    match client.get_available_capacity(capacity_query).await {
+                        Ok(response) => {
+                            // Report success
+                            state.load_balancer.read().await.report_success(uid);
+                            Some((uid, response))
+                        }
+                        Err(e) => {
+                            warn!("Failed to query validator {} at {}: {}", uid, endpoint, e);
+                            state.load_balancer.read().await.report_failure(uid);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to create client for validator {} at {}: {}", uid, endpoint, e);
+                    None
+                }
+            }
+        }
+    });
 
-    let response = client.get_available_capacity(capacity_query).await?;
-
-    // Transform ListCapacityResponse to AvailableGpuResponse
-    let available_executors = response
-        .available_executors
-        .into_iter()
-        .map(|exec| AvailableExecutor {
-            executor_id: exec.executor.id,
-            gpu_specs: exec
-                .executor
-                .gpu_specs
-                .into_iter()
-                .map(|gpu| GpuSpec {
-                    name: gpu.name,
-                    memory_gb: gpu.memory_gb,
-                    compute_capability: gpu.compute_capability,
-                })
-                .collect(),
-            cpu_specs: CpuSpec {
-                cores: exec.executor.cpu_specs.cores,
-                model: exec.executor.cpu_specs.model,
-                memory_gb: exec.executor.cpu_specs.memory_gb,
-            },
-            location: exec.executor.location,
-            price_per_hour: exec.cost_per_hour,
-            available: exec.availability.verification_score > 0.5,
-        })
-        .collect();
-
-    // Report success
-    state
-        .load_balancer
-        .read()
-        .await
-        .report_success(validator.uid);
-
-    let api_response = AvailableGpuResponse {
-        total_count: response.total_count,
-        executors: available_executors,
-    };
-
-    Ok(Json(api_response))
+    // Execute all queries in parallel
+    let results = join_all(query_futures).await;
+    
+    // Aggregate results from all validators
+    let mut all_executors = Vec::new();
+    let mut total_count = 0;
+    
+    for result in results {
+        if let Some((_validator_uid, response)) = result {
+            total_count += response.total_count;
+            
+            // Transform and add executors
+            for exec in response.available_executors {
+                all_executors.push(AvailableExecutor {
+                    executor_id: exec.executor.id,
+                    gpu_specs: exec
+                        .executor
+                        .gpu_specs
+                        .into_iter()
+                        .map(|gpu| GpuSpec {
+                            name: gpu.name,
+                            memory_gb: gpu.memory_gb,
+                            compute_capability: gpu.compute_capability,
+                        })
+                        .collect(),
+                    cpu_specs: CpuSpec {
+                        cores: exec.executor.cpu_specs.cores,
+                        model: exec.executor.cpu_specs.model,
+                        memory_gb: exec.executor.cpu_specs.memory_gb,
+                    },
+                    location: exec.executor.location,
+                    price_per_hour: exec.cost_per_hour,
+                    available: exec.availability.verification_score > 0.5,
+                });
+            }
+        }
+    }
+    
+    info!("Aggregated {} executors from all validators", all_executors.len());
+    
+    Ok(Json(AvailableGpuResponse {
+        total_count,
+        executors: all_executors,
+    }))
 }
 
 /// Create new GPU rental

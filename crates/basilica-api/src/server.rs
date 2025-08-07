@@ -57,16 +57,36 @@ impl Server {
             config.clone(),
         ));
 
+        // Initialize load balancer
+        let load_balancer = Arc::new(RwLock::new(LoadBalancer::new(
+            config.load_balancer.strategy.clone(),
+        )));
+
         // Start discovery task
         let discovery_clone = discovery.clone();
         tokio::spawn(async move {
             discovery_clone.start_discovery_loop().await;
         });
 
-        // Initialize load balancer
-        let load_balancer = Arc::new(RwLock::new(LoadBalancer::new(
-            config.load_balancer.strategy.clone(),
-        )));
+        // Start validator sync task - updates load balancer with discovered validators
+        let discovery_sync = discovery.clone();
+        let load_balancer_sync = load_balancer.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                
+                // Get all healthy validators from discovery
+                let validators = discovery_sync.get_healthy_validators();
+                
+                if !validators.is_empty() {
+                    info!("Updating load balancer with {} healthy validators", validators.len());
+                    load_balancer_sync.write().await.update_validators(validators);
+                } else {
+                    warn!("No healthy validators available from discovery service");
+                }
+            }
+        });
 
         // Create HTTP client for validator communication
         let http_client = reqwest::Client::builder()
