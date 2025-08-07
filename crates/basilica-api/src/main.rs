@@ -36,7 +36,6 @@ async fn main() -> Result<()> {
         .with_thread_ids(true)
         .with_file(true)
         .with_line_number(true)
-        .json()
         .init();
 
     info!("Starting Basilica API Gateway v{}", basilica_api::VERSION);

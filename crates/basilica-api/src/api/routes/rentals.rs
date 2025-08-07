@@ -13,9 +13,8 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use basilica_validator::{api::types as validator_types, ValidatorClient};
-use futures::future::join_all;
-use tracing::{debug, info, warn};
+use basilica_validator::api::types as validator_types;
+use tracing::{debug, info};
 
 /// List available GPU executors
 #[utoipa::path(
@@ -37,104 +36,61 @@ pub async fn list_available_gpus(
     State(state): State<AppState>,
     Query(query): Query<ListExecutorsQuery>,
 ) -> Result<Json<AvailableGpuResponse>> {
-    info!("Listing available GPUs from all validators");
+    info!("Listing available GPUs from validator");
 
-    // Always query all validators for complete network view
-    // Query all validators in parallel
-    let validators = state.load_balancer.read().await.get_all_healthy_validators();
-    
-    if validators.is_empty() {
-        warn!("No healthy validators available");
-        return Ok(Json(AvailableGpuResponse {
-            total_count: 0,
-            executors: vec![],
-        }));
-    }
+    info!(
+        "Querying validator {} at {}",
+        state.validator_uid, state.validator_endpoint
+    );
 
-    info!("Querying {} validators in parallel", validators.len());
+    // Use the validator client from app state
+    let client = &state.validator_client;
 
-    // Create futures for parallel queries
-    let query_futures = validators.iter().map(|validator| {
-        let endpoint = validator.endpoint.clone();
-        let uid = validator.uid;
-        let state = state.clone();
-        let gpu_type = query.gpu_type.clone();
-        let min_gpu_count = query.min_gpu_count;
-        
-        async move {
-            match ValidatorClient::new(&endpoint) {
-                Ok(client) => {
-                    // Build capacity query for this validator
-                    let capacity_query = validator_types::ListCapacityQuery {
-                        min_gpu_memory: None,
-                        gpu_type,
-                        min_gpu_count,
-                        max_cost_per_hour: None,
-                    };
-                    
-                    match client.get_available_capacity(capacity_query).await {
-                        Ok(response) => {
-                            // Report success
-                            state.load_balancer.read().await.report_success(uid);
-                            Some((uid, response))
-                        }
-                        Err(e) => {
-                            warn!("Failed to query validator {} at {}: {}", uid, endpoint, e);
-                            state.load_balancer.read().await.report_failure(uid);
-                            None
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to create client for validator {} at {}: {}", uid, endpoint, e);
-                    None
-                }
-            }
-        }
-    });
+    // Build capacity query
+    let capacity_query = validator_types::ListCapacityQuery {
+        min_gpu_memory: None,
+        gpu_type: query.gpu_type.clone(),
+        min_gpu_count: query.min_gpu_count,
+        max_cost_per_hour: None,
+    };
 
-    // Execute all queries in parallel
-    let results = join_all(query_futures).await;
-    
-    // Aggregate results from all validators
+    let response = client
+        .get_available_capacity(capacity_query)
+        .await
+        .map_err(|e| crate::error::Error::ValidatorCommunication {
+            message: format!("Failed to query validator: {e}"),
+        })?;
+
+    // Transform executors
     let mut all_executors = Vec::new();
-    let mut total_count = 0;
-    
-    for result in results {
-        if let Some((_validator_uid, response)) = result {
-            total_count += response.total_count;
-            
-            // Transform and add executors
-            for exec in response.available_executors {
-                all_executors.push(AvailableExecutor {
-                    executor_id: exec.executor.id,
-                    gpu_specs: exec
-                        .executor
-                        .gpu_specs
-                        .into_iter()
-                        .map(|gpu| GpuSpec {
-                            name: gpu.name,
-                            memory_gb: gpu.memory_gb,
-                            compute_capability: gpu.compute_capability,
-                        })
-                        .collect(),
-                    cpu_specs: CpuSpec {
-                        cores: exec.executor.cpu_specs.cores,
-                        model: exec.executor.cpu_specs.model,
-                        memory_gb: exec.executor.cpu_specs.memory_gb,
-                    },
-                    location: exec.executor.location,
-                    price_per_hour: exec.cost_per_hour,
-                    available: exec.availability.verification_score > 0.5,
-                });
-            }
-        }
+    for exec in response.available_executors {
+        all_executors.push(AvailableExecutor {
+            executor_id: exec.executor.id,
+            gpu_specs: exec
+                .executor
+                .gpu_specs
+                .into_iter()
+                .map(|gpu| GpuSpec {
+                    name: gpu.name,
+                    memory_gb: gpu.memory_gb,
+                    compute_capability: gpu.compute_capability,
+                })
+                .collect(),
+            cpu_specs: CpuSpec {
+                cores: exec.executor.cpu_specs.cores,
+                model: exec.executor.cpu_specs.model,
+                memory_gb: exec.executor.cpu_specs.memory_gb,
+            },
+            location: exec.executor.location,
+            price_per_hour: exec.cost_per_hour,
+            available: exec.availability.verification_score > 0.5,
+        });
     }
-    
-    info!("Aggregated {} executors from all validators", all_executors.len());
-    
+
+    info!("Found {} executors from validator", all_executors.len());
+
     Ok(Json(AvailableGpuResponse {
-        total_count,
+        total_count: response.total_count,
         executors: all_executors,
     }))
 }
@@ -167,11 +123,8 @@ pub async fn create_rental(
     };
     info!("Creating rental for {}", executor_info);
 
-    // Select validator using load balancer
-    let validator = state.load_balancer.read().await.select_validator().await?;
-
-    // Create client
-    let client = ValidatorClient::new(&validator.endpoint)?;
+    // Use the validator client from app state
+    let client = &state.validator_client;
 
     // Convert to validator types and create rental
     let validator_request: validator_types::RentCapacityRequest = request.into();
@@ -207,12 +160,7 @@ pub async fn create_rental(
         cost_per_hour: validator_response.cost_per_hour,
     };
 
-    // Report success
-    state
-        .load_balancer
-        .read()
-        .await
-        .report_success(validator.uid);
+    // Success - no load balancer to report to
 
     info!("Successfully created rental: {}", response.rental_id);
 
@@ -283,11 +231,8 @@ pub async fn get_rental_status(
 ) -> Result<Json<RentalStatusResponse>> {
     debug!("Getting status for rental: {}", rental_id);
 
-    // Select validator using load balancer
-    let validator = state.load_balancer.read().await.select_validator().await?;
-
-    // Create client
-    let client = ValidatorClient::new(&validator.endpoint)?;
+    // Use the validator client from app state
+    let client = &state.validator_client;
 
     // Get rental status
     let validator_response = client.get_rental_status(&rental_id).await?;
@@ -327,12 +272,7 @@ pub async fn get_rental_status(
         cost_incurred: validator_response.cost_incurred,
     };
 
-    // Report success
-    state
-        .load_balancer
-        .read()
-        .await
-        .report_success(validator.uid);
+    // Success - no load balancer to report to
 
     Ok(Json(response))
 }
@@ -357,11 +297,8 @@ pub async fn terminate_rental(
 ) -> Result<Json<crate::api::types::TerminateRentalResponse>> {
     info!("Terminating rental: {}", rental_id);
 
-    // Select validator using load balancer
-    let validator = state.load_balancer.read().await.select_validator().await?;
-
-    // Create client
-    let client = ValidatorClient::new(&validator.endpoint)?;
+    // Use the validator client from app state
+    let client = &state.validator_client;
 
     // Terminate rental
     let request = validator_types::TerminateRentalRequest {
@@ -375,12 +312,7 @@ pub async fn terminate_rental(
         message: validator_response.message,
     };
 
-    // Report success
-    state
-        .load_balancer
-        .read()
-        .await
-        .report_success(validator.uid);
+    // Success - no load balancer to report to
 
     info!("Successfully terminated rental: {}", rental_id);
 

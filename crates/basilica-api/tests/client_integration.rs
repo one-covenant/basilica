@@ -1,7 +1,9 @@
 //! Integration tests for the Basilica API client
 
+#[cfg(feature = "client")]
 use basilica_api::{api::types::*, BasilicaClient};
 
+#[cfg(feature = "client")]
 #[tokio::test]
 #[ignore] // Run with --ignored flag for integration tests against a real server
 async fn test_real_api_health() {
@@ -10,6 +12,7 @@ async fn test_real_api_health() {
     assert!(health.is_ok());
 }
 
+#[cfg(feature = "client")]
 #[tokio::test]
 #[ignore]
 async fn test_list_available_gpus() {

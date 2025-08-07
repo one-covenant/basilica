@@ -3,13 +3,12 @@
 use crate::{
     api,
     config::Config,
-    discovery::ValidatorDiscovery,
     error::{Error, Result},
-    load_balancer::LoadBalancer,
 };
 use axum::Router;
+use basilica_validator::ValidatorClient;
 use std::sync::Arc;
-use tokio::{signal, sync::RwLock};
+use tokio::signal;
 use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -30,11 +29,17 @@ pub struct AppState {
     /// Application configuration
     pub config: Arc<Config>,
 
-    /// Validator discovery service
-    pub discovery: Arc<ValidatorDiscovery>,
+    /// Validator client for making requests
+    pub validator_client: Arc<ValidatorClient>,
 
-    /// Load balancer
-    pub load_balancer: Arc<RwLock<LoadBalancer>>,
+    /// Validator endpoint for reference
+    pub validator_endpoint: String,
+
+    /// Validator UID in the subnet
+    pub validator_uid: u16,
+
+    /// Validator hotkey (SS58 address)
+    pub validator_hotkey: String,
 
     /// HTTP client for validator requests
     pub http_client: reqwest::Client,
@@ -47,46 +52,69 @@ impl Server {
 
         let config = Arc::new(config);
 
-        // Initialize Bittensor service for validator discovery
+        // Validate configuration
+        if config.bittensor.validator_hotkey.is_empty() {
+            return Err(Error::ConfigError(
+                "validator_hotkey must be configured in bittensor section".to_string(),
+            ));
+        }
+
+        // Initialize Bittensor service to find validator endpoint
+        info!("Connecting to Bittensor network to discover validator endpoint");
         let bittensor_config = config.to_bittensor_config();
         let bittensor_service = bittensor::Service::new(bittensor_config).await?;
 
-        // Initialize validator discovery
-        let discovery = Arc::new(ValidatorDiscovery::new(
-            Arc::new(bittensor_service),
-            config.clone(),
-        ));
+        // Query metagraph to find validator by hotkey
+        info!(
+            "Looking up validator with hotkey: {}",
+            config.bittensor.validator_hotkey
+        );
+        let metagraph = bittensor_service
+            .get_metagraph(config.bittensor.netuid)
+            .await?;
 
-        // Initialize load balancer
-        let load_balancer = Arc::new(RwLock::new(LoadBalancer::new(
-            config.load_balancer.strategy.clone(),
-        )));
-
-        // Start discovery task
-        let discovery_clone = discovery.clone();
-        tokio::spawn(async move {
-            discovery_clone.start_discovery_loop().await;
-        });
-
-        // Start validator sync task - updates load balancer with discovered validators
-        let discovery_sync = discovery.clone();
-        let load_balancer_sync = load_balancer.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
-            loop {
-                interval.tick().await;
-                
-                // Get all healthy validators from discovery
-                let validators = discovery_sync.get_healthy_validators();
-                
-                if !validators.is_empty() {
-                    info!("Updating load balancer with {} healthy validators", validators.len());
-                    load_balancer_sync.write().await.update_validators(validators);
-                } else {
-                    warn!("No healthy validators available from discovery service");
-                }
+        // Find the UID for the configured hotkey
+        let mut found_uid = None;
+        for (uid, hotkey) in metagraph.hotkeys.iter().enumerate() {
+            if hotkey.to_string() == config.bittensor.validator_hotkey {
+                found_uid = Some(uid as u16);
+                break;
             }
-        });
+        }
+
+        let validator_uid = found_uid.ok_or_else(|| {
+            Error::ConfigError(format!(
+                "Validator with hotkey {} not found in subnet {}",
+                config.bittensor.validator_hotkey, config.bittensor.netuid
+            ))
+        })?;
+
+        // Check if validator is active
+        if let Some(active) = metagraph.active.get(validator_uid as usize) {
+            if !*active {
+                return Err(Error::ConfigError(format!(
+                    "Validator {validator_uid} is not active in the network"
+                )));
+            }
+        }
+
+        // Get axon info for this validator
+        let axon_info = metagraph.axons.get(validator_uid as usize).ok_or_else(|| {
+            Error::ConfigError(format!("No axon info found for validator {validator_uid}"))
+        })?;
+
+        let validator_endpoint = format!("http://{}:{}", axon_info.ip, axon_info.port);
+        info!(
+            "Found validator {} at endpoint {}",
+            validator_uid, validator_endpoint
+        );
+
+        // Create validator client
+        let validator_client = Arc::new(ValidatorClient::new(&validator_endpoint).map_err(
+            |e| Error::Internal {
+                message: format!("Failed to create validator client: {e}"),
+            },
+        )?);
 
         // Create HTTP client for validator communication
         let http_client = reqwest::Client::builder()
@@ -99,10 +127,42 @@ impl Server {
         // Create application state
         let state = AppState {
             config: config.clone(),
-            discovery,
-            load_balancer,
-            http_client,
+            validator_client: validator_client.clone(),
+            validator_endpoint: validator_endpoint.clone(),
+            validator_uid,
+            validator_hotkey: config.bittensor.validator_hotkey.clone(),
+            http_client: http_client.clone(),
         };
+
+        // Start optional health check task using HTTP client
+        let health_http_client = http_client;
+        let health_endpoint = validator_endpoint.clone();
+        let health_interval = config.health_check_interval();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(health_interval);
+            loop {
+                interval.tick().await;
+                let health_url = format!("{health_endpoint}/health");
+                match health_http_client.get(&health_url).send().await {
+                    Ok(response) if response.status().is_success() => {
+                        tracing::debug!("Validator health check passed");
+                    }
+                    Ok(response) => {
+                        tracing::warn!(
+                            "Validator health check returned status: {}",
+                            response.status()
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Validator health check failed for {}: {}",
+                            health_endpoint,
+                            e
+                        );
+                    }
+                }
+            }
+        });
 
         // Build the application router
         let app = Self::build_router(state)?;

@@ -1,0 +1,15 @@
+# Basilica API Configuration Example
+# Copy this file to basilica-api.toml and customize for your environment
+
+[server]
+bind_address = "0.0.0.0:8000"
+request_timeout = 60
+
+[bittensor]
+# Network: "finney" for mainnet (Subnet 39) or "test" for testnet (Subnet 387)
+network = "test"
+netuid = 387
+chain_endpoint = "wss://test.finney.opentensor.ai:443"
+# REQUIRED: Specify the validator hotkey (SS58 address) to connect to
+validator_hotkey = "5FxJav..."  # Replace with actual validator hotkey
+discovery_interval = 30

@@ -2,16 +2,12 @@
 
 mod auth;
 mod cache;
-mod discovery;
-mod load_balancer;
 mod rate_limit;
 mod server;
 mod telemetry;
 
 pub use auth::AuthConfig;
 pub use cache::{CacheBackend, CacheConfig};
-pub use discovery::DiscoveryConfig;
-pub use load_balancer::{LoadBalancerConfig, LoadBalancerStrategy};
 pub use rate_limit::{RateLimitBackend, RateLimitConfig};
 pub use server::ServerConfig;
 pub use telemetry::TelemetryConfig;
@@ -41,8 +37,8 @@ pub struct BittensorIntegrationConfig {
     /// Validator discovery interval in seconds
     pub discovery_interval: u64,
 
-    /// Minimum validator score to consider
-    pub min_validator_score: f64,
+    /// Validator hotkey to connect to (SS58 address) - REQUIRED
+    pub validator_hotkey: String,
 }
 
 impl Default for BittensorIntegrationConfig {
@@ -52,7 +48,7 @@ impl Default for BittensorIntegrationConfig {
             netuid: 42,
             chain_endpoint: None,
             discovery_interval: 60,
-            min_validator_score: 0.5,
+            validator_hotkey: String::new(), // Must be provided in config
         }
     }
 }
@@ -66,9 +62,6 @@ pub struct Config {
     /// Bittensor network configuration
     pub bittensor: BittensorIntegrationConfig,
 
-    /// Load balancer configuration
-    pub load_balancer: LoadBalancerConfig,
-
     /// Cache configuration
     pub cache: CacheConfig,
 
@@ -80,9 +73,6 @@ pub struct Config {
 
     /// Telemetry configuration
     pub telemetry: TelemetryConfig,
-
-    /// Validator discovery configuration
-    pub discovery: DiscoveryConfig,
 }
 
 impl Config {
@@ -109,7 +99,7 @@ impl Config {
 
     /// Get health check interval as Duration
     pub fn health_check_interval(&self) -> Duration {
-        Duration::from_secs(self.load_balancer.health_check_interval)
+        Duration::from_secs(30) // Default 30 seconds
     }
 
     /// Get discovery interval as Duration
@@ -119,12 +109,12 @@ impl Config {
 
     /// Get connection timeout as Duration
     pub fn connection_timeout(&self) -> Duration {
-        Duration::from_secs(self.load_balancer.connection_timeout)
+        Duration::from_secs(10) // Default 10 seconds
     }
 
     /// Get validator timeout as Duration
     pub fn validator_timeout(&self) -> Duration {
-        Duration::from_secs(self.discovery.validator_timeout)
+        Duration::from_secs(30) // Default 30 seconds
     }
 
     /// Create BittensorConfig from our configuration
@@ -133,7 +123,7 @@ impl Config {
             network: self.bittensor.network.clone(),
             netuid: self.bittensor.netuid,
             chain_endpoint: self.bittensor.chain_endpoint.clone(),
-            wallet_name: "basilica-api".to_string(),
+            wallet_name: "default".to_string(),
             hotkey_name: "default".to_string(),
             weight_interval_secs: 300, // 5 minutes default
         }
@@ -215,6 +205,6 @@ mod tests {
 
         assert_eq!(bt_config.network, config.bittensor.network);
         assert_eq!(bt_config.netuid, config.bittensor.netuid);
-        assert_eq!(bt_config.wallet_name, "basilica-api");
+        assert_eq!(bt_config.wallet_name, "default");
     }
 }

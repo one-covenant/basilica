@@ -16,6 +16,10 @@ pub enum Error {
     #[error("Configuration error: {0}")]
     Config(#[from] basilica_common::ConfigurationError),
 
+    /// Configuration error string
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+
     /// Bittensor integration error
     #[error("Bittensor error: {0}")]
     Bittensor(#[from] bittensor::BittensorError),
@@ -27,14 +31,6 @@ pub enum Error {
     /// Validator communication error
     #[error("Validator communication error: {message}")]
     ValidatorCommunication { message: String },
-
-    /// No validators available
-    #[error("No validators available")]
-    NoValidatorsAvailable,
-
-    /// Load balancer error
-    #[error("Load balancer error: {message}")]
-    LoadBalancer { message: String },
 
     /// Authentication error
     #[error("Authentication error: {message}")]
@@ -102,8 +98,7 @@ impl Error {
             Error::Bittensor(_) => "BASILICA_API_BITTENSOR_ERROR",
             Error::HttpClient(_) => "BASILICA_API_HTTP_CLIENT_ERROR",
             Error::ValidatorCommunication { .. } => "BASILICA_API_VALIDATOR_COMM_ERROR",
-            Error::NoValidatorsAvailable => "BASILICA_API_NO_VALIDATORS",
-            Error::LoadBalancer { .. } => "BASILICA_API_LOAD_BALANCER_ERROR",
+            Error::ConfigError(_) => "BASILICA_API_CONFIG_ERROR",
             Error::Authentication { .. } => "BASILICA_API_AUTH_ERROR",
             Error::Authorization { .. } => "BASILICA_API_AUTHZ_ERROR",
             Error::RateLimitExceeded => "BASILICA_API_RATE_LIMIT",
@@ -128,7 +123,6 @@ impl Error {
                 | Error::ValidatorCommunication { .. }
                 | Error::Timeout
                 | Error::ServiceUnavailable
-                | Error::NoValidatorsAvailable
         )
     }
 
@@ -153,8 +147,7 @@ impl IntoResponse for Error {
             Error::Bittensor(_) => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
             Error::HttpClient(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
             Error::ValidatorCommunication { .. } => (StatusCode::BAD_GATEWAY, self.to_string()),
-            Error::NoValidatorsAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
-            Error::LoadBalancer { .. } => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
+            Error::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             Error::Authentication { .. } => (StatusCode::UNAUTHORIZED, self.to_string()),
             Error::Authorization { .. } => (StatusCode::FORBIDDEN, self.to_string()),
             Error::RateLimitExceeded => (
@@ -216,13 +209,10 @@ mod tests {
     #[test]
     fn test_error_codes() {
         assert_eq!(
-            Error::NoValidatorsAvailable.error_code(),
-            "BASILICA_API_NO_VALIDATORS"
-        );
-        assert_eq!(
             Error::RateLimitExceeded.error_code(),
             "BASILICA_API_RATE_LIMIT"
         );
+        assert_eq!(Error::Timeout.error_code(), "BASILICA_API_TIMEOUT");
     }
 
     #[test]

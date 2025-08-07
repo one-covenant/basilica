@@ -12,14 +12,14 @@ use axum::{extract::State, Json};
     ),
     tag = "health",
 )]
-pub async fn health_check(State(state): State<AppState>) -> Json<HealthCheckResponse> {
-    let discovery = &state.discovery;
-
+pub async fn health_check(State(_state): State<AppState>) -> Json<HealthCheckResponse> {
+    // We always have one configured validator
+    // Health status is monitored in background but doesn't affect API availability
     Json(HealthCheckResponse {
         status: "healthy".to_string(),
         version: crate::VERSION.to_string(),
         timestamp: chrono::Utc::now(),
-        healthy_validators: discovery.healthy_validator_count(),
-        total_validators: discovery.validator_count(),
+        healthy_validators: 1,
+        total_validators: 1,
     })
 }

@@ -154,17 +154,15 @@ impl Default for TelemetryTracker {
     ),
     tag = "health",
 )]
-pub async fn get_telemetry(State(state): State<AppState>) -> Json<TelemetryResponse> {
+pub async fn get_telemetry(State(_state): State<AppState>) -> Json<TelemetryResponse> {
     // TODO: Implement actual telemetry collection
-    // For now, return minimal response with actual validator count
-
-    let active_connections = state.load_balancer.read().await.get_total_connections() as u64;
+    // For now, return minimal response
 
     Json(TelemetryResponse {
         request_count: 0,
         avg_response_time_ms: 0.0,
         success_rate: 0.0,
-        active_connections: active_connections as usize,
+        active_connections: 0, // No load balancer to track connections
         cache_hit_rate: 0.0,
         timestamp: chrono::Utc::now(),
     })
