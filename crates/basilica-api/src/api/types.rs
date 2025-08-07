@@ -2,33 +2,27 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use utoipa::ToSchema;
 
-// Define types that mirror validator API types
+// Re-export types from validator crate
+pub use basilica_validator::api::types::{
+    RentalSelection,
+    GpuRequirements,
+};
 
-/// GPU requirements
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
-pub struct GpuRequirements {
-    /// Minimum memory in GB
-    pub min_memory_gb: u32,
+// Import validator types for conversion
+use basilica_validator::api::types as validator_types;
+use std::collections::HashMap;
 
-    /// GPU type (optional)
-    pub gpu_type: Option<String>,
-
-    /// Number of GPUs required
-    pub gpu_count: u32,
-}
+// Local types with ToSchema for OpenAPI documentation
 
 /// GPU specifications
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GpuSpec {
     /// GPU name
     pub name: String,
-
     /// Memory in GB
     pub memory_gb: u32,
-
     /// Compute capability
     pub compute_capability: String,
 }
@@ -38,10 +32,8 @@ pub struct GpuSpec {
 pub struct CpuSpec {
     /// Number of cores
     pub cores: u32,
-
     /// CPU model
     pub model: String,
-
     /// Memory in GB
     pub memory_gb: u32,
 }
@@ -51,10 +43,8 @@ pub struct CpuSpec {
 pub struct SshAccess {
     /// Host address
     pub host: String,
-
     /// SSH port
     pub port: u16,
-
     /// Username
     pub username: String,
 }
@@ -65,13 +55,10 @@ pub struct SshAccess {
 pub enum RentalStatus {
     /// Rental is pending
     Pending,
-
     /// Rental is active
     Active,
-
     /// Rental is terminated
     Terminated,
-
     /// Rental failed
     Failed,
 }
@@ -79,34 +66,30 @@ pub enum RentalStatus {
 /// Request to rent GPU capacity
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct RentCapacityRequest {
-    /// GPU requirements
-    pub gpu_requirements: GpuRequirements,
-
+    /// How to select the executor
+    pub selection: RentalSelection,
     /// SSH public key for access
     pub ssh_public_key: String,
-
     /// Docker image to run
     pub docker_image: String,
-
     /// Environment variables
     pub env_vars: Option<HashMap<String, String>>,
-
     /// Maximum rental duration in hours
     pub max_duration_hours: u32,
 }
+
+// Type alias for backward compatibility
+pub type CreateRentalRequest = RentCapacityRequest;
 
 /// Response for capacity rental request
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct RentCapacityResponse {
     /// Rental ID
     pub rental_id: String,
-
     /// Executor details
     pub executor: ExecutorDetails,
-
     /// SSH access information
     pub ssh_access: SshAccess,
-
     /// Cost per hour
     pub cost_per_hour: f64,
 }
@@ -116,13 +99,10 @@ pub struct RentCapacityResponse {
 pub struct ExecutorDetails {
     /// Executor ID
     pub id: String,
-
     /// GPU specifications
     pub gpu_specs: Vec<GpuSpec>,
-
     /// CPU specifications
     pub cpu_specs: CpuSpec,
-
     /// Location (optional)
     pub location: Option<String>,
 }
@@ -132,19 +112,14 @@ pub struct ExecutorDetails {
 pub struct RentalStatusResponse {
     /// Rental ID
     pub rental_id: String,
-
     /// Current status
     pub status: RentalStatus,
-
     /// Executor details
     pub executor: ExecutorDetails,
-
     /// Creation timestamp
     pub created_at: chrono::DateTime<chrono::Utc>,
-
     /// Last update timestamp
     pub updated_at: chrono::DateTime<chrono::Utc>,
-
     /// Cost incurred so far
     pub cost_incurred: f64,
 }
@@ -161,9 +136,33 @@ pub struct TerminateRentalRequest {
 pub struct TerminateRentalResponse {
     /// Success flag
     pub success: bool,
-
     /// Message
     pub message: String,
+}
+
+// Conversion helpers
+impl From<validator_types::RentCapacityRequest> for RentCapacityRequest {
+    fn from(req: validator_types::RentCapacityRequest) -> Self {
+        Self {
+            selection: req.selection,
+            ssh_public_key: req.ssh_public_key,
+            docker_image: req.docker_image,
+            env_vars: req.env_vars,
+            max_duration_hours: req.max_duration_hours,
+        }
+    }
+}
+
+impl From<RentCapacityRequest> for validator_types::RentCapacityRequest {
+    fn from(req: RentCapacityRequest) -> Self {
+        validator_types::RentCapacityRequest {
+            selection: req.selection,
+            ssh_public_key: req.ssh_public_key,
+            docker_image: req.docker_image,
+            env_vars: req.env_vars,
+            max_duration_hours: req.max_duration_hours,
+        }
+    }
 }
 
 /// Log query parameters
@@ -397,30 +396,18 @@ pub struct AvailableExecutor {
     pub available: bool,
 }
 
-/// Create rental request
-#[derive(Debug, Deserialize, Serialize, ToSchema)]
-pub struct CreateRentalRequest {
-    /// Executor ID to rent
-    pub executor_id: String,
-
-    /// Docker image to run
-    pub docker_image: String,
-
-    /// SSH public key for access
-    pub ssh_public_key: String,
-
-    /// Environment variables
-    pub env_vars: Option<HashMap<String, String>>,
-
-    /// Maximum rental duration in hours
-    pub max_duration_hours: u32,
-}
 
 /// List rentals query
 #[derive(Debug, Deserialize)]
 pub struct ListRentalsQuery {
     /// Status filter
     pub status: Option<String>,
+    
+    /// GPU type filter
+    pub gpu_type: Option<String>,
+    
+    /// Minimum GPU count
+    pub min_gpu_count: Option<u32>,
 
     /// Page number
     pub page: Option<u32>,
@@ -446,7 +433,7 @@ pub struct ListRentalsResponse {
 }
 
 /// Rental information
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct RentalInfo {
     /// Rental ID
     pub rental_id: String,

@@ -5,17 +5,27 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Method for selecting an executor for rental
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum RentalSelection {
+    /// Rent a specific executor by ID
+    ExecutorId(String),
+    /// Rent based on GPU requirements (validator picks best match)
+    GpuRequirements(GpuRequirements),
+}
+
 /// Request to rent GPU capacity
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RentCapacityRequest {
-    pub gpu_requirements: GpuRequirements,
+    pub selection: RentalSelection,
     pub ssh_public_key: String,
     pub docker_image: String,
     pub env_vars: Option<HashMap<String, String>>,
     pub max_duration_hours: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct GpuRequirements {
     pub min_memory_gb: u32,
     pub gpu_type: Option<String>,
@@ -23,7 +33,7 @@ pub struct GpuRequirements {
 }
 
 /// Response for capacity rental request
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RentCapacityResponse {
     pub rental_id: String,
     pub executor: ExecutorDetails,
@@ -31,7 +41,7 @@ pub struct RentCapacityResponse {
     pub cost_per_hour: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ExecutorDetails {
     pub id: String,
     pub gpu_specs: Vec<GpuSpec>,
@@ -53,7 +63,7 @@ pub struct CpuSpec {
     pub memory_gb: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SshAccess {
     pub host: String,
     pub port: u16,
@@ -61,20 +71,20 @@ pub struct SshAccess {
 }
 
 /// Request to terminate a rental
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TerminateRentalRequest {
     pub reason: Option<String>,
 }
 
 /// Response for rental termination
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TerminateRentalResponse {
     pub success: bool,
     pub message: String,
 }
 
 /// Rental status information
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RentalStatusResponse {
     pub rental_id: String,
     pub status: RentalStatus,
@@ -84,7 +94,7 @@ pub struct RentalStatusResponse {
     pub cost_incurred: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum RentalStatus {
     Pending,
     Active,
@@ -93,20 +103,20 @@ pub enum RentalStatus {
 }
 
 /// Available capacity listing
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ListCapacityResponse {
     pub available_executors: Vec<AvailableExecutor>,
     pub total_count: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AvailableExecutor {
     pub executor: ExecutorDetails,
     pub availability: AvailabilityInfo,
     pub cost_per_hour: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AvailabilityInfo {
     pub available_until: Option<chrono::DateTime<chrono::Utc>>,
     pub verification_score: f64,
@@ -114,7 +124,7 @@ pub struct AvailabilityInfo {
 }
 
 /// Query parameters for capacity listing
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ListCapacityQuery {
     pub min_gpu_memory: Option<u32>,
     pub gpu_type: Option<String>,
@@ -123,7 +133,7 @@ pub struct ListCapacityQuery {
 }
 
 /// Log streaming query parameters
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LogQuery {
     pub follow: Option<bool>,
     pub tail: Option<u32>,

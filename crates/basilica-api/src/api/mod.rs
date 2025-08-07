@@ -23,7 +23,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
         )
         // GPU discovery endpoint
         .route(
-            "/rentals/available",
+            "/capacity/available",
             get(routes::rentals::list_available_gpus),
         )
         // Rental management endpoints

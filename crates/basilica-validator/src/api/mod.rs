@@ -10,9 +10,6 @@ pub mod rental_routes;
 pub mod routes;
 pub mod types;
 
-#[cfg(feature = "client")]
-pub use client::ValidatorClient;
-
 use crate::config::ApiConfig;
 use crate::rental;
 use anyhow::Result;

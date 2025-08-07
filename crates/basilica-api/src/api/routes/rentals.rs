@@ -3,24 +3,23 @@
 use crate::{
     api::types::{
         AvailableExecutor, AvailableGpuResponse, CpuSpec, CreateRentalRequest, GpuSpec,
-        ListRentalsQuery, ListRentalsResponse, RentCapacityResponse, RentalInfo, RentalStatus,
-        RentalStatusResponse, SshAccess,
+        ListRentalsQuery, ListRentalsResponse, RentCapacityResponse, RentalInfo,
+        RentalStatusResponse,
     },
-    error::{Error, Result},
+    error::Result,
     server::AppState,
 };
+use basilica_validator::{ValidatorClient, api::types as validator_types};
 use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use chrono::Utc;
 use tracing::{debug, info};
-use uuid::Uuid;
 
 /// List available GPU executors
 #[utoipa::path(
     get,
-    path = "/api/v1/rentals/available",
+    path = "/api/v1/capacity/available",
     params(
         ("gpu_type" = Option<String>, Query, description = "Filter by GPU type"),
         ("min_gpu_count" = Option<u32>, Query, description = "Minimum GPU count"),
@@ -39,15 +38,52 @@ pub async fn list_available_gpus(
 ) -> Result<Json<AvailableGpuResponse>> {
     info!("Listing available GPUs");
 
-    // TODO: Query actual available executors from the network
-    let available_executors = get_available_executors(&state, &query).await?;
-
-    let response = AvailableGpuResponse {
-        total_count: available_executors.len(),
+    // Select validator using load balancer
+    let validator = state.load_balancer.read().await.select_validator().await?;
+    
+    // Create client
+    let client = ValidatorClient::new(&validator.endpoint)?;
+    
+    // Query capacity
+    let capacity_query = validator_types::ListCapacityQuery {
+        min_gpu_memory: None, // Could map from query params if needed
+        gpu_type: query.gpu_type,
+        min_gpu_count: query.min_gpu_count,
+        max_cost_per_hour: None,
+    };
+    
+    let response = client.get_available_capacity(capacity_query).await?;
+    
+    // Transform ListCapacityResponse to AvailableGpuResponse
+    let available_executors = response.available_executors
+        .into_iter()
+        .map(|exec| AvailableExecutor {
+            executor_id: exec.executor.id,
+            gpu_specs: exec.executor.gpu_specs.into_iter().map(|gpu| GpuSpec {
+                name: gpu.name,
+                memory_gb: gpu.memory_gb,
+                compute_capability: gpu.compute_capability,
+            }).collect(),
+            cpu_specs: CpuSpec {
+                cores: exec.executor.cpu_specs.cores,
+                model: exec.executor.cpu_specs.model,
+                memory_gb: exec.executor.cpu_specs.memory_gb,
+            },
+            location: exec.executor.location,
+            price_per_hour: exec.cost_per_hour,
+            available: exec.availability.verification_score > 0.5,
+        })
+        .collect();
+    
+    // Report success
+    state.load_balancer.read().await.report_success(validator.uid);
+    
+    let api_response = AvailableGpuResponse {
+        total_count: response.total_count,
         executors: available_executors,
     };
 
-    Ok(Json(response))
+    Ok(Json(api_response))
 }
 
 /// Create new GPU rental
@@ -63,32 +99,56 @@ pub async fn list_available_gpus(
     tag = "rentals",
 )]
 pub async fn create_rental(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(request): Json<CreateRentalRequest>,
 ) -> Result<Json<RentCapacityResponse>> {
-    info!("Creating rental for executor {}", request.executor_id);
-
-    // TODO: Verify executor exists and is available
-    // TODO: Check user has sufficient credits
-    // TODO: Actually provision the rental
-
-    let rental_id = Uuid::new_v4().to_string();
-
-    // Mock executor details - in production this would come from the network
-    let executor_details = create_mock_executor_details(&request.executor_id);
-    let ssh_access = SshAccess {
-        host: "executor-host.example.com".to_string(),
-        port: 22,
-        username: "ubuntu".to_string(),
+    // Extract executor info for logging based on selection
+    let executor_info = match &request.selection {
+        crate::api::types::RentalSelection::ExecutorId(id) => format!("executor {}", id),
+        crate::api::types::RentalSelection::GpuRequirements(reqs) => {
+            format!("GPU requirements: {} GPUs with {}GB memory", reqs.gpu_count, reqs.min_memory_gb)
+        }
     };
+    info!("Creating rental for {}", executor_info);
 
+    // Select validator using load balancer
+    let validator = state.load_balancer.read().await.select_validator().await?;
+    
+    // Create client
+    let client = ValidatorClient::new(&validator.endpoint)?;
+    
+    // Convert to validator types and create rental
+    let validator_request: validator_types::RentCapacityRequest = request.into();
+    let validator_response = client.create_rental(validator_request).await?;
+    
+    // Convert response to API types
     let response = RentCapacityResponse {
-        rental_id,
-        executor: executor_details,
-        ssh_access,
-        cost_per_hour: 0.5, // Mock price
+        rental_id: validator_response.rental_id,
+        executor: crate::api::types::ExecutorDetails {
+            id: validator_response.executor.id,
+            gpu_specs: validator_response.executor.gpu_specs.into_iter().map(|g| GpuSpec {
+                name: g.name,
+                memory_gb: g.memory_gb,
+                compute_capability: g.compute_capability,
+            }).collect(),
+            cpu_specs: CpuSpec {
+                cores: validator_response.executor.cpu_specs.cores,
+                model: validator_response.executor.cpu_specs.model,
+                memory_gb: validator_response.executor.cpu_specs.memory_gb,
+            },
+            location: validator_response.executor.location,
+        },
+        ssh_access: crate::api::types::SshAccess {
+            host: validator_response.ssh_access.host,
+            port: validator_response.ssh_access.port,
+            username: validator_response.ssh_access.username,
+        },
+        cost_per_hour: validator_response.cost_per_hour,
     };
-
+    
+    // Report success
+    state.load_balancer.read().await.report_success(validator.uid);
+    
     info!("Successfully created rental: {}", response.rental_id);
 
     Ok(Json(response))
@@ -115,8 +175,14 @@ pub async fn list_user_rentals(
 ) -> Result<Json<ListRentalsResponse>> {
     info!("Listing rentals");
 
-    // TODO: Query user's rentals from database
-    // For now, return all rentals since we don't have user auth
+    // TODO: Validator API doesn't support listing all user rentals
+    // This endpoint needs to be handled locally by tracking rentals in basilica-api's database
+    // Options:
+    // 1. Store rental IDs when created and query each one individually
+    // 2. Implement local database tracking of user rentals
+    // 3. Extend validator API to support rental listing by user
+    
+    // Temporary mock implementation
     let rentals = get_user_rentals(&state, "anonymous", &query).await?;
 
     let page = query.page.unwrap_or(1);
@@ -152,15 +218,47 @@ pub async fn get_rental_status(
 ) -> Result<Json<RentalStatusResponse>> {
     debug!("Getting status for rental: {}", rental_id);
 
-    // TODO: Query rental details from database
+    // Select validator using load balancer
+    let validator = state.load_balancer.read().await.select_validator().await?;
+    
+    // Create client
+    let client = ValidatorClient::new(&validator.endpoint)?;
+    
+    // Get rental status
+    let validator_response = client.get_rental_status(&rental_id).await?;
+    
+    // Convert to API types
+    let response = RentalStatusResponse {
+        rental_id: validator_response.rental_id,
+        status: match validator_response.status {
+            validator_types::RentalStatus::Pending => crate::api::types::RentalStatus::Pending,
+            validator_types::RentalStatus::Active => crate::api::types::RentalStatus::Active,
+            validator_types::RentalStatus::Terminated => crate::api::types::RentalStatus::Terminated,
+            validator_types::RentalStatus::Failed => crate::api::types::RentalStatus::Failed,
+        },
+        executor: crate::api::types::ExecutorDetails {
+            id: validator_response.executor.id,
+            gpu_specs: validator_response.executor.gpu_specs.into_iter().map(|g| GpuSpec {
+                name: g.name,
+                memory_gb: g.memory_gb,
+                compute_capability: g.compute_capability,
+            }).collect(),
+            cpu_specs: CpuSpec {
+                cores: validator_response.executor.cpu_specs.cores,
+                model: validator_response.executor.cpu_specs.model,
+                memory_gb: validator_response.executor.cpu_specs.memory_gb,
+            },
+            location: validator_response.executor.location,
+        },
+        created_at: validator_response.created_at,
+        updated_at: validator_response.updated_at,
+        cost_incurred: validator_response.cost_incurred,
+    };
+    
+    // Report success
+    state.load_balancer.read().await.report_success(validator.uid);
 
-    let rental_status = get_rental_details(&state, &rental_id, "anonymous")
-        .await?
-        .ok_or_else(|| Error::NotFound {
-            resource: format!("Rental {rental_id}"),
-        })?;
-
-    Ok(Json(rental_status))
+    Ok(Json(response))
 }
 
 /// Terminate active rental
@@ -183,143 +281,39 @@ pub async fn terminate_rental(
 ) -> Result<Json<crate::api::types::TerminateRentalResponse>> {
     info!("Terminating rental: {}", rental_id);
 
-    // TODO: Actually terminate the rental and clean up resources
-
-    let success = terminate_user_rental(&state, &rental_id, "anonymous").await?;
-
-    if !success {
-        return Err(Error::NotFound {
-            resource: format!("Rental {rental_id}"),
-        });
-    }
-
-    let response = crate::api::types::TerminateRentalResponse {
-        success: true,
-        message: "Rental terminated successfully".to_string(),
+    // Select validator using load balancer
+    let validator = state.load_balancer.read().await.select_validator().await?;
+    
+    // Create client
+    let client = ValidatorClient::new(&validator.endpoint)?;
+    
+    // Terminate rental
+    let request = validator_types::TerminateRentalRequest {
+        reason: Some("User requested termination".to_string()),
     };
-
+    let validator_response = client.terminate_rental(&rental_id, request).await?;
+    
+    // Convert to API types
+    let response = crate::api::types::TerminateRentalResponse {
+        success: validator_response.success,
+        message: validator_response.message,
+    };
+    
+    // Report success
+    state.load_balancer.read().await.report_success(validator.uid);
+    
     info!("Successfully terminated rental: {}", rental_id);
 
     Ok(Json(response))
 }
 
-// Helper functions for mock data - replace with actual database/network calls
-
-async fn get_available_executors(
-    _state: &AppState,
-    _query: &ListRentalsQuery,
-) -> Result<Vec<AvailableExecutor>> {
-    // Mock data - in production this would query the Bittensor network
-    let executors = vec![
-        AvailableExecutor {
-            executor_id: "exec_h100_001".to_string(),
-            gpu_specs: vec![GpuSpec {
-                name: "NVIDIA H100".to_string(),
-                memory_gb: 80,
-                compute_capability: "9.0".to_string(),
-            }],
-            cpu_specs: CpuSpec {
-                cores: 64,
-                model: "AMD EPYC 7742".to_string(),
-                memory_gb: 512,
-            },
-            location: Some("US-East".to_string()),
-            price_per_hour: 2.5,
-            available: true,
-        },
-        AvailableExecutor {
-            executor_id: "exec_a100_002".to_string(),
-            gpu_specs: vec![GpuSpec {
-                name: "NVIDIA A100".to_string(),
-                memory_gb: 40,
-                compute_capability: "8.0".to_string(),
-            }],
-            cpu_specs: CpuSpec {
-                cores: 32,
-                model: "Intel Xeon Gold 6258R".to_string(),
-                memory_gb: 256,
-            },
-            location: Some("US-West".to_string()),
-            price_per_hour: 1.8,
-            available: true,
-        },
-    ];
-
-    Ok(executors)
-}
-
-fn create_mock_executor_details(executor_id: &str) -> crate::api::types::ExecutorDetails {
-    crate::api::types::ExecutorDetails {
-        id: executor_id.to_string(),
-        gpu_specs: vec![GpuSpec {
-            name: "NVIDIA H100".to_string(),
-            memory_gb: 80,
-            compute_capability: "9.0".to_string(),
-        }],
-        cpu_specs: CpuSpec {
-            cores: 64,
-            model: "AMD EPYC 7742".to_string(),
-            memory_gb: 512,
-        },
-        location: Some("US-East".to_string()),
-    }
-}
-
+// Helper function for list_user_rentals - needs local tracking
 async fn get_user_rentals(
     _state: &AppState,
     _user_address: &str,
     _query: &ListRentalsQuery,
 ) -> Result<Vec<RentalInfo>> {
-    // Mock data - in production this would query the database
-    let now = Utc::now();
-    let rentals = vec![RentalInfo {
-        rental_id: "rental_123".to_string(),
-        executor_id: "exec_h100_001".to_string(),
-        status: RentalStatus::Active,
-        docker_image: "pytorch/pytorch:latest".to_string(),
-        ssh_access: Some(SshAccess {
-            host: "exec-123.basilica.ai".to_string(),
-            port: 22,
-            username: "ubuntu".to_string(),
-        }),
-        created_at: now - chrono::Duration::hours(2),
-        updated_at: now,
-        cost_per_hour: 2.5,
-        total_cost: 5.0,
-    }];
-
-    Ok(rentals)
-}
-
-async fn get_rental_details(
-    _state: &AppState,
-    rental_id: &str,
-    _user_address: &str,
-) -> Result<Option<RentalStatusResponse>> {
-    // Mock data - in production this would query the database and verify ownership
-    let now = Utc::now();
-
-    if rental_id == "rental_123" {
-        let response = RentalStatusResponse {
-            rental_id: rental_id.to_string(),
-            status: RentalStatus::Active,
-            executor: create_mock_executor_details("exec_h100_001"),
-            created_at: now - chrono::Duration::hours(2),
-            updated_at: now,
-            cost_incurred: 5.0,
-        };
-        Ok(Some(response))
-    } else {
-        Ok(None)
-    }
-}
-
-async fn terminate_user_rental(
-    _state: &AppState,
-    rental_id: &str,
-    _user_address: &str,
-) -> Result<bool> {
-    // Mock implementation - in production this would verify ownership and terminate
-    info!("Terminating rental: {}", rental_id);
-    Ok(rental_id == "rental_123")
+    // TODO: This endpoint needs local database tracking of user rentals
+    // For now, return empty list since we can't query all rentals from validator
+    Ok(vec![])
 }

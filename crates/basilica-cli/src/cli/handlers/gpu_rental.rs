@@ -7,7 +7,7 @@ use crate::interactive::selector::InteractiveSelector;
 use crate::output::{json_output, table_output};
 use crate::ssh::SshClient;
 use basilica_api::api::types::{
-    CreateRentalRequest, ListExecutorsQuery, ListRentalsQuery, RentalStatusResponse,
+    CreateRentalRequest, ListExecutorsQuery, ListRentalsQuery, RentalSelection, RentalStatusResponse,
 };
 use basilica_api::ClientBuilder;
 use std::path::PathBuf;
@@ -94,7 +94,7 @@ pub async fn handle_up(
     let env_vars = parse_env_vars(&options.env)?;
 
     let request = CreateRentalRequest {
-        executor_id,
+        selection: RentalSelection::ExecutorId(executor_id),
         ssh_public_key,
         docker_image,
         env_vars: Some(env_vars),
@@ -130,6 +130,8 @@ pub async fn handle_ps(filters: PsFilters, json: bool) -> Result<()> {
 
     let query = ListRentalsQuery {
         status: None,
+        gpu_type: None,
+        min_gpu_count: None,
         page: None,
         page_size: None,
     };
@@ -231,6 +233,8 @@ pub async fn handle_down(targets: Vec<String>, config_path: PathBuf) -> Result<(
         // Interactive mode - let user select from active rentals
         let query = ListRentalsQuery {
             status: None,
+            gpu_type: None,
+            min_gpu_count: None,
             page: None,
             page_size: None,
         };

@@ -17,10 +17,10 @@ pub mod ssh;
 pub mod validation;
 
 // Main public API exports
-pub use api::types::{RentCapacityRequest, RentCapacityResponse};
+pub use api::types::{RentCapacityRequest, RentCapacityResponse, RentalSelection};
 pub use api::ApiHandler;
 #[cfg(feature = "client")]
-pub use api::ValidatorClient;
+pub use api::client::ValidatorClient;
 pub use bittensor_core::weight_setter::WeightSetter;
 pub use cli::{Args, Command};
 pub use config::{ValidatorConfig, VerificationConfig};

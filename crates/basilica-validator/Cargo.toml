@@ -40,6 +40,7 @@ tower-http = { workspace = true, features = ["limit"] }
 # Additional dependencies for validator
 futures = "0.3"
 futures-util = { version = "0.3", optional = true }
+bytes = "1.5"
 async-trait = "0.1"
 toml = "0.8"
 url = "2.5"

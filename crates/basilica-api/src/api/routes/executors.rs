@@ -104,11 +104,12 @@ pub async fn list_executors(
     // Apply pagination
     let start = ((page - 1) * page_size) as usize;
     let end = (start + page_size as usize).min(executors.len());
-    let paginated_executors = executors[start..end].to_vec();
+    let total = executors.len();
+    let paginated_executors: Vec<ExecutorDetails> = executors.drain(start..end).collect();
 
     Ok(Json(ListExecutorsResponse {
         executors: paginated_executors,
-        total_count: executors.len(),
+        total_count: total,
         page,
         page_size,
     }))

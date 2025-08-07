@@ -5,8 +5,9 @@
 
 use crate::api::types::*;
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use futures_util::Stream;
-use reqwest::{Client, Response};
+use reqwest::Client;
 use std::pin::Pin;
 
 /// HTTP client for the Validator API
@@ -195,12 +196,12 @@ pub struct Event {
 
 /// Stream wrapper for converting bytes to Events
 struct EventStream {
-    inner: Pin<Box<dyn Stream<Item = reqwest::Result<bytes::Bytes>> + Send>>,
+    inner: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>,
     buffer: String,
 }
 
 impl EventStream {
-    fn new(stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Send + 'static) -> Self {
+    fn new(stream: impl Stream<Item = reqwest::Result<Bytes>> + Send + 'static) -> Self {
         Self {
             inner: Box::pin(stream),
             buffer: String::new(),
@@ -233,7 +234,7 @@ impl Stream for EventStream {
                         // Try to parse as JSON event
                         match serde_json::from_str::<Event>(line) {
                             Ok(event) => std::task::Poll::Ready(Some(Ok(event))),
-                            Err(e) => {
+                            Err(_) => {
                                 // If not JSON, create a simple text event
                                 let event = Event {
                                     timestamp: chrono::Utc::now(),
