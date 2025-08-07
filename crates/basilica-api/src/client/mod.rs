@@ -7,7 +7,6 @@ use crate::{
     api::types::*,
     error::{Error, ErrorResponse, Result},
 };
-use futures::Stream;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::time::Duration;
@@ -121,50 +120,6 @@ impl BasilicaClient {
         self.get(&path).await
     }
 
-    // ===== Logs =====
-
-    /// Get logs for a rental
-    pub async fn get_logs(&self, rental_id: &str, tail: Option<u32>) -> Result<String> {
-        let mut path = format!("/api/v1/rentals/{rental_id}/logs");
-
-        if let Some(tail) = tail {
-            path.push_str(&format!("?tail={tail}"));
-        }
-
-        let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.get(&url);
-        let request = self.apply_auth(request);
-
-        let response = request.send().await.map_err(Error::HttpClient)?;
-
-        if response.status().is_success() {
-            response.text().await.map_err(Error::HttpClient)
-        } else {
-            self.handle_error_response(response).await
-        }
-    }
-
-    /// Follow logs in real-time (returns a stream)
-    ///
-    /// Note: This is a placeholder that returns an error. The actual implementation
-    /// would require Server-Sent Events parsing.
-    pub async fn follow_logs(&self, rental_id: &str) -> Result<impl Stream<Item = Result<String>>> {
-        let path = format!("/api/v1/rentals/{rental_id}/logs?follow=true");
-        let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.get(&url);
-        let request = self.apply_auth(request);
-
-        let response = request.send().await.map_err(Error::HttpClient)?;
-
-        if !response.status().is_success() {
-            return self.handle_error_response(response).await;
-        }
-
-        // Return a stream that yields log lines
-        // For now, return an empty stream as a placeholder
-        Ok(futures::stream::empty())
-    }
-
     // ===== Health & Discovery =====
 
     /// Health check
@@ -187,32 +142,6 @@ impl BasilicaClient {
         }
         if let Some(min_score) = query.min_score {
             params.push(format!("min_score={min_score}"));
-        }
-        if let Some(page) = query.page {
-            params.push(format!("page={page}"));
-        }
-        if let Some(page_size) = query.page_size {
-            params.push(format!("page_size={page_size}"));
-        }
-
-        if !params.is_empty() {
-            path.push('?');
-            path.push_str(&params.join("&"));
-        }
-
-        self.get(&path).await
-    }
-
-    /// List executors
-    pub async fn list_executors(&self, query: ListExecutorsQuery) -> Result<ListExecutorsResponse> {
-        let mut path = "/api/v1/executors".to_string();
-        let mut params = vec![];
-
-        if let Some(min_gpu_count) = query.min_gpu_count {
-            params.push(format!("min_gpu_count={min_gpu_count}"));
-        }
-        if let Some(gpu_type) = &query.gpu_type {
-            params.push(format!("gpu_type={gpu_type}"));
         }
         if let Some(page) = query.page {
             params.push(format!("page={page}"));

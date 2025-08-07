@@ -37,11 +37,6 @@ pub fn routes(state: AppState) -> Router<AppState> {
             "/rentals/:rental_id",
             delete(routes::rentals::terminate_rental),
         )
-        // Log streaming endpoint
-        .route(
-            "/rentals/:rental_id/logs",
-            get(routes::logs::stream_rental_logs),
-        )
         // Health and telemetry (keep existing)
         .route("/health", get(routes::health::health_check))
         .route("/telemetry", get(routes::telemetry::get_telemetry))
@@ -73,9 +68,6 @@ pub fn docs_routes() -> Router<AppState> {
         routes::rentals::list_user_rentals,
         routes::rentals::get_rental_status,
         routes::rentals::terminate_rental,
-
-        // Log streaming
-        routes::logs::stream_rental_logs,
 
         // Health and monitoring
         routes::health::health_check,
@@ -116,7 +108,6 @@ pub fn docs_routes() -> Router<AppState> {
     tags(
         (name = "registration", description = "User registration and wallet management"),
         (name = "rentals", description = "GPU rental management"),
-        (name = "logs", description = "Log streaming"),
         (name = "health", description = "Health and monitoring"),
     ),
     info(

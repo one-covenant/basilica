@@ -162,16 +162,6 @@ impl From<RentCapacityRequest> for validator_types::RentCapacityRequest {
     }
 }
 
-/// Log query parameters
-#[derive(Debug, Deserialize)]
-pub struct LogQuery {
-    /// Follow logs
-    pub follow: Option<bool>,
-
-    /// Number of lines to tail
-    pub tail: Option<u32>,
-}
-
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct HealthCheckResponse {
@@ -272,6 +262,22 @@ pub struct AvailableExecutor {
     pub available: bool,
 }
 
+/// List executors query
+#[derive(Debug, Deserialize)]
+pub struct ListExecutorsQuery {
+    /// GPU type filter
+    pub gpu_type: Option<String>,
+
+    /// Minimum GPU count
+    pub min_gpu_count: Option<u32>,
+
+    /// Page number
+    pub page: Option<u32>,
+
+    /// Page size
+    pub page_size: Option<u32>,
+}
+
 /// List rentals query
 #[derive(Debug, Deserialize)]
 pub struct ListRentalsQuery {
@@ -289,6 +295,42 @@ pub struct ListRentalsQuery {
 
     /// Page size  
     pub page_size: Option<u32>,
+}
+
+/// List validators response
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ListValidatorsResponse {
+    /// List of validators
+    pub validators: Vec<serde_json::Value>,
+
+    /// Total count
+    pub total_count: usize,
+}
+
+/// List miners query
+#[derive(Debug, Deserialize)]
+pub struct ListMinersQuery {
+    /// Minimum GPU count
+    pub min_gpu_count: Option<u32>,
+
+    /// Minimum score
+    pub min_score: Option<f64>,
+
+    /// Page number
+    pub page: Option<u32>,
+
+    /// Page size
+    pub page_size: Option<u32>,
+}
+
+/// List miners response
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ListMinersResponse {
+    /// List of miners
+    pub miners: Vec<serde_json::Value>,
+
+    /// Total count
+    pub total_count: usize,
 }
 
 /// List rentals response

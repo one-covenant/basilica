@@ -24,7 +24,7 @@ pub async fn handle_wallet(
 
     // Show wallet configuration (display original path with tilde for readability)
     println!("Wallet Configuration:");
-    println!("   Wallet name: {}", wallet_to_use);
+    println!("   Wallet name: {wallet_to_use}");
 
     // Format path for display - show tilde if it's in home directory
     let display_path = if let Some(home) = dirs::home_dir() {
@@ -37,7 +37,7 @@ pub async fn handle_wallet(
     } else {
         config.wallet.base_wallet_path.display().to_string()
     };
-    println!("   Wallet path: {}", display_path);
+    println!("   Wallet path: {display_path}");
 
     // Check if wallet exists (use the already-expanded path from config)
     if wallet::wallet_exists(&config.wallet.base_wallet_path, &wallet_to_use) {
@@ -63,18 +63,18 @@ pub async fn handle_wallet(
                 println!();
                 println!("Wallet Addresses:");
                 if let Some(coldkey) = addresses.coldkey {
-                    println!("   Coldkey:  {}", coldkey);
+                    println!("   Coldkey:  {coldkey}");
                 } else {
                     println!("   Coldkey:  (Unable to load)");
                 }
                 // Only display hotkey if it exists
                 if let Some(hotkey) = addresses.hotkey {
-                    println!("   Hotkey:   {}", hotkey);
+                    println!("   Hotkey:   {hotkey}");
                 }
             }
             Err(e) => {
                 println!();
-                println!("Warning: Unable to load wallet addresses: {}", e);
+                println!("Warning: Unable to load wallet addresses: {e}");
             }
         }
     } else {

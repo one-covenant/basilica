@@ -48,16 +48,14 @@ pub async fn rent_capacity(
                             // Verify executor is available
                             if !is_executor_available(&exec) {
                                 return Err(ApiError::BadRequest(format!(
-                                    "Executor {} is not available",
-                                    executor_id
+                                    "Executor {executor_id} is not available"
                                 )));
                             }
                             Some(exec)
                         }
                         None => {
                             return Err(ApiError::NotFound(format!(
-                                "Executor {} not found",
-                                executor_id
+                                "Executor {executor_id} not found"
                             )));
                         }
                     }

@@ -193,32 +193,16 @@ pub async fn handle_status(target: String, json: bool) -> Result<()> {
 }
 
 /// Handle the `logs` command - view rental logs
-pub async fn handle_logs(target: String, options: LogsOptions) -> Result<()> {
+pub async fn handle_logs(target: String, _options: LogsOptions) -> Result<()> {
     debug!("Viewing logs for rental: {}", target);
 
-    let config = CliConfig::load_default().await?;
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    // TODO: Implement SSH-based log streaming
+    // This requires storing SSH access details when rentals are created
+    // or obtaining them from the rental creation response
 
-    if options.follow {
-        // TODO: Implement proper SSE streaming when the server fully supports it
-        let logs = api_client
-            .get_logs(&target, options.tail)
-            .await
-            .map_err(|e| CliError::internal(format!("Failed to get logs: {e}")))?;
-        print!("{logs}");
-    } else {
-        let logs = api_client
-            .get_logs(&target, options.tail)
-            .await
-            .map_err(|e| CliError::internal(format!("Failed to get logs: {e}")))?;
-        print!("{logs}");
-    }
-
-    Ok(())
+    Err(CliError::not_supported(
+        "Log streaming via SSH is not yet implemented. SSH access details need to be stored from rental creation."
+    ))
 }
 
 /// Handle the `down` command - terminate rentals

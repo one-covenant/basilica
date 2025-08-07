@@ -3,8 +3,8 @@
 use crate::{
     api::types::{
         AvailableExecutor, AvailableGpuResponse, CpuSpec, CreateRentalRequest, GpuSpec,
-        ListRentalsQuery, ListRentalsResponse, RentCapacityResponse, RentalInfo,
-        RentalStatusResponse,
+        ListExecutorsQuery, ListRentalsQuery, ListRentalsResponse, RentCapacityResponse,
+        RentalInfo, RentalStatusResponse,
     },
     error::Result,
     server::AppState,
@@ -34,7 +34,7 @@ use tracing::{debug, info};
 )]
 pub async fn list_available_gpus(
     State(state): State<AppState>,
-    Query(query): Query<ListRentalsQuery>,
+    Query(query): Query<ListExecutorsQuery>,
 ) -> Result<Json<AvailableGpuResponse>> {
     info!("Listing available GPUs");
 
@@ -114,7 +114,7 @@ pub async fn create_rental(
 ) -> Result<Json<RentCapacityResponse>> {
     // Extract executor info for logging based on selection
     let executor_info = match &request.selection {
-        crate::api::types::RentalSelection::ExecutorId(id) => format!("executor {}", id),
+        crate::api::types::RentalSelection::ExecutorId(id) => format!("executor {id}"),
         crate::api::types::RentalSelection::GpuRequirements(reqs) => {
             format!(
                 "GPU requirements: {} GPUs with {}GB memory",
