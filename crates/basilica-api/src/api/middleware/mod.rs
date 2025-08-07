@@ -1,10 +1,7 @@
 //! API middleware stack
 
-mod auth;
-mod cache;
 mod rate_limit;
 
-pub use cache::CacheMiddleware;
 pub use rate_limit::RateLimitMiddleware;
 
 use crate::server::AppState;
@@ -41,7 +38,6 @@ pub fn apply_middleware(router: Router<AppState>, state: AppState) -> Router<App
             state.clone(),
             rate_limit_handler,
         ))
-        .layer(axum::middleware::from_fn_with_state(state, cache_handler))
 }
 
 /// Rate limit handler function
@@ -65,22 +61,3 @@ async fn rate_limit_handler(
     }
 }
 
-/// Cache handler function
-async fn cache_handler(
-    State(state): axum::extract::State<AppState>,
-    req: Request<Body>,
-    next: Next,
-) -> Result<Response<Body>, crate::error::Error> {
-    // Create cache storage
-    let storage = std::sync::Arc::new(cache::CacheStorage::new(std::sync::Arc::new(
-        state.config.cache.clone(),
-    )));
-
-    // Handle caching
-    match cache::cache_middleware(storage, state.config.clone(), req, next).await {
-        Ok(response) => Ok(response),
-        Err(_) => Err(crate::error::Error::Internal {
-            message: "Cache middleware failed".to_string(),
-        }),
-    }
-}
