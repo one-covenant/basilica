@@ -73,33 +73,29 @@ impl Server {
             .get_metagraph(config.bittensor.netuid)
             .await?;
 
-        // Find the UID for the configured hotkey
-        let mut found_uid = None;
-        for (uid, hotkey) in metagraph.hotkeys.iter().enumerate() {
-            if hotkey.to_string() == config.bittensor.validator_hotkey {
-                found_uid = Some(uid as u16);
-                break;
-            }
-        }
+        // Use NeuronDiscovery to find validator
+        let discovery = bittensor::NeuronDiscovery::new(&metagraph);
+        let validator_info = discovery
+            .find_neuron_by_hotkey(&config.bittensor.validator_hotkey)
+            .ok_or_else(|| {
+                Error::ConfigError(format!(
+                    "Validator with hotkey {} not found in subnet {}",
+                    config.bittensor.validator_hotkey, config.bittensor.netuid
+                ))
+            })?;
 
-        let validator_uid = found_uid.ok_or_else(|| {
-            Error::ConfigError(format!(
-                "Validator with hotkey {} not found in subnet {}",
+        // Verify it's actually a validator (has validator_permit)
+        if !validator_info.is_validator {
+            return Err(Error::ConfigError(format!(
+                "Hotkey {} exists but does not have validator permit in subnet {}",
                 config.bittensor.validator_hotkey, config.bittensor.netuid
-            ))
-        })?;
-
-        // Check if validator is active
-        if let Some(active) = metagraph.active.get(validator_uid as usize) {
-            if !*active {
-                return Err(Error::ConfigError(format!(
-                    "Validator {validator_uid} is not active in the network"
-                )));
-            }
+            )));
         }
 
-        // Get axon info for this validator
-        let axon_info = metagraph.axons.get(validator_uid as usize).ok_or_else(|| {
+        let validator_uid = validator_info.uid;
+
+        // Get axon info from the validator info
+        let axon_info = validator_info.axon_info.ok_or_else(|| {
             Error::ConfigError(format!("No axon info found for validator {validator_uid}"))
         })?;
 
