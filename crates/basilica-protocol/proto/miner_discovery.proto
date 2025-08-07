@@ -34,6 +34,11 @@ message MinerAuthResponse {
   string session_token = 2;
   basilca.common.v1.Timestamp expires_at = 3;
   basilca.common.v1.ErrorInfo error = 4;
+  
+  // Miner identity verification fields
+  string miner_hotkey = 5;       // Miner's hotkey for verification
+  string miner_signature = 6;     // Signature proving miner's identity
+  string response_nonce = 7;      // Nonce included in signature to prevent replay
 }
 
 message LeaseRequest {

@@ -44,6 +44,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[derive(serde::Serialize, serde::Deserialize)]",
         )
         .type_attribute("OsInfo", "#[derive(serde::Serialize, serde::Deserialize)]")
+        // Add serde support for authentication messages
+        .type_attribute(
+            "MinerAuthentication",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        // Add serde support for ResourceLimits
+        .type_attribute(
+            "ResourceLimits",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
         .compile(
             &[
                 "proto/common.proto",

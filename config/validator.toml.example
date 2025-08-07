@@ -90,6 +90,7 @@ ssh_key_directory = "/opt/basilica/data/ssh_keys"
 key_algorithm = "ed25519"
 default_session_duration = 300
 max_session_duration = 3600
+rental_session_duration = 3600
 key_cleanup_interval = { secs = 60, nanos = 0 }
 enable_automated_sessions = true
 max_concurrent_sessions = 5

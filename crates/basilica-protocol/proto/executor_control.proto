@@ -52,6 +52,9 @@ message ProvisionAccessRequest {
   
   // Additional configuration
   map<string, string> config = 6;
+  
+  // Authentication data from miner
+  basilca.common.v1.MinerAuthentication auth = 7;
 }
 
 message ProvisionAccessResponse {
@@ -87,6 +90,9 @@ message SystemProfileRequest {
   
   // Requesting validator hotkey
   string validator_hotkey = 5;
+  
+  // Authentication data from miner
+  basilca.common.v1.MinerAuthentication auth = 6;
 }
 
 message SystemProfileResponse {
@@ -120,6 +126,9 @@ message BenchmarkRequest {
   
   // Requesting validator hotkey
   string validator_hotkey = 4;
+  
+  // Authentication data from miner
+  basilca.common.v1.MinerAuthentication auth = 5;
 }
 
 message BenchmarkResponse {
@@ -155,6 +164,9 @@ message ContainerOpRequest {
   
   // Requesting validator hotkey
   string validator_hotkey = 6;
+  
+  // Authentication data from miner
+  basilca.common.v1.MinerAuthentication auth = 7;
 }
 
 message ContainerOpResponse {
@@ -202,6 +214,9 @@ message HealthCheckRequest {
   
   // Check type (basic, detailed)
   string check_type = 2;
+  
+  // Authentication data from miner (optional for health checks)
+  basilca.common.v1.MinerAuthentication auth = 3;
 }
 
 message HealthCheckResponse {

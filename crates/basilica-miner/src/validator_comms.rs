@@ -48,6 +48,7 @@ pub struct ValidatorCommsServer {
     validator_discovery: Option<Arc<ValidatorDiscovery>>,
     ssh_session_orchestrator: Option<Arc<SshSessionOrchestrator>>,
     endpoint_registry: Arc<RwLock<HashMap<String, String>>>,
+    bittensor_service: Option<Arc<bittensor::Service>>,
 }
 
 impl ValidatorCommsServer {
@@ -80,6 +81,7 @@ impl ValidatorCommsServer {
             validator_discovery,
             ssh_session_orchestrator: None,
             endpoint_registry: Arc::new(RwLock::new(HashMap::new())),
+            bittensor_service: None,
         })
     }
 
@@ -89,6 +91,12 @@ impl ValidatorCommsServer {
         orchestrator: Arc<SshSessionOrchestrator>,
     ) -> Self {
         self.ssh_session_orchestrator = Some(orchestrator);
+        self
+    }
+
+    /// Set Bittensor service for signing responses
+    pub fn with_bittensor_service(mut self, service: Arc<bittensor::Service>) -> Self {
+        self.bittensor_service = Some(service);
         self
     }
 
@@ -105,6 +113,7 @@ impl ValidatorCommsServer {
             jwt_service: self.jwt_service.clone(),
             validator_discovery: self.validator_discovery.clone(),
             ssh_session_orchestrator: self.ssh_session_orchestrator.clone(),
+            bittensor_service: self.bittensor_service.clone(),
         };
 
         // Create health reporter
@@ -161,6 +170,7 @@ impl ValidatorCommsServer {
             jwt_service: self.jwt_service.clone(),
             validator_discovery: self.validator_discovery.clone(),
             ssh_session_orchestrator: self.ssh_session_orchestrator.clone(),
+            bittensor_service: self.bittensor_service.clone(),
         };
 
         // Create health reporter
@@ -315,6 +325,7 @@ struct MinerDiscoveryService {
     jwt_service: Arc<JwtAuthService>,
     validator_discovery: Option<Arc<ValidatorDiscovery>>,
     ssh_session_orchestrator: Option<Arc<SshSessionOrchestrator>>,
+    bittensor_service: Option<Arc<bittensor::Service>>,
 }
 
 #[tonic::async_trait]
@@ -415,6 +426,34 @@ impl MinerDiscovery for MinerDiscoveryService {
         let expires_at = chrono::Utc::now()
             + chrono::Duration::seconds(self.security_config.token_expiration.as_secs() as i64);
 
+        // Get miner's hotkey and create signature
+        let (miner_hotkey, miner_signature, response_nonce) =
+            if let Some(ref bittensor_service) = self.bittensor_service {
+                // Generate response nonce for signature
+                let response_nonce = uuid::Uuid::new_v4().to_string();
+                let miner_hotkey = bittensor_service.get_account_id().to_string();
+
+                // Create canonical data to sign: validator_hotkey:response_nonce:session_token
+                let canonical_data = format!(
+                    "MINER_AUTH_RESPONSE:{}:{}:{}",
+                    auth_request.validator_hotkey, response_nonce, session_token
+                );
+
+                // Sign the canonical data
+                let signature = bittensor_service
+                    .sign_data(canonical_data.as_bytes())
+                    .map_err(|e| {
+                        error!("Failed to sign authentication response: {}", e);
+                        Status::internal("Failed to sign authentication response")
+                    })?;
+
+                (miner_hotkey, signature, response_nonce)
+            } else {
+                // Bittensor service not available - leave fields empty
+                warn!("Bittensor service not available for signing miner response");
+                (String::new(), String::new(), String::new())
+            };
+
         let response = MinerAuthResponse {
             authenticated: true,
             session_token,
@@ -424,6 +463,9 @@ impl MinerDiscovery for MinerDiscoveryService {
                 ))),
             }),
             error: None,
+            miner_hotkey,
+            miner_signature,
+            response_nonce,
         };
 
         Ok(Response::new(response))
@@ -769,6 +811,8 @@ fn create_gpu_spec_from_executor(
 
 #[cfg(test)]
 mod tests {
+    use basilica_common::{ssh::DefaultSshService, DatabaseConfig};
+
     use super::*;
     use crate::config::ExecutorConfig;
 
@@ -844,6 +888,7 @@ mod tests {
             jwt_service,
             validator_discovery: None,
             ssh_session_orchestrator: None,
+            bittensor_service: None,
         };
 
         // Test with production-level verification enabled
@@ -872,6 +917,117 @@ mod tests {
             assert_eq!(status.code(), tonic::Code::Unauthenticated);
             assert!(status.message().contains("Invalid signature"));
         }
+    }
+
+    #[tokio::test]
+    async fn test_miner_signature_fields_populated_without_bittensor_service() {
+        // This test verifies that when bittensor service is not available,
+        // the miner signature fields are empty but the authentication still succeeds
+        let config = ValidatorCommsConfig::default();
+        let security_config = SecurityConfig {
+            verify_signatures: false, // Don't verify validator sig for this test
+            ..Default::default()
+        };
+
+        let miner_config = crate::config::MinerConfig {
+            executor_management: crate::config::ExecutorManagementConfig {
+                executors: vec![ExecutorConfig {
+                    grpc_address: "127.0.0.1:50051".to_string(),
+                    host: "127.0.0.1".to_string(),
+                    port: 50051,
+                    ssh_port: 22,
+                    ssh_username: "testuser".to_string(),
+                    enabled: true,
+                    metadata: None,
+                }],
+                ..Default::default()
+            },
+            database: DatabaseConfig {
+                url: "sqlite::memory:".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let db = RegistrationDb::new(&miner_config.database).await.unwrap();
+        let executor_manager = Arc::new(
+            ExecutorManager::new(&miner_config, db.clone())
+                .await
+                .unwrap(),
+        );
+
+        // Create SSH access service for testing
+        let ssh_config = crate::ssh::MinerSshConfig {
+            key_directory: std::path::PathBuf::from("/tmp/test_ssh_keys"),
+            ..crate::ssh::MinerSshConfig::default()
+        };
+        let ssh_service = std::sync::Arc::new(DefaultSshService::new(ssh_config.clone()).unwrap());
+        let ssh_access_service = crate::ssh::ValidatorAccessService::new(
+            ssh_config,
+            ssh_service,
+            executor_manager.clone(),
+            db.clone(),
+        )
+        .await
+        .unwrap();
+
+        // Create JWT service for testing
+        let jwt_service = Arc::new(
+            JwtAuthService::new(
+                "test_secret_key_that_is_long_enough_for_security",
+                "test-miner".to_string(),
+                "test-miner".to_string(),
+                chrono::Duration::hours(1),
+            )
+            .unwrap(),
+        );
+
+        // Create service WITHOUT bittensor service
+        let service = MinerDiscoveryService {
+            _config: config,
+            security_config,
+            executor_manager,
+            db,
+            ssh_access_service,
+            jwt_service,
+            validator_discovery: None,
+            ssh_session_orchestrator: None,
+            bittensor_service: None, // No bittensor service
+        };
+
+        // Create authentication request
+        let validator_hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
+        let nonce = "test-nonce-123";
+
+        let request = ValidatorAuthRequest {
+            validator_hotkey: validator_hotkey.to_string(),
+            signature: "validator_signature".to_string(), // Dummy sig since we disabled verification
+            nonce: nonce.to_string(),
+            timestamp: None,
+        };
+
+        // Call authenticate_validator
+        let response = service.authenticate_validator(Request::new(request)).await;
+
+        // Should succeed
+        assert!(response.is_ok(), "Authentication should succeed");
+
+        let auth_response = response.unwrap().into_inner();
+        assert!(auth_response.authenticated);
+
+        // Verify miner signature fields are empty when no bittensor service
+        assert!(
+            auth_response.miner_hotkey.is_empty(),
+            "Miner hotkey should be empty without bittensor service"
+        );
+        assert!(
+            auth_response.miner_signature.is_empty(),
+            "Miner signature should be empty without bittensor service"
+        );
+        assert!(
+            auth_response.response_nonce.is_empty(),
+            "Response nonce should be empty without bittensor service"
+        );
     }
 
     #[tokio::test]
@@ -946,6 +1102,7 @@ mod tests {
             jwt_service,
             validator_discovery: None,
             ssh_session_orchestrator: None,
+            bittensor_service: None,
         };
 
         // Test various invalid signature scenarios to ensure production verification works

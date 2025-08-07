@@ -258,6 +258,10 @@ fn default_known_hosts_file() -> Option<PathBuf> {
     None
 }
 
+fn default_rental_session_duration() -> u64 {
+    0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
     /// Storage directory path
@@ -297,6 +301,10 @@ pub struct SshSessionConfig {
 
     /// Maximum session duration in seconds
     pub max_session_duration: u64,
+
+    /// Rental session duration in seconds (0 = no predetermined duration)
+    #[serde(default = "default_rental_session_duration")]
+    pub rental_session_duration: u64,
 
     /// Cleanup interval for expired keys
     pub key_cleanup_interval: Duration,
@@ -354,6 +362,7 @@ impl Default for SshSessionConfig {
             persistent_ssh_key_path: None,
             default_session_duration: 300, // 5 minutes
             max_session_duration: 3600,    // 1 hour
+            rental_session_duration: default_rental_session_duration(),
             key_cleanup_interval: Duration::from_secs(60),
             enable_automated_sessions: default_enable_automated_sessions(),
             max_concurrent_sessions: default_max_concurrent_sessions(),

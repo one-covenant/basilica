@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::transport::Channel;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use basilica_common::identity::Hotkey;
 use basilica_protocol::miner_discovery::{
@@ -27,6 +27,10 @@ pub struct MinerClientConfig {
     pub grpc_port_offset: Option<u16>,
     /// Whether to use TLS for gRPC connections
     pub use_tls: bool,
+    /// Rental session duration in seconds (0 = no predetermined duration)
+    pub rental_session_duration: u64,
+    /// Whether to require miner signature verification
+    pub require_miner_signature: bool,
 }
 
 impl Default for MinerClientConfig {
@@ -36,6 +40,8 @@ impl Default for MinerClientConfig {
             max_retries: 3,
             grpc_port_offset: None, // Will use default port 8080
             use_tls: false,
+            rental_session_duration: 0, // No predetermined duration by default
+            require_miner_signature: true, // Default to requiring signatures for security
         }
     }
 }
@@ -99,6 +105,11 @@ impl MinerClient {
             validator_hotkey,
             signer: Some(signer),
         }
+    }
+
+    /// Get the configured rental session duration
+    pub fn get_rental_session_duration(&self) -> u64 {
+        self.config.rental_session_duration
     }
 
     /// Create a validator signature for authentication
@@ -180,12 +191,22 @@ impl MinerClient {
         // The miner will verify this using verify_bittensor_signature
         let signature = self.create_validator_signature(&nonce)?;
 
+        // Create current timestamp
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| anyhow::anyhow!("Failed to get system time: {}", e))?;
+
+        let timestamp = prost_types::Timestamp {
+            seconds: now.as_secs() as i64,
+            nanos: now.subsec_nanos() as i32,
+        };
+
         let auth_request = ValidatorAuthRequest {
             validator_hotkey: self.validator_hotkey.to_string(),
             signature,
             nonce,
             timestamp: Some(basilica_protocol::common::Timestamp {
-                value: None, // Handle timestamp conversion properly with matching prost versions
+                value: Some(timestamp),
             }),
         };
 
@@ -217,6 +238,55 @@ impl MinerClient {
                 .map(|e| e.message)
                 .unwrap_or_else(|| "Unknown error".to_string());
             return Err(anyhow::anyhow!("Authentication failed: {}", error_msg));
+        }
+
+        // Verify miner's signature
+        if !auth_response.miner_hotkey.is_empty() && !auth_response.miner_signature.is_empty() {
+            debug!(
+                "Verifying miner signature from hotkey: {}",
+                auth_response.miner_hotkey
+            );
+
+            // Parse miner hotkey
+            let miner_hotkey = Hotkey::new(auth_response.miner_hotkey.clone())
+                .map_err(|e| anyhow::anyhow!("Invalid miner hotkey: {}", e))?;
+
+            // Create canonical data that miner signed
+            let validator_hotkey = &self.validator_hotkey;
+            let response_nonce = &auth_response.response_nonce;
+            let session_token = &auth_response.session_token;
+            let canonical_data =
+                format!("MINER_AUTH_RESPONSE:{validator_hotkey}:{response_nonce}:{session_token}");
+
+            // Verify miner's signature
+            if let Err(e) = bittensor::utils::verify_bittensor_signature(
+                &miner_hotkey,
+                &auth_response.miner_signature,
+                canonical_data.as_bytes(),
+            ) {
+                warn!(
+                    "Miner signature verification failed for {}: {}",
+                    auth_response.miner_hotkey, e
+                );
+                return Err(anyhow::anyhow!(
+                    "Miner signature verification failed: {}",
+                    e
+                ));
+            }
+
+            info!(
+                "Successfully verified miner signature from {}",
+                auth_response.miner_hotkey
+            );
+        } else if self.config.require_miner_signature {
+            // Signature is required but not provided
+            error!("Miner did not provide required signature for verification");
+            return Err(anyhow::anyhow!(
+                "Miner authentication response missing required signature"
+            ));
+        } else {
+            // Signature not required and not provided
+            warn!("Miner did not provide signature for verification (not required by config)");
         }
 
         let session_token = auth_response.session_token;
@@ -347,6 +417,7 @@ impl AuthenticatedMinerConnection {
         validator_hotkey: &str,
         validator_public_key: &str,
         rental_id: &str,
+        session_duration: u64,
     ) -> Result<InitiateSshSessionResponse> {
         info!(
             "Initiating rental SSH session for executor {} (rental: {})",
@@ -358,7 +429,7 @@ impl AuthenticatedMinerConnection {
             executor_id: executor_id.to_string(),
             purpose: "rental".to_string(),
             validator_public_key: validator_public_key.to_string(),
-            session_duration_secs: 3600, // No predetermined duration for rentals
+            session_duration_secs: session_duration as i64,
             session_metadata: serde_json::json!({
                 "rental_id": rental_id,
                 "type": "container_deployment"
@@ -468,5 +539,44 @@ mod tests {
         let axon = "http://example.com:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
         assert_eq!(grpc, "https://example.com:8091");
+    }
+
+    #[test]
+    fn test_miner_signature_verification_config() {
+        // Test default config requires signature
+        let config = MinerClientConfig::default();
+        assert!(config.require_miner_signature);
+
+        // Test custom config without signature requirement
+        let config_no_sig = MinerClientConfig {
+            require_miner_signature: false,
+            ..Default::default()
+        };
+        assert!(!config_no_sig.require_miner_signature);
+    }
+
+    #[test]
+    fn test_canonical_data_format_for_miner_response() {
+        // Test that canonical data format matches between miner and validator
+        let validator_hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
+        let response_nonce = "test-nonce-123";
+        let session_token = "test-session-token";
+
+        let canonical_data =
+            format!("MINER_AUTH_RESPONSE:{validator_hotkey}:{response_nonce}:{session_token}");
+
+        // Verify format
+        assert!(canonical_data.starts_with("MINER_AUTH_RESPONSE:"));
+        assert!(canonical_data.contains(validator_hotkey));
+        assert!(canonical_data.contains(response_nonce));
+        assert!(canonical_data.contains(session_token));
+
+        // Verify no extra colons or formatting issues
+        let parts: Vec<&str> = canonical_data.split(':').collect();
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0], "MINER_AUTH_RESPONSE");
+        assert_eq!(parts[1], validator_hotkey);
+        assert_eq!(parts[2], response_nonce);
+        assert_eq!(parts[3], session_token);
     }
 }

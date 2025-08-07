@@ -6,6 +6,7 @@ pub mod auth;
 pub mod bittensor_core;
 pub mod cli;
 pub mod config;
+pub mod executor_auth;
 pub mod executor_manager;
 pub mod executors;
 pub mod persistence;

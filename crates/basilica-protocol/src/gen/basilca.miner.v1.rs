@@ -22,6 +22,17 @@ pub struct MinerAuthResponse {
     pub expires_at: ::core::option::Option<super::super::common::v1::Timestamp>,
     #[prost(message, optional, tag = "4")]
     pub error: ::core::option::Option<super::super::common::v1::ErrorInfo>,
+    /// Miner identity verification fields
+    ///
+    /// Miner's hotkey for verification
+    #[prost(string, tag = "5")]
+    pub miner_hotkey: ::prost::alloc::string::String,
+    /// Signature proving miner's identity
+    #[prost(string, tag = "6")]
+    pub miner_signature: ::prost::alloc::string::String,
+    /// Nonce included in signature to prevent replay
+    #[prost(string, tag = "7")]
+    pub response_nonce: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

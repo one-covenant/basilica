@@ -652,7 +652,7 @@ mod tests {
 
             // Seed miners table first (required for foreign key constraint)
             sqlx::query(
-                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, executor_info) 
+                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, executor_info)
                  VALUES (?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&miner_id)
@@ -671,7 +671,7 @@ mod tests {
                     let gpu_uuid =
                         format!("gpu-{}-{}-{}", profile.miner_uid.as_u16(), gpu_model, i);
                     sqlx::query(
-                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified) 
+                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified)
                          VALUES (?, ?, ?, ?, ?, ?)"
                     )
                     .bind(&gpu_uuid)
@@ -689,8 +689,8 @@ mod tests {
             let gpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
             let cpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
             sqlx::query(
-                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, created_at, updated_at) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, status, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&executor_id)
             .bind(&miner_id)
@@ -699,6 +699,7 @@ mod tests {
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
             .bind(&gpu_specs)
             .bind(&cpu_specs)
+            .bind("online")
             .bind(now.to_rfc3339())
             .bind(now.to_rfc3339())
             .execute(persistence.pool())
@@ -708,7 +709,7 @@ mod tests {
             if let Some(last_successful) = profile.last_successful_validation {
                 let log_id = uuid::Uuid::new_v4().to_string();
                 sqlx::query(
-                    "INSERT INTO verification_logs (id, executor_id, validator_hotkey, verification_type, timestamp, score, success, details, duration_ms, error_message, created_at, updated_at) 
+                    "INSERT INTO verification_logs (id, executor_id, validator_hotkey, verification_type, timestamp, score, success, details, duration_ms, error_message, created_at, updated_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(&log_id)
