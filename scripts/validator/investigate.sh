@@ -4,6 +4,8 @@ DB_PATH=""
 SSH_CONN=""
 MINER_UID=""
 EXECUTOR_ID=""
+EXECUTOR_ENDPOINT=""
+GPU_UUID=""
 GPU_PROFILE=""
 SHOW_GPU_UUIDS=false
 
@@ -25,6 +27,14 @@ while [[ $# -gt 0 ]]; do
             EXECUTOR_ID="$2"
             shift 2
             ;;
+        --executor-endpoint)
+            EXECUTOR_ENDPOINT="$2"
+            shift 2
+            ;;
+        --gpu-uuid)
+            GPU_UUID="$2"
+            shift 2
+            ;;
         --gpu-profile)
             GPU_PROFILE="$2"
             shift 2
@@ -41,7 +51,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$DB_PATH" ]; then
-    echo "Usage: $0 --db <path> [-c <ssh_connection>] [--miner-uid <uid>] [--executor-id <id>] [--gpu-profile <h100|h200>] [--gpu-uuids]"
+    echo "Usage: $0 --db <path> [-c <ssh_connection>] [--miner-uid <uid>] [--executor-id <id>] [--executor-endpoint <endpoint>] [--gpu-uuid <uuid>] [--gpu-profile <h100|h200>] [--gpu-uuids]"
     exit 1
 fi
 
@@ -577,6 +587,231 @@ elif [ -n "$EXECUTOR_ID" ]; then
     FROM verification_logs
     WHERE executor_id = '$EXECUTOR_ID'
     AND timestamp > '$LAST_EPOCH';"
+
+elif [ -n "$EXECUTOR_ENDPOINT" ]; then
+    echo "=== EXECUTOR ENDPOINT $EXECUTOR_ENDPOINT BREAKDOWN ==="
+    echo
+
+    echo "Executors with this endpoint:"
+    run_query "SELECT
+        me.executor_id,
+        me.miner_id,
+        me.gpu_count,
+        me.status,
+        me.last_health_check
+    FROM miner_executors me
+    WHERE me.grpc_address = '$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'http://$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'https://$EXECUTOR_ENDPOINT';"
+    echo
+
+    echo "Associated Miners:"
+    run_query "SELECT DISTINCT
+        m.id as miner_id,
+        SUBSTR(m.hotkey, 1, 10) || '...' as hotkey_prefix,
+        m.endpoint,
+        p.total_score
+    FROM miner_executors me
+    INNER JOIN miners m ON me.miner_id = m.id
+    LEFT JOIN miner_gpu_profiles p ON p.miner_uid = CAST(SUBSTR(m.id, 7) AS INTEGER)
+    WHERE me.grpc_address = '$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'http://$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'https://$EXECUTOR_ENDPOINT';"
+    echo
+
+    echo "GPU Assignments for this endpoint:"
+    run_query "SELECT
+        ga.executor_id,
+        ga.miner_id,
+        COUNT(DISTINCT ga.gpu_uuid) as gpu_count,
+        ga.gpu_name,
+        MIN(ga.last_verified) as first_seen,
+        MAX(ga.last_verified) as last_seen
+    FROM gpu_uuid_assignments ga
+    INNER JOIN miner_executors me ON ga.executor_id = me.executor_id
+    WHERE me.grpc_address = '$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'http://$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'https://$EXECUTOR_ENDPOINT'
+    GROUP BY ga.executor_id, ga.miner_id, ga.gpu_name;"
+    echo
+
+    if [ "$SHOW_GPU_UUIDS" = true ]; then
+        echo "Detailed GPU UUIDs for this endpoint:"
+        run_query "SELECT
+            ga.gpu_uuid,
+            ga.gpu_name,
+            ga.executor_id,
+            ga.miner_id,
+            ga.last_verified
+        FROM gpu_uuid_assignments ga
+        INNER JOIN miner_executors me ON ga.executor_id = me.executor_id
+        WHERE me.grpc_address = '$EXECUTOR_ENDPOINT'
+        OR me.grpc_address = 'http://$EXECUTOR_ENDPOINT'
+        OR me.grpc_address = 'https://$EXECUTOR_ENDPOINT'
+        ORDER BY ga.executor_id, ga.gpu_uuid;"
+        echo
+    fi
+
+    echo "Recent Validations (last 20):"
+    run_query "SELECT
+        vl.executor_id,
+        vl.timestamp,
+        vl.success,
+        CASE WHEN vl.success = 1 THEN vl.score ELSE vl.error_message END as result
+    FROM verification_logs vl
+    INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
+    WHERE me.grpc_address = '$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'http://$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'https://$EXECUTOR_ENDPOINT'
+    ORDER BY vl.timestamp DESC
+    LIMIT 20;"
+    echo
+
+    echo "Validation Statistics (last 24 hours):"
+    run_query "SELECT
+        vl.executor_id,
+        COUNT(*) as total_validations,
+        SUM(CASE WHEN vl.success = 1 THEN 1 ELSE 0 END) as successful,
+        SUM(CASE WHEN vl.success = 0 THEN 1 ELSE 0 END) as failed,
+        ROUND(100.0 * SUM(CASE WHEN vl.success = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as success_rate
+    FROM verification_logs vl
+    INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
+    WHERE me.grpc_address = '$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'http://$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'https://$EXECUTOR_ENDPOINT'
+    AND vl.timestamp > datetime('now', '-1 day')
+    GROUP BY vl.executor_id;"
+    echo
+
+    echo "Health Status:"
+    run_query "SELECT
+        me.executor_id,
+        me.status,
+        me.last_health_check,
+        CASE
+            WHEN me.last_health_check > datetime('now', '-1 hour') THEN 'Active'
+            WHEN me.last_health_check > datetime('now', '-1 day') THEN 'Stale'
+            ELSE 'Inactive'
+        END as health
+    FROM miner_executors me
+    WHERE me.grpc_address = '$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'http://$EXECUTOR_ENDPOINT'
+    OR me.grpc_address = 'https://$EXECUTOR_ENDPOINT';"
+
+elif [ -n "$GPU_UUID" ]; then
+    echo "=== GPU UUID $GPU_UUID BREAKDOWN ==="
+    echo
+
+    echo "GPU Information:"
+    run_query "SELECT
+        gpu_uuid,
+        gpu_name,
+        gpu_index,
+        executor_id,
+        miner_id,
+        last_verified,
+        created_at
+    FROM gpu_uuid_assignments
+    WHERE gpu_uuid = '$GPU_UUID';"
+    echo
+
+    echo "Associated Miner:"
+    run_query "SELECT
+        m.id as miner_id,
+        m.hotkey,
+        m.endpoint,
+        p.total_score,
+        p.verification_count
+    FROM gpu_uuid_assignments ga
+    INNER JOIN miners m ON ga.miner_id = m.id
+    LEFT JOIN miner_gpu_profiles p ON p.miner_uid = CAST(SUBSTR(m.id, 7) AS INTEGER)
+    WHERE ga.gpu_uuid = '$GPU_UUID';"
+    echo
+
+    echo "Associated Executor:"
+    run_query "SELECT
+        me.executor_id,
+        me.grpc_address,
+        me.gpu_count,
+        me.status,
+        me.last_health_check
+    FROM gpu_uuid_assignments ga
+    INNER JOIN miner_executors me ON ga.executor_id = me.executor_id
+    WHERE ga.gpu_uuid = '$GPU_UUID';"
+    echo
+
+    echo "Other GPUs on same executor:"
+    run_query "SELECT
+        other.gpu_uuid,
+        other.gpu_name,
+        other.last_verified
+    FROM gpu_uuid_assignments ga
+    INNER JOIN gpu_uuid_assignments other ON ga.executor_id = other.executor_id
+    WHERE ga.gpu_uuid = '$GPU_UUID'
+    AND other.gpu_uuid != '$GPU_UUID'
+    ORDER BY other.gpu_uuid;"
+    echo
+
+    echo "GPU Conflict Check:"
+    run_query "SELECT
+        COUNT(*) as total_occurrences,
+        COUNT(DISTINCT miner_id) as unique_miners,
+        COUNT(DISTINCT executor_id) as unique_executors,
+        CASE
+            WHEN COUNT(DISTINCT miner_id) > 1 THEN 'CONFLICT: Used by multiple miners!'
+            ELSE 'No conflicts'
+        END as status
+    FROM gpu_uuid_assignments
+    WHERE gpu_uuid = '$GPU_UUID';"
+    echo
+
+    echo "Miners using this GPU UUID:"
+    run_query "SELECT
+        miner_id,
+        executor_id,
+        last_verified
+    FROM gpu_uuid_assignments
+    WHERE gpu_uuid = '$GPU_UUID'
+    ORDER BY last_verified DESC;"
+    echo
+
+    echo "Prover Results for this GPU:"
+    run_query "SELECT
+        verification_timestamp,
+        attestation_valid,
+        gpu_model,
+        gpu_memory_gb
+    FROM miner_prover_results
+    WHERE gpu_uuid = '$GPU_UUID'
+    ORDER BY verification_timestamp DESC
+    LIMIT 10;"
+    echo
+
+    echo "Recent Validations for associated executor (last 10):"
+    run_query "SELECT
+        vl.timestamp,
+        vl.verification_type,
+        vl.success,
+        CASE WHEN vl.success = 1 THEN vl.score ELSE vl.error_message END as result
+    FROM verification_logs vl
+    WHERE vl.executor_id IN (
+        SELECT executor_id FROM gpu_uuid_assignments WHERE gpu_uuid = '$GPU_UUID'
+    )
+    ORDER BY vl.timestamp DESC
+    LIMIT 10;"
+    echo
+
+    echo "GPU History (changes over time):"
+    run_query "SELECT
+        DATE(last_verified) as date,
+        executor_id,
+        miner_id,
+        COUNT(*) as verification_count
+    FROM gpu_uuid_assignments
+    WHERE gpu_uuid = '$GPU_UUID'
+    GROUP BY DATE(last_verified), executor_id, miner_id
+    ORDER BY date DESC
+    LIMIT 7;"
 
 elif [ -n "$GPU_PROFILE" ]; then
     GPU_MODEL=$(echo "$GPU_PROFILE" | tr '[:lower:]' '[:upper:]')
