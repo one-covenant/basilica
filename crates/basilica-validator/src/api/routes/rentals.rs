@@ -42,21 +42,23 @@ pub async fn rent_capacity(
                     let executor = capacity_entries
                         .into_iter()
                         .find(|entry| entry.executor_id == *executor_id);
-                    
+
                     match executor {
                         Some(exec) => {
                             // Verify executor is available
                             if !is_executor_available(&exec) {
-                                return Err(ApiError::BadRequest(
-                                    format!("Executor {} is not available", executor_id),
-                                ));
+                                return Err(ApiError::BadRequest(format!(
+                                    "Executor {} is not available",
+                                    executor_id
+                                )));
                             }
                             Some(exec)
                         }
                         None => {
-                            return Err(ApiError::NotFound(
-                                format!("Executor {} not found", executor_id),
-                            ));
+                            return Err(ApiError::NotFound(format!(
+                                "Executor {} not found",
+                                executor_id
+                            )));
                         }
                     }
                 }
@@ -75,7 +77,7 @@ pub async fn rent_capacity(
                     "gpu_count must be greater than 0".to_string(),
                 ));
             }
-            
+
             match state
                 .persistence
                 .get_available_capacity(min_score, min_success_rate, 10, 0)
@@ -148,8 +150,7 @@ pub async fn rent_capacity(
             // Store rental in database
             match state.persistence.create_rental(&rental).await {
                 Ok(()) => {
-                    let executor_details =
-                        extract_executor_details_from_capacity(&executor)?;
+                    let executor_details = extract_executor_details_from_capacity(&executor)?;
 
                     Ok(Json(RentCapacityResponse {
                         rental_id: rental.id.to_string(),
@@ -453,7 +454,7 @@ fn extract_gpu_requirements_from_executor(
     executor: &crate::persistence::simple_persistence::CapacityEntry,
 ) -> serde_json::Value {
     let hardware_info = &executor.hardware_info;
-    
+
     if let Some(gpu_info) = hardware_info.get("gpu") {
         if let Some(gpus) = gpu_info.as_array() {
             if let Some(first_gpu) = gpus.first() {
@@ -465,7 +466,7 @@ fn extract_gpu_requirements_from_executor(
                     .get("name")
                     .and_then(|n| n.as_str())
                     .unwrap_or("Unknown");
-                
+
                 return json!({
                     "min_memory_gb": memory_gb,
                     "gpu_type": gpu_name,
@@ -474,7 +475,7 @@ fn extract_gpu_requirements_from_executor(
             }
         }
     }
-    
+
     // Default if no GPU info found
     json!({
         "min_memory_gb": 0,

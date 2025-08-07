@@ -45,7 +45,7 @@ impl ValidatorClient {
         query: ListCapacityQuery,
     ) -> Result<ListCapacityResponse> {
         let url = format!("{}/capacity/available", self.base_url);
-        
+
         let response = self
             .http_client
             .get(&url)
@@ -111,11 +111,7 @@ impl ValidatorClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Failed to get rental status: {} - {}",
-                status,
-                error_body
-            );
+            anyhow::bail!("Failed to get rental status: {} - {}", status, error_body);
         }
 
         response
@@ -143,11 +139,7 @@ impl ValidatorClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Failed to terminate rental: {} - {}",
-                status,
-                error_body
-            );
+            anyhow::bail!("Failed to terminate rental: {} - {}", status, error_body);
         }
 
         response
@@ -181,7 +173,7 @@ impl ValidatorClient {
         // Convert the response into a stream of Events
         let stream = response.bytes_stream();
         let event_stream = EventStream::new(stream);
-        
+
         Ok(Box::pin(event_stream))
     }
 }
@@ -217,19 +209,19 @@ impl Stream for EventStream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         use futures_util::StreamExt;
-        
+
         match self.inner.poll_next_unpin(cx) {
             std::task::Poll::Ready(Some(Ok(bytes))) => {
                 // Append new data to buffer
                 if let Ok(text) = std::str::from_utf8(&bytes) {
                     self.buffer.push_str(text);
                 }
-                
+
                 // Try to parse complete lines as events
                 if let Some(newline_pos) = self.buffer.find('\n') {
                     let line = self.buffer.drain(..=newline_pos).collect::<String>();
                     let line = line.trim();
-                    
+
                     if !line.is_empty() {
                         // Try to parse as JSON event
                         match serde_json::from_str::<Event>(line) {

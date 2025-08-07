@@ -7,7 +7,6 @@ use crate::{
 };
 use axum::{extract::State, Json};
 use tracing::info;
-use uuid::Uuid;
 
 /// Register user and create account for credits
 #[utoipa::path(
@@ -94,56 +93,40 @@ pub async fn get_credit_wallet(
 }
 
 /// Check if user is already registered
-async fn is_user_registered(_state: &AppState, user_identifier: &str) -> Result<bool> {
+async fn is_user_registered(_state: &AppState, _user_identifier: &str) -> Result<bool> {
     // TODO: Implement database lookup
-    // For now, simulate some users as already registered
-    let registered_users = ["test-user@example.com", "demo-user@example.com"];
-
-    Ok(registered_users.contains(&user_identifier))
+    Err(Error::Internal {
+        message: "User registration check not implemented".to_string(),
+    })
 }
 
 /// Generate a new credit wallet for the user
-async fn generate_credit_wallet(user_identifier: &str) -> Result<String> {
-    // In production, this would create an actual wallet for holding credits
-    // For now, generate a deterministic wallet address based on user identifier
-    let uuid = Uuid::new_v4();
-    let hash_suffix = format!("{:x}", user_identifier.len() * 31 + 42);
-    let credit_wallet = format!("5Credit{}{}", &hash_suffix[0..8], &uuid.to_string()[0..8]);
-
-    Ok(credit_wallet)
+async fn generate_credit_wallet(_user_identifier: &str) -> Result<String> {
+    // TODO: Implement actual wallet generation
+    Err(Error::Internal {
+        message: "Credit wallet generation not implemented".to_string(),
+    })
 }
 
 /// Store user registration in database
 async fn store_user_registration(
     _state: &AppState,
-    user_identifier: &str,
-    credit_wallet: &str,
+    _user_identifier: &str,
+    _credit_wallet: &str,
 ) -> Result<()> {
     // TODO: Implement database storage
-    info!(
-        "Storing registration: user={}, credit={}",
-        user_identifier, credit_wallet
-    );
-    Ok(())
+    Err(Error::Internal {
+        message: "User registration storage not implemented".to_string(),
+    })
 }
 
 /// Get user's credit wallet from database
 async fn get_user_credit_wallet(
     _state: &AppState,
-    user_identifier: &str,
+    _user_identifier: &str,
 ) -> Result<Option<String>> {
     // TODO: Implement database lookup
-    // For now, simulate some existing registrations
-    let existing_registrations = [
-        ("test-user@example.com", "5Credit26Fz9rcQ12345678"),
-        ("demo-user@example.com", "5CreditW46xGXgs87654321"),
-    ];
-
-    for (user, credit) in existing_registrations.iter() {
-        if *user == user_identifier {
-            return Ok(Some(credit.to_string()));
-        }
-    }
-
-    Ok(None)
+    Err(Error::Internal {
+        message: "Credit wallet lookup not implemented".to_string(),
+    })
 }

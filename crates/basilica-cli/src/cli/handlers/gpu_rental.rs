@@ -7,7 +7,8 @@ use crate::interactive::selector::InteractiveSelector;
 use crate::output::{json_output, table_output};
 use crate::ssh::SshClient;
 use basilica_api::api::types::{
-    CreateRentalRequest, ListExecutorsQuery, ListRentalsQuery, RentalSelection, RentalStatusResponse,
+    CreateRentalRequest, ListExecutorsQuery, ListRentalsQuery, RentalSelection,
+    RentalStatusResponse,
 };
 use basilica_api::ClientBuilder;
 use std::path::PathBuf;
@@ -347,16 +348,12 @@ pub async fn handle_cp(source: String, destination: String, config_path: PathBuf
         ssh_client
             .upload_file(&rental, &local_path, &remote_path)
             .await?;
-        println!(
-            "✅ Successfully uploaded {local_path} to {rental_id}:{remote_path}"
-        );
+        println!("✅ Successfully uploaded {local_path} to {rental_id}:{remote_path}");
     } else {
         ssh_client
             .download_file(&rental, &remote_path, &local_path)
             .await?;
-        println!(
-            "✅ Successfully downloaded {rental_id}:{remote_path} to {local_path}"
-        );
+        println!("✅ Successfully downloaded {rental_id}:{remote_path} to {local_path}");
     }
 
     Ok(())

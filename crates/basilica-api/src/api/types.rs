@@ -5,10 +5,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 // Re-export types from validator crate
-pub use basilica_validator::api::types::{
-    RentalSelection,
-    GpuRequirements,
-};
+pub use basilica_validator::api::types::{GpuRequirements, RentalSelection};
 
 // Import validator types for conversion
 use basilica_validator::api::types as validator_types;
@@ -175,127 +172,6 @@ pub struct LogQuery {
     pub tail: Option<u32>,
 }
 
-/// List executors query parameters
-#[derive(Debug, Deserialize)]
-pub struct ListExecutorsQuery {
-    /// Minimum GPU count
-    pub min_gpu_count: Option<u32>,
-
-    /// GPU type filter
-    pub gpu_type: Option<String>,
-
-    /// Page number
-    pub page: Option<u32>,
-
-    /// Page size
-    pub page_size: Option<u32>,
-}
-
-/// List executors response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ListExecutorsResponse {
-    /// List of executors
-    pub executors: Vec<ExecutorDetails>,
-
-    /// Total count
-    pub total_count: usize,
-
-    /// Current page
-    pub page: u32,
-
-    /// Page size
-    pub page_size: u32,
-}
-
-/// Validator details
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ValidatorDetails {
-    /// Validator UID
-    pub uid: u16,
-
-    /// Validator hotkey
-    pub hotkey: String,
-
-    /// Validator endpoint
-    pub endpoint: String,
-
-    /// Validator score
-    pub score: f64,
-
-    /// Is healthy
-    pub is_healthy: bool,
-
-    /// Last health check
-    pub last_health_check: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-/// List validators response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ListValidatorsResponse {
-    /// List of validators
-    pub validators: Vec<ValidatorDetails>,
-
-    /// Total count
-    pub total_count: usize,
-}
-
-/// Miner details
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct MinerDetails {
-    /// Miner ID
-    pub miner_id: String,
-
-    /// Miner hotkey
-    pub hotkey: String,
-
-    /// Miner endpoint
-    pub endpoint: String,
-
-    /// Number of executors
-    pub executor_count: u32,
-
-    /// Total GPU count
-    pub total_gpu_count: u32,
-
-    /// Verification score
-    pub verification_score: f64,
-
-    /// Last seen timestamp
-    pub last_seen: chrono::DateTime<chrono::Utc>,
-}
-
-/// List miners query parameters
-#[derive(Debug, Deserialize)]
-pub struct ListMinersQuery {
-    /// Minimum GPU count filter
-    pub min_gpu_count: Option<u32>,
-
-    /// Minimum score filter
-    pub min_score: Option<f64>,
-
-    /// Page number
-    pub page: Option<u32>,
-
-    /// Page size
-    pub page_size: Option<u32>,
-}
-
-/// List miners response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ListMinersResponse {
-    /// List of miners
-    pub miners: Vec<MinerDetails>,
-
-    /// Total count
-    pub total_count: usize,
-
-    /// Current page
-    pub page: u32,
-
-    /// Page size
-    pub page_size: u32,
-}
-
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct HealthCheckResponse {
@@ -396,16 +272,15 @@ pub struct AvailableExecutor {
     pub available: bool,
 }
 
-
 /// List rentals query
 #[derive(Debug, Deserialize)]
 pub struct ListRentalsQuery {
     /// Status filter
     pub status: Option<String>,
-    
+
     /// GPU type filter
     pub gpu_type: Option<String>,
-    
+
     /// Minimum GPU count
     pub min_gpu_count: Option<u32>,
 

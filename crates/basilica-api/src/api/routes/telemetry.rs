@@ -155,29 +155,17 @@ impl Default for TelemetryTracker {
     tag = "health",
 )]
 pub async fn get_telemetry(State(state): State<AppState>) -> Json<TelemetryResponse> {
-    // Get telemetry from the global tracker
-    // Note: In a real implementation, the telemetry tracker would be stored in AppState
-    // For now, we'll create a response with current metrics
+    // TODO: Implement actual telemetry collection
+    // For now, return minimal response with actual validator count
 
-    // Collect current metrics from the metrics registry
-    let request_count = state.discovery.validator_count() as u64 * 100; // Estimate
     let active_connections = state.load_balancer.read().await.get_total_connections() as u64;
 
-    // Calculate cache statistics if available
-    let cache_hit_rate = 0.85; // In production, this would come from actual cache metrics
-
-    // Calculate average response time from recent requests
-    let avg_response_time_ms = 45.2; // In production, this would be calculated from actual metrics
-
-    // Calculate success rate
-    let success_rate = 0.995; // In production, this would be calculated from actual metrics
-
     Json(TelemetryResponse {
-        request_count,
-        avg_response_time_ms,
-        success_rate,
+        request_count: 0,
+        avg_response_time_ms: 0.0,
+        success_rate: 0.0,
         active_connections: active_connections as usize,
-        cache_hit_rate,
+        cache_hit_rate: 0.0,
         timestamp: chrono::Utc::now(),
     })
 }

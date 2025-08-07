@@ -9,11 +9,11 @@ use crate::{
     error::Result,
     server::AppState,
 };
-use basilica_validator::{ValidatorClient, api::types as validator_types};
 use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use basilica_validator::{api::types as validator_types, ValidatorClient};
 use tracing::{debug, info};
 
 /// List available GPU executors
@@ -40,10 +40,10 @@ pub async fn list_available_gpus(
 
     // Select validator using load balancer
     let validator = state.load_balancer.read().await.select_validator().await?;
-    
+
     // Create client
     let client = ValidatorClient::new(&validator.endpoint)?;
-    
+
     // Query capacity
     let capacity_query = validator_types::ListCapacityQuery {
         min_gpu_memory: None, // Could map from query params if needed
@@ -51,19 +51,25 @@ pub async fn list_available_gpus(
         min_gpu_count: query.min_gpu_count,
         max_cost_per_hour: None,
     };
-    
+
     let response = client.get_available_capacity(capacity_query).await?;
-    
+
     // Transform ListCapacityResponse to AvailableGpuResponse
-    let available_executors = response.available_executors
+    let available_executors = response
+        .available_executors
         .into_iter()
         .map(|exec| AvailableExecutor {
             executor_id: exec.executor.id,
-            gpu_specs: exec.executor.gpu_specs.into_iter().map(|gpu| GpuSpec {
-                name: gpu.name,
-                memory_gb: gpu.memory_gb,
-                compute_capability: gpu.compute_capability,
-            }).collect(),
+            gpu_specs: exec
+                .executor
+                .gpu_specs
+                .into_iter()
+                .map(|gpu| GpuSpec {
+                    name: gpu.name,
+                    memory_gb: gpu.memory_gb,
+                    compute_capability: gpu.compute_capability,
+                })
+                .collect(),
             cpu_specs: CpuSpec {
                 cores: exec.executor.cpu_specs.cores,
                 model: exec.executor.cpu_specs.model,
@@ -74,10 +80,14 @@ pub async fn list_available_gpus(
             available: exec.availability.verification_score > 0.5,
         })
         .collect();
-    
+
     // Report success
-    state.load_balancer.read().await.report_success(validator.uid);
-    
+    state
+        .load_balancer
+        .read()
+        .await
+        .report_success(validator.uid);
+
     let api_response = AvailableGpuResponse {
         total_count: response.total_count,
         executors: available_executors,
@@ -106,31 +116,39 @@ pub async fn create_rental(
     let executor_info = match &request.selection {
         crate::api::types::RentalSelection::ExecutorId(id) => format!("executor {}", id),
         crate::api::types::RentalSelection::GpuRequirements(reqs) => {
-            format!("GPU requirements: {} GPUs with {}GB memory", reqs.gpu_count, reqs.min_memory_gb)
+            format!(
+                "GPU requirements: {} GPUs with {}GB memory",
+                reqs.gpu_count, reqs.min_memory_gb
+            )
         }
     };
     info!("Creating rental for {}", executor_info);
 
     // Select validator using load balancer
     let validator = state.load_balancer.read().await.select_validator().await?;
-    
+
     // Create client
     let client = ValidatorClient::new(&validator.endpoint)?;
-    
+
     // Convert to validator types and create rental
     let validator_request: validator_types::RentCapacityRequest = request.into();
     let validator_response = client.create_rental(validator_request).await?;
-    
+
     // Convert response to API types
     let response = RentCapacityResponse {
         rental_id: validator_response.rental_id,
         executor: crate::api::types::ExecutorDetails {
             id: validator_response.executor.id,
-            gpu_specs: validator_response.executor.gpu_specs.into_iter().map(|g| GpuSpec {
-                name: g.name,
-                memory_gb: g.memory_gb,
-                compute_capability: g.compute_capability,
-            }).collect(),
+            gpu_specs: validator_response
+                .executor
+                .gpu_specs
+                .into_iter()
+                .map(|g| GpuSpec {
+                    name: g.name,
+                    memory_gb: g.memory_gb,
+                    compute_capability: g.compute_capability,
+                })
+                .collect(),
             cpu_specs: CpuSpec {
                 cores: validator_response.executor.cpu_specs.cores,
                 model: validator_response.executor.cpu_specs.model,
@@ -145,10 +163,14 @@ pub async fn create_rental(
         },
         cost_per_hour: validator_response.cost_per_hour,
     };
-    
+
     // Report success
-    state.load_balancer.read().await.report_success(validator.uid);
-    
+    state
+        .load_balancer
+        .read()
+        .await
+        .report_success(validator.uid);
+
     info!("Successfully created rental: {}", response.rental_id);
 
     Ok(Json(response))
@@ -181,7 +203,7 @@ pub async fn list_user_rentals(
     // 1. Store rental IDs when created and query each one individually
     // 2. Implement local database tracking of user rentals
     // 3. Extend validator API to support rental listing by user
-    
+
     // Temporary mock implementation
     let rentals = get_user_rentals(&state, "anonymous", &query).await?;
 
@@ -220,29 +242,36 @@ pub async fn get_rental_status(
 
     // Select validator using load balancer
     let validator = state.load_balancer.read().await.select_validator().await?;
-    
+
     // Create client
     let client = ValidatorClient::new(&validator.endpoint)?;
-    
+
     // Get rental status
     let validator_response = client.get_rental_status(&rental_id).await?;
-    
+
     // Convert to API types
     let response = RentalStatusResponse {
         rental_id: validator_response.rental_id,
         status: match validator_response.status {
             validator_types::RentalStatus::Pending => crate::api::types::RentalStatus::Pending,
             validator_types::RentalStatus::Active => crate::api::types::RentalStatus::Active,
-            validator_types::RentalStatus::Terminated => crate::api::types::RentalStatus::Terminated,
+            validator_types::RentalStatus::Terminated => {
+                crate::api::types::RentalStatus::Terminated
+            }
             validator_types::RentalStatus::Failed => crate::api::types::RentalStatus::Failed,
         },
         executor: crate::api::types::ExecutorDetails {
             id: validator_response.executor.id,
-            gpu_specs: validator_response.executor.gpu_specs.into_iter().map(|g| GpuSpec {
-                name: g.name,
-                memory_gb: g.memory_gb,
-                compute_capability: g.compute_capability,
-            }).collect(),
+            gpu_specs: validator_response
+                .executor
+                .gpu_specs
+                .into_iter()
+                .map(|g| GpuSpec {
+                    name: g.name,
+                    memory_gb: g.memory_gb,
+                    compute_capability: g.compute_capability,
+                })
+                .collect(),
             cpu_specs: CpuSpec {
                 cores: validator_response.executor.cpu_specs.cores,
                 model: validator_response.executor.cpu_specs.model,
@@ -254,9 +283,13 @@ pub async fn get_rental_status(
         updated_at: validator_response.updated_at,
         cost_incurred: validator_response.cost_incurred,
     };
-    
+
     // Report success
-    state.load_balancer.read().await.report_success(validator.uid);
+    state
+        .load_balancer
+        .read()
+        .await
+        .report_success(validator.uid);
 
     Ok(Json(response))
 }
@@ -283,25 +316,29 @@ pub async fn terminate_rental(
 
     // Select validator using load balancer
     let validator = state.load_balancer.read().await.select_validator().await?;
-    
+
     // Create client
     let client = ValidatorClient::new(&validator.endpoint)?;
-    
+
     // Terminate rental
     let request = validator_types::TerminateRentalRequest {
         reason: Some("User requested termination".to_string()),
     };
     let validator_response = client.terminate_rental(&rental_id, request).await?;
-    
+
     // Convert to API types
     let response = crate::api::types::TerminateRentalResponse {
         success: validator_response.success,
         message: validator_response.message,
     };
-    
+
     // Report success
-    state.load_balancer.read().await.report_success(validator.uid);
-    
+    state
+        .load_balancer
+        .read()
+        .await
+        .report_success(validator.uid);
+
     info!("Successfully terminated rental: {}", rental_id);
 
     Ok(Json(response))
