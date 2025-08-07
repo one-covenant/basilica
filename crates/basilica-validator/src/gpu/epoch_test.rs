@@ -130,7 +130,7 @@ mod tests {
         };
 
         // Store and retrieve
-        seed_test_data(&persistence, &gpu_repo, &[profile.clone()]).await?;
+        seed_test_data(&persistence, &gpu_repo, std::slice::from_ref(&profile)).await?;
         let retrieved = gpu_repo.get_gpu_profile(MinerUid::new(1)).await?;
 
         assert!(retrieved.is_some());
