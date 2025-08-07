@@ -135,8 +135,13 @@ if [ -n "$MINER_UID" ]; then
     SELECT
         'Profile JSON (CACHED)' as source,
         CAST(
-            (SELECT SUM(CAST(json_each.value AS INTEGER))
-             FROM miner_gpu_profiles, json_each(gpu_counts_json)
+            (SELECT CASE
+                WHEN gpu_counts_json IS NULL OR gpu_counts_json = '' THEN 0
+                WHEN json_valid(gpu_counts_json) = 0 THEN 0
+                ELSE (SELECT SUM(CAST(json_each.value AS INTEGER))
+                      FROM json_each(gpu_counts_json))
+            END
+             FROM miner_gpu_profiles
              WHERE miner_uid = $MINER_UID)
         AS INTEGER) as total_gpus;"
     echo
@@ -503,12 +508,18 @@ if [ -n "$MINER_UID" ]; then
 
         # Final verdict
         echo
-        if [ "$PROFILE_JSON" != "{}" ] && [ "$ACTIVE_EXECUTOR_COUNT" -eq 0 ]; then
-            echo "  PHANTOM GPU PROFILE DETECTED!"
-            echo "  This miner has GPU profile but NO ACTIVE executors"
-            echo "  Profile shows: $PROFILE_JSON"
-            echo "  This miner is receiving UNDESERVED weights!"
-        elif [ "$CONFLICTING_GPUS" -gt 0 ] || [ "$INVALID_UUIDS" -gt 0 ]; then
+        # Check if PROFILE_JSON is non-empty and has keys using jq
+        if [ -n "$PROFILE_JSON" ]; then
+            HAS_GPUS=$(echo "$PROFILE_JSON" | jq -r 'if . == null then "false" elif . == {} then "false" else (. | length > 0) end' 2>/dev/null || echo "false")
+            if [ "$HAS_GPUS" = "true" ] && [ "$ACTIVE_EXECUTOR_COUNT" -eq 0 ]; then
+                echo "  PHANTOM GPU PROFILE DETECTED!"
+                echo "  This miner has GPU profile but NO ACTIVE executors"
+                echo "  Profile shows: $PROFILE_JSON"
+                echo "  This miner is receiving UNDESERVED weights!"
+            fi
+        fi
+
+        if [ "$CONFLICTING_GPUS" -gt 0 ] || [ "$INVALID_UUIDS" -gt 0 ]; then
             echo "  POTENTIAL FRAUD DETECTED - Review GPU assignments immediately"
         elif [ "$ACTIVE_EXECUTORS" -eq 0 ]; then
             echo "  MINER INACTIVE - No recent validations"

@@ -60,11 +60,11 @@ impl<'a> IdentityDisplay for ExecutorIdentityDisplay<'a> {
 /// Extension trait to add display methods directly to ExecutorIdentity types
 pub trait ExecutorIdentityDisplayExt {
     /// Creates a display formatter for this identity
-    fn display(&self) -> ExecutorIdentityDisplay;
+    fn display(&self) -> ExecutorIdentityDisplay<'_>;
 }
 
 impl<T: ExecutorIdentity> ExecutorIdentityDisplayExt for T {
-    fn display(&self) -> ExecutorIdentityDisplay {
+    fn display(&self) -> ExecutorIdentityDisplay<'_> {
         ExecutorIdentityDisplay::new(self)
     }
 }

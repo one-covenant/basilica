@@ -113,11 +113,15 @@ impl GpuProfileRepository {
     pub async fn get_all_gpu_profiles(&self) -> Result<Vec<MinerGpuProfile>> {
         let query = r#"
             SELECT DISTINCT
-                CAST(SUBSTR(g.miner_id, 7) AS INTEGER) as miner_uid,
+                CASE
+                    WHEN g.miner_id LIKE 'miner_%' THEN CAST(SUBSTR(g.miner_id, 7) AS INTEGER)
+                    ELSE NULL
+                END as miner_uid,
                 g.miner_id
             FROM gpu_uuid_assignments g
             INNER JOIN miner_executors me ON g.miner_id = me.miner_id AND g.executor_id = me.executor_id
             WHERE me.status IN ('online', 'verified')
+                AND g.miner_id LIKE 'miner_%'
             ORDER BY g.miner_id
         "#;
 
@@ -126,8 +130,13 @@ impl GpuProfileRepository {
         let mut profiles = Vec::new();
 
         for row in rows {
-            let miner_uid_val: i64 = row.get("miner_uid");
+            let miner_uid_val: Option<i64> = row.get("miner_uid");
             let miner_id_str: String = row.get("miner_id");
+
+            let Some(miner_uid_val) = miner_uid_val else {
+                tracing::warn!("Skipping miner_id with invalid format: {}", miner_id_str);
+                continue;
+            };
 
             let simple_persistence = SimplePersistence::with_pool(self.pool.clone());
             let gpu_counts_raw = simple_persistence
@@ -186,12 +195,33 @@ impl GpuProfileRepository {
                 None
             };
 
+            // Retrieve existing last_updated from the stored profile if it exists
+            let last_updated_query = r#"
+                SELECT last_updated
+                FROM miner_gpu_profiles
+                WHERE miner_uid = ?
+            "#;
+
+            let last_updated = sqlx::query(last_updated_query)
+                .bind(miner_uid_val)
+                .fetch_optional(&self.pool)
+                .await?
+                .and_then(|row| {
+                    let timestamp_str: Option<String> = row.get("last_updated");
+                    timestamp_str.and_then(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
+                })
+                .unwrap_or_else(Utc::now);
+
             profiles.push(MinerGpuProfile {
                 miner_uid: MinerUid::new(miner_uid_val as u16),
                 gpu_counts,
                 total_score,
                 verification_count: verification_count as u32,
-                last_updated: Utc::now(),
+                last_updated,
                 last_successful_validation,
             });
         }
@@ -203,12 +233,16 @@ impl GpuProfileRepository {
     pub async fn get_profiles_by_gpu_model(&self, gpu_model: &str) -> Result<Vec<MinerGpuProfile>> {
         let query = r#"
             SELECT DISTINCT
-                CAST(SUBSTR(g.miner_id, 7) AS INTEGER) as miner_uid,
+                CASE
+                    WHEN g.miner_id LIKE 'miner_%' THEN CAST(SUBSTR(g.miner_id, 7) AS INTEGER)
+                    ELSE NULL
+                END as miner_uid,
                 g.miner_id
             FROM gpu_uuid_assignments g
             INNER JOIN miner_executors me ON g.miner_id = me.miner_id AND g.executor_id = me.executor_id
             WHERE me.status IN ('online', 'verified')
-            AND g.gpu_name LIKE '%' || ? || '%'
+                AND g.miner_id LIKE 'miner_%'
+                AND g.gpu_name LIKE '%' || ? || '%'
             ORDER BY g.miner_id
         "#;
 
@@ -220,8 +254,14 @@ impl GpuProfileRepository {
         let mut profiles = Vec::new();
 
         for row in rows {
-            let miner_uid_val: i64 = row.get("miner_uid");
+            let miner_uid_val: Option<i64> = row.get("miner_uid");
             let miner_id_str: String = row.get("miner_id");
+
+            // Skip rows where miner_uid couldn't be parsed
+            let Some(miner_uid_val) = miner_uid_val else {
+                tracing::warn!("Skipping miner_id with invalid format: {}", miner_id_str);
+                continue;
+            };
 
             let simple_persistence = SimplePersistence::with_pool(self.pool.clone());
             let gpu_counts = simple_persistence
@@ -278,12 +318,33 @@ impl GpuProfileRepository {
                 None
             };
 
+            // Retrieve existing last_updated from the stored profile if it exists
+            let last_updated_query = r#"
+                SELECT last_updated
+                FROM miner_gpu_profiles
+                WHERE miner_uid = ?
+            "#;
+
+            let last_updated = sqlx::query(last_updated_query)
+                .bind(miner_uid_val)
+                .fetch_optional(&self.pool)
+                .await?
+                .and_then(|row| {
+                    let timestamp_str: Option<String> = row.get("last_updated");
+                    timestamp_str.and_then(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
+                })
+                .unwrap_or_else(Utc::now);
+
             profiles.push(MinerGpuProfile {
                 miner_uid: MinerUid::new(miner_uid_val as u16),
                 gpu_counts,
                 total_score,
                 verification_count: verification_count as u32,
-                last_updated: Utc::now(),
+                last_updated,
                 last_successful_validation,
             });
         }
@@ -994,10 +1055,19 @@ mod tests {
         let deleted = repo.cleanup_old_profiles(30).await.unwrap();
         assert_eq!(deleted, 1);
 
-        // Verify only recent profile remains
-        let all_profiles = repo.get_all_gpu_profiles().await.unwrap();
-        assert_eq!(all_profiles.len(), 1);
-        assert_eq!(all_profiles[0].miner_uid, recent_profile.miner_uid);
+        // Verify only recent profile remains in the database
+        let remaining_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM miner_gpu_profiles")
+            .fetch_one(&repo.pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining_count, 1);
+
+        // Verify it's the recent profile that remains
+        let remaining_uid: i64 = sqlx::query_scalar("SELECT miner_uid FROM miner_gpu_profiles")
+            .fetch_one(&repo.pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining_uid, recent_profile.miner_uid.as_u16() as i64);
     }
 
     #[tokio::test]
