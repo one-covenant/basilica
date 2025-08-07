@@ -685,7 +685,7 @@ impl VerificationEngine {
                 .bind("{}") // cpu_specs
                 //---------
                 .bind("discovered") // location
-                .bind("verified") // status
+                .bind("online") // status - online until verification completes
                 .execute(self.persistence.pool())
                 .await
                 .map_err(|e| {
@@ -959,15 +959,30 @@ impl VerificationEngine {
         .fetch_one(self.persistence.pool())
         .await?;
 
+        let new_status = if gpu_count > 0 { "verified" } else { "offline" };
+
         sqlx::query(
-            "UPDATE miner_executors SET gpu_count = ?, updated_at = datetime('now')
+            "UPDATE miner_executors SET gpu_count = ?, status = ?, updated_at = datetime('now')
              WHERE miner_id = ? AND executor_id = ?",
         )
         .bind(gpu_count as i32)
+        .bind(new_status)
         .bind(&miner_id)
         .bind(executor_id)
         .execute(self.persistence.pool())
         .await?;
+
+        if gpu_count > 0 {
+            info!(
+                "Executor {}/{} verified with {} GPUs",
+                miner_id, executor_id, gpu_count
+            );
+        } else {
+            warn!(
+                "Executor {}/{} has no GPUs, marking as offline",
+                miner_id, executor_id
+            );
+        }
 
         // Validate that the GPU count matches the expected count
         let expected_gpu_count = gpu_infos
@@ -2070,7 +2085,7 @@ impl VerificationEngine {
             .await?;
 
             // Mark offline if they claim GPUs but have none
-            if status == "online" {
+            if status == "online" || status == "verified" {
                 sqlx::query(
                     "UPDATE miner_executors SET status = 'offline', updated_at = datetime('now')
                      WHERE executor_id = ? AND miner_id = ?",
@@ -2081,8 +2096,8 @@ impl VerificationEngine {
                 .await?;
 
                 info!(
-                    "Marked executor {} as offline due to GPU count mismatch",
-                    executor_id
+                    "Marked executor {} as offline (claimed {} GPUs but has 0 assignments)",
+                    executor_id, gpu_count
                 );
             }
         }
@@ -2196,6 +2211,85 @@ impl VerificationEngine {
             .await?;
 
         let stale_deleted = stale_result.rows_affected();
+
+        // Step 4: Update GPU profiles for all miners with wrong gpu count profile
+        let affected_miners_query = r#"
+            SELECT DISTINCT miner_uid
+            FROM miner_gpu_profiles
+            WHERE miner_uid IN (
+                -- Miners with offline executors
+                SELECT DISTINCT CAST(SUBSTR(miner_id, 7) AS INTEGER)
+                FROM miner_executors
+                WHERE status = 'offline'
+
+                UNION
+
+                -- Miners with non-empty GPU profiles but no active executors
+                SELECT miner_uid
+                FROM miner_gpu_profiles
+                WHERE gpu_counts_json <> '{}'
+                AND NOT EXISTS (
+                    SELECT 1 FROM miner_executors
+                    WHERE miner_id = 'miner_' || miner_gpu_profiles.miner_uid
+                    AND status NOT IN ('offline', 'failed', 'stale')
+                )
+            )
+        "#;
+
+        let affected_miners = sqlx::query(affected_miners_query)
+            .fetch_all(self.persistence.pool())
+            .await?;
+
+        for row in affected_miners {
+            let miner_uid: i64 = row.try_get("miner_uid")?;
+            let miner_id = format!("miner_{}", miner_uid);
+
+            let gpu_counts = self
+                .persistence
+                .get_miner_gpu_counts_from_assignments(&miner_id)
+                .await?;
+
+            let mut gpu_map: std::collections::HashMap<String, u32> =
+                std::collections::HashMap::new();
+            for (_, count, gpu_name) in gpu_counts {
+                let model =
+                    crate::gpu::categorization::GpuCategorizer::normalize_gpu_model(&gpu_name);
+                *gpu_map.entry(model).or_insert(0) += count;
+            }
+
+            let update_query = if gpu_map.is_empty() {
+                r#"
+                UPDATE miner_gpu_profiles
+                SET gpu_counts_json = ?,
+                    total_score = 0.0,
+                    verification_count = 0,
+                    last_successful_validation = NULL,
+                    last_updated = datetime('now')
+                WHERE miner_uid = ?
+                "#
+            } else {
+                r#"
+                UPDATE miner_gpu_profiles
+                SET gpu_counts_json = ?,
+                    last_updated = datetime('now')
+                WHERE miner_uid = ?
+                "#
+            };
+
+            let gpu_json = serde_json::to_string(&gpu_map)?;
+            let result = sqlx::query(update_query)
+                .bind(&gpu_json)
+                .bind(miner_uid)
+                .execute(self.persistence.pool())
+                .await?;
+
+            if result.rows_affected() > 0 {
+                info!(
+                    "Updated GPU profile for miner {} after cleanup: {}",
+                    miner_uid, gpu_json
+                );
+            }
+        }
 
         // Log summary
         if gpu_assignments_cleaned > 0 {
