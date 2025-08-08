@@ -4,7 +4,7 @@ use crate::{
     api::types::{
         AvailableExecutor, AvailableGpuResponse, CpuSpec, CreateRentalRequest, GpuSpec,
         ListExecutorsQuery, ListRentalsQuery, ListRentalsResponse, RentCapacityResponse,
-        RentalInfo, RentalStatusResponse,
+        RentalInfo, RentalSelection, RentalStatusResponse,
     },
     error::Result,
     server::AppState,
@@ -111,23 +111,84 @@ pub async fn create_rental(
     State(state): State<AppState>,
     Json(request): Json<CreateRentalRequest>,
 ) -> Result<Json<RentCapacityResponse>> {
-    // Extract executor info for logging based on selection
-    let executor_info = match &request.selection {
-        crate::api::types::RentalSelection::ExecutorId(id) => format!("executor {id}"),
-        crate::api::types::RentalSelection::GpuRequirements(reqs) => {
-            format!(
-                "GPU requirements: {} GPUs with {}GB memory",
-                reqs.gpu_count, reqs.min_memory_gb
-            )
-        }
-    };
-    info!("Creating rental for {}", executor_info);
-
     // Use the validator client from app state
     let client = &state.validator_client;
 
-    // Convert to validator types and create rental
-    let validator_request: validator_types::RentCapacityRequest = request.into();
+    // Determine GPU requirements based on selection method
+    let gpu_requirements = match &request.selection {
+        RentalSelection::ExecutorId(executor_id) => {
+            info!("Creating rental for specific executor: {}", executor_id);
+
+            // Query all available capacity to find the specific executor
+            let capacity_query = validator_types::ListCapacityQuery {
+                min_gpu_memory: None,
+                gpu_type: None,
+                min_gpu_count: None,
+                max_cost_per_hour: None,
+            };
+
+            let capacity_response = client
+                .get_available_capacity(capacity_query)
+                .await
+                .map_err(|e| crate::error::Error::ValidatorCommunication {
+                    message: format!("Failed to query available capacity: {e}"),
+                })?;
+
+            // Find the specific executor
+            let executor = capacity_response
+                .available_executors
+                .into_iter()
+                .find(|exec| exec.executor.id == *executor_id)
+                .ok_or_else(|| crate::error::Error::NotFound {
+                    resource: format!("Executor {executor_id}"),
+                })?;
+
+            // Check if executor is available
+            if executor.availability.verification_score < 0.5 {
+                return Err(crate::error::Error::BadRequest {
+                    message: format!(
+                        "Executor {executor_id} is not available (low verification score)"
+                    ),
+                });
+            }
+
+            // Extract GPU requirements from the executor's specs
+            let first_gpu = executor.executor.gpu_specs.first().ok_or_else(|| {
+                crate::error::Error::BadRequest {
+                    message: format!("Executor {executor_id} has no GPUs"),
+                }
+            })?;
+
+            validator_types::GpuRequirements {
+                min_memory_gb: first_gpu.memory_gb,
+                gpu_type: Some(first_gpu.name.clone()),
+                gpu_count: executor.executor.gpu_specs.len() as u32,
+            }
+        }
+        RentalSelection::GpuRequirements(reqs) => {
+            info!(
+                "Creating rental for GPU requirements: {} GPUs with {}GB memory",
+                reqs.gpu_count, reqs.min_memory_gb
+            );
+
+            // Convert API requirements to validator requirements
+            validator_types::GpuRequirements {
+                min_memory_gb: reqs.min_memory_gb,
+                gpu_type: reqs.gpu_type.clone(),
+                gpu_count: reqs.gpu_count,
+            }
+        }
+    };
+
+    // Create validator request with the determined GPU requirements
+    let validator_request = validator_types::RentCapacityRequest {
+        gpu_requirements,
+        ssh_public_key: request.ssh_public_key.clone(),
+        docker_image: request.docker_image.clone(),
+        env_vars: request.env_vars.clone(),
+        max_duration_hours: request.max_duration_hours,
+    };
+
     let validator_response = client.create_rental(validator_request).await?;
 
     // Convert response to API types

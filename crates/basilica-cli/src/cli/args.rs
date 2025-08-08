@@ -1,4 +1,5 @@
 use crate::cli::{commands::Commands, handlers};
+use crate::config::CliConfig;
 use crate::error::Result;
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -64,42 +65,43 @@ impl Args {
             .with_target(false)
             .init();
 
-        // Expand tilde in config path
+        // Expand tilde in config path and load config once
         let config_path = expand_tilde(&self.config);
+        let config = CliConfig::load_from_path(&config_path).await?;
 
         match self.command {
             // Setup and configuration
-            Commands::Init => handlers::init::handle_init(config_path).await,
+            Commands::Init => handlers::init::handle_init(&config).await,
             Commands::Config { action } => {
-                handlers::config::handle_config(action, config_path).await
+                handlers::config::handle_config(action, &config, config_path).await
             }
-            Commands::Wallet { name } => handlers::wallet::handle_wallet(config_path, name).await,
+            Commands::Wallet { name } => handlers::wallet::handle_wallet(&config, name).await,
 
             // GPU rental operations
-            Commands::Ls { filters } => handlers::gpu_rental::handle_ls(filters, self.json).await,
+            Commands::Ls { filters } => handlers::gpu_rental::handle_ls(filters, self.json, &config).await,
             Commands::Up { target, options } => {
-                handlers::gpu_rental::handle_up(target, options, config_path).await
+                handlers::gpu_rental::handle_up(target, options, &config).await
             }
-            Commands::Ps { filters } => handlers::gpu_rental::handle_ps(filters, self.json).await,
+            Commands::Ps { filters } => handlers::gpu_rental::handle_ps(filters, self.json, &config).await,
             Commands::Status { target } => {
-                handlers::gpu_rental::handle_status(target, self.json).await
+                handlers::gpu_rental::handle_status(target, self.json, &config).await
             }
             Commands::Logs { target, options } => {
-                handlers::gpu_rental::handle_logs(target, options).await
+                handlers::gpu_rental::handle_logs(target, options, &config).await
             }
             Commands::Down { targets } => {
-                handlers::gpu_rental::handle_down(targets, config_path).await
+                handlers::gpu_rental::handle_down(targets, &config).await
             }
             Commands::Exec { target, command } => {
-                handlers::gpu_rental::handle_exec(target, command, config_path).await
+                handlers::gpu_rental::handle_exec(target, command, &config).await
             }
             Commands::Ssh { target, options } => {
-                handlers::gpu_rental::handle_ssh(target, options, config_path).await
+                handlers::gpu_rental::handle_ssh(target, options, &config).await
             }
             Commands::Cp {
                 source,
                 destination,
-            } => handlers::gpu_rental::handle_cp(source, destination, config_path).await,
+            } => handlers::gpu_rental::handle_cp(source, destination, &config).await,
 
             // Network component delegation
             Commands::Validator { args } => handlers::external::handle_validator(args).await,

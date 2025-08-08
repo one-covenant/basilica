@@ -4,14 +4,31 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-// Re-export types from validator crate
-pub use basilica_validator::api::types::{GpuRequirements, RentalSelection};
-
-// Import validator types for conversion
-use basilica_validator::api::types as validator_types;
+// No longer re-exporting RentalSelection from validator
 use std::collections::HashMap;
 
 // Local types with ToSchema for OpenAPI documentation
+
+/// GPU requirements for rental
+#[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
+pub struct GpuRequirements {
+    /// Minimum memory in GB
+    pub min_memory_gb: u32,
+    /// GPU type (optional)
+    pub gpu_type: Option<String>,
+    /// Number of GPUs
+    pub gpu_count: u32,
+}
+
+/// Method for selecting an executor for rental
+#[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RentalSelection {
+    /// Rent a specific executor by ID
+    ExecutorId(String),
+    /// Rent based on GPU requirements (API picks best match)
+    GpuRequirements(GpuRequirements),
+}
 
 /// GPU specifications
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -137,30 +154,7 @@ pub struct TerminateRentalResponse {
     pub message: String,
 }
 
-// Conversion helpers
-impl From<validator_types::RentCapacityRequest> for RentCapacityRequest {
-    fn from(req: validator_types::RentCapacityRequest) -> Self {
-        Self {
-            selection: req.selection,
-            ssh_public_key: req.ssh_public_key,
-            docker_image: req.docker_image,
-            env_vars: req.env_vars,
-            max_duration_hours: req.max_duration_hours,
-        }
-    }
-}
-
-impl From<RentCapacityRequest> for validator_types::RentCapacityRequest {
-    fn from(req: RentCapacityRequest) -> Self {
-        validator_types::RentCapacityRequest {
-            selection: req.selection,
-            ssh_public_key: req.ssh_public_key,
-            docker_image: req.docker_image,
-            env_vars: req.env_vars,
-            max_duration_hours: req.max_duration_hours,
-        }
-    }
-}
+// Conversion helpers removed - API now handles selection logic internally
 
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

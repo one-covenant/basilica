@@ -25,149 +25,99 @@ pub async fn rent_capacity(
         ));
     }
 
-    // Find suitable executor based on selection method
+    if request.gpu_requirements.gpu_count == 0 {
+        return Err(ApiError::BadRequest(
+            "gpu_count must be greater than 0".to_string(),
+        ));
+    }
+
+    // Find suitable executor
     let min_score = Some(0.7); // Require good verification score for rentals
     let min_success_rate = Some(0.8);
 
-    let suitable_executor = match &request.selection {
-        RentalSelection::ExecutorId(executor_id) => {
-            // Direct executor selection - find the specific executor
-            // Query all available capacity and filter for the specific executor
-            match state
-                .persistence
-                .get_available_capacity(None, None, 100, 0) // Get all executors
-                .await
-            {
-                Ok(capacity_entries) => {
-                    let executor = capacity_entries
-                        .into_iter()
-                        .find(|entry| entry.executor_id == *executor_id);
+    match state
+        .persistence
+        .get_available_capacity(min_score, min_success_rate, 10, 0)
+        .await
+    {
+        Ok(capacity_entries) => {
+            // Filter executors by requirements
+            let suitable_executor = capacity_entries
+                .into_iter()
+                .find(|entry| executor_meets_requirements(entry, &request.gpu_requirements));
 
-                    match executor {
-                        Some(exec) => {
-                            // Verify executor is available
-                            if !is_executor_available(&exec) {
-                                return Err(ApiError::BadRequest(format!(
-                                    "Executor {executor_id} is not available"
-                                )));
-                            }
-                            Some(exec)
+            match suitable_executor {
+                Some(executor) => {
+                    let cost_per_hour = calculate_rental_cost(&executor);
+
+                    // Generate SSH access info (simplified for now)
+                    let ssh_access = SshAccess {
+                        host: format!("{}.executor.basilica.ai", executor.executor_id),
+                        port: 22,
+                        username: "basilica".to_string(),
+                    };
+
+                    // Create GPU requirements JSON
+                    let gpu_requirements_json = json!({
+                        "min_memory_gb": request.gpu_requirements.min_memory_gb,
+                        "gpu_type": request.gpu_requirements.gpu_type,
+                        "gpu_count": request.gpu_requirements.gpu_count
+                    });
+
+                    // Create SSH access JSON
+                    let ssh_access_json = json!({
+                        "host": ssh_access.host,
+                        "port": ssh_access.port,
+                        "username": ssh_access.username
+                    });
+
+                    // Convert env_vars to JSON
+                    let env_vars_json = request.env_vars.map(|vars| json!(vars));
+
+                    // Create rental record
+                    let rental = Rental::new(
+                        executor.executor_id.clone(),
+                        request.ssh_public_key,
+                        request.docker_image,
+                        env_vars_json,
+                        gpu_requirements_json,
+                        ssh_access_json,
+                        request.max_duration_hours,
+                        cost_per_hour,
+                    );
+
+                    // Store rental in database
+                    match state.persistence.create_rental(&rental).await {
+                        Ok(()) => {
+                            let executor_details =
+                                extract_executor_details_from_capacity(&executor)?;
+
+                            Ok(Json(RentCapacityResponse {
+                                rental_id: rental.id.to_string(),
+                                executor: executor_details,
+                                ssh_access,
+                                cost_per_hour,
+                            }))
                         }
-                        None => {
-                            return Err(ApiError::NotFound(format!(
-                                "Executor {executor_id} not found"
-                            )));
+                        Err(e) => {
+                            error!("Failed to create rental: {}", e);
+                            Err(ApiError::InternalError(
+                                "Failed to create rental".to_string(),
+                            ))
                         }
                     }
                 }
-                Err(e) => {
-                    error!("Failed to query executor: {}", e);
-                    return Err(ApiError::InternalError(
-                        "Failed to query executor".to_string(),
-                    ));
-                }
+                None => Err(ApiError::NotFound(
+                    "No suitable executor found for requirements".to_string(),
+                )),
             }
         }
-        RentalSelection::GpuRequirements(gpu_requirements) => {
-            // Requirements-based selection - find best matching executor
-            if gpu_requirements.gpu_count == 0 {
-                return Err(ApiError::BadRequest(
-                    "gpu_count must be greater than 0".to_string(),
-                ));
-            }
-
-            match state
-                .persistence
-                .get_available_capacity(min_score, min_success_rate, 10, 0)
-                .await
-            {
-                Ok(capacity_entries) => {
-                    // Filter executors by requirements
-                    capacity_entries
-                        .into_iter()
-                        .find(|entry| executor_meets_requirements(entry, gpu_requirements))
-                }
-                Err(e) => {
-                    error!("Failed to query available capacity: {}", e);
-                    return Err(ApiError::InternalError(
-                        "Failed to find available capacity".to_string(),
-                    ));
-                }
-            }
+        Err(e) => {
+            error!("Failed to query available capacity: {}", e);
+            Err(ApiError::InternalError(
+                "Failed to find available capacity".to_string(),
+            ))
         }
-    };
-
-    match suitable_executor {
-        Some(executor) => {
-            let cost_per_hour = calculate_rental_cost(&executor);
-
-            // Generate SSH access info (simplified for now)
-            let ssh_access = SshAccess {
-                host: format!("{}.executor.basilica.ai", executor.executor_id),
-                port: 22,
-                username: "basilica".to_string(),
-            };
-
-            // Create GPU requirements JSON based on selection method
-            let gpu_requirements_json = match &request.selection {
-                RentalSelection::ExecutorId(_) => {
-                    // Extract GPU info from executor for record keeping
-                    extract_gpu_requirements_from_executor(&executor)
-                }
-                RentalSelection::GpuRequirements(gpu_reqs) => {
-                    json!({
-                        "min_memory_gb": gpu_reqs.min_memory_gb,
-                        "gpu_type": gpu_reqs.gpu_type,
-                        "gpu_count": gpu_reqs.gpu_count
-                    })
-                }
-            };
-
-            // Create SSH access JSON
-            let ssh_access_json = json!({
-                "host": ssh_access.host,
-                "port": ssh_access.port,
-                "username": ssh_access.username
-            });
-
-            // Convert env_vars to JSON
-            let env_vars_json = request.env_vars.map(|vars| json!(vars));
-
-            // Create rental record
-            let rental = Rental::new(
-                executor.executor_id.clone(),
-                request.ssh_public_key,
-                request.docker_image,
-                env_vars_json,
-                gpu_requirements_json,
-                ssh_access_json,
-                request.max_duration_hours,
-                cost_per_hour,
-            );
-
-            // Store rental in database
-            match state.persistence.create_rental(&rental).await {
-                Ok(()) => {
-                    let executor_details = extract_executor_details_from_capacity(&executor)?;
-
-                    Ok(Json(RentCapacityResponse {
-                        rental_id: rental.id.to_string(),
-                        executor: executor_details,
-                        ssh_access,
-                        cost_per_hour,
-                    }))
-                }
-                Err(e) => {
-                    error!("Failed to create rental: {}", e);
-                    Err(ApiError::InternalError(
-                        "Failed to create rental".to_string(),
-                    ))
-                }
-            }
-        }
-        None => Err(ApiError::NotFound(
-            "No suitable executor found for requirements".to_string(),
-        )),
     }
 }
 
@@ -439,45 +389,4 @@ fn create_executor_details_from_rental(rental: &Rental) -> ExecutorDetails {
         },
         location: None,
     }
-}
-
-/// Check if an executor is available
-fn is_executor_available(executor: &crate::persistence::simple_persistence::CapacityEntry) -> bool {
-    // Check if executor has been verified recently and has good score
-    executor.verification_score > 0.5 && executor.success_rate > 0.7
-}
-
-/// Extract GPU requirements from executor for record keeping
-fn extract_gpu_requirements_from_executor(
-    executor: &crate::persistence::simple_persistence::CapacityEntry,
-) -> serde_json::Value {
-    let hardware_info = &executor.hardware_info;
-
-    if let Some(gpu_info) = hardware_info.get("gpu") {
-        if let Some(gpus) = gpu_info.as_array() {
-            if let Some(first_gpu) = gpus.first() {
-                let memory_gb = first_gpu
-                    .get("memory_gb")
-                    .and_then(|m| m.as_u64())
-                    .unwrap_or(0);
-                let gpu_name = first_gpu
-                    .get("name")
-                    .and_then(|n| n.as_str())
-                    .unwrap_or("Unknown");
-
-                return json!({
-                    "min_memory_gb": memory_gb,
-                    "gpu_type": gpu_name,
-                    "gpu_count": gpus.len()
-                });
-            }
-        }
-    }
-
-    // Default if no GPU info found
-    json!({
-        "min_memory_gb": 0,
-        "gpu_type": null,
-        "gpu_count": 0
-    })
 }

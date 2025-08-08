@@ -48,7 +48,7 @@ impl BasilicaClient {
         &self,
         query: ListExecutorsQuery,
     ) -> Result<AvailableGpuResponse> {
-        let mut path = "/api/v1/rentals/available".to_string();
+        let mut path = "/api/v1/capacity/available".to_string();
         let mut params = vec![];
 
         if let Some(min_gpu_count) = query.min_gpu_count {

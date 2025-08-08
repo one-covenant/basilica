@@ -22,6 +22,7 @@ pub struct ContainerSpec {
     pub environment: HashMap<String, String>,
     pub ports: Vec<PortMapping>,
     pub resources: ResourceRequirements,
+    #[serde(default)]
     pub entrypoint: Vec<String>,
     pub command: Vec<String>,
     pub volumes: Vec<VolumeMount>,

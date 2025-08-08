@@ -5,21 +5,13 @@ use crate::error::{CliError, Result};
 use basilica_api::api::types::RegisterRequest;
 use basilica_api::{BasilicaClient, ClientBuilder};
 use std::io;
-use std::path::Path;
 use tracing::debug;
 
 /// Handle the `init` command - setup and registration
-pub async fn handle_init(config_path: impl AsRef<Path>) -> Result<()> {
+pub async fn handle_init(config: &CliConfig) -> Result<()> {
     debug!("Initializing Basilica CLI");
 
     println!("🚀 Initializing Basilica CLI...");
-
-    // Load or create configuration
-    let config = CliConfig::load_from_path(config_path.as_ref()).await?;
-    println!(
-        "✅ Configuration loaded from: {}",
-        config_path.as_ref().display()
-    );
 
     // Check if already registered
     let mut cache = CliCache::load().await?;
@@ -33,7 +25,7 @@ pub async fn handle_init(config_path: impl AsRef<Path>) -> Result<()> {
         );
 
         // Validate registration is still active
-        match validate_registration(&config, &registration.hotwallet).await {
+        match validate_registration(config, &registration.hotwallet).await {
             Ok(true) => {
                 println!("✅ Registration is valid and active");
                 return Ok(());

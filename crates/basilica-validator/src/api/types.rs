@@ -5,27 +5,17 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Method for selecting an executor for rental
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum RentalSelection {
-    /// Rent a specific executor by ID
-    ExecutorId(String),
-    /// Rent based on GPU requirements (validator picks best match)
-    GpuRequirements(GpuRequirements),
-}
-
 /// Request to rent GPU capacity
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RentCapacityRequest {
-    pub selection: RentalSelection,
+    pub gpu_requirements: GpuRequirements,
     pub ssh_public_key: String,
     pub docker_image: String,
     pub env_vars: Option<HashMap<String, String>>,
     pub max_duration_hours: u32,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct GpuRequirements {
     pub min_memory_gb: u32,
     pub gpu_type: Option<String>,

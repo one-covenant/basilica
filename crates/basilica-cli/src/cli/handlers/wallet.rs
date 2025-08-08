@@ -8,13 +8,8 @@ use std::path::Path;
 use tracing::debug;
 
 /// Handle the `wallet` command - show wallet information
-pub async fn handle_wallet(
-    config_path: impl AsRef<Path>,
-    wallet_name: Option<String>,
-) -> Result<()> {
+pub async fn handle_wallet(config: &CliConfig, wallet_name: Option<String>) -> Result<()> {
     debug!("Showing wallet information");
-
-    let config = CliConfig::load_from_path(config_path.as_ref()).await?;
     let cache = CliCache::load().await?;
 
     // Use provided wallet name or fall back to config default

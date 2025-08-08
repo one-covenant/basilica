@@ -15,10 +15,8 @@ use std::path::PathBuf;
 use tracing::{debug, info};
 
 /// Handle the `ls` command - list available GPUs
-pub async fn handle_ls(filters: ListFilters, json: bool) -> Result<()> {
+pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> Result<()> {
     debug!("Listing available GPUs with filters: {:?}", filters);
-
-    let config = CliConfig::load_default().await?;
     let api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
@@ -51,9 +49,8 @@ pub async fn handle_ls(filters: ListFilters, json: bool) -> Result<()> {
 pub async fn handle_up(
     target: Option<String>,
     options: UpOptions,
-    config_path: PathBuf,
+    config: &CliConfig,
 ) -> Result<()> {
-    let config = CliConfig::load_from_path(&config_path).await?;
     let api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
@@ -89,7 +86,7 @@ pub async fn handle_up(
     info!("Provisioning instance on executor: {}", executor_id);
 
     // Build rental request
-    let ssh_public_key = load_ssh_public_key(&options.ssh_key, &config)?;
+    let ssh_public_key = load_ssh_public_key(&options.ssh_key, config)?;
     let docker_image = options.image.unwrap_or_else(|| config.image.name.clone());
 
     let env_vars = parse_env_vars(&options.env)?;
@@ -119,10 +116,8 @@ pub async fn handle_up(
 }
 
 /// Handle the `ps` command - list active rentals
-pub async fn handle_ps(filters: PsFilters, json: bool) -> Result<()> {
+pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Result<()> {
     debug!("Listing active rentals with filters: {:?}", filters);
-
-    let config = CliConfig::load_default().await?;
     let api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
@@ -168,10 +163,8 @@ pub async fn handle_ps(filters: PsFilters, json: bool) -> Result<()> {
 }
 
 /// Handle the `status` command - check rental status
-pub async fn handle_status(target: String, json: bool) -> Result<()> {
+pub async fn handle_status(target: String, json: bool, config: &CliConfig) -> Result<()> {
     debug!("Checking status for rental: {}", target);
-
-    let config = CliConfig::load_default().await?;
     let api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
@@ -193,7 +186,7 @@ pub async fn handle_status(target: String, json: bool) -> Result<()> {
 }
 
 /// Handle the `logs` command - view rental logs
-pub async fn handle_logs(target: String, _options: LogsOptions) -> Result<()> {
+pub async fn handle_logs(target: String, _options: LogsOptions, _config: &CliConfig) -> Result<()> {
     debug!("Viewing logs for rental: {}", target);
 
     // TODO: Implement SSH-based log streaming
@@ -206,8 +199,7 @@ pub async fn handle_logs(target: String, _options: LogsOptions) -> Result<()> {
 }
 
 /// Handle the `down` command - terminate rentals
-pub async fn handle_down(targets: Vec<String>, config_path: PathBuf) -> Result<()> {
-    let config = CliConfig::load_from_path(&config_path).await?;
+pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()> {
     let api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
@@ -256,10 +248,8 @@ pub async fn handle_down(targets: Vec<String>, config_path: PathBuf) -> Result<(
 }
 
 /// Handle the `exec` command - execute commands via SSH
-pub async fn handle_exec(target: String, command: String, config_path: PathBuf) -> Result<()> {
+pub async fn handle_exec(target: String, command: String, config: &CliConfig) -> Result<()> {
     debug!("Executing command on rental: {}", target);
-
-    let config = CliConfig::load_from_path(&config_path).await?;
     let api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
@@ -283,11 +273,9 @@ pub async fn handle_exec(target: String, command: String, config_path: PathBuf) 
 pub async fn handle_ssh(
     target: String,
     _options: crate::cli::commands::SshOptions,
-    config_path: PathBuf,
+    config: &CliConfig,
 ) -> Result<()> {
     debug!("Opening SSH connection to rental: {}", target);
-
-    let config = CliConfig::load_from_path(&config_path).await?;
     let api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
@@ -308,10 +296,8 @@ pub async fn handle_ssh(
 }
 
 /// Handle the `cp` command - copy files via SSH
-pub async fn handle_cp(source: String, destination: String, config_path: PathBuf) -> Result<()> {
+pub async fn handle_cp(source: String, destination: String, config: &CliConfig) -> Result<()> {
     debug!("Copying files from {} to {}", source, destination);
-
-    let config = CliConfig::load_from_path(&config_path).await?;
 
     // Parse source and destination to determine which is remote
     let (rental_id, is_upload, local_path, remote_path) = parse_copy_paths(&source, &destination)?;

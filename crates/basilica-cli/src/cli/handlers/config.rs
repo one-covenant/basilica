@@ -8,20 +8,23 @@ use std::path::Path;
 use tracing::{debug, info};
 
 /// Handle configuration management commands
-pub async fn handle_config(action: ConfigAction, config_path: impl AsRef<Path>) -> Result<()> {
+pub async fn handle_config(
+    action: ConfigAction,
+    config: &CliConfig,
+    config_path: impl AsRef<Path>,
+) -> Result<()> {
     match action {
-        ConfigAction::Show => handle_config_show(config_path).await,
+        ConfigAction::Show => handle_config_show(config).await,
         ConfigAction::Set { key, value } => handle_config_set(key, value, config_path).await,
-        ConfigAction::Get { key } => handle_config_get(key, config_path).await,
+        ConfigAction::Get { key } => handle_config_get(key, config).await,
         ConfigAction::Reset => handle_config_reset(config_path).await,
     }
 }
 
 /// Show current configuration
-async fn handle_config_show(config_path: impl AsRef<Path>) -> Result<()> {
+async fn handle_config_show(config: &CliConfig) -> Result<()> {
     debug!("Showing current configuration");
 
-    let config = CliConfig::load_from_path(config_path.as_ref()).await?;
     let config_map = config.to_map();
 
     table_output::display_config(&config_map)?;
@@ -48,10 +51,9 @@ async fn handle_config_set(
 }
 
 /// Get a configuration value
-async fn handle_config_get(key: String, config_path: impl AsRef<Path>) -> Result<()> {
+async fn handle_config_get(key: String, config: &CliConfig) -> Result<()> {
     debug!("Getting configuration value for key: {}", key);
 
-    let config = CliConfig::load_from_path(config_path.as_ref()).await?;
     let value = config.get(&key)?;
 
     println!("{value}");
