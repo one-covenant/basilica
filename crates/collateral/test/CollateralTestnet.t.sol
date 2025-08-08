@@ -54,21 +54,23 @@ contract CollateralTestnetTest is Test {
         // Use realistic testnet addresses
         address user = TESTNET_USER;
         uint256 depositAmount = 2 ether;
+        bytes32 hotkey = bytes32(uint256(42)); // Convert netuid to bytes32
+        bytes16 executorId = bytes16(uint128(1));
 
         // Fund the user (only works on fork, not live testnet)
         vm.deal(user, depositAmount);
 
         // Test event emission for deposit
         vm.expectEmit(true, true, true, true, address(collateral));
-        emit Deposit(bytes16(uint128(1)), user, depositAmount);
+        emit Deposit(hotkey, executorId, user, depositAmount);
 
         // Perform deposit
         vm.prank(user);
-        collateral.deposit{value: depositAmount}(bytes16(uint128(1)));
+        collateral.deposit{value: depositAmount}(hotkey, executorId);
 
         // Verify deposit
-        assertEq(collateral.collaterals(bytes16(uint128(1))), depositAmount);
-        assertEq(collateral.executorToMiner(bytes16(uint128(1))), user);
+        assertEq(collateral.collaterals(hotkey, executorId), depositAmount);
+        assertEq(collateral.executorToMiner(hotkey, executorId), user);
 
         console.log("Deposit successful on testnet");
         console.log("Contract balance:", address(collateral).balance);
@@ -80,50 +82,58 @@ contract CollateralTestnetTest is Test {
     function testEventCheckAll() public {
         address user = makeAddr("testUser");
         vm.deal(user, 10 ether);
+        bytes32 hotkey = bytes32(uint256(99));
+        bytes16 executorId = bytes16(uint128(99));
 
         // Check all indexed parameters AND data
         vm.expectEmit(true, true, true, true, address(collateral));
-        emit Deposit(bytes16(uint128(99)), user, 3 ether);
+        emit Deposit(hotkey, executorId, user, 3 ether);
 
         vm.prank(user);
-        collateral.deposit{value: 3 ether}(bytes16(uint128(99)));
+        collateral.deposit{value: 3 ether}(hotkey, executorId);
     }
 
     /// @dev Example 2: Check only indexed parameters (ignore data)
     function testEventCheckIndexedOnly() public {
         address user = makeAddr("testUser");
         vm.deal(user, 10 ether);
+        bytes32 hotkey = bytes32(uint256(99));
+        bytes16 executorId = bytes16(uint128(99));
 
         // Check indexed parameters but ignore amount (data)
         vm.expectEmit(true, true, false, false, address(collateral));
-        emit Deposit(bytes16(uint128(99)), user, 0); // amount doesn't matter
+        emit Deposit(hotkey, executorId, user, 0); // amount doesn't matter
 
         vm.prank(user);
-        collateral.deposit{value: 3 ether}(bytes16(uint128(99)));
+        collateral.deposit{value: 3 ether}(hotkey, executorId);
     }
 
     /// @dev Example 4: Test without specifying emitter (any contract can emit)
     function testEventAnyEmitter() public {
         address user = makeAddr("testUser");
         vm.deal(user, 10 ether);
+        bytes32 hotkey = bytes32(uint256(99));
+        bytes16 executorId = bytes16(uint128(99));
 
         // Don't specify emitter address
         vm.expectEmit(true, true, true, true);
-        emit Deposit(bytes16(uint128(99)), user, 3 ether);
+        emit Deposit(hotkey, executorId, user, 3 ether);
 
         vm.prank(user);
-        collateral.deposit{value: 3 ether}(bytes16(uint128(99)));
+        collateral.deposit{value: 3 ether}(hotkey, executorId);
     }
 
     event Deposit(
+        bytes32 indexed hotkey,
         bytes16 indexed executorId,
         address indexed miner,
         uint256 amount
     );
     event ReclaimProcessStarted(
         uint256 indexed reclaimRequestId,
+        bytes32 indexed hotkey,
         bytes16 indexed executorId,
-        address indexed miner,
+        address miner,
         uint256 amount,
         uint64 expirationTime,
         string url,
@@ -131,8 +141,9 @@ contract CollateralTestnetTest is Test {
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
+        bytes32 indexed hotkey,
         bytes16 indexed executorId,
-        address indexed miner,
+        address miner,
         uint256 amount
     );
     event Denied(
@@ -141,6 +152,7 @@ contract CollateralTestnetTest is Test {
         bytes16 urlContentMd5Checksum
     );
     event Slashed(
+        bytes32 indexed hotkey,
         bytes16 indexed executorId,
         address indexed miner,
         uint256 amount,

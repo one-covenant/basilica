@@ -1,62 +1,26 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
 
-import {Test, console, Vm} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+pragma solidity ^0.8.28;
+
+import {Test, console} from "forge-std/Test.sol";
 import {CollateralUpgradeable} from "../src/CollateralUpgradeable.sol";
 import {CollateralUpgradeableV2} from "../src/CollateralUpgradeableV2.sol";
-
-// Interface for UUPS upgrades
-interface IUpgradeable {
-    function upgradeTo(address newImplementation) external;
-}
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract CollateralUpgradeableTest is Test {
     CollateralUpgradeable public collateral;
     CollateralUpgradeable public implementation;
     ERC1967Proxy public proxy;
 
-    // Test accounts
-    address public alice;
-    address public bob;
-    address public trustee;
-    address public admin;
-    address public upgrader;
-
-    // Constants
-    uint256 constant INITIAL_BALANCE = 100 ether;
-    uint256 constant MIN_DEPOSIT = 1 ether;
+    // Test parameters
     uint16 constant NETUID = 42;
+    address constant trustee = address(0x123);
+    uint256 constant MIN_DEPOSIT = 1 ether;
     uint64 constant DECISION_TIMEOUT = 3600; // 1 hour
-
-    // Events
-    event Deposit(
-        bytes16 indexed executorId,
-        address indexed miner,
-        uint256 amount
-    );
-    event ContractUpgraded(
-        uint256 indexed newVersion,
-        address indexed newImplementation
-    );
-    event TrusteeUpdated(
-        address indexed oldTrustee,
-        address indexed newTrustee
-    );
+    address constant admin = address(0x456);
+    address constant alice = address(0x789);
 
     function setUp() public {
-        // Create test accounts
-        alice = makeAddr("alice");
-        bob = makeAddr("bob");
-        trustee = makeAddr("trustee");
-        admin = makeAddr("admin");
-        upgrader = makeAddr("upgrader");
-
-        // Fund accounts
-        vm.deal(alice, INITIAL_BALANCE);
-        vm.deal(bob, INITIAL_BALANCE);
-        vm.deal(admin, INITIAL_BALANCE);
-
         // Deploy implementation
         implementation = new CollateralUpgradeable();
 
@@ -70,7 +34,7 @@ contract CollateralUpgradeableTest is Test {
             admin
         );
 
-        // Deploy proxy with initialization
+        // Deploy proxy
         proxy = new ERC1967Proxy(address(implementation), initData);
 
         // Cast proxy to interface
@@ -107,17 +71,19 @@ contract CollateralUpgradeableTest is Test {
     /// @dev Test basic deposit functionality
     function testBasicDeposit() public {
         vm.deal(alice, 10 ether);
+        bytes32 hotkey = bytes32(uint256(1));
+        bytes16 executorId = bytes16(uint128(1));
 
         // Test event emission
         vm.expectEmit(true, true, true, true, address(collateral));
-        emit Deposit(bytes16(uint128(1)), alice, 5 ether);
+        emit Deposit(hotkey, executorId, alice, 5 ether);
 
         vm.prank(alice);
-        collateral.deposit{value: 5 ether}(bytes16(uint128(1)));
+        collateral.deposit{value: 5 ether}(hotkey, executorId);
 
         // Verify state
-        assertEq(collateral.collaterals(bytes16(uint128(1))), 5 ether);
-        assertEq(collateral.executorToMiner(bytes16(uint128(1))), alice);
+        assertEq(collateral.collaterals(hotkey, executorId), 5 ether);
+        assertEq(collateral.executorToMiner(hotkey, executorId), alice);
         assertEq(address(collateral).balance, 5 ether);
     }
 
@@ -170,4 +136,52 @@ contract CollateralUpgradeableTest is Test {
         assertTrue(collateral.hasRole(collateral.DEFAULT_ADMIN_ROLE(), admin));
         assertTrue(collateral.hasRole(collateral.UPGRADER_ROLE(), admin));
     }
+
+    event Deposit(
+        bytes32 indexed hotkey,
+        bytes16 indexed executorId,
+        address indexed miner,
+        uint256 amount
+    );
+    event ReclaimProcessStarted(
+        uint256 indexed reclaimRequestId,
+        bytes32 indexed hotkey,
+        bytes16 indexed executorId,
+        address miner,
+        uint256 amount,
+        uint64 expirationTime,
+        string url,
+        bytes16 urlContentMd5Checksum
+    );
+    event Reclaimed(
+        uint256 indexed reclaimRequestId,
+        bytes32 indexed hotkey,
+        bytes16 indexed executorId,
+        address miner,
+        uint256 amount
+    );
+    event Denied(
+        uint256 indexed reclaimRequestId,
+        string url,
+        bytes16 urlContentMd5Checksum
+    );
+    event Slashed(
+        bytes32 indexed hotkey,
+        bytes16 indexed executorId,
+        address indexed miner,
+        uint256 amount,
+        string url,
+        bytes16 urlContentMd5Checksum
+    );
+
+    // Upgrade event
+    event ContractUpgraded(
+        uint256 indexed newVersion,
+        address indexed newImplementation
+    );
+
+    event TrusteeUpdated(
+        address indexed oldTrustee,
+        address indexed newTrustee
+    );
 }
