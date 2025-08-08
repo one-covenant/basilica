@@ -5,7 +5,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
 
@@ -93,21 +93,6 @@ impl CleanupTask {
 
         if metrics_count > 0 {
             info!("Cleaned up {} old emission metrics", metrics_count);
-        }
-
-        // Get and log current statistics
-        match self.gpu_repo.get_profile_statistics().await {
-            Ok(stats) => {
-                info!(
-                    "Database stats after cleanup: {} profiles, {} H100s, {} H200s",
-                    stats.total_profiles,
-                    stats.gpu_model_distribution.get("H100").unwrap_or(&0),
-                    stats.gpu_model_distribution.get("H200").unwrap_or(&0)
-                );
-            }
-            Err(e) => {
-                warn!("Failed to get profile statistics: {}", e);
-            }
         }
 
         info!("Database cleanup completed");

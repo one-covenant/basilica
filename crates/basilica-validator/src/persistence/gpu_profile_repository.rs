@@ -9,7 +9,7 @@ use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
-use crate::gpu::MinerGpuProfile;
+use crate::gpu::{GpuCategorizer, MinerGpuProfile};
 use crate::persistence::SimplePersistence;
 use basilica_common::identity::MinerUid;
 
@@ -29,9 +29,50 @@ impl GpuProfileRepository {
         &self.pool
     }
 
+    /// Get miner's gpu assignments counts
+    async fn get_gpu_counts_from_assignments(
+        &self,
+        miner_uid: MinerUid,
+    ) -> Result<HashMap<String, u32>> {
+        let miner_id = format!("miner_{}", miner_uid.as_u16());
+        let query = r#"
+            SELECT gpu_name, COUNT(*) as count
+            FROM gpu_uuid_assignments
+            WHERE miner_id = ?
+            GROUP BY gpu_name
+        "#;
+
+        let rows = sqlx::query(query)
+            .bind(&miner_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut gpu_counts = HashMap::new();
+        for row in rows {
+            let gpu_name: String = row.get("gpu_name");
+            let count: i64 = row.get("count");
+
+            let normalized_name = GpuCategorizer::normalize_gpu_model(&gpu_name);
+
+            *gpu_counts.entry(normalized_name).or_insert(0) += count as u32;
+        }
+
+        Ok(gpu_counts)
+    }
+
     /// Store or update a miner's GPU profile
     pub async fn upsert_gpu_profile(&self, profile: &MinerGpuProfile) -> Result<()> {
-        let gpu_counts_json = serde_json::to_string(&profile.gpu_counts)?;
+        let actual_gpu_counts = self
+            .get_gpu_counts_from_assignments(profile.miner_uid)
+            .await?;
+
+        let gpu_counts_to_store = if !actual_gpu_counts.is_empty() {
+            &actual_gpu_counts
+        } else {
+            &profile.gpu_counts
+        };
+
+        let gpu_counts_json = serde_json::to_string(gpu_counts_to_store)?;
 
         let query = r#"
             INSERT INTO miner_gpu_profiles (
@@ -60,36 +101,41 @@ impl GpuProfileRepository {
             .execute(&self.pool)
             .await?;
 
-        debug!(miner_uid = profile.miner_uid.as_u16(), "GPU profile stored");
+        debug!(
+            miner_uid = profile.miner_uid.as_u16(),
+            "GPU profile stored with actual counts"
+        );
 
         Ok(())
     }
 
     /// Get a specific miner's GPU profile
     pub async fn get_gpu_profile(&self, miner_uid: MinerUid) -> Result<Option<MinerGpuProfile>> {
-        let query = r#"
-            SELECT miner_uid, gpu_counts_json,
-                   total_score, verification_count, last_updated, last_successful_validation
+        let profile_query = r#"
+            SELECT total_score, verification_count, last_updated, last_successful_validation
             FROM miner_gpu_profiles
             WHERE miner_uid = ?
         "#;
 
-        let row = sqlx::query(query)
+        let profile_row = sqlx::query(profile_query)
             .bind(miner_uid.as_u16() as i64)
             .fetch_optional(&self.pool)
             .await?;
 
-        match row {
+        match profile_row {
             Some(row) => {
-                let miner_uid_val: i64 = row.get("miner_uid");
-                let gpu_counts_json: String = row.get("gpu_counts_json");
                 let total_score: f64 = row.get("total_score");
                 let verification_count: i64 = row.get("verification_count");
                 let last_updated_str: String = row.get("last_updated");
                 let last_successful_validation_str: Option<String> =
                     row.get("last_successful_validation");
 
-                let gpu_counts: HashMap<String, u32> = serde_json::from_str(&gpu_counts_json)?;
+                let gpu_counts = self.get_gpu_counts_from_assignments(miner_uid).await?;
+
+                if gpu_counts.is_empty() {
+                    return Ok(None);
+                }
+
                 let last_updated =
                     DateTime::parse_from_rfc3339(&last_updated_str)?.with_timezone(&Utc);
                 let last_successful_validation = last_successful_validation_str
@@ -97,7 +143,7 @@ impl GpuProfileRepository {
                     .transpose()?;
 
                 Ok(Some(MinerGpuProfile {
-                    miner_uid: MinerUid::new(miner_uid_val as u16),
+                    miner_uid,
                     gpu_counts,
                     total_score,
                     verification_count: verification_count as u32,
@@ -375,52 +421,100 @@ impl GpuProfileRepository {
         Ok(deleted)
     }
 
-    /// Get GPU profile statistics
-    pub async fn get_profile_statistics(&self) -> Result<GpuProfileStatistics> {
-        // Get total profiles
-        let total_query = "SELECT COUNT(*) as count FROM miner_gpu_profiles";
-        let total_row = sqlx::query(total_query).fetch_one(&self.pool).await?;
-        let total_profiles: i64 = total_row.get("count");
+    /// Clean up stale executors and orphan GPU profiles
+    pub async fn cleanup_stale_executors(&self) -> Result<()> {
+        let stale_threshold = Utc::now() - chrono::Duration::minutes(30);
 
-        // Get all profiles to calculate statistics from gpu_counts_json
-        let profiles_query = "SELECT gpu_counts_json, total_score FROM miner_gpu_profiles";
-        let rows = sqlx::query(profiles_query).fetch_all(&self.pool).await?;
+        info!(
+            "Cleaning up executors not validated in the last 30 minutes. since: {}",
+            stale_threshold
+        );
 
-        let mut gpu_model_distribution = HashMap::new();
-        let mut total_score_by_model = HashMap::new();
-        let mut total_gpus_by_model = HashMap::new();
-        let mut miner_count_by_model = HashMap::new();
+        let mut tx = self.pool.begin().await?;
 
-        for row in rows {
-            let gpu_counts_json: String = row.get("gpu_counts_json");
-            let total_score: f64 = row.get("total_score");
+        let stale_executors_query = r#"
+            SELECT id, executor_id, miner_id
+            FROM miner_executors
+            WHERE status IN ('online', 'verified')
+            AND (last_health_check IS NULL OR last_health_check < ?)
+        "#;
 
-            let gpu_counts: HashMap<String, u32> = serde_json::from_str(&gpu_counts_json)?;
+        let stale_executors = sqlx::query(stale_executors_query)
+            .bind(stale_threshold.to_rfc3339())
+            .fetch_all(&mut *tx)
+            .await?;
 
-            for (model, count) in gpu_counts {
-                *gpu_model_distribution.entry(model.clone()).or_insert(0) += 1;
-                *total_score_by_model.entry(model.clone()).or_insert(0.0) += total_score;
-                *total_gpus_by_model.entry(model.clone()).or_insert(0) += count;
-                *miner_count_by_model.entry(model.clone()).or_insert(0) += 1;
+        let stale_count = stale_executors.len();
+        let mut total_assignments_deleted = 0u64;
+
+        for row in stale_executors {
+            let executor_id: String = row.get("executor_id");
+            let miner_id: String = row.get("miner_id");
+
+            let delete_assignments = r#"
+                DELETE FROM gpu_uuid_assignments
+                WHERE executor_id = ? AND miner_id = ?
+            "#;
+
+            let result = sqlx::query(delete_assignments)
+                .bind(&executor_id)
+                .bind(&miner_id)
+                .execute(&mut *tx)
+                .await?;
+
+            total_assignments_deleted += result.rows_affected();
+
+            if result.rows_affected() > 0 {
+                debug!(
+                    "Deleted {} GPU assignments for stale executor {}",
+                    result.rows_affected(),
+                    executor_id
+                );
             }
+
+            let mark_offline = r#"
+                UPDATE miner_executors
+                SET status = 'offline', updated_at = datetime('now')
+                WHERE id = ?
+            "#;
+
+            sqlx::query(mark_offline)
+                .bind(row.get::<String, _>("id"))
+                .execute(&mut *tx)
+                .await?;
         }
 
-        // Calculate average scores
-        let mut average_score_by_model = HashMap::new();
-        for (model, total_score) in total_score_by_model {
-            let miner_count = miner_count_by_model.get(&model).unwrap_or(&0);
-            if *miner_count > 0 {
-                average_score_by_model.insert(model, total_score / *miner_count as f64);
-            }
+        let orphan_query = r#"
+            DELETE FROM miner_gpu_profiles
+            WHERE miner_uid IN (
+                SELECT mgp.miner_uid
+                FROM miner_gpu_profiles mgp
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM gpu_uuid_assignments gua
+                    WHERE gua.miner_id = 'miner_' || mgp.miner_uid
+                )
+            )
+        "#;
+
+        let orphan_result = sqlx::query(orphan_query).execute(&mut *tx).await?;
+
+        let orphan_count = orphan_result.rows_affected();
+
+        tx.commit().await?;
+
+        if stale_count > 0 {
+            info!(
+                "Marked {} stale executors as offline and deleted {} GPU assignments",
+                stale_count, total_assignments_deleted
+            );
         }
 
-        Ok(GpuProfileStatistics {
-            total_profiles: total_profiles as u64,
-            gpu_model_distribution,
-            average_score_by_model,
-            total_gpus_by_model,
-            last_updated: Utc::now(),
-        })
+        if orphan_count > 0 {
+            info!("Cleaned up {} orphan GPU profiles", orphan_count);
+        }
+
+        Ok(())
     }
 }
 
@@ -831,7 +925,7 @@ mod tests {
     #[tokio::test]
     async fn test_gpu_profile_storage() {
         let (pool, _temp_file) = create_test_pool().await.unwrap();
-        let repo = GpuProfileRepository::new(pool);
+        let repo = GpuProfileRepository::new(pool.clone());
 
         // Create a test profile
         let mut gpu_counts = HashMap::new();
@@ -846,8 +940,11 @@ mod tests {
             last_successful_validation: None,
         };
 
-        // Store the profile
-        repo.upsert_gpu_profile(&profile).await.unwrap();
+        // Seed required data including GPU assignments
+        let persistence = SimplePersistence::with_pool(pool);
+        seed_test_data(&persistence, &repo, std::slice::from_ref(&profile))
+            .await
+            .unwrap();
 
         // Retrieve the profile
         let retrieved = repo.get_gpu_profile(profile.miner_uid).await.unwrap();
@@ -861,12 +958,15 @@ mod tests {
             retrieved_profile.verification_count,
             profile.verification_count
         );
+        // Check GPU counts are properly normalized and retrieved
+        assert_eq!(retrieved_profile.gpu_counts.get("H100"), Some(&2));
     }
 
     #[tokio::test]
     async fn test_profile_update() {
         let (pool, _temp_file) = create_test_pool().await.unwrap();
-        let repo = GpuProfileRepository::new(pool);
+        let repo = GpuProfileRepository::new(pool.clone());
+        let persistence = SimplePersistence::with_pool(pool.clone());
 
         let miner_uid = MinerUid::new(1);
         let mut gpu_counts = HashMap::new();
@@ -882,9 +982,35 @@ mod tests {
             last_successful_validation: None,
         };
 
-        repo.upsert_gpu_profile(&profile1).await.unwrap();
+        // Seed initial data with 1 GPU
+        seed_test_data(&persistence, &repo, std::slice::from_ref(&profile1))
+            .await
+            .unwrap();
 
-        // Update profile
+        // Now update the GPU assignments to have 2 GPUs
+        let miner_id = format!("miner_{}", miner_uid.as_u16());
+        let executor_id = format!(
+            "miner{}__test-executor-{}",
+            miner_uid.as_u16(),
+            miner_uid.as_u16()
+        );
+
+        // Add another GPU assignment
+        sqlx::query(
+            "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        .bind(format!("gpu-{}-H100-1", miner_uid.as_u16()))
+        .bind(1i32)
+        .bind(&executor_id)
+        .bind(&miner_id)
+        .bind("H100")
+        .bind(Utc::now().to_rfc3339())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Update profile with new score
         gpu_counts.insert("H100".to_string(), 2);
         let profile2 = MinerGpuProfile {
             miner_uid,
@@ -898,9 +1024,12 @@ mod tests {
         repo.upsert_gpu_profile(&profile2).await.unwrap();
 
         // Verify update
-        let retrieved = repo.get_gpu_profile(miner_uid).await.unwrap().unwrap();
+        let retrieved = repo.get_gpu_profile(miner_uid).await.unwrap();
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap();
         assert_eq!(retrieved.total_score, 0.8);
         assert_eq!(retrieved.verification_count, 2);
+        // GPU count should reflect actual assignments (2)
         assert_eq!(retrieved.gpu_counts.get("H100"), Some(&2));
     }
 
@@ -1068,44 +1197,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(remaining_uid, recent_profile.miner_uid.as_u16() as i64);
-    }
-
-    #[tokio::test]
-    async fn test_profile_statistics() {
-        let (pool, _temp_file) = create_test_pool().await.unwrap();
-        let repo = GpuProfileRepository::new(pool);
-
-        // Create profiles with different GPU models
-        let models = [("H100", 3), ("H200", 2), ("OTHER", 1)];
-
-        for (i, (model, count)) in models.iter().enumerate() {
-            let mut gpu_counts = HashMap::new();
-            gpu_counts.insert(model.to_string(), *count);
-
-            let profile = MinerGpuProfile {
-                miner_uid: MinerUid::new(i as u16),
-                gpu_counts,
-                total_score: 0.5 + (i as f64 * 0.1),
-                verification_count: 1,
-                last_updated: Utc::now(),
-                last_successful_validation: None,
-            };
-
-            repo.upsert_gpu_profile(&profile).await.unwrap();
-        }
-
-        // Get statistics
-        let stats = repo.get_profile_statistics().await.unwrap();
-
-        assert_eq!(stats.total_profiles, 3);
-        assert_eq!(stats.gpu_model_distribution.get("H100"), Some(&1));
-        assert_eq!(stats.gpu_model_distribution.get("H200"), Some(&1));
-        assert_eq!(stats.gpu_model_distribution.get("OTHER"), Some(&1));
-
-        // Check average scores
-        assert!((stats.average_score_by_model.get("H100").unwrap() - 0.5).abs() < 0.01);
-        assert!((stats.average_score_by_model.get("H200").unwrap() - 0.6).abs() < 0.01);
-        assert!((stats.average_score_by_model.get("OTHER").unwrap() - 0.7).abs() < 0.01);
     }
 
     #[tokio::test]

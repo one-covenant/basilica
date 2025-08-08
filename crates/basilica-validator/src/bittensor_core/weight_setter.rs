@@ -224,21 +224,24 @@ impl WeightSetter {
             self.config.netuid
         );
 
-        // 1. Get current metagraph
+        // 1. Clean up stale executors before new epoch
+        self.gpu_profile_repo.cleanup_stale_executors().await?;
+
+        // 2. Get current metagraph
         let metagraph = self.get_metagraph().await?;
         debug!(
             "Retrieved metagraph with {} neurons",
             metagraph.hotkeys.len()
         );
 
-        // 2. Get last weight set timestamp for epoch filtering
+        // 3. Get last weight set timestamp for epoch filtering
         let last_weight_timestamp = self.get_last_weight_set_timestamp().await?;
         info!(
             "Fetching miners by GPU category from scoring engine, cutoff at {GPU_CATEGORY_CUTOFF_HOURS} hours, epoch: {:?}",
             last_weight_timestamp
         );
 
-        // 3. Get miners by GPU category from the scoring engine with axon validation and epoch filtering
+        // 4. Get miners by GPU category from the scoring engine with axon validation and epoch filtering
         let miners_by_category = self
             .gpu_scoring_engine
             .get_miners_by_gpu_category_since_epoch(
@@ -258,7 +261,7 @@ impl WeightSetter {
             miners_by_category.keys().collect::<Vec<_>>()
         );
 
-        // 3. Calculate weight distribution using the allocation engine
+        // 5. Calculate weight distribution using the allocation engine
         let weight_distribution = self
             .weight_allocation_engine
             .calculate_weight_distribution(miners_by_category)?;
@@ -273,7 +276,7 @@ impl WeightSetter {
             weight_distribution.category_allocations.len()
         );
 
-        // 4. Log category allocations for transparency
+        // 6. Log category allocations for transparency
         for (category, allocation) in &weight_distribution.category_allocations {
             info!(
                 gpu_category = %category,
@@ -284,7 +287,7 @@ impl WeightSetter {
             );
         }
 
-        // 5. Log burn allocation if present
+        // 7. Log burn allocation if present
         if let Some(burn_alloc) = &weight_distribution.burn_allocation {
             info!(
                 miner_uid = burn_alloc.uid,
@@ -294,10 +297,10 @@ impl WeightSetter {
             );
         }
 
-        // 6. Convert to normalized weights for chain submission including burn allocation
+        // 8. Convert to normalized weights for chain submission including burn allocation
         let normalized_weights = self.build_normalized_weights(&weight_distribution)?;
 
-        // 7. Get version key and submit weights
+        // 9. Get version key and submit weights
         let version_key = self.get_version_key().await?;
 
         info!(
