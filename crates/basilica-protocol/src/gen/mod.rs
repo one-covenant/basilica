@@ -36,3 +36,10 @@ pub mod basilca {
         }
     }
 }
+pub mod basilica {
+    pub mod billing {
+        pub mod v1 {
+            include!("basilica.billing.v1.rs");
+        }
+    }
+}

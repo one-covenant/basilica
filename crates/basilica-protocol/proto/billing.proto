@@ -1,0 +1,314 @@
+syntax = "proto3";
+
+package basilica.billing.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Billing service for credit management, rental tracking, and telemetry ingestion
+service BillingService {
+    // Credit management
+    rpc ApplyCredits(ApplyCreditsRequest) returns (ApplyCreditsResponse);
+    rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
+    rpc ReserveCredits(ReserveCreditsRequest) returns (ReserveCreditsResponse);
+    rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
+
+    // Rental tracking
+    rpc TrackRental(TrackRentalRequest) returns (TrackRentalResponse);
+    rpc UpdateRentalStatus(UpdateRentalStatusRequest) returns (UpdateRentalStatusResponse);
+    rpc GetActiveRentals(GetActiveRentalsRequest) returns (GetActiveRentalsResponse);
+    rpc FinalizeRental(FinalizeRentalRequest) returns (FinalizeRentalResponse);
+
+    // Telemetry ingestion
+    rpc IngestTelemetry(stream TelemetryData) returns (IngestResponse);
+    rpc GetUsageReport(UsageReportRequest) returns (UsageReportResponse);
+
+    // Billing rules and packages
+    rpc GetBillingPackages(GetBillingPackagesRequest) returns (GetBillingPackagesResponse);
+    rpc SetUserPackage(SetUserPackageRequest) returns (SetUserPackageResponse);
+}
+
+// Credit Management Messages
+
+message ApplyCreditsRequest {
+    string user_id = 1;
+    string amount = 2; // Decimal string for precision
+    string transaction_id = 3;
+    string payment_method = 4;
+    map<string, string> metadata = 5;
+}
+
+message ApplyCreditsResponse {
+    bool success = 1;
+    string new_balance = 2; // Decimal string
+    string credit_id = 3;
+    google.protobuf.Timestamp applied_at = 4;
+}
+
+message GetBalanceRequest {
+    string user_id = 1;
+}
+
+message GetBalanceResponse {
+    string available_balance = 1; // Decimal string
+    string reserved_balance = 2; // Decimal string
+    string total_balance = 3; // Decimal string
+    google.protobuf.Timestamp last_updated = 4;
+}
+
+message ReserveCreditsRequest {
+    string user_id = 1;
+    string rental_id = 2;
+    string amount = 3; // Decimal string
+    uint32 duration_hours = 4;
+}
+
+message ReserveCreditsResponse {
+    bool success = 1;
+    string reservation_id = 2;
+    string reserved_amount = 3; // Decimal string
+    google.protobuf.Timestamp reserved_until = 4;
+    string error_message = 5;
+}
+
+message ReleaseReservationRequest {
+    string reservation_id = 1;
+    string final_amount = 2; // Decimal string - actual amount to charge
+}
+
+message ReleaseReservationResponse {
+    bool success = 1;
+    string charged_amount = 2; // Decimal string
+    string refunded_amount = 3; // Decimal string
+    string new_balance = 4; // Decimal string
+}
+
+// Rental Tracking Messages
+
+message TrackRentalRequest {
+    string rental_id = 1;
+    string user_id = 2;
+    string executor_id = 3;
+    string validator_id = 4;
+    ResourceSpec resource_spec = 5;
+    string hourly_rate = 6; // Decimal string
+    google.protobuf.Timestamp start_time = 7;
+    uint32 max_duration_hours = 8;
+    map<string, string> metadata = 9;
+}
+
+message ResourceSpec {
+    uint32 cpu_cores = 1;
+    uint64 memory_mb = 2;
+    repeated GpuSpec gpus = 3;
+    uint64 disk_gb = 4;
+    uint64 network_bandwidth_mbps = 5;
+}
+
+message GpuSpec {
+    string model = 1;
+    uint64 memory_mb = 2;
+    uint32 count = 3;
+}
+
+message TrackRentalResponse {
+    bool success = 1;
+    string tracking_id = 2;
+    string reservation_id = 3;
+    string estimated_cost = 4; // Decimal string
+}
+
+message UpdateRentalStatusRequest {
+    string rental_id = 1;
+    RentalStatus status = 2;
+    google.protobuf.Timestamp timestamp = 3;
+    string reason = 4;
+}
+
+enum RentalStatus {
+    RENTAL_STATUS_UNSPECIFIED = 0;
+    RENTAL_STATUS_PENDING = 1;
+    RENTAL_STATUS_ACTIVE = 2;
+    RENTAL_STATUS_STOPPING = 3;
+    RENTAL_STATUS_STOPPED = 4;
+    RENTAL_STATUS_FAILED = 5;
+}
+
+message UpdateRentalStatusResponse {
+    bool success = 1;
+    string current_cost = 2; // Decimal string
+    google.protobuf.Timestamp updated_at = 3;
+}
+
+message GetActiveRentalsRequest {
+    oneof filter {
+        string user_id = 1;
+        string validator_id = 2;
+        string executor_id = 3;
+    }
+    uint32 limit = 4;
+    uint32 offset = 5;
+}
+
+message GetActiveRentalsResponse {
+    repeated ActiveRental rentals = 1;
+    uint64 total_count = 2;
+}
+
+message ActiveRental {
+    string rental_id = 1;
+    string user_id = 2;
+    string executor_id = 3;
+    string validator_id = 4;
+    RentalStatus status = 5;
+    ResourceSpec resource_spec = 6;
+    string hourly_rate = 7; // Decimal string
+    string current_cost = 8; // Decimal string
+    google.protobuf.Timestamp start_time = 9;
+    google.protobuf.Timestamp last_updated = 10;
+    map<string, string> metadata = 11;
+}
+
+message FinalizeRentalRequest {
+    string rental_id = 1;
+    google.protobuf.Timestamp end_time = 2;
+    string final_cost = 3; // Decimal string
+    string termination_reason = 4;
+}
+
+message FinalizeRentalResponse {
+    bool success = 1;
+    string total_cost = 2; // Decimal string
+    string duration_hours = 3; // Decimal string
+    string charged_amount = 4; // Decimal string
+    string refunded_amount = 5; // Decimal string
+}
+
+// Telemetry Messages
+
+message TelemetryData {
+    string rental_id = 1;
+    string executor_id = 2;
+    google.protobuf.Timestamp timestamp = 3;
+    ResourceUsage resource_usage = 4;
+    map<string, double> custom_metrics = 5;
+}
+
+message ResourceUsage {
+    double cpu_percent = 1;
+    uint64 memory_mb = 2;
+    uint64 network_rx_bytes = 3;
+    uint64 network_tx_bytes = 4;
+    uint64 disk_read_bytes = 5;
+    uint64 disk_write_bytes = 6;
+    repeated GpuUsage gpu_usage = 7;
+}
+
+message GpuUsage {
+    uint32 index = 1;
+    double utilization_percent = 2;
+    uint64 memory_used_mb = 3;
+    double temperature_celsius = 4;
+    uint64 power_watts = 5;
+}
+
+message IngestResponse {
+    uint64 events_received = 1;
+    uint64 events_processed = 2;
+    uint64 events_failed = 3;
+    google.protobuf.Timestamp last_processed = 4;
+}
+
+message UsageReportRequest {
+    string rental_id = 1;
+    google.protobuf.Timestamp start_time = 2;
+    google.protobuf.Timestamp end_time = 3;
+    UsageAggregation aggregation = 4;
+}
+
+enum UsageAggregation {
+    USAGE_AGGREGATION_UNSPECIFIED = 0;
+    USAGE_AGGREGATION_MINUTE = 1;
+    USAGE_AGGREGATION_HOUR = 2;
+    USAGE_AGGREGATION_DAY = 3;
+}
+
+message UsageReportResponse {
+    string rental_id = 1;
+    repeated UsageDataPoint data_points = 2;
+    UsageSummary summary = 3;
+    string total_cost = 4; // Decimal string
+}
+
+message UsageDataPoint {
+    google.protobuf.Timestamp timestamp = 1;
+    ResourceUsage usage = 2;
+    string cost = 3; // Decimal string for this period
+}
+
+message UsageSummary {
+    double avg_cpu_percent = 1;
+    uint64 avg_memory_mb = 2;
+    uint64 total_network_bytes = 3;
+    uint64 total_disk_bytes = 4;
+    double avg_gpu_utilization = 5;
+    string duration_hours = 6; // Decimal string
+}
+
+// Billing Rules and Packages
+
+message GetBillingPackagesRequest {
+    string user_id = 1;
+}
+
+message GetBillingPackagesResponse {
+    repeated BillingPackage packages = 1;
+    string current_package_id = 2;
+}
+
+message BillingPackage {
+    string package_id = 1;
+    string name = 2;
+    string description = 3;
+    PackageRates rates = 4;
+    IncludedResources included_resources = 5;
+    PackageRates overage_rates = 6;
+    uint32 priority = 7;
+    bool is_active = 8;
+}
+
+message PackageRates {
+    string cpu_rate_per_hour = 1; // Decimal string
+    string memory_rate_per_gb_hour = 2; // Decimal string
+    map<string, string> gpu_rates = 3; // GPU model -> rate per hour
+    string network_rate_per_gb = 4; // Decimal string
+    string disk_iops_rate = 5; // Decimal string
+    string base_rate_per_hour = 6; // Decimal string
+}
+
+message IncludedResources {
+    uint32 cpu_core_hours = 1;
+    uint64 memory_gb_hours = 2;
+    map<string, uint32> gpu_hours = 3; // GPU model -> included hours
+    uint64 network_gb = 4;
+    uint64 disk_iops = 5;
+}
+
+message SetUserPackageRequest {
+    string user_id = 1;
+    string package_id = 2;
+    google.protobuf.Timestamp effective_from = 3;
+}
+
+message SetUserPackageResponse {
+    bool success = 1;
+    string previous_package_id = 2;
+    string new_package_id = 3;
+    google.protobuf.Timestamp effective_from = 4;
+}
+
+// Error details for better error handling
+message ErrorDetail {
+    string code = 1;
+    string message = 2;
+    map<string, string> metadata = 3;
+}
