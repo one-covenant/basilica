@@ -1762,6 +1762,7 @@ dependencies = [
  "async-trait",
  "basilica-api",
  "basilica-common",
+ "basilica-validator",
  "bittensor_wallet",
  "chrono",
  "clap",
@@ -1982,6 +1983,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "utoipa",
  "uuid",
 ]
 

@@ -6,7 +6,7 @@ pub mod types;
 
 use crate::server::AppState;
 use axum::{
-    routing::{delete, get, post},
+    routing::{get, post},
     Router,
 };
 use utoipa::OpenApi;
@@ -21,22 +21,15 @@ pub fn routes(state: AppState) -> Router<AppState> {
             "/register/wallet/:user_id",
             get(routes::registration::get_credit_wallet),
         )
-        // GPU discovery endpoint
+        // Validator-compatible rental endpoints
+        .route("/rental/list", get(routes::rentals::list_rentals_validator))
+        .route("/rental/start", post(routes::rentals::start_rental))
         .route(
-            "/capacity/available",
-            get(routes::rentals::list_available_gpus),
-        )
-        // Rental management endpoints
-        .route("/rentals", post(routes::rentals::create_rental))
-        .route("/rentals", get(routes::rentals::list_user_rentals))
-        .route(
-            "/rentals/:rental_id",
+            "/rental/status/:id",
             get(routes::rentals::get_rental_status),
         )
-        .route(
-            "/rentals/:rental_id",
-            delete(routes::rentals::terminate_rental),
-        )
+        .route("/rental/logs/:id", get(routes::rentals::stream_rental_logs))
+        .route("/rental/stop/:id", post(routes::rentals::stop_rental))
         // Health and telemetry (keep existing)
         .route("/health", get(routes::health::health_check))
         .route("/telemetry", get(routes::telemetry::get_telemetry))
@@ -60,15 +53,6 @@ pub fn docs_routes() -> Router<AppState> {
         routes::registration::register_user,
         routes::registration::get_credit_wallet,
 
-        // GPU discovery
-        routes::rentals::list_available_gpus,
-
-        // Rental management
-        routes::rentals::create_rental,
-        routes::rentals::list_user_rentals,
-        routes::rentals::get_rental_status,
-        routes::rentals::terminate_rental,
-
         // Health and monitoring
         routes::health::health_check,
         routes::telemetry::get_telemetry,
@@ -79,17 +63,13 @@ pub fn docs_routes() -> Router<AppState> {
         types::RegisterResponse,
         types::CreditWalletResponse,
 
-        // GPU discovery types
-        types::AvailableGpuResponse,
-        types::AvailableExecutor,
-
         // Rental types
-        types::CreateRentalRequest,
-        types::RentCapacityResponse,
-        types::ListRentalsResponse,
-        types::RentalInfo,
+        types::StartRentalRequest,
         types::RentalStatusResponse,
-        types::TerminateRentalResponse,
+        types::LogStreamQuery,
+        types::PortMappingRequest,
+        types::ResourceRequirementsRequest,
+        types::VolumeMountRequest,
 
         // Common types
         types::GpuSpec,

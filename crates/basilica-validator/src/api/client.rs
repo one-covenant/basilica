@@ -39,43 +39,37 @@ impl ValidatorClient {
         }
     }
 
-    /// Get available GPU capacity
-    pub async fn get_available_capacity(
-        &self,
-        query: ListCapacityQuery,
-    ) -> Result<ListCapacityResponse> {
-        let url = format!("{}/capacity/available", self.base_url);
+    /// List rentals with optional state filter
+    pub async fn list_rentals(&self, state: Option<&str>) -> Result<ListRentalsResponse> {
+        let url = format!("{}/rental/list", self.base_url);
 
-        let response = self
-            .http_client
-            .get(&url)
-            .query(&query)
-            .send()
-            .await
-            .context("Failed to send capacity request")?;
+        let mut req = self.http_client.get(&url);
+        if let Some(state_filter) = state {
+            req = req.query(&[("state", state_filter)]);
+        }
+
+        let response = req.send().await.context("Failed to send list request")?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Failed to get available capacity: {} - {}",
-                status,
-                error_body
-            );
+            anyhow::bail!("Failed to list rentals: {} - {}", status, error_body);
         }
 
-        response
+        let json = response
             .json()
             .await
-            .context("Failed to parse capacity response")
+            .context("Failed to parse list response")?;
+
+        Ok(json)
     }
 
-    /// Create a new rental
-    pub async fn create_rental(
+    /// Start a new rental
+    pub async fn start_rental(
         &self,
-        request: RentCapacityRequest,
-    ) -> Result<RentCapacityResponse> {
-        let url = format!("{}/rentals", self.base_url);
+        request: crate::api::rental_routes::StartRentalRequest,
+    ) -> Result<crate::rental::RentalResponse> {
+        let url = format!("{}/rental/start", self.base_url);
 
         let response = self
             .http_client
@@ -88,7 +82,7 @@ impl ValidatorClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Failed to create rental: {} - {}", status, error_body);
+            anyhow::bail!("Failed to start rental: {} - {}", status, error_body);
         }
 
         response
@@ -99,7 +93,7 @@ impl ValidatorClient {
 
     /// Get rental status
     pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusResponse> {
-        let url = format!("{}/rentals/{}/status", self.base_url, rental_id);
+        let url = format!("{}/rental/status/{}", self.base_url, rental_id);
 
         let response = self
             .http_client
@@ -126,11 +120,11 @@ impl ValidatorClient {
         rental_id: &str,
         request: TerminateRentalRequest,
     ) -> Result<TerminateRentalResponse> {
-        let url = format!("{}/rentals/{}", self.base_url, rental_id);
+        let url = format!("{}/rental/stop/{}", self.base_url, rental_id);
 
         let response = self
             .http_client
-            .delete(&url)
+            .post(&url) // Changed from DELETE to POST to match the new API
             .json(&request)
             .send()
             .await
@@ -154,7 +148,7 @@ impl ValidatorClient {
         rental_id: &str,
         query: LogQuery,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Event>> + Send>>> {
-        let url = format!("{}/rentals/{}/logs", self.base_url, rental_id);
+        let url = format!("{}/rental/logs/{}", self.base_url, rental_id);
 
         let response = self
             .http_client

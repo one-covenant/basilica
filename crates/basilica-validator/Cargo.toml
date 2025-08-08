@@ -81,6 +81,9 @@ sysinfo = "0.30"
 # SSH key management
 ssh-key = { version = "0.6", features = ["ed25519", "std"] }
 
+# OpenAPI documentation support (optional)
+utoipa = { version = "4.1", features = ["chrono", "uuid"], optional = true }
+
 [dev-dependencies]
 tempfile = "3.8"
 serial_test = "3.0"
@@ -94,3 +97,5 @@ client = ["futures-util"]
 test-utils = []
 # Enable development mode with additional debugging
 dev-mode = ["tracing-subscriber/env-filter"]
+# Enable OpenAPI schema generation support
+openapi = ["utoipa"]

@@ -78,20 +78,22 @@ impl Args {
             Commands::Wallet { name } => handlers::wallet::handle_wallet(&config, name).await,
 
             // GPU rental operations
-            Commands::Ls { filters } => handlers::gpu_rental::handle_ls(filters, self.json, &config).await,
+            Commands::Ls { filters } => {
+                handlers::gpu_rental::handle_ls(filters, self.json, &config).await
+            }
             Commands::Up { target, options } => {
                 handlers::gpu_rental::handle_up(target, options, &config).await
             }
-            Commands::Ps { filters } => handlers::gpu_rental::handle_ps(filters, self.json, &config).await,
+            Commands::Ps { filters } => {
+                handlers::gpu_rental::handle_ps(filters, self.json, &config).await
+            }
             Commands::Status { target } => {
                 handlers::gpu_rental::handle_status(target, self.json, &config).await
             }
             Commands::Logs { target, options } => {
                 handlers::gpu_rental::handle_logs(target, options, &config).await
             }
-            Commands::Down { targets } => {
-                handlers::gpu_rental::handle_down(targets, &config).await
-            }
+            Commands::Down { targets } => handlers::gpu_rental::handle_down(targets, &config).await,
             Commands::Exec { target, command } => {
                 handlers::gpu_rental::handle_exec(target, command, &config).await
             }

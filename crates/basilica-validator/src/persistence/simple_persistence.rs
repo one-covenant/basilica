@@ -1166,6 +1166,21 @@ impl SimplePersistence {
         Ok(executors)
     }
 
+    /// Get miner ID by executor ID
+    pub async fn get_miner_id_by_executor(
+        &self,
+        executor_id: &str,
+    ) -> Result<String, anyhow::Error> {
+        let miner_id: String =
+            sqlx::query("SELECT miner_id FROM miner_executors WHERE executor_id = ? LIMIT 1")
+                .bind(executor_id)
+                .fetch_one(&self.pool)
+                .await?
+                .get("miner_id");
+
+        Ok(miner_id)
+    }
+
     /// Get the actual gpu_count for an executor from gpu_uuid_assignments
     pub async fn get_executor_gpu_count_from_assignments(
         &self,

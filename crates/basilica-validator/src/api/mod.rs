@@ -132,12 +132,7 @@ impl ApiHandler {
     /// Follows Open/Closed Principle - easy to extend with new routes
     fn create_router(&self) -> Router {
         Router::new()
-            .route("/capacity/available", get(routes::list_available_capacity))
-            .route("/rentals", post(routes::rent_capacity))
-            .route("/rentals/:rental_id", delete(routes::terminate_rental))
-            .route("/rentals/:rental_id/status", get(routes::get_rental_status))
-            .route("/rentals/:rental_id/logs", get(routes::stream_rental_logs))
-            // New rental routes
+            .route("/rental/list", get(rental_routes::list_rentals))
             .route("/rental/start", post(rental_routes::start_rental))
             .route("/rental/status/:id", get(rental_routes::get_rental_status))
             .route("/rental/logs/:id", get(rental_routes::stream_rental_logs))

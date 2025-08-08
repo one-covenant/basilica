@@ -1,9 +1,8 @@
 //! Table formatting for CLI output
 
 use crate::error::Result;
-use basilica_api::api::types::{
-    AvailableExecutor, ExecutorDetails, RentalInfo, RentalStatusResponse,
-};
+use basilica_api::api::types::{ExecutorDetails, RentalStatusResponse};
+use basilica_validator::api::types::RentalListItem;
 use std::collections::HashMap;
 use tabled::{Table, Tabled};
 
@@ -56,6 +55,7 @@ pub fn display_executors(executors: &[ExecutorDetails]) -> Result<()> {
     Ok(())
 }
 
+/* Commented out - AvailableExecutor type removed
 /// Display available executors in table format with pricing information
 pub fn display_available_executors(executors: &[AvailableExecutor]) -> Result<()> {
     #[derive(Tabled)]
@@ -110,7 +110,9 @@ pub fn display_available_executors(executors: &[AvailableExecutor]) -> Result<()
 
     Ok(())
 }
+*/
 
+/* Commented out - RentalInfo type removed
 /// Display active rentals in table format (for RentalInfo)
 pub fn display_rental_list(rentals: &[RentalInfo]) -> Result<()> {
     #[derive(Tabled)]
@@ -146,6 +148,7 @@ pub fn display_rental_list(rentals: &[RentalInfo]) -> Result<()> {
 
     Ok(())
 }
+*/
 
 /// Display active rentals in table format (for RentalStatusResponse - legacy)
 pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
@@ -159,8 +162,6 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
         executor: String,
         #[tabled(rename = "Created")]
         created: String,
-        #[tabled(rename = "Cost")]
-        cost: String,
     }
 
     let rows: Vec<RentalRow> = rentals
@@ -170,7 +171,42 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
             status: format!("{:?}", rental.status),
             executor: rental.executor.id.clone(),
             created: rental.created_at.format("%Y-%m-%d %H:%M").to_string(),
-            cost: format!("${:.4}", rental.cost_incurred),
+        })
+        .collect();
+
+    let table = Table::new(rows);
+    println!("{table}");
+
+    Ok(())
+}
+
+/// Display rental items in table format
+pub fn display_rental_items(rentals: &[RentalListItem]) -> Result<()> {
+    #[derive(Tabled)]
+    struct RentalRow {
+        #[tabled(rename = "Rental ID")]
+        rental_id: String,
+        #[tabled(rename = "State")]
+        state: String,
+        #[tabled(rename = "Executor")]
+        executor: String,
+        #[tabled(rename = "Container")]
+        container: String,
+        #[tabled(rename = "Image")]
+        image: String,
+        #[tabled(rename = "Created")]
+        created: String,
+    }
+
+    let rows: Vec<RentalRow> = rentals
+        .iter()
+        .map(|rental| RentalRow {
+            rental_id: rental.rental_id.clone(),
+            state: rental.state.to_string(),
+            executor: rental.executor_id.clone(),
+            container: rental.container_id.clone(),
+            image: rental.container_image.clone(),
+            created: rental.created_at.clone(),
         })
         .collect();
 

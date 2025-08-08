@@ -7,42 +7,15 @@ use crate::interactive::selector::InteractiveSelector;
 use crate::output::{json_output, table_output};
 use crate::ssh::SshClient;
 use basilica_api::api::types::{
-    CreateRentalRequest, ListExecutorsQuery, ListRentalsQuery, RentalSelection,
-    RentalStatusResponse,
+    RentalStatusResponse, ResourceRequirementsRequest, StartRentalRequest,
 };
 use basilica_api::ClientBuilder;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
-/// Handle the `ls` command - list available GPUs
-pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> Result<()> {
-    debug!("Listing available GPUs with filters: {:?}", filters);
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
-
-    let query = ListExecutorsQuery {
-        min_gpu_count: filters.gpu_min,
-        gpu_type: filters.gpu_type,
-        page: None,
-        page_size: None,
-    };
-
-    let response = api_client
-        .list_available_gpus(query)
-        .await
-        .map_err(|e| CliError::internal(format!("Failed to list available GPUs: {e}")))?;
-
-    if json {
-        json_output(&response)?;
-    } else {
-        table_output::display_available_executors(&response.executors)?;
-        println!("\nTotal: {} executors available", response.total_count);
-    }
-
-    Ok(())
+/// Handle the `ls` command - list rentals
+pub async fn handle_ls(_filters: ListFilters, _json: bool, _config: &CliConfig) -> Result<()> {
+    todo!();
 }
 
 /// Handle the `up` command - provision GPU instances
@@ -57,60 +30,76 @@ pub async fn handle_up(
         .build()
         .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    let executor_id = if let Some(target) = target {
-        target
+    // Log the mode we're using
+    if let Some(ref executor_id) = target {
+        info!(
+            "Provisioning instance on specific executor: {}",
+            executor_id
+        );
     } else {
-        // Interactive mode - let user select from available executors
-        let query = ListExecutorsQuery {
-            min_gpu_count: options.gpu_min,
-            gpu_type: options.gpu_type.clone(),
-            page: None,
-            page_size: None,
-        };
-
-        let response = api_client
-            .list_available_gpus(query)
-            .await
-            .map_err(|e| CliError::internal(format!("Failed to list available GPUs: {e}")))?;
-
-        if response.executors.is_empty() {
-            return Err(CliError::not_found(
-                "No available executors match your criteria",
-            ));
+        info!("Provisioning instance based on requirements");
+        if options.gpu_type.is_none() && options.gpu_min.is_none() {
+            debug!("No specific GPU requirements provided, system will select best available");
         }
-
-        let selector = InteractiveSelector::new();
-        selector.select_executor(&response.executors)?
-    };
-
-    info!("Provisioning instance on executor: {}", executor_id);
+    }
 
     // Build rental request
     let ssh_public_key = load_ssh_public_key(&options.ssh_key, config)?;
-    let docker_image = options.image.unwrap_or_else(|| config.image.name.clone());
+    let container_image = options.image.unwrap_or_else(|| config.image.name.clone());
 
     let env_vars = parse_env_vars(&options.env)?;
 
-    let request = CreateRentalRequest {
-        selection: RentalSelection::ExecutorId(executor_id),
+    // Parse port mappings if provided
+    let port_mappings = parse_port_mappings(&options.ports)?;
+
+    let request = StartRentalRequest {
+        executor_id: target.clone(), // Optional - None means system will select
+        container_image,
         ssh_public_key,
-        docker_image,
-        env_vars: Some(env_vars),
-        max_duration_hours: 24, // Default to 24 hours
+        environment: env_vars,
+        ports: port_mappings,
+        resources: ResourceRequirementsRequest {
+            cpu_cores: options.cpu_cores.unwrap_or(1.0),
+            memory_mb: options.memory_mb.unwrap_or(1024),
+            storage_mb: 102400,
+            gpu_count: options.gpu_min.unwrap_or(0),
+            gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
+        },
+        command: vec![],
+        volumes: vec![],
     };
 
     let response = api_client
-        .create_rental(request)
+        .start_rental(request)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to create rental: {e}")))?;
+        .map_err(|e| CliError::internal(format!("Failed to start rental: {e}")))?;
 
-    println!("✅ Successfully created rental: {}", response.rental_id);
-    println!("🖥️  Executor: {}", response.executor.id);
-    println!(
-        "🔗 SSH: ssh {}@{} -p {}",
-        response.ssh_access.username, response.ssh_access.host, response.ssh_access.port
-    );
-    println!("💰 Cost: ${:.4}/hour", response.cost_per_hour);
+    // Extract rental_id from the response (it's a serde_json::Value)
+    let rental_id = response
+        .get("rental_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let executor_id_resp = response
+        .get("executor_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    println!("✅ Successfully created rental: {rental_id}");
+    println!("🖥️  Executor: {executor_id_resp}");
+
+    if let Some(ssh_access) = response.get("ssh_access") {
+        if let (Some(host), Some(port), Some(username)) = (
+            ssh_access.get("host").and_then(|v| v.as_str()),
+            ssh_access.get("port").and_then(|v| v.as_u64()),
+            ssh_access.get("username").and_then(|v| v.as_str()),
+        ) {
+            println!("🔗 SSH: ssh {username}@{host} -p {port}");
+        }
+    }
+
+    if let Some(cost) = response.get("cost_per_hour").and_then(|v| v.as_f64()) {
+        println!("💰 Cost: ${cost:.4}/hour");
+    }
 
     Ok(())
 }
@@ -124,39 +113,17 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
         .build()
         .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    let query = ListRentalsQuery {
-        status: None,
-        gpu_type: None,
-        min_gpu_count: None,
-        page: None,
-        page_size: None,
-    };
-    let response = api_client
-        .list_rentals(query)
+    // Use the status filter if provided
+    let rentals_list = api_client
+        .list_rentals(filters.status.as_deref())
         .await
         .map_err(|e| CliError::internal(format!("Failed to list rentals: {e}")))?;
 
-    // Apply filters
-    let filtered_rentals: Vec<_> = response
-        .rentals
-        .into_iter()
-        .filter(|rental| {
-            if let Some(ref status_filter) = filters.status {
-                // Convert status to string for comparison
-                let status_str = format!("{:?}", rental.status).to_lowercase();
-                if status_str != status_filter.to_lowercase() {
-                    return false;
-                }
-            }
-            true
-        })
-        .collect();
-
     if json {
-        json_output(&filtered_rentals)?;
+        json_output(&rentals_list)?;
     } else {
-        table_output::display_rental_list(&filtered_rentals)?;
-        println!("\nTotal: {} active rentals", filtered_rentals.len());
+        table_output::display_rental_items(&rentals_list.rentals[..])?;
+        println!("\nTotal: {} active rentals", rentals_list.rentals.len());
     }
 
     Ok(())
@@ -208,39 +175,32 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()>
 
     let rental_ids = if targets.is_empty() {
         // Interactive mode - let user select from active rentals
-        let query = ListRentalsQuery {
-            status: None,
-            gpu_type: None,
-            min_gpu_count: None,
-            page: None,
-            page_size: None,
-        };
-        let response = api_client
-            .list_rentals(query)
+        let rentals_list = api_client
+            .list_rentals(None)
             .await
             .map_err(|e| CliError::internal(format!("Failed to list rentals: {e}")))?;
 
-        if response.rentals.is_empty() {
+        if rentals_list.rentals.is_empty() {
             println!("No active rentals to terminate.");
             return Ok(());
         }
 
         let selector = InteractiveSelector::new();
-        selector.select_rentals_for_termination(&response.rentals)?
+        selector.select_rental_items_for_termination(&rentals_list.rentals[..])?
     } else {
         targets
     };
 
     for rental_id in rental_ids {
-        info!("Terminating rental: {}", rental_id);
+        info!("Stopping rental: {}", rental_id);
 
         match api_client
-            .terminate_rental(&rental_id, None)
+            .stop_rental(&rental_id)
             .await
-            .map_err(|e| CliError::internal(format!("Failed to terminate rental: {e}")))
+            .map_err(|e| CliError::internal(format!("Failed to stop rental: {e}")))
         {
-            Ok(_) => println!("✅ Successfully terminated rental: {rental_id}"),
-            Err(e) => eprintln!("❌ Failed to terminate rental {rental_id}: {e}"),
+            Ok(_) => println!("✅ Successfully stopped rental: {rental_id}"),
+            Err(e) => eprintln!("❌ Failed to stop rental {rental_id}: {e}"),
         }
     }
 
@@ -354,6 +314,40 @@ fn parse_env_vars(env_vars: &[String]) -> Result<std::collections::HashMap<Strin
     Ok(result)
 }
 
+fn parse_port_mappings(
+    ports: &[String],
+) -> Result<Vec<basilica_api::api::types::PortMappingRequest>> {
+    let mut mappings = Vec::new();
+
+    for port_spec in ports {
+        // Support format: host:container or just port (same for both)
+        let (host_port, container_port) = if let Some((host, container)) = port_spec.split_once(':')
+        {
+            let host = host
+                .parse::<u32>()
+                .map_err(|_| CliError::invalid_argument(format!("Invalid host port: {host}")))?;
+            let container = container.parse::<u32>().map_err(|_| {
+                CliError::invalid_argument(format!("Invalid container port: {container}"))
+            })?;
+            (host, container)
+        } else {
+            // Single port means same for host and container
+            let port = port_spec
+                .parse::<u32>()
+                .map_err(|_| CliError::invalid_argument(format!("Invalid port: {port_spec}")))?;
+            (port, port)
+        };
+
+        mappings.push(basilica_api::api::types::PortMappingRequest {
+            container_port,
+            host_port,
+            protocol: "tcp".to_string(),
+        });
+    }
+
+    Ok(mappings)
+}
+
 fn parse_copy_paths(source: &str, destination: &str) -> Result<(String, bool, String, String)> {
     // Format: <rental_id>:<path> or just <path>
     let (source_rental, source_path) = split_remote_path(source);
@@ -397,7 +391,6 @@ fn display_rental_status(status: &RentalStatusResponse) {
         "  Updated: {}",
         status.updated_at.format("%Y-%m-%d %H:%M:%S UTC")
     );
-    println!("  Cost Incurred: ${:.4}", status.cost_incurred);
 
     println!("\nExecutor Details:");
     println!("  GPUs: {} available", status.executor.gpu_specs.len());

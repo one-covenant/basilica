@@ -52,6 +52,10 @@ sp-core = "34.0.0"
 # Internal crate dependencies
 basilica-common = { path = "../basilica-common" }
 basilica-api = { path = "../basilica-api", features = ["client"] }
+basilica-validator = { path = "../basilica-validator", features = [
+    "client",
+    "openapi",
+] }
 
 [dev-dependencies]
 tempfile = "3.8"

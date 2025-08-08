@@ -1,160 +1,17 @@
 //! API types for the Basilica API Gateway
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use utoipa::ToSchema;
 
-// No longer re-exporting RentalSelection from validator
-use std::collections::HashMap;
+// Re-export common types from validator that now have ToSchema support
+pub use basilica_validator::api::types::{
+    AvailabilityInfo, AvailableExecutor, CpuSpec, ExecutorDetails, GpuRequirements, GpuSpec,
+    ListCapacityQuery, ListCapacityResponse, LogQuery, RentCapacityRequest, RentCapacityResponse,
+    RentalStatus, RentalStatusResponse, SshAccess, TerminateRentalRequest, TerminateRentalResponse,
+};
 
-// Local types with ToSchema for OpenAPI documentation
-
-/// GPU requirements for rental
-#[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
-pub struct GpuRequirements {
-    /// Minimum memory in GB
-    pub min_memory_gb: u32,
-    /// GPU type (optional)
-    pub gpu_type: Option<String>,
-    /// Number of GPUs
-    pub gpu_count: u32,
-}
-
-/// Method for selecting an executor for rental
-#[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RentalSelection {
-    /// Rent a specific executor by ID
-    ExecutorId(String),
-    /// Rent based on GPU requirements (API picks best match)
-    GpuRequirements(GpuRequirements),
-}
-
-/// GPU specifications
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct GpuSpec {
-    /// GPU name
-    pub name: String,
-    /// Memory in GB
-    pub memory_gb: u32,
-    /// Compute capability
-    pub compute_capability: String,
-}
-
-/// CPU specifications
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct CpuSpec {
-    /// Number of cores
-    pub cores: u32,
-    /// CPU model
-    pub model: String,
-    /// Memory in GB
-    pub memory_gb: u32,
-}
-
-/// SSH access information
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct SshAccess {
-    /// Host address
-    pub host: String,
-    /// SSH port
-    pub port: u16,
-    /// Username
-    pub username: String,
-}
-
-/// Rental status
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum RentalStatus {
-    /// Rental is pending
-    Pending,
-    /// Rental is active
-    Active,
-    /// Rental is terminated
-    Terminated,
-    /// Rental failed
-    Failed,
-}
-
-/// Request to rent GPU capacity
-#[derive(Debug, Deserialize, Serialize, ToSchema)]
-pub struct RentCapacityRequest {
-    /// How to select the executor
-    pub selection: RentalSelection,
-    /// SSH public key for access
-    pub ssh_public_key: String,
-    /// Docker image to run
-    pub docker_image: String,
-    /// Environment variables
-    pub env_vars: Option<HashMap<String, String>>,
-    /// Maximum rental duration in hours
-    pub max_duration_hours: u32,
-}
-
-// Type alias for backward compatibility
-pub type CreateRentalRequest = RentCapacityRequest;
-
-/// Response for capacity rental request
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct RentCapacityResponse {
-    /// Rental ID
-    pub rental_id: String,
-    /// Executor details
-    pub executor: ExecutorDetails,
-    /// SSH access information
-    pub ssh_access: SshAccess,
-    /// Cost per hour
-    pub cost_per_hour: f64,
-}
-
-/// Executor details
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ExecutorDetails {
-    /// Executor ID
-    pub id: String,
-    /// GPU specifications
-    pub gpu_specs: Vec<GpuSpec>,
-    /// CPU specifications
-    pub cpu_specs: CpuSpec,
-    /// Location (optional)
-    pub location: Option<String>,
-}
-
-/// Rental status response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct RentalStatusResponse {
-    /// Rental ID
-    pub rental_id: String,
-    /// Current status
-    pub status: RentalStatus,
-    /// Executor details
-    pub executor: ExecutorDetails,
-    /// Creation timestamp
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    /// Last update timestamp
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    /// Cost incurred so far
-    pub cost_incurred: f64,
-}
-
-/// Request to terminate a rental
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct TerminateRentalRequest {
-    /// Reason for termination (optional)
-    pub reason: Option<String>,
-}
-
-/// Response for rental termination
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct TerminateRentalResponse {
-    /// Success flag
-    pub success: bool,
-    /// Message
-    pub message: String,
-}
-
-// Conversion helpers removed - API now handles selection logic internally
+// API-specific types that don't exist in validator
 
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -224,54 +81,6 @@ pub struct CreditWalletResponse {
     pub credit_wallet_address: String,
 }
 
-/// Available GPU resources
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct AvailableGpuResponse {
-    /// List of available executors
-    pub executors: Vec<AvailableExecutor>,
-
-    /// Total count
-    pub total_count: usize,
-}
-
-/// Available executor info
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct AvailableExecutor {
-    /// Executor ID
-    pub executor_id: String,
-
-    /// GPU specifications
-    pub gpu_specs: Vec<GpuSpec>,
-
-    /// CPU specifications  
-    pub cpu_specs: CpuSpec,
-
-    /// Location (optional)
-    pub location: Option<String>,
-
-    /// Price per hour in TAO
-    pub price_per_hour: f64,
-
-    /// Availability status
-    pub available: bool,
-}
-
-/// List executors query
-#[derive(Debug, Deserialize)]
-pub struct ListExecutorsQuery {
-    /// GPU type filter
-    pub gpu_type: Option<String>,
-
-    /// Minimum GPU count
-    pub min_gpu_count: Option<u32>,
-
-    /// Page number
-    pub page: Option<u32>,
-
-    /// Page size
-    pub page_size: Option<u32>,
-}
-
 /// List rentals query
 #[derive(Debug, Deserialize)]
 pub struct ListRentalsQuery {
@@ -327,49 +136,68 @@ pub struct ListMinersResponse {
     pub total_count: usize,
 }
 
-/// List rentals response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ListRentalsResponse {
-    /// List of rentals
-    pub rentals: Vec<RentalInfo>,
-
-    /// Total count
-    pub total_count: usize,
-
-    /// Current page
-    pub page: u32,
-
-    /// Page size
-    pub page_size: u32,
+/// Start rental request matching validator's format
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct StartRentalRequest {
+    /// Optional executor ID - if not provided, system will select based on requirements
+    pub executor_id: Option<String>,
+    pub container_image: String,
+    pub ssh_public_key: String,
+    #[serde(default)]
+    pub environment: HashMap<String, String>,
+    #[serde(default)]
+    pub ports: Vec<PortMappingRequest>,
+    #[serde(default)]
+    pub resources: ResourceRequirementsRequest,
+    #[serde(default)]
+    pub command: Vec<String>,
+    #[serde(default)]
+    pub volumes: Vec<VolumeMountRequest>,
 }
 
-/// Rental information
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct RentalInfo {
-    /// Rental ID
-    pub rental_id: String,
+/// Port mapping request
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct PortMappingRequest {
+    pub container_port: u32,
+    pub host_port: u32,
+    #[serde(default = "default_protocol")]
+    pub protocol: String,
+}
 
-    /// Executor ID
-    pub executor_id: String,
+fn default_protocol() -> String {
+    "tcp".to_string()
+}
 
-    /// Status
-    pub status: RentalStatus,
+/// Resource requirements request
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
+pub struct ResourceRequirementsRequest {
+    pub cpu_cores: f64,
+    pub memory_mb: i64,
+    pub storage_mb: i64,
+    pub gpu_count: u32,
+    #[serde(default)]
+    pub gpu_types: Vec<String>,
+}
 
-    /// Docker image
-    pub docker_image: String,
+/// Volume mount request
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct VolumeMountRequest {
+    pub host_path: String,
+    pub container_path: String,
+    #[serde(default)]
+    pub read_only: bool,
+}
 
-    /// SSH access info
-    pub ssh_access: Option<SshAccess>,
+/// Rental status query parameters
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RentalStatusQuery {
+    #[allow(dead_code)]
+    pub include_resource_usage: Option<bool>,
+}
 
-    /// Created timestamp
-    pub created_at: DateTime<Utc>,
-
-    /// Updated timestamp
-    pub updated_at: DateTime<Utc>,
-
-    /// Cost per hour
-    pub cost_per_hour: f64,
-
-    /// Total cost incurred
-    pub total_cost: f64,
+/// Log streaming query parameters
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct LogStreamQuery {
+    pub follow: Option<bool>,
+    pub tail: Option<u32>,
 }

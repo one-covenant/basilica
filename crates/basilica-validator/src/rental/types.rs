@@ -1,6 +1,7 @@
 //! Types for rental operations
 
 use chrono::{DateTime, Utc};
+use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -40,6 +41,7 @@ pub struct PortMapping {
 }
 
 /// Resource requirements
+// TODO: make this type compatible with the one in basilica-api
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceRequirements {
     pub cpu_cores: f64,
@@ -91,6 +93,12 @@ pub enum RentalState {
     Stopping,
     Stopped,
     Failed,
+}
+
+impl fmt::Display for RentalState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 
 /// Rental information stored in memory and persistence

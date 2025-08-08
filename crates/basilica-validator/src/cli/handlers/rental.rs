@@ -60,7 +60,7 @@ async fn resolve_miner_info(
 }
 
 /// Create rental manager with all necessary setup
-async fn create_rental_manager(
+pub async fn create_rental_manager(
     config: &ValidatorConfig,
     validator_hotkey: Hotkey,
     persistence: Arc<SimplePersistence>,

@@ -4,15 +4,17 @@
 //! It supports both authenticated and unauthenticated requests.
 
 use crate::{
-    api::types::*,
+    api::types::{
+        CreditWalletResponse, HealthCheckResponse, ListMinersQuery, ListMinersResponse,
+        ListValidatorsResponse, RegisterRequest, RegisterResponse, RentalStatusResponse,
+        StartRentalRequest,
+    },
     error::{Error, ErrorResponse, Result},
 };
+use basilica_validator::api::types::ListRentalsResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::time::Duration;
-
-mod builder;
-pub use builder::ClientBuilder;
 
 /// HTTP client for interacting with the Basilica API
 pub struct BasilicaClient {
@@ -43,73 +45,46 @@ impl BasilicaClient {
 
     // ===== Rentals =====
 
-    /// List available GPU executors
-    pub async fn list_available_gpus(
-        &self,
-        query: ListExecutorsQuery,
-    ) -> Result<AvailableGpuResponse> {
-        let mut path = "/api/v1/capacity/available".to_string();
-        let mut params = vec![];
-
-        if let Some(min_gpu_count) = query.min_gpu_count {
-            params.push(format!("min_gpu_count={min_gpu_count}"));
-        }
-        if let Some(gpu_type) = &query.gpu_type {
-            params.push(format!("gpu_type={gpu_type}"));
-        }
-        if let Some(page) = query.page {
-            params.push(format!("page={page}"));
-        }
-        if let Some(page_size) = query.page_size {
-            params.push(format!("page_size={page_size}"));
-        }
-
-        if !params.is_empty() {
-            path.push('?');
-            path.push_str(&params.join("&"));
-        }
-
-        self.get(&path).await
-    }
-
-    /// Create a new rental
-    pub async fn create_rental(
-        &self,
-        request: CreateRentalRequest,
-    ) -> Result<RentCapacityResponse> {
-        self.post("/api/v1/rentals", &request).await
-    }
-
     /// Get rental status
     pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusResponse> {
-        let path = format!("/api/v1/rentals/{rental_id}");
+        let path = format!("/rental/status/{rental_id}");
         self.get(&path).await
     }
 
-    /// Terminate a rental
-    pub async fn terminate_rental(
-        &self,
-        rental_id: &str,
-        reason: Option<String>,
-    ) -> Result<TerminateRentalResponse> {
-        let path = format!("/api/v1/rentals/{rental_id}");
-        let request = TerminateRentalRequest { reason };
-        self.delete_with_body(&path, &request).await
+    /// Start a new rental
+    pub async fn start_rental(&self, request: StartRentalRequest) -> Result<serde_json::Value> {
+        self.post("/rental/start", &request).await
     }
 
-    /// List user's rentals
-    pub async fn list_rentals(&self, query: ListRentalsQuery) -> Result<ListRentalsResponse> {
-        let mut path = "/api/v1/rentals".to_string();
+    /// Stop a rental
+    pub async fn stop_rental(&self, rental_id: &str) -> Result<()> {
+        let path = format!("/rental/stop/{rental_id}");
+        let response: Response = self.post_empty(&path).await?;
+
+        if response.status() == StatusCode::NO_CONTENT {
+            Ok(())
+        } else {
+            Err(Error::Internal {
+                message: format!("Unexpected status code: {}", response.status()),
+            })
+        }
+    }
+
+    /// Get rental logs
+    pub async fn get_rental_logs(
+        &self,
+        rental_id: &str,
+        follow: bool,
+        tail: Option<u32>,
+    ) -> Result<reqwest::Response> {
+        let mut path = format!("/rental/logs/{rental_id}");
         let mut params = vec![];
 
-        if let Some(status) = &query.status {
-            params.push(format!("status={status}"));
+        if follow {
+            params.push("follow=true".to_string());
         }
-        if let Some(page) = query.page {
-            params.push(format!("page={page}"));
-        }
-        if let Some(page_size) = query.page_size {
-            params.push(format!("page_size={page_size}"));
+        if let Some(tail_lines) = tail {
+            params.push(format!("tail={tail_lines}"));
         }
 
         if !params.is_empty() {
@@ -117,19 +92,35 @@ impl BasilicaClient {
             path.push_str(&params.join("&"));
         }
 
-        self.get(&path).await
+        let url = format!("{}{}", self.base_url, path);
+        let request = self.http_client.get(&url);
+        let request = self.apply_auth(request);
+
+        request.send().await.map_err(Error::HttpClient)
+    }
+
+    /// List rentals
+    pub async fn list_rentals(&self, state: Option<&str>) -> Result<ListRentalsResponse> {
+        let mut path = "/rental/list".to_string();
+
+        if let Some(state_filter) = state {
+            path.push_str(&format!("?status={state_filter}"));
+        }
+
+        let response = self.get(&path).await?;
+        Ok(response)
     }
 
     // ===== Health & Discovery =====
 
     /// Health check
     pub async fn health_check(&self) -> Result<HealthCheckResponse> {
-        self.get("/api/v1/health").await
+        self.get("/health").await
     }
 
     /// List validators
     pub async fn list_validators(&self) -> Result<ListValidatorsResponse> {
-        self.get("/api/v1/validators").await
+        self.get("/validators").await
     }
 
     /// List miners
@@ -201,18 +192,13 @@ impl BasilicaClient {
         self.handle_response(response).await
     }
 
-    /// Generic DELETE request with body
-    async fn delete_with_body<B: Serialize, T: DeserializeOwned>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> Result<T> {
+    /// Generic POST request without body
+    async fn post_empty(&self, path: &str) -> Result<Response> {
         let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.delete(&url).json(body);
+        let request = self.http_client.post(&url);
         let request = self.apply_auth(request);
 
-        let response = request.send().await.map_err(Error::HttpClient)?;
-        self.handle_response(response).await
+        request.send().await.map_err(Error::HttpClient)
     }
 
     /// Handle successful response
@@ -270,6 +256,79 @@ impl BasilicaClient {
                 }),
             }
         }
+    }
+}
+
+/// Builder for constructing a BasilicaClient with custom configuration
+#[derive(Default)]
+pub struct ClientBuilder {
+    base_url: Option<String>,
+    api_key: Option<String>,
+    timeout: Option<Duration>,
+    connect_timeout: Option<Duration>,
+    pool_max_idle_per_host: Option<usize>,
+}
+
+impl ClientBuilder {
+    /// Set the base URL for the API
+    pub fn base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = Some(url.into());
+        self
+    }
+
+    /// Set the API key for authentication
+    pub fn api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = Some(key.into());
+        self
+    }
+
+    /// Set the request timeout
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Set the connection timeout
+    pub fn connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = Some(timeout);
+        self
+    }
+
+    /// Set the maximum idle connections per host
+    pub fn pool_max_idle_per_host(mut self, max: usize) -> Self {
+        self.pool_max_idle_per_host = Some(max);
+        self
+    }
+
+    /// Build the client
+    pub fn build(self) -> Result<BasilicaClient> {
+        let base_url = self.base_url.ok_or_else(|| Error::InvalidRequest {
+            message: "base_url is required".into(),
+        })?;
+
+        let mut client_builder = reqwest::Client::builder();
+
+        if let Some(timeout) = self.timeout {
+            client_builder = client_builder.timeout(timeout);
+        } else {
+            client_builder = client_builder.timeout(Duration::from_secs(30));
+        }
+
+        if let Some(timeout) = self.connect_timeout {
+            client_builder = client_builder.connect_timeout(timeout);
+        }
+
+        if let Some(max) = self.pool_max_idle_per_host {
+            client_builder = client_builder.pool_max_idle_per_host(max);
+        }
+
+        let http_client = client_builder.build().map_err(Error::HttpClient)?;
+
+        Ok(BasilicaClient {
+            http_client,
+            base_url,
+            api_key: self.api_key,
+        })
     }
 }
 
@@ -357,5 +416,24 @@ mod tests {
             }
             _ => panic!("Expected authentication error"),
         }
+    }
+
+    #[test]
+    fn test_builder_requires_base_url() {
+        let result = ClientBuilder::default().build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_builder_with_all_options() {
+        let client = ClientBuilder::default()
+            .base_url("https://api.basilica.ai")
+            .api_key("test-key")
+            .timeout(Duration::from_secs(60))
+            .connect_timeout(Duration::from_secs(10))
+            .pool_max_idle_per_host(100)
+            .build();
+
+        assert!(client.is_ok());
     }
 }

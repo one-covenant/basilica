@@ -1,8 +1,9 @@
 //! Interactive selection utilities
 
 use crate::error::{CliError, Result};
-use basilica_api::api::types::{AvailableExecutor, RentalInfo, RentalStatusResponse};
-use dialoguer::{theme::ColorfulTheme, MultiSelect, Select};
+use basilica_api::api::types::RentalStatusResponse;
+use basilica_validator::api::types::RentalListItem;
+use dialoguer::{theme::ColorfulTheme, MultiSelect};
 
 /// Interactive selector for CLI operations
 pub struct InteractiveSelector {
@@ -17,6 +18,7 @@ impl InteractiveSelector {
         }
     }
 
+    /* Commented out - AvailableExecutor type removed
     /// Let user select an executor from available options
     pub fn select_executor(&self, executors: &[AvailableExecutor]) -> Result<String> {
         if executors.is_empty() {
@@ -67,7 +69,9 @@ impl InteractiveSelector {
 
         Ok(executors[selection].executor_id.clone())
     }
+    */
 
+    /* Commented out - RentalInfo type removed
     /// Let user select rentals for termination (from list)
     pub fn select_rentals_for_termination(&self, rentals: &[RentalInfo]) -> Result<Vec<String>> {
         if rentals.is_empty() {
@@ -99,6 +103,7 @@ impl InteractiveSelector {
             .map(|idx| rentals[idx].rental_id.clone())
             .collect())
     }
+    */
 
     /// Let user select rentals for termination (legacy - for RentalStatusResponse)
     pub fn select_rentals_for_termination_legacy(
@@ -113,8 +118,45 @@ impl InteractiveSelector {
             .iter()
             .map(|rental| {
                 format!(
-                    "{} - {:?} - {} - ${:.4}",
-                    rental.rental_id, rental.status, rental.executor.id, rental.cost_incurred
+                    "{} - {:?} - {}",
+                    rental.rental_id, rental.status, rental.executor.id
+                )
+            })
+            .collect();
+
+        let selections = MultiSelect::with_theme(&self.theme)
+            .with_prompt("Select rentals to terminate (Space to select, Enter to confirm)")
+            .items(&items)
+            .interact()
+            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+
+        if selections.is_empty() {
+            return Err(CliError::interactive("No rentals selected"));
+        }
+
+        let selected_ids: Vec<String> = selections
+            .into_iter()
+            .map(|i| rentals[i].rental_id.clone())
+            .collect();
+
+        Ok(selected_ids)
+    }
+
+    /// Let user select rental items for termination
+    pub fn select_rental_items_for_termination(
+        &self,
+        rentals: &[RentalListItem],
+    ) -> Result<Vec<String>> {
+        if rentals.is_empty() {
+            return Err(CliError::not_found("No active rentals"));
+        }
+
+        let items: Vec<String> = rentals
+            .iter()
+            .map(|rental| {
+                format!(
+                    "{} - {} - {} - {}",
+                    rental.rental_id, rental.state, rental.executor_id, rental.container_image
                 )
             })
             .collect();

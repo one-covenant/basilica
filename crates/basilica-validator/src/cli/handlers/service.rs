@@ -1,3 +1,4 @@
+use crate::cli::handlers::rental::create_rental_manager;
 use crate::config::ValidatorConfig;
 
 use super::HandlerUtils;
@@ -292,7 +293,7 @@ async fn start_validator_services(
         HandlerUtils::print_info("Running in local test mode - Bittensor services disabled");
     }
 
-    let (_bittensor_service, miner_prover_opt, weight_setter_opt) = if !local_test {
+    let (bittensor_service, miner_prover_opt, weight_setter_opt) = if !local_test {
         let bittensor_service: Arc<BittensorService> =
             Arc::new(BittensorService::new(config.bittensor.common.clone()).await?);
 
@@ -361,7 +362,7 @@ async fn start_validator_services(
     };
 
     // Create validator hotkey for API handler
-    let validator_hotkey = if let Some(ref bittensor_service) = _bittensor_service {
+    let validator_hotkey = if let Some(ref bittensor_service) = bittensor_service {
         // Get the account ID from bittensor service and convert to SS58 string
         let account_id = bittensor_service.get_account_id();
         let ss58_address = format!("{account_id}");
@@ -373,14 +374,32 @@ async fn start_validator_services(
             .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?
     };
 
-    let api_handler = crate::api::ApiHandler::new(
+    let mut api_handler = crate::api::ApiHandler::new(
         config.api.clone(),
         persistence_arc.clone(),
         gpu_profile_repo.clone(),
         storage.clone(),
         config.clone(),
-        validator_hotkey,
+        validator_hotkey.clone(),
     );
+
+    let rental_manager = if let Some(bittensor_service) = bittensor_service {
+        Some(
+            create_rental_manager(
+                &config,
+                validator_hotkey,
+                persistence_arc.clone(),
+                bittensor_service,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    if let Some(rental_manager) = rental_manager {
+        api_handler = api_handler.with_rental_manager(Arc::new(rental_manager));
+    }
 
     // Store metrics for cleanup (if needed)
     let _validator_metrics = validator_metrics;
