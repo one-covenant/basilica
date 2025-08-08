@@ -1,5 +1,6 @@
 use crate::cli::handlers::rental::create_rental_manager;
 use crate::config::ValidatorConfig;
+use crate::miner_prover::miner_client::{BittensorServiceSigner, MinerClient, MinerClientConfig};
 
 use super::HandlerUtils;
 use anyhow::Result;
@@ -383,19 +384,29 @@ async fn start_validator_services(
         validator_hotkey.clone(),
     );
 
-    let rental_manager = if let Some(bittensor_service) = bittensor_service {
+    let rental_manager = if let Some(ref bittensor_service) = bittensor_service {
         Some(
             create_rental_manager(
                 &config,
-                validator_hotkey,
+                validator_hotkey.clone(),
                 persistence_arc.clone(),
-                bittensor_service,
+                bittensor_service.clone(),
             )
             .await?,
         )
     } else {
         None
     };
+
+    let miner_client = if let Some(ref bittensor_service) = bittensor_service {
+        let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
+
+        MinerClient::with_signer(MinerClientConfig::default(), validator_hotkey, signer)
+    } else {
+        MinerClient::new(MinerClientConfig::default(), validator_hotkey)
+    };
+
+    api_handler = api_handler.with_miner_client(Arc::new(miner_client));
 
     if let Some(rental_manager) = rental_manager {
         api_handler = api_handler.with_rental_manager(Arc::new(rental_manager));

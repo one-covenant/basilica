@@ -1171,12 +1171,15 @@ impl SimplePersistence {
         &self,
         executor_id: &str,
     ) -> Result<String, anyhow::Error> {
-        let miner_id: String =
-            sqlx::query("SELECT miner_id FROM miner_executors WHERE executor_id = ? LIMIT 1")
-                .bind(executor_id)
-                .fetch_one(&self.pool)
-                .await?
-                .get("miner_id");
+        let miner_id: String = sqlx::query(
+            "SELECT miner_id FROM miner_executors \
+                 WHERE executor_id GLOB '*__' || ? \
+                 LIMIT 1",
+        )
+        .bind(executor_id)
+        .fetch_one(&self.pool)
+        .await?
+        .get("miner_id");
 
         Ok(miner_id)
     }
