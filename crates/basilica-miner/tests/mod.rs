@@ -52,8 +52,14 @@ mod tests {
         );
 
         let executor_id: u128 = rand::thread_rng().gen_range(0..10000000000);
+        let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
-        let deposit_tx = contract.deposit(executor_id.into()).value(amount);
+        let deposit_tx = contract
+            .deposit(
+                FixedBytes::from_slice(&hotkey),
+                FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            )
+            .value(amount);
         let deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         let mut deposit_found = false;
@@ -66,7 +72,10 @@ mod tests {
         assert!(deposit_found);
 
         let collaterals = contract
-            .collaterals(executor_id.into())
+            .collaterals(
+                FixedBytes::from_slice(&hotkey),
+                FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            )
             .call()
             .await
             .unwrap();
@@ -84,15 +93,25 @@ mod tests {
 
         // Deposit first
         let executor_id: u128 = rand::thread_rng().gen_range(0..10000000000);
+        let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
-        let deposit_tx = contract.deposit(executor_id.into()).value(amount);
+        let deposit_tx = contract
+            .deposit(
+                FixedBytes::from_slice(&hotkey),
+                FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            )
+            .value(amount);
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
         let url = "example.com";
         let url_checksum = 123_u128;
-        let reclaim_tx =
-            contract.reclaimCollateral(executor_id.into(), url.to_owned(), url_checksum.into());
+        let reclaim_tx = contract.reclaimCollateral(
+            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            url.to_owned(),
+            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
+        );
         let reclaim_receipt = reclaim_tx.send().await?.get_receipt().await?;
 
         let mut reclaim_id = U256::from(0);
@@ -127,15 +146,25 @@ mod tests {
         let contract = get_contract().await?;
 
         let executor_id: u128 = rand::thread_rng().gen_range(0..10000000000);
+        let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
-        let deposit_tx = contract.deposit(executor_id.into()).value(amount);
+        let deposit_tx = contract
+            .deposit(
+                FixedBytes::from_slice(&hotkey),
+                FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            )
+            .value(amount);
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
         let url = "example.com";
         let url_checksum = 123_u128;
-        let reclaim_tx =
-            contract.reclaimCollateral(executor_id.into(), url.to_owned(), url_checksum.into());
+        let reclaim_tx = contract.reclaimCollateral(
+            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            url.to_owned(),
+            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
+        );
         let reclaim_receipt = reclaim_tx.send().await?.get_receipt().await?;
 
         let mut reclaim_id = U256::from(0);
@@ -146,7 +175,11 @@ mod tests {
         });
 
         // Test denyReclaimRequest (trustee only)
-        let deny_tx = contract.denyReclaimRequest(reclaim_id, url.to_owned(), url_checksum.into());
+        let deny_tx = contract.denyReclaimRequest(
+            reclaim_id,
+            url.to_owned(),
+            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
+        );
         let deny_receipt = deny_tx.send().await?.get_receipt().await?;
 
         // Check for Denied event
@@ -168,15 +201,25 @@ mod tests {
         let contract = get_contract().await?;
 
         let executor_id: u128 = rand::thread_rng().gen_range(0..10000000000);
+        let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
-        let deposit_tx = contract.deposit(executor_id.into()).value(amount);
+        let deposit_tx = contract
+            .deposit(
+                FixedBytes::from_slice(&hotkey),
+                FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            )
+            .value(amount);
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
         let url = "example.com";
         let url_checksum = 123_u128;
-        let slash_tx =
-            contract.slashCollateral(executor_id.into(), url.to_owned(), url_checksum.into());
+        let slash_tx = contract.slashCollateral(
+            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            url.to_owned(),
+            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
+        );
         let slash_receipt = slash_tx.send().await?.get_receipt().await?;
 
         slash_receipt.logs().iter().for_each(|log| {
