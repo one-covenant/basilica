@@ -323,8 +323,10 @@ mod test {
         const LOCAL_CHAIN_ID: u64 = 42;
         disable_whitelist().await.unwrap();
 
-        // get sudo alice signer
-        let alithe_private_key = "5fb92d6e98884f76de468fa3f6278f8807c48bebc13595d45af5bdc4da702133";
+        // get predefined evm account alithe signer
+        let alithe_private_key = std::env::var("TEST_PRIVATE_KEY").unwrap_or_else(|_| {
+            "5fb92d6e98884f76de468fa3f6278f8807c48bebc13595d45af5bdc4da702133".to_string()
+        });
         let mut signer: PrivateKeySigner = alithe_private_key.parse().unwrap();
         signer.set_chain_id(Some(LOCAL_CHAIN_ID));
 
