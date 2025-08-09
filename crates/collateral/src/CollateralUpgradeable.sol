@@ -265,6 +265,7 @@ contract CollateralUpgradeable is
         }
 
         collaterals[hotkey][executorId] -= amount;
+        executorToMiner[hotkey][executorId] = address(0);
 
         emit Reclaimed(reclaimRequestId, hotkey, executorId, miner, amount);
 
@@ -273,7 +274,6 @@ contract CollateralUpgradeable is
         if (!success) {
             revert TransferFailed();
         }
-        executorToMiner[hotkey][executorId] = address(0);
     }
 
     /// @notice Allows the trustee to deny a pending reclaim request before the timeout expires

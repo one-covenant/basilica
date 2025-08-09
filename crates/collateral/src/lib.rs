@@ -21,8 +21,8 @@ sol!(
 
 #[derive(Debug, Clone)]
 pub struct Reclaim {
-    pub hotkey: u32,
-    pub executor_id: u16,
+    pub hotkey: [u8; 32],
+    pub executor_id: u128,
     pub miner: Address,
     pub amount: U256,
     pub deny_timeout: u64,
@@ -31,8 +31,8 @@ pub struct Reclaim {
 impl From<(FixedBytes<32>, FixedBytes<16>, Address, U256, u64)> for Reclaim {
     fn from(tuple: (FixedBytes<32>, FixedBytes<16>, Address, U256, u64)) -> Self {
         Self {
-            hotkey: u32::from_be_bytes(tuple.0[0..4].try_into().unwrap()),
-            executor_id: u16::from_be_bytes(tuple.1[0..2].try_into().unwrap()),
+            hotkey: tuple.0.to_vec().try_into().unwrap(),
+            executor_id: u128::from_be_bytes(tuple.1.to_vec().try_into().unwrap()),
             miner: tuple.2,
             amount: tuple.3,
             deny_timeout: tuple.4,
