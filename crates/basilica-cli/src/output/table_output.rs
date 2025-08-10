@@ -4,7 +4,18 @@ use crate::error::Result;
 use basilica_api::api::types::{ExecutorDetails, RentalStatusResponse};
 use basilica_validator::api::types::RentalListItem;
 use std::collections::HashMap;
-use tabled::{Table, Tabled};
+use tabled::{settings::Style, Table, Tabled};
+
+/// Truncate container ID to first N characters for display (similar to Docker)
+fn truncate_container_id(container_id: &str) -> String {
+    const CONTAINER_ID_DISPLAY_LENGTH: usize = 12;
+    
+    if container_id.len() <= CONTAINER_ID_DISPLAY_LENGTH {
+        container_id.to_string()
+    } else {
+        container_id.chars().take(CONTAINER_ID_DISPLAY_LENGTH).collect()
+    }
+}
 
 /// Display executors in table format
 pub fn display_executors(executors: &[ExecutorDetails]) -> Result<()> {
@@ -49,7 +60,8 @@ pub fn display_executors(executors: &[ExecutorDetails]) -> Result<()> {
         })
         .collect();
 
-    let table = Table::new(rows);
+    let mut table = Table::new(rows);
+    table.with(Style::modern());
     println!("{table}");
 
     Ok(())
@@ -105,7 +117,8 @@ pub fn display_available_executors(executors: &[AvailableExecutor]) -> Result<()
         })
         .collect();
 
-    let table = Table::new(rows);
+    let mut table = Table::new(rows);
+    table.with(Style::modern());
     println!("{table}");
 
     Ok(())
@@ -143,7 +156,8 @@ pub fn display_rental_list(rentals: &[RentalInfo]) -> Result<()> {
         })
         .collect();
 
-    let table = Table::new(rows);
+    let mut table = Table::new(rows);
+    table.with(Style::modern());
     println!("{table}");
 
     Ok(())
@@ -174,7 +188,8 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
         })
         .collect();
 
-    let table = Table::new(rows);
+    let mut table = Table::new(rows);
+    table.with(Style::modern());
     println!("{table}");
 
     Ok(())
@@ -204,13 +219,14 @@ pub fn display_rental_items(rentals: &[RentalListItem]) -> Result<()> {
             rental_id: rental.rental_id.clone(),
             state: rental.state.to_string(),
             executor: rental.executor_id.clone(),
-            container: rental.container_id.clone(),
+            container: truncate_container_id(&rental.container_id),
             image: rental.container_image.clone(),
             created: rental.created_at.clone(),
         })
         .collect();
 
-    let table = Table::new(rows);
+    let mut table = Table::new(rows);
+    table.with(Style::modern());
     println!("{table}");
 
     Ok(())
@@ -236,7 +252,8 @@ pub fn display_config(config: &HashMap<String, String>) -> Result<()> {
 
     rows.sort_by(|a, b| a.key.cmp(&b.key));
 
-    let table = Table::new(rows);
+    let mut table = Table::new(rows);
+    table.with(Style::modern());
     println!("{table}");
 
     Ok(())
