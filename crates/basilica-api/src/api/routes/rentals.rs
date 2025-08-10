@@ -1,10 +1,7 @@
 //! Rental management route handlers
 
 use crate::{
-    api::types::{
-        ListRentalsQuery, LogStreamQuery, RentalStatusResponse, StartRentalRequest,
-        TerminateRentalRequest,
-    },
+    api::types::{ListRentalsQuery, LogStreamQuery, RentalStatusResponse, TerminateRentalRequest},
     error::Result,
     server::AppState,
 };
@@ -13,7 +10,10 @@ use axum::{
     response::{sse::Event, IntoResponse, Response, Sse},
     Json,
 };
-use basilica_validator::api::{rental_routes::StartRentalRequest, types::ListRentalsResponse};
+use basilica_validator::{
+    api::{rental_routes::StartRentalRequest, types::ListRentalsResponse},
+    RentalResponse,
+};
 use futures::stream::Stream;
 use tracing::{debug, error, info};
 
@@ -36,7 +36,7 @@ pub async fn get_rental_status(
 pub async fn start_rental(
     State(state): State<AppState>,
     Json(request): Json<StartRentalRequest>,
-) -> Result<Response> {
+) -> Result<Json<RentalResponse>> {
     info!("Starting rental with executor: {:?}", request.executor_id);
 
     // Validate SSH public key
@@ -56,11 +56,7 @@ pub async fn start_rental(
     }
 
     // Check if executor_id is provided
-    let executor_id = request
-        .executor_id
-        .ok_or_else(|| crate::error::Error::BadRequest {
-            message: "executor_id is required".into(),
-        })?;
+    let executor_id = request.executor_id;
 
     // Convert to validator's StartRentalRequest format
     let validator_request = StartRentalRequest {
@@ -79,19 +75,7 @@ pub async fn start_rental(
         .start_rental(validator_request)
         .await?;
 
-    // Convert to rental response format
-    let response = serde_json::json!({
-        "rental_id": validator_response.rental_id,
-        "ssh_credentials": validator_response.ssh_credentials,
-        "container_info": {
-            "container_id": validator_response.container_info.container_id,
-            "container_name": validator_response.container_info.container_name,
-            "mapped_ports": validator_response.container_info.mapped_ports,
-            "status": validator_response.container_info.status,
-        },
-    });
-
-    Ok(Json(response).into_response())
+    Ok(Json(validator_response))
 }
 
 /// Stop a rental

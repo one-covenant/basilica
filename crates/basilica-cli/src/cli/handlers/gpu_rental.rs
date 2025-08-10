@@ -5,10 +5,9 @@ use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
 use crate::output::{json_output, table_output};
-use basilica_api::api::types::{
-    RentalStatusResponse, ResourceRequirementsRequest, StartRentalRequest,
-};
+use basilica_api::api::types::{RentalStatusResponse, ResourceRequirementsRequest};
 use basilica_api::ClientBuilder;
+use basilica_validator::api::rental_routes::StartRentalRequest;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
@@ -18,11 +17,7 @@ pub async fn handle_ls(_filters: ListFilters, _json: bool, _config: &CliConfig) 
 }
 
 /// Handle the `up` command - provision GPU instances
-pub async fn handle_up(
-    target: Option<String>,
-    options: UpOptions,
-    config: &CliConfig,
-) -> Result<()> {
+pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig) -> Result<()> {
     let api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
@@ -30,17 +25,17 @@ pub async fn handle_up(
         .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
     // Log the mode we're using
-    if let Some(ref executor_id) = target {
-        info!(
-            "Provisioning instance on specific executor: {}",
-            executor_id
-        );
-    } else {
-        info!("Provisioning instance based on requirements");
-        if options.gpu_type.is_none() && options.gpu_min.is_none() {
-            debug!("No specific GPU requirements provided, system will select best available");
-        }
-    }
+    // if let Some(ref executor_id) = target {
+    //     info!(
+    //         "Provisioning instance on specific executor: {}",
+    //         executor_id
+    //     );
+    // } else {
+    //     info!("Provisioning instance based on requirements");
+    //     if options.gpu_type.is_none() && options.gpu_min.is_none() {
+    //         debug!("No specific GPU requirements provided, system will select best available");
+    //     }
+    // }
 
     // Build rental request
     let ssh_public_key = load_ssh_public_key(&options.ssh_key, config)?;
@@ -64,7 +59,7 @@ pub async fn handle_up(
             gpu_count: options.gpu_min.unwrap_or(0),
             gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
         },
-        command: vec![],
+        command: options.command,
         volumes: vec![],
     };
 

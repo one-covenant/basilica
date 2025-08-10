@@ -64,7 +64,6 @@ pub fn docs_routes() -> Router<AppState> {
         types::CreditWalletResponse,
 
         // Rental types
-        types::StartRentalRequest,
         types::RentalStatusResponse,
         types::LogStreamQuery,
         types::PortMappingRequest,

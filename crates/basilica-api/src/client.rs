@@ -7,11 +7,10 @@ use crate::{
     api::types::{
         CreditWalletResponse, HealthCheckResponse, ListMinersQuery, ListMinersResponse,
         ListValidatorsResponse, RegisterRequest, RegisterResponse, RentalStatusResponse,
-        StartRentalRequest,
     },
     error::{Error, ErrorResponse, Result},
 };
-use basilica_validator::api::types::ListRentalsResponse;
+use basilica_validator::api::{rental_routes::StartRentalRequest, types::ListRentalsResponse};
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};

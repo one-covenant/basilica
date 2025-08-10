@@ -1,7 +1,6 @@
 //! API types for the Basilica API Gateway
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use utoipa::ToSchema;
 
 // Re-export common types from validator that now have ToSchema support
@@ -139,25 +138,6 @@ pub struct ListMinersResponse {
 
     /// Total count
     pub total_count: usize,
-}
-
-/// Start rental request matching validator's format
-#[derive(Debug, Deserialize, Serialize, ToSchema)]
-pub struct StartRentalRequest {
-    /// Optional executor ID - if not provided, system will select based on requirements
-    pub executor_id: Option<String>,
-    pub container_image: String,
-    pub ssh_public_key: String,
-    #[serde(default)]
-    pub environment: HashMap<String, String>,
-    #[serde(default)]
-    pub ports: Vec<PortMappingRequest>,
-    #[serde(default)]
-    pub resources: ResourceRequirementsRequest,
-    #[serde(default)]
-    pub command: Vec<String>,
-    #[serde(default)]
-    pub volumes: Vec<VolumeMountRequest>,
 }
 
 /// Rental status query parameters

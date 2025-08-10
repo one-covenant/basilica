@@ -29,7 +29,7 @@ pub enum Commands {
     /// Provision and start GPU instances
     Up {
         /// Target executor UID/HUID (optional for interactive mode)
-        target: Option<String>,
+        target: String,
 
         #[command(flatten)]
         options: UpOptions,
@@ -201,6 +201,10 @@ pub struct UpOptions {
     /// Memory in MB
     #[arg(long)]
     pub memory_mb: Option<i64>,
+
+    /// Command to run
+    #[arg(long)]
+    pub command: Vec<String>,
 }
 
 /// Filters for listing active rentals
