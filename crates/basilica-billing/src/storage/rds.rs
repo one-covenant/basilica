@@ -64,6 +64,15 @@ impl RdsConnection {
         Ok(Self { pool, retry_config })
     }
 
+    /// Create a direct connection without AWS dependencies
+    pub async fn new_direct(config: DatabaseConfig) -> Result<Self> {
+        let retry_config = RetryConfig::default();
+        let connection_url = config.url.clone();
+        let pool = Self::create_pool_with_retry(&connection_url, &config, &retry_config).await?;
+
+        Ok(Self { pool, retry_config })
+    }
+
     async fn get_connection_from_secret(
         aws_config: &SdkConfig,
         secret_name: &str,

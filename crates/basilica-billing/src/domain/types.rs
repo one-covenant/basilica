@@ -18,6 +18,10 @@ impl UserId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub fn as_uuid(&self) -> Result<Uuid, uuid::Error> {
+        Uuid::parse_str(&self.0)
+    }
 }
 
 impl fmt::Display for UserId {
@@ -103,20 +107,44 @@ impl PackageId {
         Self(id)
     }
 
+    pub fn h100() -> Self {
+        Self("h100".to_string())
+    }
+
+    pub fn h200() -> Self {
+        Self("h200".to_string())
+    }
+
+    pub fn custom() -> Self {
+        Self("custom".to_string())
+    }
+
+    // Legacy aliases for backward compatibility
     pub fn standard() -> Self {
-        Self("standard".to_string())
+        Self::h100()
     }
 
     pub fn premium() -> Self {
-        Self("premium".to_string())
+        Self::h200()
     }
 
     pub fn enterprise() -> Self {
-        Self("enterprise".to_string())
+        Self::custom()
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub fn from_gpu_model(gpu_model: &str) -> Self {
+        let model_lower = gpu_model.to_lowercase();
+        if model_lower.contains("h100") {
+            Self::h100()
+        } else if model_lower.contains("h200") {
+            Self::h200()
+        } else {
+            Self::custom()
+        }
     }
 }
 
@@ -127,7 +155,7 @@ impl fmt::Display for PackageId {
 }
 
 /// Credit balance with precision handling
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct CreditBalance(Decimal);
 
 impl CreditBalance {
@@ -250,14 +278,23 @@ impl BillingPeriod {
     }
 }
 
+/// GPU specification details
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GpuSpec {
+    pub model: String,
+    pub memory_mb: u64,
+    pub count: u32,
+}
+
 /// Resource specifications for rental
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResourceSpec {
-    pub gpu_count: u32,
-    pub gpu_model: Option<String>,
+    pub gpu_specs: Vec<GpuSpec>,
     pub cpu_cores: u32,
     pub memory_gb: u32,
     pub storage_gb: u32,
+    pub disk_iops: u64,
+    pub network_bandwidth_mbps: u64,
 }
 
 /// Usage metrics for billing calculations
@@ -268,6 +305,7 @@ pub struct UsageMetrics {
     pub memory_gb_hours: Decimal,
     pub storage_gb_hours: Decimal,
     pub network_gb: Decimal,
+    pub disk_io_gb: Decimal,
 }
 
 impl UsageMetrics {
@@ -278,6 +316,7 @@ impl UsageMetrics {
             memory_gb_hours: Decimal::ZERO,
             storage_gb_hours: Decimal::ZERO,
             network_gb: Decimal::ZERO,
+            disk_io_gb: Decimal::ZERO,
         }
     }
 
@@ -288,6 +327,7 @@ impl UsageMetrics {
             memory_gb_hours: self.memory_gb_hours + other.memory_gb_hours,
             storage_gb_hours: self.storage_gb_hours + other.storage_gb_hours,
             network_gb: self.network_gb + other.network_gb,
+            disk_io_gb: self.disk_io_gb + other.disk_io_gb,
         }
     }
 }

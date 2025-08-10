@@ -17,6 +17,7 @@ pub struct Rental {
     pub id: RentalId,
     pub user_id: UserId,
     pub executor_id: String,
+    pub validator_id: String,
     pub package_id: PackageId,
     pub reservation_id: Option<ReservationId>,
     pub state: RentalState,
@@ -30,12 +31,17 @@ pub struct Rental {
     // Aliases for compatibility
     pub created_at: DateTime<Utc>,
     pub last_updated: DateTime<Utc>,
+    // Additional fields for billing handlers
+    pub actual_start_time: Option<DateTime<Utc>>,
+    pub actual_end_time: Option<DateTime<Utc>>,
+    pub actual_cost: CreditBalance,
 }
 
 impl Rental {
     pub fn new(
         user_id: UserId,
         executor_id: String,
+        validator_id: String,
         package_id: PackageId,
         resource_spec: ResourceSpec,
         reservation_id: Option<ReservationId>,
@@ -45,6 +51,7 @@ impl Rental {
             id: RentalId::new(),
             user_id,
             executor_id,
+            validator_id,
             package_id,
             reservation_id,
             state: RentalState::Pending,
@@ -63,6 +70,9 @@ impl Rental {
             metadata: HashMap::new(),
             created_at: now,
             last_updated: now,
+            actual_start_time: None,
+            actual_end_time: None,
+            actual_cost: CreditBalance::zero(),
         }
     }
 
@@ -130,6 +140,7 @@ pub trait RentalOperations: Send + Sync {
         &self,
         user_id: UserId,
         executor_id: String,
+        validator_id: String,
         package_id: PackageId,
         resource_spec: ResourceSpec,
         reservation_id: Option<ReservationId>,
@@ -179,6 +190,7 @@ impl RentalOperations for RentalManager {
         &self,
         user_id: UserId,
         executor_id: String,
+        validator_id: String,
         package_id: PackageId,
         resource_spec: ResourceSpec,
         reservation_id: Option<ReservationId>,
@@ -186,6 +198,7 @@ impl RentalOperations for RentalManager {
         let rental = Rental::new(
             user_id,
             executor_id,
+            validator_id,
             package_id,
             resource_spec,
             reservation_id,
@@ -350,6 +363,7 @@ impl RentalOperations for RentalManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::GpuSpec;
 
     #[tokio::test]
     async fn test_rental_lifecycle() {
@@ -357,11 +371,16 @@ mod tests {
         let user_id = UserId::new("user789".to_string());
 
         let resource_spec = ResourceSpec {
-            gpu_count: 2,
-            gpu_model: Some("RTX 4090".to_string()),
+            gpu_specs: vec![GpuSpec {
+                model: "H100".to_string(),
+                memory_mb: 24576,
+                count: 2,
+            }],
             cpu_cores: 16,
             memory_gb: 64,
             storage_gb: 1000,
+            disk_iops: 10000,
+            network_bandwidth_mbps: 10000,
         };
 
         // Create rental
@@ -369,6 +388,7 @@ mod tests {
             .create_rental(
                 user_id.clone(),
                 "executor-123".to_string(),
+                "validator-456".to_string(),
                 PackageId::standard(),
                 resource_spec,
                 None,
@@ -389,6 +409,7 @@ mod tests {
             memory_gb_hours: Decimal::from(128),
             storage_gb_hours: Decimal::from(2000),
             network_gb: Decimal::from(10),
+            disk_io_gb: Decimal::from(50),
         };
 
         manager
@@ -418,17 +439,19 @@ mod tests {
         let user_id = UserId::new("user999".to_string());
 
         let resource_spec = ResourceSpec {
-            gpu_count: 1,
-            gpu_model: None,
+            gpu_specs: vec![],
             cpu_cores: 8,
             memory_gb: 32,
             storage_gb: 500,
+            disk_iops: 5000,
+            network_bandwidth_mbps: 5000,
         };
 
         let rental_id = manager
             .create_rental(
                 user_id,
                 "executor-456".to_string(),
+                "validator-789".to_string(),
                 PackageId::standard(),
                 resource_spec,
                 None,

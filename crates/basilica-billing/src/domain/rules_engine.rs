@@ -1,4 +1,5 @@
-use crate::domain::types::{BillingPeriod, CostBreakdown, CreditBalance, PackageId, UsageMetrics};
+use crate::domain::packages::BillingPackage;
+use crate::domain::types::{CostBreakdown, CreditBalance, PackageId, UsageMetrics};
 use crate::error::{BillingError, Result};
 use async_trait::async_trait;
 use chrono::Timelike;
@@ -8,133 +9,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Billing package with included resources and rates
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BillingPackage {
-    pub id: PackageId,
-    pub name: String,
-    pub description: String,
-    pub base_rate: CreditBalance,
-    pub billing_period: BillingPeriod,
-    pub included_resources: IncludedResources,
-    pub overage_rates: OverageRates,
-    pub discount_percentage: Decimal,
-    pub priority: u32,
-    pub active: bool,
-    pub metadata: HashMap<String, String>,
-}
-
-impl BillingPackage {
-    pub fn standard() -> Self {
-        Self {
-            id: PackageId::standard(),
-            name: "Standard".to_string(),
-            description: "Standard compute package for general workloads".to_string(),
-            base_rate: CreditBalance::from_f64(10.0).unwrap(),
-            billing_period: BillingPeriod::Hourly,
-            included_resources: IncludedResources {
-                gpu_hours: Decimal::from(1),
-                cpu_hours: Decimal::from(16),
-                memory_gb_hours: Decimal::from(64),
-                storage_gb_hours: Decimal::from(1000),
-                network_gb: Decimal::from(100),
-            },
-            overage_rates: OverageRates::default(),
-            discount_percentage: Decimal::ZERO,
-            priority: 100,
-            active: true,
-            metadata: HashMap::new(),
-        }
-    }
-
-    pub fn premium() -> Self {
-        Self {
-            id: PackageId::premium(),
-            name: "Premium".to_string(),
-            description: "Premium compute package with higher limits".to_string(),
-            base_rate: CreditBalance::from_f64(50.0).unwrap(),
-            billing_period: BillingPeriod::Hourly,
-            included_resources: IncludedResources {
-                gpu_hours: Decimal::from(4),
-                cpu_hours: Decimal::from(64),
-                memory_gb_hours: Decimal::from(256),
-                storage_gb_hours: Decimal::from(5000),
-                network_gb: Decimal::from(500),
-            },
-            overage_rates: OverageRates {
-                gpu_hour: CreditBalance::from_f64(8.0).unwrap(),
-                cpu_hour: CreditBalance::from_f64(0.25).unwrap(),
-                memory_gb_hour: CreditBalance::from_f64(0.05).unwrap(),
-                storage_gb_hour: CreditBalance::from_f64(0.001).unwrap(),
-                network_gb: CreditBalance::from_f64(0.02).unwrap(),
-            },
-            discount_percentage: Decimal::from_str_exact("0.10").unwrap(), // 10% discount
-            priority: 200,
-            active: true,
-            metadata: HashMap::new(),
-        }
-    }
-
-    pub fn enterprise() -> Self {
-        Self {
-            id: PackageId::enterprise(),
-            name: "Enterprise".to_string(),
-            description: "Enterprise package with custom limits and priority support".to_string(),
-            base_rate: CreditBalance::from_f64(200.0).unwrap(),
-            billing_period: BillingPeriod::Hourly,
-            included_resources: IncludedResources {
-                gpu_hours: Decimal::from(16),
-                cpu_hours: Decimal::from(256),
-                memory_gb_hours: Decimal::from(1024),
-                storage_gb_hours: Decimal::from(20000),
-                network_gb: Decimal::from(2000),
-            },
-            overage_rates: OverageRates {
-                gpu_hour: CreditBalance::from_f64(6.0).unwrap(),
-                cpu_hour: CreditBalance::from_f64(0.20).unwrap(),
-                memory_gb_hour: CreditBalance::from_f64(0.04).unwrap(),
-                storage_gb_hour: CreditBalance::from_f64(0.0008).unwrap(),
-                network_gb: CreditBalance::from_f64(0.015).unwrap(),
-            },
-            discount_percentage: Decimal::from_str_exact("0.20").unwrap(), // 20% discount
-            priority: 300,
-            active: true,
-            metadata: HashMap::new(),
-        }
-    }
-}
-
-/// Resources included in a package
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IncludedResources {
-    pub gpu_hours: Decimal,
-    pub cpu_hours: Decimal,
-    pub memory_gb_hours: Decimal,
-    pub storage_gb_hours: Decimal,
-    pub network_gb: Decimal,
-}
-
-/// Overage rates for resources beyond included limits
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OverageRates {
-    pub gpu_hour: CreditBalance,
-    pub cpu_hour: CreditBalance,
-    pub memory_gb_hour: CreditBalance,
-    pub storage_gb_hour: CreditBalance,
-    pub network_gb: CreditBalance,
-}
-
-impl Default for OverageRates {
-    fn default() -> Self {
-        Self {
-            gpu_hour: CreditBalance::from_f64(10.0).unwrap(),
-            cpu_hour: CreditBalance::from_f64(0.5).unwrap(),
-            memory_gb_hour: CreditBalance::from_f64(0.1).unwrap(),
-            storage_gb_hour: CreditBalance::from_f64(0.002).unwrap(),
-            network_gb: CreditBalance::from_f64(0.05).unwrap(),
-        }
-    }
-}
 
 /// Custom billing rule for special conditions
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,56 +134,23 @@ pub struct RulesEngine {
 
 impl RulesEngine {
     pub fn new() -> Self {
-        let mut packages = HashMap::new();
-        packages.insert(PackageId::standard(), BillingPackage::standard());
-        packages.insert(PackageId::premium(), BillingPackage::premium());
-        packages.insert(PackageId::enterprise(), BillingPackage::enterprise());
-
+        // Start with empty packages - should be loaded from repository
         Self {
-            packages: Arc::new(RwLock::new(packages)),
+            packages: Arc::new(RwLock::new(HashMap::new())),
             rules: Arc::new(RwLock::new(Vec::new())),
         }
     }
-
-    fn calculate_overage(
-        &self,
-        usage: &UsageMetrics,
-        included: &IncludedResources,
-        rates: &OverageRates,
-    ) -> CreditBalance {
-        let mut total = CreditBalance::zero();
-
-        // GPU overage
-        if usage.gpu_hours > included.gpu_hours {
-            let overage = usage.gpu_hours - included.gpu_hours;
-            total = total.add(rates.gpu_hour.multiply(overage));
+    
+    pub fn with_packages(packages: Vec<BillingPackage>) -> Self {
+        let mut package_map = HashMap::new();
+        for package in packages {
+            package_map.insert(package.id.clone(), package);
         }
-
-        // CPU overage
-        if usage.cpu_hours > included.cpu_hours {
-            let overage = usage.cpu_hours - included.cpu_hours;
-            total = total.add(rates.cpu_hour.multiply(overage));
+        
+        Self {
+            packages: Arc::new(RwLock::new(package_map)),
+            rules: Arc::new(RwLock::new(Vec::new())),
         }
-
-        // Memory overage
-        if usage.memory_gb_hours > included.memory_gb_hours {
-            let overage = usage.memory_gb_hours - included.memory_gb_hours;
-            total = total.add(rates.memory_gb_hour.multiply(overage));
-        }
-
-        // Storage overage
-        if usage.storage_gb_hours > included.storage_gb_hours {
-            let overage = usage.storage_gb_hours - included.storage_gb_hours;
-            total = total.add(rates.storage_gb_hour.multiply(overage));
-        }
-
-        // Network overage
-        if usage.network_gb > included.network_gb {
-            let overage = usage.network_gb - included.network_gb;
-            total = total.add(rates.network_gb.multiply(overage));
-        }
-
-        total
     }
 
     fn apply_rule_actions(&self, mut cost: CostBreakdown, rules: &[BillingRule]) -> CostBreakdown {
@@ -362,20 +203,18 @@ impl RulesEvaluator for RulesEngine {
                 id: package_id.to_string(),
             })?;
 
-        let base_cost = package.base_rate;
-        let overage_cost =
-            self.calculate_overage(usage, &package.included_resources, &package.overage_rates);
-        let package_discount = base_cost.multiply(package.discount_percentage);
+        let total_hours = usage.gpu_hours.max(Decimal::from(1)); // Minimum 1 hour
+        let total_cost = package.hourly_rate.multiply(total_hours);
 
         let mut cost_breakdown = CostBreakdown {
-            base_cost,
-            usage_cost: overage_cost,
-            discounts: package_discount,
+            base_cost: total_cost,
+            usage_cost: CreditBalance::zero(), // No separate usage cost with flat rate
+            discounts: CreditBalance::zero(),
             overage_charges: CreditBalance::zero(),
-            total_cost: CreditBalance::zero(),
+            total_cost,
         };
 
-        // Apply custom rules
+        // Apply custom rules for discounts
         let rules = self.evaluate_rules(usage, metadata).await?;
         cost_breakdown = self.apply_rule_actions(cost_breakdown, &rules);
 
@@ -443,10 +282,20 @@ impl RulesEvaluator for RulesEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::packages::BillingPackage;
 
     #[tokio::test]
     async fn test_package_evaluation() {
-        let engine = RulesEngine::new();
+        // Create an h100 package for testing
+        let h100_package = BillingPackage::new(
+            PackageId::h100(),
+            "H100 GPU".to_string(),
+            "NVIDIA H100 GPU instances".to_string(),
+            CreditBalance::from_f64(3.5).unwrap(),
+            "H100".to_string(),
+        );
+
+        let engine = RulesEngine::with_packages(vec![h100_package]);
 
         let usage = UsageMetrics {
             gpu_hours: Decimal::from(2),
@@ -454,18 +303,20 @@ mod tests {
             memory_gb_hours: Decimal::from(100),
             storage_gb_hours: Decimal::from(1500),
             network_gb: Decimal::from(150),
+            disk_io_gb: Decimal::from(200),
         };
 
         let metadata = HashMap::new();
 
-        // Evaluate standard package
+        // Evaluate h100 package (formerly standard)
         let cost = engine
-            .evaluate_package(&PackageId::standard(), &usage, &metadata)
+            .evaluate_package(&PackageId::h100(), &usage, &metadata)
             .await
             .unwrap();
 
-        assert_eq!(cost.base_cost.as_decimal(), Decimal::from(10));
-        assert!(cost.usage_cost.as_decimal() > Decimal::ZERO); // Should have overage charges
+        // With flat pricing: 2 GPU hours * $3.50/hour = $7.00
+        assert_eq!(cost.base_cost.as_decimal(), Decimal::from(7));
+        assert_eq!(cost.usage_cost.as_decimal(), Decimal::ZERO); // No separate usage cost with flat rate
     }
 
     #[tokio::test]
@@ -495,6 +346,7 @@ mod tests {
             memory_gb_hours: Decimal::from(100),
             storage_gb_hours: Decimal::from(1000),
             network_gb: Decimal::from(100),
+            disk_io_gb: Decimal::from(150),
         };
 
         let metadata = HashMap::new();

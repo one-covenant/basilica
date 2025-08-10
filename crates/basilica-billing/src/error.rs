@@ -83,6 +83,15 @@ pub enum BillingError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
+    #[error("Account not found for user: {id}")]
+    AccountNotFound { id: String },
+
+    #[error("Insufficient credits: available={available}, required={required}")]
+    InsufficientCredits {
+        available: rust_decimal::Decimal,
+        required: rust_decimal::Decimal,
+    },
+
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 }

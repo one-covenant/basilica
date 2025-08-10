@@ -1,4 +1,3 @@
-pub mod aggregator;
 pub mod config;
 pub mod domain;
 pub mod error;

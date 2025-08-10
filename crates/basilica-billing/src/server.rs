@@ -18,14 +18,23 @@ pub struct BillingServer {
 
 impl BillingServer {
     pub async fn new(config: BillingConfig) -> anyhow::Result<Self> {
-        let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-
-        let secret_name = config.aws.secret_name.as_deref();
-        let rds_connection = Arc::new(
-            RdsConnection::new(config.database.clone(), &aws_config, secret_name)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to connect to RDS: {}", e))?,
-        );
+        // Only load AWS config if we're actually using AWS services
+        let rds_connection = if config.aws.secrets_manager_enabled && config.aws.secret_name.is_some() {
+            let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+            let secret_name = config.aws.secret_name.as_deref();
+            Arc::new(
+                RdsConnection::new(config.database.clone(), &aws_config, secret_name)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to connect to RDS: {}", e))?,
+            )
+        } else {
+            // Use direct database connection without AWS
+            Arc::new(
+                RdsConnection::new_direct(config.database.clone())
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?,
+            )
+        };
 
         Ok(Self {
             config,

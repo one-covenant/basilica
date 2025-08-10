@@ -1,15 +1,21 @@
+use crate::domain::events::EventStore;
 use crate::domain::{
     credits::{CreditManager, CreditOperations},
     rentals::{RentalManager, RentalOperations},
     rules_engine::RulesEngine,
-    types::{CreditBalance, PackageId, RentalId, RentalState, ReservationId, ResourceSpec, UserId},
+    types::{
+        CreditBalance, GpuSpec, PackageId, RentalId, RentalState, ReservationId, ResourceSpec,
+        UserId,
+    },
 };
 use crate::error::BillingError;
+use crate::storage::events::{EventType, UsageEvent};
 use crate::storage::rds::RdsConnection;
-use crate::storage::repositories::{
-    CreditRepository, PackageRepository, RentalRepository, SqlCreditRepository,
-    SqlPackageRepository, SqlRentalRepository,
+use crate::storage::{
+    CreditRepository, RentalRepository, SqlCreditRepository, SqlRentalRepository,
 };
+use crate::storage::{PackageRepository, SqlPackageRepository};
+use crate::storage::{SqlUserPreferencesRepository, UserPreferencesRepository};
 use crate::telemetry::{TelemetryIngester, TelemetryProcessor};
 
 use basilica_protocol::billing::{
@@ -25,12 +31,13 @@ use basilica_protocol::billing::{
 
 use chrono::Duration;
 use rust_decimal::prelude::*;
-use std::collections::HashMap;
+use serde_json;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
+use uuid;
 
 pub struct BillingServiceImpl {
     credit_manager: Arc<dyn CreditOperations + Send + Sync>,
@@ -42,6 +49,8 @@ pub struct BillingServiceImpl {
     credit_repository: Arc<dyn CreditRepository + Send + Sync>,
     rental_repository: Arc<dyn RentalRepository + Send + Sync>,
     package_repository: Arc<dyn PackageRepository + Send + Sync>,
+    user_preferences_repository: Arc<dyn UserPreferencesRepository + Send + Sync>,
+    event_store: Arc<EventStore>,
 }
 
 impl BillingServiceImpl {
@@ -52,7 +61,23 @@ impl BillingServiceImpl {
     ) -> Self {
         let credit_repository = Arc::new(SqlCreditRepository::new(rds_connection.clone()));
         let rental_repository = Arc::new(SqlRentalRepository::new(rds_connection.clone()));
-        let package_repository = Arc::new(SqlPackageRepository::new(rds_connection.clone()));
+        let package_repository = Arc::new(SqlPackageRepository::new(rds_connection.pool().clone()));
+        let user_preferences_repository =
+            Arc::new(SqlUserPreferencesRepository::new(rds_connection.clone()));
+
+        // Create event repositories using proper pattern
+        let event_repository = Arc::new(crate::storage::events::SqlEventRepository::new(
+            rds_connection.clone(),
+        ));
+        let batch_repository = Arc::new(crate::storage::events::SqlBatchRepository::new(
+            rds_connection.clone(),
+        ));
+        let event_store = Arc::new(crate::domain::events::EventStore::new(
+            event_repository,
+            batch_repository,
+            1000,
+            90,
+        ));
 
         Self {
             credit_manager: Arc::new(CreditManager::new()),
@@ -63,6 +88,8 @@ impl BillingServiceImpl {
             credit_repository: credit_repository.clone(),
             rental_repository: rental_repository.clone(),
             package_repository: package_repository.clone(),
+            user_preferences_repository: user_preferences_repository.clone(),
+            event_store,
         }
     }
 
@@ -293,20 +320,52 @@ impl BillingService for BillingServiceImpl {
             rental_id, user_id, hourly_rate
         );
 
-        let package_id = PackageId::standard();
-        let resource_spec = ResourceSpec {
-            gpu_count: 1, // Default values, should come from request
-            gpu_model: None,
-            cpu_cores: 4,
-            memory_gb: 16,
-            storage_gb: 100,
+        let resource_spec = if let Some(spec) = req.resource_spec {
+            ResourceSpec {
+                gpu_specs: spec
+                    .gpus
+                    .into_iter()
+                    .map(|gpu| GpuSpec {
+                        model: gpu.model,
+                        memory_mb: gpu.memory_mb,
+                        count: gpu.count,
+                    })
+                    .collect(),
+                cpu_cores: spec.cpu_cores,
+                memory_gb: (spec.memory_mb / 1024) as u32,
+                storage_gb: spec.disk_gb as u32,
+                disk_iops: 0,
+                network_bandwidth_mbps: spec.network_bandwidth_mbps,
+            }
+        } else {
+            ResourceSpec {
+                gpu_specs: vec![],
+                cpu_cores: 4,
+                memory_gb: 16,
+                storage_gb: 100,
+                disk_iops: 1000,
+                network_bandwidth_mbps: 1000,
+            }
         };
+
+        // Select package based on GPU model
+        let package_id = if !resource_spec.gpu_specs.is_empty() {
+            PackageId::from_gpu_model(&resource_spec.gpu_specs[0].model)
+        } else {
+            PackageId::custom()
+        };
+        let package_id_str = package_id.to_string();
+        let resource_spec_value =
+            serde_json::to_value(&resource_spec).unwrap_or(serde_json::Value::Null);
+        let validator_id = req.validator_id.clone();
+        let validator_id_copy = validator_id.clone();
 
         let rental_id = self
             .rental_manager
             .create_rental(
                 user_id.clone(),
                 req.executor_id.clone(),
+                validator_id,
                 package_id,
                 resource_spec,
                 None,
@@ -338,6 +397,31 @@ impl BillingService for BillingServiceImpl {
             .create_rental(&created)
             .await
             .map_err(|e| Status::internal(format!("Failed to persist rental: {}", e)))?;
+
+        let rental_start_event = UsageEvent {
+            event_id: uuid::Uuid::new_v4(),
+            rental_id: rental_id.as_uuid(),
+            user_id: user_id.to_string(),
+            executor_id: req.executor_id.clone(),
+            validator_id: validator_id_copy,
+            event_type: EventType::RentalStart,
+            event_data: serde_json::json!({
+                "package_id": package_id_str,
+                "hourly_rate": hourly_rate.to_string(),
+                "resource_spec": resource_spec_value,
+                "estimated_cost": estimated_cost.to_string(),
+                "max_duration_hours": req.max_duration_hours,
+            }),
+            timestamp: chrono::Utc::now(),
+            processed: false,
+            processed_at: None,
+            batch_id: None,
+        };
+
+        self.event_store
+            .append_usage_event(&rental_start_event)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to store rental start event: {}", e)))?;
 
         let response = TrackRentalResponse {
             success: true,
@@ -384,6 +468,28 @@ impl BillingService for BillingServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Failed to persist status: {}", e)))?;
 
+        let status_change_event = UsageEvent {
+            event_id: uuid::Uuid::new_v4(),
+            rental_id: rental_id.as_uuid(),
+            user_id: rental.user_id.to_string(),
+            executor_id: rental.executor_id.clone(),
+            validator_id: rental.validator_id.clone(),
+            event_type: EventType::StatusChange,
+            event_data: serde_json::json!({
+                "old_status": req.status().as_str_name(),
+                "new_status": new_status.to_string(),
+                "reason": if req.reason.is_empty() { None } else { Some(&req.reason) },
+            }),
+            timestamp: chrono::Utc::now(),
+            processed: false,
+            processed_at: None,
+            batch_id: None,
+        };
+        self.event_store
+            .append_usage_event(&status_change_event)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to store status change event: {}", e)))?;
+
         let response = UpdateRentalStatusResponse {
             success: true,
             current_cost: rental.cost_breakdown.total_cost.to_string(),
@@ -409,17 +515,32 @@ impl BillingService for BillingServiceImpl {
                         .map_err(|e| Status::internal(format!("Failed to list rentals: {}", e)))?
                 }
                 basilica_protocol::billing::get_active_rentals_request::Filter::ExecutorId(
-                    _executor_id,
+                    executor_id,
                 ) => {
-                    // Executor filter not supported in trait yet
-                    self.rental_repository
+                    let all_rentals = self
+                        .rental_repository
                         .get_active_rentals(None)
                         .await
-                        .map_err(|e| Status::internal(format!("Failed to list rentals: {}", e)))?
+                        .map_err(|e| Status::internal(format!("Failed to list rentals: {}", e)))?;
+
+                    all_rentals
+                        .into_iter()
+                        .filter(|r| r.executor_id == executor_id)
+                        .collect()
                 }
-                basilica_protocol::billing::get_active_rentals_request::Filter::ValidatorId(_) => {
-                    // Validator filter not implemented yet
-                    Vec::new()
+                basilica_protocol::billing::get_active_rentals_request::Filter::ValidatorId(
+                    validator_id,
+                ) => {
+                    let all_rentals = self
+                        .rental_repository
+                        .get_active_rentals(None)
+                        .await
+                        .map_err(|e| Status::internal(format!("Failed to list rentals: {}", e)))?;
+
+                    all_rentals
+                        .into_iter()
+                        .filter(|r| r.validator_id == validator_id)
+                        .collect()
                 }
             }
         } else {
@@ -429,22 +550,42 @@ impl BillingService for BillingServiceImpl {
         let active_rentals: Vec<ActiveRental> = rentals
             .into_iter()
             .filter(|r| r.state.is_active())
-            .map(|r| ActiveRental {
-                rental_id: r.id.to_string(),
-                user_id: r.user_id.to_string(),
-                executor_id: r.executor_id.clone(),
-                validator_id: String::new(), // Not tracked yet
-                status: Self::domain_status_to_proto(r.state).into(),
-                resource_spec: None, // Would need to be added to domain
-                hourly_rate: r.cost_breakdown.base_cost.to_string(),
-                current_cost: r.cost_breakdown.total_cost.to_string(),
-                start_time: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
-                    r.created_at,
-                ))),
-                last_updated: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
-                    r.last_updated,
-                ))),
-                metadata: HashMap::new(),
+            .map(|r| {
+                // Convert ResourceSpec to proto format
+                let resource_spec = Some(basilica_protocol::billing::ResourceSpec {
+                    cpu_cores: r.resource_spec.cpu_cores,
+                    memory_mb: (r.resource_spec.memory_gb as u64) * 1024,
+                    gpus: r
+                        .resource_spec
+                        .gpu_specs
+                        .iter()
+                        .map(|gpu| basilica_protocol::billing::GpuSpec {
+                            model: gpu.model.clone(),
+                            memory_mb: gpu.memory_mb,
+                            count: gpu.count,
+                        })
+                        .collect(),
+                    disk_gb: r.resource_spec.storage_gb as u64,
+                    network_bandwidth_mbps: r.resource_spec.network_bandwidth_mbps,
+                });
+
+                ActiveRental {
+                    rental_id: r.id.to_string(),
+                    user_id: r.user_id.to_string(),
+                    executor_id: r.executor_id.clone(),
+                    validator_id: r.validator_id.clone(),
+                    status: Self::domain_status_to_proto(r.state).into(),
+                    resource_spec,
+                    hourly_rate: r.cost_breakdown.base_cost.to_string(),
+                    current_cost: r.cost_breakdown.total_cost.to_string(),
+                    start_time: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
+                        r.created_at,
+                    ))),
+                    last_updated: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
+                        r.last_updated,
+                    ))),
+                    metadata: std::collections::HashMap::new(),
+                }
             })
             .collect();
 
@@ -595,27 +736,118 @@ impl BillingService for BillingServiceImpl {
         let duration_hours =
             duration.num_hours() as f64 + (duration.num_minutes() % 60) as f64 / 60.0;
 
+        let events = self
+            .event_store
+            .get_rental_events(
+                uuid::Uuid::parse_str(&rental_id.to_string())
+                    .map_err(|_| Status::internal("Invalid rental ID format"))?,
+                Some(rental.created_at),
+                rental.ended_at,
+            )
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get telemetry events: {}", e)))?;
+
+        let mut total_cpu_percent = 0.0;
+        let mut total_memory_mb = 0u64;
+        let mut total_network_bytes = 0u64;
+        let mut total_disk_bytes = 0u64;
+        let mut total_gpu_percent = 0.0;
+        let mut telemetry_count = 0u64;
+
+        let mut data_points = Vec::new();
+
+        for event in &events {
+            if let Some(cpu_percent) = event.event_data.get("cpu_percent").and_then(|v| v.as_f64())
+            {
+                telemetry_count += 1;
+
+                total_cpu_percent += cpu_percent * 100.0; // Convert from hours to percent
+
+                if let Some(memory_gb) = event.event_data.get("memory_gb").and_then(|v| v.as_f64())
+                {
+                    total_memory_mb += (memory_gb * 1024.0) as u64;
+                }
+
+                if let Some(network_gb) =
+                    event.event_data.get("network_gb").and_then(|v| v.as_f64())
+                {
+                    total_network_bytes += (network_gb * 1_073_741_824.0) as u64;
+                }
+
+                if let Some(gpu_hours) = event.event_data.get("gpu_hours").and_then(|v| v.as_f64())
+                {
+                    total_gpu_percent += gpu_hours * 100.0; // Convert from hours to percent
+                }
+
+                // For disk I/O, check if it exists in the data
+                if let Some(disk_gb) = event.event_data.get("disk_io_gb").and_then(|v| v.as_f64()) {
+                    total_disk_bytes += (disk_gb * 1_073_741_824.0) as u64;
+                }
+
+                data_points.push(UsageDataPoint {
+                    timestamp: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
+                        event.timestamp,
+                    ))),
+                    usage: Some(basilica_protocol::billing::ResourceUsage {
+                        cpu_percent: cpu_percent * 100.0,
+                        memory_mb: (event
+                            .event_data
+                            .get("memory_gb")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                            * 1024.0) as u64,
+                        network_rx_bytes: 0,
+                        network_tx_bytes: (event
+                            .event_data
+                            .get("network_gb")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                            * 1_073_741_824.0) as u64,
+                        disk_read_bytes: 0,
+                        disk_write_bytes: (event
+                            .event_data
+                            .get("disk_io_gb")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                            * 1_073_741_824.0) as u64,
+                        gpu_usage: vec![],
+                    }),
+                    // Cost calculation would be done per interval
+                    cost: "0".to_string(),
+                });
+            }
+        }
+
         let summary = UsageSummary {
-            avg_cpu_percent: rental.usage_metrics.cpu_hours.to_f64().unwrap_or(0.0)
-                / duration_hours.max(1.0),
-            avg_memory_mb: (rental.usage_metrics.memory_gb_hours.to_f64().unwrap_or(0.0) * 1024.0
-                / duration_hours.max(1.0)) as u64,
-            total_network_bytes: (rental.usage_metrics.network_gb.to_f64().unwrap_or(0.0)
-                * 1_073_741_824.0) as u64,
-            total_disk_bytes: 0, // Not tracked yet
-            avg_gpu_utilization: rental.usage_metrics.gpu_hours.to_f64().unwrap_or(0.0)
-                / duration_hours.max(1.0),
+            avg_cpu_percent: if telemetry_count > 0 {
+                total_cpu_percent / telemetry_count as f64
+            } else {
+                0.0
+            },
+            avg_memory_mb: if telemetry_count > 0 {
+                total_memory_mb / telemetry_count
+            } else {
+                0
+            },
+            total_network_bytes,
+            total_disk_bytes,
+            avg_gpu_utilization: if telemetry_count > 0 {
+                total_gpu_percent / telemetry_count as f64
+            } else {
+                0.0
+            },
             duration_hours: duration_hours.to_string(),
         };
 
-        // Generate mock data points (should come from telemetry data)
-        let data_points = vec![UsageDataPoint {
-            timestamp: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
-                rental.created_at,
-            ))),
-            usage: None,
-            cost: rental.cost_breakdown.base_cost.to_string(),
-        }];
+        if data_points.is_empty() {
+            data_points.push(UsageDataPoint {
+                timestamp: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
+                    rental.created_at,
+                ))),
+                usage: None,
+                cost: rental.cost_breakdown.base_cost.to_string(),
+            });
+        }
 
         let response = UsageReportResponse {
             rental_id: rental_id.to_string(),
@@ -632,52 +864,31 @@ impl BillingService for BillingServiceImpl {
         request: Request<GetBillingPackagesRequest>,
     ) -> std::result::Result<Response<GetBillingPackagesResponse>, Status> {
         let req = request.into_inner();
-        let _user_id = UserId::new(req.user_id);
+        let user_id = UserId::new(req.user_id);
 
         let packages = self
             .package_repository
-            .list_packages(true)
+            .list_packages()
             .await
             .map_err(|e| Status::internal(format!("Failed to list packages: {}", e)))?;
 
-        let current_package_id = PackageId::standard();
+        let billing_packages = packages.into_iter().map(|p| p.to_proto()).collect();
 
-        let billing_packages = packages
-            .into_iter()
-            .map(|pkg| basilica_protocol::billing::BillingPackage {
-                package_id: pkg.id.to_string(),
-                name: pkg.id.to_string(),
-                description: format!("{} billing package", pkg.id),
-                rates: Some(basilica_protocol::billing::PackageRates {
-                    cpu_rate_per_hour: "0.01".to_string(),
-                    memory_rate_per_gb_hour: "0.005".to_string(),
-                    gpu_rates: HashMap::from([
-                        ("RTX_4090".to_string(), "1.5".to_string()),
-                        ("A100".to_string(), "2.5".to_string()),
-                    ]),
-                    network_rate_per_gb: "0.1".to_string(),
-                    disk_iops_rate: "0.0001".to_string(),
-                    base_rate_per_hour: pkg.base_rate.to_string(),
-                }),
-                included_resources: Some(basilica_protocol::billing::IncludedResources {
-                    cpu_core_hours: pkg.included_resources.cpu_hours.to_u32().unwrap_or(0),
-                    memory_gb_hours: pkg.included_resources.memory_gb_hours.to_u64().unwrap_or(0),
-                    gpu_hours: HashMap::from([(
-                        "RTX_4090".to_string(),
-                        pkg.included_resources.gpu_hours.to_u32().unwrap_or(0),
-                    )]),
-                    network_gb: pkg.included_resources.network_gb.to_u64().unwrap_or(0),
-                    disk_iops: 0,
-                }),
-                overage_rates: None,
-                priority: 1,
-                is_active: true,
-            })
-            .collect();
+        // Get the user's current package preference
+        let current_package_id = match self
+            .user_preferences_repository
+            .get_user_package(&user_id)
+            .await
+        {
+            Ok(Some(pref)) => pref.package_id.to_string(),
+            Ok(None) | Err(_) => {
+                crate::domain::packages::PricingRules::DEFAULT_PACKAGE_ID.to_string()
+            }
+        };
 
         let response = GetBillingPackagesResponse {
             packages: billing_packages,
-            current_package_id: current_package_id.to_string(),
+            current_package_id,
         };
 
         Ok(Response::new(response))
@@ -697,15 +908,24 @@ impl BillingService for BillingServiceImpl {
             .package_repository
             .get_package(&new_package_id)
             .await
-            .map_err(|e| Status::internal(format!("Failed to get package: {}", e)))?
-            .ok_or_else(|| Status::not_found("Package not found"))?;
+            .map_err(|e| Status::internal(format!("Failed to get package: {}", e)))?;
 
-        // Update user's package (would need user preferences table)
-        // For now, just return success
+        let effective_from = req.effective_from.as_ref().map(|timestamp| {
+            chrono::DateTime::from_timestamp(timestamp.seconds, timestamp.nanos as u32)
+                .unwrap_or_else(chrono::Utc::now)
+        });
+
+        let previous_package_id = self
+            .user_preferences_repository
+            .set_user_package(&user_id, &new_package_id, effective_from)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to update user package: {}", e)))?;
 
         let response = SetUserPackageResponse {
             success: true,
-            previous_package_id: PackageId::standard().to_string(),
+            previous_package_id: previous_package_id
+                .unwrap_or_else(PackageId::standard)
+                .to_string(),
             new_package_id: new_package_id.to_string(),
             effective_from: req.effective_from,
         };
