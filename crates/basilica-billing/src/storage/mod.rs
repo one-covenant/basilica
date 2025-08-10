@@ -21,4 +21,6 @@ pub use events::{
     EventType, ProcessingBatch, SqlBatchRepository, SqlEventRepository, UsageEvent,
 };
 
-pub use user_preferences::{SqlUserPreferencesRepository, UserPreference, UserPreferencesRepository};
+pub use user_preferences::{
+    SqlUserPreferencesRepository, UserPreference, UserPreferencesRepository,
+};

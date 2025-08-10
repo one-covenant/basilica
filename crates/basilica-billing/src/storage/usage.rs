@@ -22,10 +22,10 @@ pub trait UsageRepository: Send + Sync {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<CreditBalance>;
-    
+
     /// Initialize usage tracking for a new rental
     async fn initialize_rental(&self, rental_id: &RentalId, user_id: &UserId) -> Result<()>;
-    
+
     /// Update usage metrics for a rental
     async fn update_usage(
         &self,
@@ -148,7 +148,7 @@ impl UsageRepository for SqlUsageRepository {
 
         Ok(CreditBalance::from_decimal(row.get("total_cost")))
     }
-    
+
     async fn initialize_rental(&self, rental_id: &RentalId, user_id: &UserId) -> Result<()> {
         // Create initial usage record for the rental
         sqlx::query(
@@ -170,10 +170,10 @@ impl UsageRepository for SqlUsageRepository {
             operation: "initialize_rental".to_string(),
             source: Box::new(e),
         })?;
-        
+
         Ok(())
     }
-    
+
     async fn update_usage(
         &self,
         rental_id: &RentalId,
@@ -182,11 +182,13 @@ impl UsageRepository for SqlUsageRepository {
         cost: CreditBalance,
     ) -> Result<()> {
         let hour_key = chrono::Utc::now().hour() as i32;
-        let date_key = chrono::Utc::now().date_naive().and_hms_opt(0, 0, 0)
+        let date_key = chrono::Utc::now()
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
             .unwrap()
             .and_utc()
             .timestamp() as i32;
-        
+
         // Insert or update usage aggregation
         sqlx::query(
             r#"
@@ -229,9 +231,7 @@ impl UsageRepository for SqlUsageRepository {
             operation: "update_usage".to_string(),
             source: Box::new(e),
         })?;
-        
+
         Ok(())
     }
 }
-
-

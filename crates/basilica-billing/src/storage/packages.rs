@@ -93,7 +93,12 @@ impl SqlPackageRepository {
                 billing_period,
                 priority: row.get::<i32, _>("priority") as u32,
                 active: row.get("active"),
-                metadata: serde_json::from_value(row.get("metadata")).unwrap_or_default(),
+                metadata: row
+                    .try_get::<Option<serde_json::Value>, _>("metadata")
+                    .ok()
+                    .flatten()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default(),
             };
 
             cache.insert(package_id, package);
@@ -138,7 +143,12 @@ impl SqlPackageRepository {
                 billing_period,
                 priority: row.get::<i32, _>("priority") as u32,
                 active: row.get("active"),
-                metadata: serde_json::from_value(row.get("metadata")).unwrap_or_default(),
+                metadata: row
+                    .try_get::<Option<serde_json::Value>, _>("metadata")
+                    .ok()
+                    .flatten()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default(),
             }))
         } else {
             Ok(None)
@@ -173,7 +183,7 @@ impl SqlPackageRepository {
         .bind(format!("{:?}", package.billing_period))
         .bind(package.priority as i32)
         .bind(package.active)
-        .bind(serde_json::to_value(&package.metadata).unwrap())
+        .bind(serde_json::to_value(&package.metadata).unwrap_or(serde_json::json!({})))
         .execute(&self.pool)
         .await
         .map_err(|e| BillingError::DatabaseError {
@@ -245,7 +255,12 @@ impl PackageRepository for SqlPackageRepository {
                 billing_period,
                 priority: row.get::<i32, _>("priority") as u32,
                 active: row.get("active"),
-                metadata: serde_json::from_value(row.get("metadata")).unwrap_or_default(),
+                metadata: row
+                    .try_get::<Option<serde_json::Value>, _>("metadata")
+                    .ok()
+                    .flatten()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default(),
             });
         }
 
@@ -437,7 +452,12 @@ impl PackageRepository for SqlPackageRepository {
                 billing_period,
                 priority: row.get::<i32, _>("priority") as u32,
                 active: row.get("active"),
-                metadata: serde_json::from_value(row.get("metadata")).unwrap_or_default(),
+                metadata: row
+                    .try_get::<Option<serde_json::Value>, _>("metadata")
+                    .ok()
+                    .flatten()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default(),
             });
         }
 

@@ -246,5 +246,3 @@ pub struct UsageAggregation {
     pub cost_for_period: Decimal,
     pub data_points_count: i32,
 }
-
-

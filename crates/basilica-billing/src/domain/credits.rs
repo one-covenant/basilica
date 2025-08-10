@@ -1,11 +1,11 @@
 use crate::domain::types::{CreditBalance, RentalId, ReservationId, UserId};
 use crate::error::{BillingError, Result};
+use crate::storage::CreditRepository;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Reservation {
@@ -161,42 +161,35 @@ pub trait CreditOperations: Send + Sync {
 }
 
 pub struct CreditManager {
-    accounts: Arc<RwLock<HashMap<UserId, CreditAccount>>>,
-    reservations: Arc<RwLock<HashMap<ReservationId, Reservation>>>,
+    repository: Arc<dyn CreditRepository + Send + Sync>,
 }
 
 impl CreditManager {
-    pub fn new() -> Self {
-        Self {
-            accounts: Arc::new(RwLock::new(HashMap::new())),
-            reservations: Arc::new(RwLock::new(HashMap::new())),
+    pub fn new(repository: Arc<dyn CreditRepository + Send + Sync>) -> Self {
+        Self { repository }
+    }
+
+    async fn get_or_create_account(&self, user_id: &UserId) -> Result<CreditAccount> {
+        match self.repository.get_account(user_id).await? {
+            Some(account) => Ok(account),
+            None => {
+                let account = CreditAccount::new(user_id.clone());
+                self.repository.create_account(&account).await?;
+                Ok(account)
+            }
         }
-    }
-
-    async fn get_or_create_account(&self, user_id: &UserId) -> CreditAccount {
-        let mut accounts = self.accounts.write().await;
-        accounts
-            .entry(user_id.clone())
-            .or_insert_with(|| CreditAccount::new(user_id.clone()))
-            .clone()
-    }
-}
-
-impl Default for CreditManager {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
 #[async_trait]
 impl CreditOperations for CreditManager {
     async fn get_balance(&self, user_id: &UserId) -> Result<CreditBalance> {
-        let account = self.get_or_create_account(user_id).await;
+        let account = self.get_or_create_account(user_id).await?;
         Ok(account.available_balance())
     }
 
     async fn get_account(&self, user_id: &UserId) -> Result<CreditAccount> {
-        Ok(self.get_or_create_account(user_id).await)
+        self.get_or_create_account(user_id).await
     }
 
     async fn apply_credits(
@@ -204,12 +197,12 @@ impl CreditOperations for CreditManager {
         user_id: &UserId,
         amount: CreditBalance,
     ) -> Result<CreditBalance> {
-        let mut accounts = self.accounts.write().await;
-        let account = accounts
-            .entry(user_id.clone())
-            .or_insert_with(|| CreditAccount::new(user_id.clone()));
+        let mut account = self.get_or_create_account(user_id).await?;
 
         account.apply_credits(amount);
+
+        self.repository.update_account(&account).await?;
+
         Ok(account.balance)
     }
 
@@ -220,29 +213,34 @@ impl CreditOperations for CreditManager {
         duration: Duration,
         rental_id: Option<RentalId>,
     ) -> Result<ReservationId> {
-        let mut accounts = self.accounts.write().await;
-        let account = accounts
-            .entry(user_id.clone())
-            .or_insert_with(|| CreditAccount::new(user_id.clone()));
+        let mut account = self.get_or_create_account(user_id).await?;
 
-        account.reserve_credits(amount)?;
+        if !account.can_reserve(amount) {
+            return Err(BillingError::InsufficientBalance {
+                available: account.available_balance().as_decimal(),
+                required: amount.as_decimal(),
+            });
+        }
 
         let reservation = Reservation::new(user_id.clone(), amount, duration, rental_id);
         let reservation_id = reservation.id;
 
-        let mut reservations = self.reservations.write().await;
-        reservations.insert(reservation_id, reservation);
+        account.reserve_credits(amount)?;
+
+        self.repository.create_reservation(&reservation).await?;
+        self.repository.update_account(&account).await?;
 
         Ok(reservation_id)
     }
 
     async fn release_reservation(&self, reservation_id: &ReservationId) -> Result<CreditBalance> {
-        let mut reservations = self.reservations.write().await;
-        let reservation = reservations.get_mut(reservation_id).ok_or_else(|| {
-            BillingError::ReservationNotFound {
+        let mut reservation = self
+            .repository
+            .get_reservation(reservation_id)
+            .await?
+            .ok_or_else(|| BillingError::ReservationNotFound {
                 id: reservation_id.to_string(),
-            }
-        })?;
+            })?;
 
         if reservation.released {
             return Err(BillingError::ReservationAlreadyReleased {
@@ -251,12 +249,21 @@ impl CreditOperations for CreditManager {
         }
 
         let amount = reservation.amount;
-        reservation.released = true;
+        let user_id = reservation.user_id.clone();
 
-        let mut accounts = self.accounts.write().await;
-        if let Some(account) = accounts.get_mut(&reservation.user_id) {
-            account.release_reservation(amount);
-        }
+        reservation.released = true;
+        self.repository.update_reservation(&reservation).await?;
+
+        let mut account = self
+            .repository
+            .get_account(&user_id)
+            .await?
+            .ok_or_else(|| BillingError::UserNotFound {
+                id: user_id.to_string(),
+            })?;
+
+        account.release_reservation(amount);
+        self.repository.update_account(&account).await?;
 
         Ok(amount)
     }
@@ -266,14 +273,16 @@ impl CreditOperations for CreditManager {
         user_id: &UserId,
         amount: CreditBalance,
     ) -> Result<CreditBalance> {
-        let mut accounts = self.accounts.write().await;
-        let account = accounts
-            .get_mut(user_id)
-            .ok_or_else(|| BillingError::UserNotFound {
+        let mut account = self.repository.get_account(user_id).await?.ok_or_else(|| {
+            BillingError::UserNotFound {
                 id: user_id.to_string(),
-            })?;
+            }
+        })?;
 
         account.charge(amount)?;
+
+        self.repository.update_account(&account).await?;
+
         Ok(account.balance)
     }
 
@@ -282,12 +291,13 @@ impl CreditOperations for CreditManager {
         reservation_id: &ReservationId,
         actual_amount: CreditBalance,
     ) -> Result<CreditBalance> {
-        let mut reservations = self.reservations.write().await;
-        let reservation = reservations.get_mut(reservation_id).ok_or_else(|| {
-            BillingError::ReservationNotFound {
+        let mut reservation = self
+            .repository
+            .get_reservation(reservation_id)
+            .await?
+            .ok_or_else(|| BillingError::ReservationNotFound {
                 id: reservation_id.to_string(),
-            }
-        })?;
+            })?;
 
         if reservation.released {
             return Err(BillingError::ReservationAlreadyReleased {
@@ -297,123 +307,56 @@ impl CreditOperations for CreditManager {
 
         let reserved_amount = reservation.amount;
         let user_id = reservation.user_id.clone();
+
         reservation.released = true;
+        self.repository.update_reservation(&reservation).await?;
 
-        drop(reservations); // Release lock before acquiring accounts lock
-
-        let mut accounts = self.accounts.write().await;
-        let account = accounts
-            .get_mut(&user_id)
+        let mut account = self
+            .repository
+            .get_account(&user_id)
+            .await?
             .ok_or_else(|| BillingError::UserNotFound {
                 id: user_id.to_string(),
             })?;
 
         account.charge_from_reservation(reserved_amount, actual_amount)?;
+
+        self.repository.update_account(&account).await?;
+
         Ok(account.balance)
     }
 
     async fn get_reservation(&self, reservation_id: &ReservationId) -> Result<Reservation> {
-        let reservations = self.reservations.read().await;
-        reservations
-            .get(reservation_id)
-            .cloned()
+        self.repository
+            .get_reservation(reservation_id)
+            .await?
             .ok_or_else(|| BillingError::ReservationNotFound {
                 id: reservation_id.to_string(),
             })
     }
 
     async fn get_active_reservations(&self, user_id: &UserId) -> Result<Vec<Reservation>> {
-        let reservations = self.reservations.read().await;
-        Ok(reservations
-            .values()
-            .filter(|r| r.user_id == *user_id && r.is_active())
-            .cloned()
-            .collect())
+        self.repository.get_active_reservations(user_id).await
     }
 
     async fn cleanup_expired_reservations(&self) -> Result<u64> {
-        let mut reservations = self.reservations.write().await;
-        let mut accounts = self.accounts.write().await;
-
-        let expired: Vec<(ReservationId, UserId, CreditBalance)> = reservations
-            .iter()
-            .filter(|(_, r)| r.is_expired() && !r.released)
-            .map(|(id, r)| (*id, r.user_id.clone(), r.amount))
-            .collect();
-
+        let expired = self.repository.get_expired_reservations(100).await?;
         let count = expired.len() as u64;
 
-        for (id, user_id, amount) in expired {
-            if let Some(reservation) = reservations.get_mut(&id) {
+        for mut reservation in expired {
+            if !reservation.released {
                 reservation.released = true;
-            }
-            if let Some(account) = accounts.get_mut(&user_id) {
-                account.release_reservation(amount);
+                self.repository.update_reservation(&reservation).await?;
+
+                if let Ok(Some(mut account)) =
+                    self.repository.get_account(&reservation.user_id).await
+                {
+                    account.release_reservation(reservation.amount);
+                    let _ = self.repository.update_account(&account).await;
+                }
             }
         }
 
         Ok(count)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rust_decimal::Decimal;
-
-    #[tokio::test]
-    async fn test_credit_reservation_flow() {
-        let manager = CreditManager::new();
-        let user_id = UserId::new("user123".to_string());
-
-        let balance = manager
-            .apply_credits(&user_id, CreditBalance::from_f64(100.0).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(balance.as_decimal(), Decimal::from(100));
-
-        let reservation_id = manager
-            .reserve_credits(
-                &user_id,
-                CreditBalance::from_f64(30.0).unwrap(),
-                Duration::hours(1),
-                None,
-            )
-            .await
-            .unwrap();
-
-        let available = manager.get_balance(&user_id).await.unwrap();
-        assert_eq!(available.as_decimal(), Decimal::from(70));
-
-        let new_balance = manager
-            .charge_from_reservation(&reservation_id, CreditBalance::from_f64(25.0).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(new_balance.as_decimal(), Decimal::from(75));
-    }
-
-    #[tokio::test]
-    async fn test_insufficient_balance() {
-        let manager = CreditManager::new();
-        let user_id = UserId::new("user456".to_string());
-
-        manager
-            .apply_credits(&user_id, CreditBalance::from_f64(10.0).unwrap())
-            .await
-            .unwrap();
-
-        let result = manager
-            .reserve_credits(
-                &user_id,
-                CreditBalance::from_f64(20.0).unwrap(),
-                Duration::hours(1),
-                None,
-            )
-            .await;
-
-        assert!(matches!(
-            result,
-            Err(BillingError::InsufficientBalance { .. })
-        ));
     }
 }

@@ -38,7 +38,10 @@ impl TelemetryIngester {
         match self.sender.try_send(data) {
             Ok(_) => {
                 metrics.total_processed += 1;
-                metrics.current_queue_size = self.sender.capacity() - self.sender.max_capacity();
+                metrics.current_queue_size = self
+                    .sender
+                    .max_capacity()
+                    .saturating_sub(self.sender.capacity());
                 Ok(())
             }
             Err(mpsc::error::TrySendError::Full(data)) => {

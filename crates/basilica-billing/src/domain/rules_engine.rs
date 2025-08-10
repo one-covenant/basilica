@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-
 /// Custom billing rule for special conditions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillingRule {
@@ -134,19 +133,18 @@ pub struct RulesEngine {
 
 impl RulesEngine {
     pub fn new() -> Self {
-        // Start with empty packages - should be loaded from repository
         Self {
             packages: Arc::new(RwLock::new(HashMap::new())),
             rules: Arc::new(RwLock::new(Vec::new())),
         }
     }
-    
+
     pub fn with_packages(packages: Vec<BillingPackage>) -> Self {
         let mut package_map = HashMap::new();
         for package in packages {
             package_map.insert(package.id.clone(), package);
         }
-        
+
         Self {
             packages: Arc::new(RwLock::new(package_map)),
             rules: Arc::new(RwLock::new(Vec::new())),

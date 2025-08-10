@@ -20,7 +20,7 @@ pub struct UserPreference {
 pub trait UserPreferencesRepository: Send + Sync {
     /// Get user's current package preference
     async fn get_user_package(&self, user_id: &UserId) -> Result<Option<UserPreference>>;
-    
+
     /// Set user's package preference
     async fn set_user_package(
         &self,
@@ -82,11 +82,11 @@ impl UserPreferencesRepository for SqlUserPreferencesRepository {
         effective_from: Option<DateTime<Utc>>,
     ) -> Result<Option<PackageId>> {
         let effective_from = effective_from.unwrap_or_else(Utc::now);
-        
+
         // Get current package to store as previous
         let current = self.get_user_package(user_id).await?;
         let previous_package_id = current.as_ref().map(|p| p.package_id.clone());
-        
+
         sqlx::query(
             r#"
             INSERT INTO billing.user_preferences 

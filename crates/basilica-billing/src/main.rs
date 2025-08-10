@@ -1,9 +1,7 @@
-mod server;
-
 use anyhow::Result;
 use basilica_billing::config::BillingConfig;
+use basilica_billing::server::BillingServer;
 use clap::Parser;
-use server::BillingServer;
 use std::path::PathBuf;
 use tokio::signal;
 use tracing::{error, info};

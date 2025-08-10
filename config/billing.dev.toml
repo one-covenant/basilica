@@ -1,0 +1,57 @@
+[service]
+name = "basilica-billing"
+environment = "development"
+log_level = "info"
+metrics_enabled = true
+service_id = "billing-dev-001"
+
+[database]
+url = "postgres://billing:billing_dev_password@postgres:5432/basilica_billing"
+max_connections = 10
+min_connections = 2
+connect_timeout_seconds = 30
+acquire_timeout_seconds = 30
+idle_timeout_seconds = 600
+max_lifetime_seconds = 1800
+enable_ssl = false
+
+[grpc]
+listen_address = "0.0.0.0"
+port = 50051
+max_message_size = 4194304
+keepalive_interval_seconds = 300
+keepalive_timeout_seconds = 20
+tls_enabled = false
+max_concurrent_requests = 1000
+max_concurrent_streams = 100
+request_timeout_seconds = 60
+
+[http]
+listen_address = "0.0.0.0"
+port = 8080
+cors_enabled = true
+cors_allowed_origins = ["*"]
+
+[aggregator]
+batch_size = 1000
+batch_timeout_seconds = 60
+processing_interval_seconds = 30
+retention_days = 90
+max_events_per_second = 10000
+
+[telemetry]
+ingest_buffer_size = 10000
+flush_interval_seconds = 10
+max_batch_size = 500
+compression_enabled = true
+
+[rules_engine]
+evaluation_interval_seconds = 60
+cache_ttl_seconds = 300
+max_rules_per_package = 100
+default_package_id = "h100"
+
+[aws]
+region = "us-east-1"
+use_iam_auth = false
+secrets_manager_enabled = false

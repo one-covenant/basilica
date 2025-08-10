@@ -41,7 +41,7 @@ services:
       - BILLING_AWS__REGION=us-east-1
       - BILLING_AWS__USE_IAM_AUTH=false
     volumes:
-      - ../../config/billing.toml:/app/billing.toml:ro
+      - ../../config/billing.dev.toml:/app/billing.toml:ro
       - ../../crates:/app/crates:ro
       - ../../Cargo.toml:/app/Cargo.toml:ro
       - ../../Cargo.lock:/app/Cargo.lock:ro

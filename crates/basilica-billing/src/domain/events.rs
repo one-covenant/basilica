@@ -45,7 +45,9 @@ impl EventStore {
         }
 
         info!("Appending {} usage events in batch", events.len());
-        self.event_repository.append_usage_events_batch(events).await
+        self.event_repository
+            .append_usage_events_batch(events)
+            .await
     }
 
     /// Append a billing event
@@ -60,7 +62,9 @@ impl EventStore {
     /// Get unprocessed events for processing
     pub async fn get_unprocessed_events(&self, limit: Option<i64>) -> Result<Vec<UsageEvent>> {
         let actual_limit = limit.or(Some(self.batch_size as i64));
-        self.event_repository.get_unprocessed_events(actual_limit).await
+        self.event_repository
+            .get_unprocessed_events(actual_limit)
+            .await
     }
 
     /// Mark events as processed
@@ -72,7 +76,9 @@ impl EventStore {
                 batch_id
             );
         }
-        self.event_repository.mark_events_processed(event_ids, batch_id).await
+        self.event_repository
+            .mark_events_processed(event_ids, batch_id)
+            .await
     }
 
     /// Get events for a specific rental
@@ -116,7 +122,9 @@ impl EventStore {
         entity_id: &str,
         limit: Option<usize>,
     ) -> Result<Vec<BillingEvent>> {
-        self.event_repository.get_events_by_entity(entity_id, limit).await
+        self.event_repository
+            .get_events_by_entity(entity_id, limit)
+            .await
     }
 
     /// Get event statistics
@@ -126,7 +134,10 @@ impl EventStore {
 
     /// Clean up old events based on retention policy
     pub async fn cleanup_old_events(&self) -> Result<u64> {
-        let count = self.event_repository.cleanup_old_events(self.retention_days).await?;
+        let count = self
+            .event_repository
+            .cleanup_old_events(self.retention_days)
+            .await?;
         if count > 0 {
             info!("Archived {} old events", count);
         }
@@ -189,4 +200,3 @@ impl EventStoreOperations for EventStore {
         self.mark_events_processed(event_ids, batch_id).await
     }
 }
-

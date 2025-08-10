@@ -5,7 +5,6 @@ use crate::domain::{
 use crate::error::{BillingError, Result};
 use crate::storage::rds::RdsConnection;
 use async_trait::async_trait;
-// Duration import removed as it's unused
 use sqlx::Row;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -43,6 +42,62 @@ impl SqlCreditRepository {
     pub fn new(connection: Arc<RdsConnection>) -> Self {
         Self { connection }
     }
+
+    pub fn pool(&self) -> &sqlx::PgPool {
+        self.connection.pool()
+    }
+
+    // Transaction history for testing - returns raw transaction data
+    pub async fn get_transaction_history(
+        &self,
+        user_id: &UserId,
+        limit: Option<i64>,
+    ) -> Result<Vec<CreditTransactionRecord>> {
+        let limit = limit.unwrap_or(100);
+
+        let rows = sqlx::query(
+            r#"
+            SELECT transaction_id, user_id, amount, transaction_type, payment_method, metadata, created_at
+            FROM billing.credit_transactions
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(user_id.as_str())
+        .bind(limit)
+        .fetch_all(self.connection.pool())
+        .await
+        .map_err(|e| BillingError::DatabaseError {
+            operation: "get_transaction_history".to_string(),
+            source: Box::new(e),
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| CreditTransactionRecord {
+                transaction_id: row.get("transaction_id"),
+                user_id: UserId::new(row.get("user_id")),
+                amount: CreditBalance::from_decimal(row.get("amount")),
+                transaction_type: row.get("transaction_type"),
+                payment_method: row.get("payment_method"),
+                metadata: serde_json::from_value(row.get("metadata")).unwrap_or_default(),
+                created_at: row.get("created_at"),
+            })
+            .collect())
+    }
+}
+
+// Simple transaction record for querying history
+#[derive(Debug, Clone)]
+pub struct CreditTransactionRecord {
+    pub transaction_id: String,
+    pub user_id: UserId,
+    pub amount: CreditBalance,
+    pub transaction_type: String,
+    pub payment_method: Option<String>,
+    pub metadata: std::collections::HashMap<String, String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[async_trait]

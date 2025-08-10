@@ -693,4 +693,3 @@ impl BatchRepository for SqlBatchRepository {
         }
     }
 }
-

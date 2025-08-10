@@ -80,7 +80,7 @@ impl BillingServiceImpl {
         ));
 
         Self {
-            credit_manager: Arc::new(CreditManager::new()),
+            credit_manager: Arc::new(CreditManager::new(credit_repository.clone())),
             rental_manager: Arc::new(RentalManager::new()),
             _rules_engine: Arc::new(RulesEngine::new()),
             telemetry_processor,

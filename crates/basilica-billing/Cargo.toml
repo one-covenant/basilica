@@ -77,6 +77,7 @@ test-log = "0.2"
 pretty_assertions = "1.4"
 tempfile = "3.8"
 wiremock = "0.5"
+portpicker = "0.1"
 
 [[bin]]
 name = "basilica-billing"

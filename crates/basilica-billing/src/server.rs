@@ -1,7 +1,7 @@
-use basilica_billing::config::BillingConfig;
-use basilica_billing::grpc::BillingServiceImpl;
-use basilica_billing::storage::rds::RdsConnection;
-use basilica_billing::telemetry::{TelemetryIngester, TelemetryProcessor};
+use crate::config::BillingConfig;
+use crate::grpc::BillingServiceImpl;
+use crate::storage::rds::RdsConnection;
+use crate::telemetry::{TelemetryIngester, TelemetryProcessor};
 
 use basilica_protocol::billing::billing_service_server::BillingServiceServer;
 use std::net::SocketAddr;
@@ -19,7 +19,9 @@ pub struct BillingServer {
 impl BillingServer {
     pub async fn new(config: BillingConfig) -> anyhow::Result<Self> {
         // Only load AWS config if we're actually using AWS services
-        let rds_connection = if config.aws.secrets_manager_enabled && config.aws.secret_name.is_some() {
+        let rds_connection = if config.aws.secrets_manager_enabled
+            && config.aws.secret_name.is_some()
+        {
             let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
             let secret_name = config.aws.secret_name.as_deref();
             Arc::new(
