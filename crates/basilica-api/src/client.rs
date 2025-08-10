@@ -12,6 +12,7 @@ use crate::{
     error::{Error, ErrorResponse, Result},
 };
 use basilica_validator::api::types::ListRentalsResponse;
+use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::time::Duration;
@@ -52,7 +53,7 @@ impl BasilicaClient {
     }
 
     /// Start a new rental
-    pub async fn start_rental(&self, request: StartRentalRequest) -> Result<serde_json::Value> {
+    pub async fn start_rental(&self, request: StartRentalRequest) -> Result<RentalResponse> {
         self.post("/rental/start", &request).await
     }
 

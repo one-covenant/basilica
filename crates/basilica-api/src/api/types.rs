@@ -11,6 +11,11 @@ pub use basilica_validator::api::types::{
     RentalStatus, RentalStatusResponse, SshAccess, TerminateRentalRequest, TerminateRentalResponse,
 };
 
+// Re-export rental-specific types from validator
+pub use basilica_validator::api::rental_routes::{
+    PortMappingRequest, ResourceRequirementsRequest, VolumeMountRequest,
+};
+
 // API-specific types that don't exist in validator
 
 /// Health check response
@@ -153,39 +158,6 @@ pub struct StartRentalRequest {
     pub command: Vec<String>,
     #[serde(default)]
     pub volumes: Vec<VolumeMountRequest>,
-}
-
-/// Port mapping request
-#[derive(Debug, Deserialize, Serialize, ToSchema)]
-pub struct PortMappingRequest {
-    pub container_port: u32,
-    pub host_port: u32,
-    #[serde(default = "default_protocol")]
-    pub protocol: String,
-}
-
-fn default_protocol() -> String {
-    "tcp".to_string()
-}
-
-/// Resource requirements request
-#[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
-pub struct ResourceRequirementsRequest {
-    pub cpu_cores: f64,
-    pub memory_mb: i64,
-    pub storage_mb: i64,
-    pub gpu_count: u32,
-    #[serde(default)]
-    pub gpu_types: Vec<String>,
-}
-
-/// Volume mount request
-#[derive(Debug, Deserialize, Serialize, ToSchema)]
-pub struct VolumeMountRequest {
-    pub host_path: String,
-    pub container_path: String,
-    #[serde(default)]
-    pub read_only: bool,
 }
 
 /// Rental status query parameters

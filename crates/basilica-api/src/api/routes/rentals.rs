@@ -13,7 +13,7 @@ use axum::{
     response::{sse::Event, IntoResponse, Response, Sse},
     Json,
 };
-use basilica_validator::api::types::ListRentalsResponse;
+use basilica_validator::api::{rental_routes::StartRentalRequest, types::ListRentalsResponse};
 use futures::stream::Stream;
 use tracing::{debug, error, info};
 
@@ -63,41 +63,15 @@ pub async fn start_rental(
         })?;
 
     // Convert to validator's StartRentalRequest format
-    let validator_request = basilica_validator::api::rental_routes::StartRentalRequest {
+    let validator_request = StartRentalRequest {
         executor_id,
-        container_image: request.container_image.clone(),
-        ssh_public_key: request.ssh_public_key.clone(),
-        environment: request.environment.clone(),
-        ports: request
-            .ports
-            .into_iter()
-            .map(
-                |p| basilica_validator::api::rental_routes::PortMappingRequest {
-                    container_port: p.container_port,
-                    host_port: p.host_port,
-                    protocol: p.protocol,
-                },
-            )
-            .collect(),
-        resources: basilica_validator::api::rental_routes::ResourceRequirementsRequest {
-            cpu_cores: request.resources.cpu_cores,
-            memory_mb: request.resources.memory_mb,
-            storage_mb: request.resources.storage_mb,
-            gpu_count: request.resources.gpu_count,
-            gpu_types: request.resources.gpu_types.clone(),
-        },
-        command: request.command.clone(),
-        volumes: request
-            .volumes
-            .into_iter()
-            .map(
-                |v| basilica_validator::api::rental_routes::VolumeMountRequest {
-                    host_path: v.host_path,
-                    container_path: v.container_path,
-                    read_only: v.read_only,
-                },
-            )
-            .collect(),
+        container_image: request.container_image,
+        ssh_public_key: request.ssh_public_key,
+        environment: request.environment,
+        ports: request.ports,
+        resources: request.resources,
+        command: request.command,
+        volumes: request.volumes,
     };
 
     let validator_response = state

@@ -42,6 +42,7 @@ pub struct StartRentalRequest {
 
 /// Port mapping request
 #[derive(Debug, Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PortMappingRequest {
     pub container_port: u32,
     pub host_port: u32,
@@ -55,6 +56,7 @@ fn default_protocol() -> String {
 
 /// Resource requirements request
 #[derive(Debug, Default, Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResourceRequirementsRequest {
     pub cpu_cores: f64,
     pub memory_mb: i64,
@@ -66,6 +68,7 @@ pub struct ResourceRequirementsRequest {
 
 /// Volume mount request
 #[derive(Debug, Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct VolumeMountRequest {
     pub host_path: String,
     pub container_path: String,

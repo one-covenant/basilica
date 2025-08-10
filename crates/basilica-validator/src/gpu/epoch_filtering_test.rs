@@ -4,6 +4,7 @@ mod tests {
     use crate::persistence::{gpu_profile_repository::GpuProfileRepository, SimplePersistence};
     use basilica_common::identity::MinerUid;
     use chrono::Utc;
+    use core::slice;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -347,7 +348,7 @@ mod tests {
         };
 
         // Store profile with complete data
-        seed_test_data(&persistence, &gpu_repo, &[multi_gpu_profile.clone()]).await?;
+        seed_test_data(&persistence, &gpu_repo, slice::from_ref(&multi_gpu_profile)).await?;
 
         // Retrieve and verify
         let retrieved = gpu_repo.get_gpu_profile(MinerUid::new(100)).await?.unwrap();

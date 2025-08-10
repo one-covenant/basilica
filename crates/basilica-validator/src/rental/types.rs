@@ -80,8 +80,10 @@ pub struct RentalResponse {
 pub struct ContainerInfo {
     pub container_id: String,
     pub container_name: String,
+    #[serde(default)]
     pub mapped_ports: Vec<PortMapping>,
     pub status: String,
+    #[serde(default)]
     pub labels: HashMap<String, String>,
 }
 

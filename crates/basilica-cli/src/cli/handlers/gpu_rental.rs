@@ -5,7 +5,6 @@ use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
 use crate::output::{json_output, table_output};
-use crate::ssh::SshClient;
 use basilica_api::api::types::{
     RentalStatusResponse, ResourceRequirementsRequest, StartRentalRequest,
 };
@@ -74,32 +73,8 @@ pub async fn handle_up(
         .await
         .map_err(|e| CliError::internal(format!("Failed to start rental: {e}")))?;
 
-    // Extract rental_id from the response (it's a serde_json::Value)
-    let rental_id = response
-        .get("rental_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-    let executor_id_resp = response
-        .get("executor_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-
-    println!("✅ Successfully created rental: {rental_id}");
-    println!("🖥️  Executor: {executor_id_resp}");
-
-    if let Some(ssh_access) = response.get("ssh_access") {
-        if let (Some(host), Some(port), Some(username)) = (
-            ssh_access.get("host").and_then(|v| v.as_str()),
-            ssh_access.get("port").and_then(|v| v.as_u64()),
-            ssh_access.get("username").and_then(|v| v.as_str()),
-        ) {
-            println!("🔗 SSH: ssh {username}@{host} -p {port}");
-        }
-    }
-
-    if let Some(cost) = response.get("cost_per_hour").and_then(|v| v.as_f64()) {
-        println!("💰 Cost: ${cost:.4}/hour");
-    }
+    println!("✅ Successfully created rental: {}", response.rental_id);
+    println!("🔗 SSH: {}", response.ssh_credentials);
 
     Ok(())
 }
@@ -208,25 +183,25 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()>
 }
 
 /// Handle the `exec` command - execute commands via SSH
-pub async fn handle_exec(target: String, command: String, config: &CliConfig) -> Result<()> {
+pub async fn handle_exec(target: String, _command: String, config: &CliConfig) -> Result<()> {
     debug!("Executing command on rental: {}", target);
-    let api_client = ClientBuilder::default()
+    let _api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
         .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    // Get rental details for SSH access
-    let rental = api_client
-        .get_rental_status(&target)
-        .await
-        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
+    // TODO: The rental status endpoint doesn't return SSH access information.
+    // Need to either:
+    // 1. Store SSH access info locally when rental is created
+    // 2. Add an endpoint to retrieve SSH access info
+    // 3. Include SSH access in rental status response
 
-    // Create SSH client and execute command
-    let ssh_client = SshClient::new(&config.ssh)?;
-    ssh_client.execute_command(&rental, &command).await?;
-
-    Ok(())
+    // For now, return not supported error
+    Err(CliError::not_supported(
+        "SSH command execution requires storing SSH access details from rental creation. \
+         Please save the SSH connection details when creating a rental.",
+    ))
 }
 
 /// Handle the `ssh` command - SSH into instances
@@ -236,23 +211,23 @@ pub async fn handle_ssh(
     config: &CliConfig,
 ) -> Result<()> {
     debug!("Opening SSH connection to rental: {}", target);
-    let api_client = ClientBuilder::default()
+    let _api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
         .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    // Get rental details for SSH access
-    let rental = api_client
-        .get_rental_status(&target)
-        .await
-        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
+    // TODO: The rental status endpoint doesn't return SSH access information.
+    // Need to either:
+    // 1. Store SSH access info locally when rental is created
+    // 2. Add an endpoint to retrieve SSH access info
+    // 3. Include SSH access in rental status response
 
-    // Create SSH client and open interactive session
-    let ssh_client = SshClient::new(&config.ssh)?;
-    ssh_client.interactive_session(&rental).await?;
-
-    Ok(())
+    // For now, return not supported error
+    Err(CliError::not_supported(
+        "SSH access requires storing SSH access details from rental creation. \
+         Please save the SSH connection details when creating a rental.",
+    ))
 }
 
 /// Handle the `cp` command - copy files via SSH
@@ -260,33 +235,26 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
     debug!("Copying files from {} to {}", source, destination);
 
     // Parse source and destination to determine which is remote
-    let (rental_id, is_upload, local_path, remote_path) = parse_copy_paths(&source, &destination)?;
+    let (_rental_id, _is_upload, _local_path, _remote_path) =
+        parse_copy_paths(&source, &destination)?;
 
-    let api_client = ClientBuilder::default()
+    let _api_client = ClientBuilder::default()
         .base_url(&config.api.base_url)
         .api_key(config.api.api_key.clone().unwrap_or_default())
         .build()
         .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
-    let rental = api_client
-        .get_rental_status(&rental_id)
-        .await
-        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
 
-    let ssh_client = SshClient::new(&config.ssh)?;
+    // TODO: The rental status endpoint doesn't return SSH access information.
+    // Need to either:
+    // 1. Store SSH access info locally when rental is created
+    // 2. Add an endpoint to retrieve SSH access info
+    // 3. Include SSH access in rental status response
 
-    if is_upload {
-        ssh_client
-            .upload_file(&rental, &local_path, &remote_path)
-            .await?;
-        println!("✅ Successfully uploaded {local_path} to {rental_id}:{remote_path}");
-    } else {
-        ssh_client
-            .download_file(&rental, &remote_path, &local_path)
-            .await?;
-        println!("✅ Successfully downloaded {rental_id}:{remote_path} to {local_path}");
-    }
-
-    Ok(())
+    // For now, return not supported error
+    Err(CliError::not_supported(
+        "File transfer requires storing SSH access details from rental creation. \
+         Please save the SSH connection details when creating a rental.",
+    ))
 }
 
 // Helper functions

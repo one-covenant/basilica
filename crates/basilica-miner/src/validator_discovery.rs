@@ -192,6 +192,7 @@ impl ValidatorDiscovery {
 }
 
 /// Business logic based assignment strategy
+#[allow(dead_code)]
 pub struct BusinessLogicAssignment {
     /// Validators that should be prioritized
     pub preferred_validators: Vec<String>,
@@ -248,6 +249,7 @@ impl AssignmentStrategy for BusinessLogicAssignment {
 }
 
 /// Random assignment strategy
+#[allow(dead_code)]
 pub struct RandomAssignment {
     /// Maximum executors to assign per validator
     pub max_executors_per_validator: usize,
@@ -293,6 +295,7 @@ impl AssignmentStrategy for RandomAssignment {
 }
 
 /// Stake-based assignment strategy
+#[allow(dead_code)]
 pub struct StakeBasedAssignment {
     /// Minimum stake required for any assignment
     pub min_stake_threshold: u64,
