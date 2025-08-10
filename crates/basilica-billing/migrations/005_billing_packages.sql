@@ -22,11 +22,16 @@ CREATE INDEX IF NOT EXISTS idx_billing_packages_priority ON billing.billing_pack
 -- Create index for GPU model lookup
 CREATE INDEX IF NOT EXISTS idx_billing_packages_gpu_model ON billing.billing_packages(gpu_model);
 -- Trigger already exists from migration 001, skip creating it again
--- Insert default packages
+-- Insert default packages with all required columns
 INSERT INTO billing.billing_packages (
     package_id,
     name,
     description,
+    base_rate_per_hour,
+    cpu_rate_per_hour,
+    memory_rate_per_gb_hour,
+    network_rate_per_gb,
+    disk_iops_rate,
     hourly_rate,
     gpu_model,
     billing_period,
@@ -38,6 +43,11 @@ VALUES (
     'H100 GPU',
     'NVIDIA H100 GPU instances - $3.50/hour',
     3.50,
+    0.01,
+    0.001,
+    0.001,
+    0.0001,
+    3.50,
     'H100',
     'Hourly',
     100,
@@ -48,6 +58,11 @@ VALUES (
     'H200 GPU',
     'NVIDIA H200 GPU instances - $5.00/hour',
     5.00,
+    0.01,
+    0.001,
+    0.001,
+    0.0001,
+    5.00,
     'H200',
     'Hourly',
     200,
@@ -57,6 +72,11 @@ VALUES (
     'custom',
     'Custom',
     'Custom pricing for bespoke deals',
+    0.00,
+    0.01,
+    0.001,
+    0.001,
+    0.0001,
     0.00,
     'Custom',
     'Hourly',
