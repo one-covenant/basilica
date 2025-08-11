@@ -6,7 +6,7 @@ mod tests {
     use alloy_provider::ProviderBuilder;
     use alloy_sol_types::SolEvent;
     use basilica_miner::config::MinerConfig;
-    use collateral::Collateral::{self, CollateralInstance};
+    use collateral::CollateralUpgradeable::{self, CollateralUpgradeableInstance};
     use rand::Rng;
 
     const TESTNET_URL: &str = "https://test.finney.opentensor.ai";
@@ -17,7 +17,8 @@ mod tests {
     /// 0x119ecacb1322cd9d581d550b52e199ec97a33e2e deployed in testnet
     /// decisionTimeout is 20 for the reclaim deny testing
     /// ~/.basilca/private_key is default for private key file path
-    async fn get_contract() -> anyhow::Result<CollateralInstance<impl alloy_provider::Provider>> {
+    async fn get_contract(
+    ) -> anyhow::Result<CollateralUpgradeableInstance<impl alloy_provider::Provider>> {
         let config = MinerConfig::load()?;
         let rpc_url = TESTNET_URL;
         let private_key = config.security.get_private_key()?;
@@ -31,7 +32,7 @@ mod tests {
             .connect(rpc_url)
             .await?;
 
-        let contract = Collateral::new(contract_address, provider);
+        let contract = CollateralUpgradeable::new(contract_address, provider);
         Ok(contract)
     }
 
@@ -64,7 +65,7 @@ mod tests {
 
         let mut deposit_found = false;
         deposit_tx_receipt.logs().iter().for_each(|log| {
-            if let Ok(event) = Collateral::Deposit::decode_log(&log.inner) {
+            if let Ok(event) = CollateralUpgradeable::Deposit::decode_log(&log.inner) {
                 assert!(FixedBytes::from(executor_id) == event.executorId);
                 deposit_found = true;
             }
@@ -116,7 +117,8 @@ mod tests {
 
         let mut reclaim_id = U256::from(0);
         reclaim_receipt.logs().iter().for_each(|log| {
-            if let Ok(event) = Collateral::ReclaimProcessStarted::decode_log(&log.inner) {
+            if let Ok(event) = CollateralUpgradeable::ReclaimProcessStarted::decode_log(&log.inner)
+            {
                 reclaim_id = event.reclaimRequestId;
             }
         });
@@ -129,7 +131,7 @@ mod tests {
         let mut finalize_found = false;
         // Check for Denied event
         finalize_receipt.logs().iter().for_each(|log| {
-            if let Ok(event) = Collateral::Reclaimed::decode_log(&log.inner) {
+            if let Ok(event) = CollateralUpgradeable::Reclaimed::decode_log(&log.inner) {
                 assert_eq!(event.reclaimRequestId, reclaim_id);
                 finalize_found = true;
             }
@@ -169,7 +171,8 @@ mod tests {
 
         let mut reclaim_id = U256::from(0);
         reclaim_receipt.logs().iter().for_each(|log| {
-            if let Ok(event) = Collateral::ReclaimProcessStarted::decode_log(&log.inner) {
+            if let Ok(event) = CollateralUpgradeable::ReclaimProcessStarted::decode_log(&log.inner)
+            {
                 reclaim_id = event.reclaimRequestId;
             }
         });
@@ -185,7 +188,7 @@ mod tests {
         // Check for Denied event
         let mut denied_found = false;
         deny_receipt.logs().iter().for_each(|log| {
-            if let Ok(event) = Collateral::Denied::decode_log(&log.inner) {
+            if let Ok(event) = CollateralUpgradeable::Denied::decode_log(&log.inner) {
                 assert_eq!(event.reclaimRequestId, reclaim_id);
                 denied_found = true;
             }
@@ -223,7 +226,7 @@ mod tests {
         let slash_receipt = slash_tx.send().await?.get_receipt().await?;
 
         slash_receipt.logs().iter().for_each(|log| {
-            if let Ok(event) = Collateral::Slashed::decode_log(&log.inner) {
+            if let Ok(event) = CollateralUpgradeable::Slashed::decode_log(&log.inner) {
                 assert_eq!(event.executorId, FixedBytes::from(executor_id));
             }
         });

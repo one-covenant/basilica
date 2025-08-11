@@ -42,7 +42,7 @@ contract CollateralUpgradeableTest is Test {
     }
 
     /// @dev Test basic initialization
-    function testInitialization() public {
+    function testInitialization() public view {
         assertEq(collateral.NETUID(), NETUID);
         assertEq(collateral.TRUSTEE(), trustee);
         assertEq(collateral.MIN_COLLATERAL_INCREASE(), MIN_DEPOSIT);
