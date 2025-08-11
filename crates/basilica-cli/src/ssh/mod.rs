@@ -164,6 +164,133 @@ impl SshClient {
         Ok(())
     }
 
+    /// Parse port forward specification into components
+    fn parse_port_forward_spec<'a>(
+        spec: &'a str,
+        forward_type: &str,
+    ) -> Result<(u16, &'a str, u16)> {
+        // Use splitn for more efficient parsing - stops after finding 3 parts
+        let mut parts = spec.splitn(3, ':');
+
+        let port1_str = parts.next().ok_or_else(|| {
+            CliError::invalid_argument(format!(
+                "Invalid {} forward specification: {}. Expected format: port:host:port",
+                forward_type, spec
+            ))
+        })?;
+
+        let host = parts.next().ok_or_else(|| {
+            CliError::invalid_argument(format!(
+                "Invalid {} forward specification: {}. Expected format: port:host:port",
+                forward_type, spec
+            ))
+        })?;
+
+        let port2_str = parts.next().ok_or_else(|| {
+            CliError::invalid_argument(format!(
+                "Invalid {} forward specification: {}. Expected format: port:host:port",
+                forward_type, spec
+            ))
+        })?;
+
+        // Parse and validate port numbers
+        let port1 = port1_str.parse::<u16>().map_err(|_| {
+            CliError::invalid_argument(format!(
+                "Invalid port number '{}' in {} forward spec: {}",
+                port1_str, forward_type, spec
+            ))
+        })?;
+
+        let port2 = port2_str.parse::<u16>().map_err(|_| {
+            CliError::invalid_argument(format!(
+                "Invalid port number '{}' in {} forward spec: {}",
+                port2_str, forward_type, spec
+            ))
+        })?;
+
+        Ok((port1, host, port2))
+    }
+
+    /// Open interactive SSH session with port forwarding and command options
+    pub async fn interactive_session_with_options(
+        &self,
+        ssh_access: &SshAccess,
+        options: &crate::cli::commands::SshOptions,
+    ) -> Result<()> {
+        let details = self.ssh_access_to_connection_details(ssh_access)?;
+
+        info!(
+            "Opening SSH session to {}@{}",
+            ssh_access.username, ssh_access.host
+        );
+
+        if !options.local_forward.is_empty() {
+            info!("Local port forwarding enabled");
+        }
+        if !options.remote_forward.is_empty() {
+            info!("Remote port forwarding enabled");
+        }
+
+        debug!(
+            "Running interactive SSH to {}@{}:{}",
+            details.username, details.host, details.port
+        );
+
+        // Use SSH command directly with proper arguments for TTY support
+        let mut cmd = std::process::Command::new("ssh");
+        cmd.arg("-i")
+            .arg(details.private_key_path.display().to_string())
+            .arg("-p")
+            .arg(details.port.to_string())
+            .arg("-o")
+            .arg("StrictHostKeyChecking=no")
+            .arg("-o")
+            .arg("UserKnownHostsFile=/dev/null")
+            .arg("-o")
+            .arg("LogLevel=error");
+
+        // Add local port forwarding arguments
+        for forward_spec in &options.local_forward {
+            // Validate format: local_port:remote_host:remote_port
+            let (_local_port, _host, _remote_port) =
+                Self::parse_port_forward_spec(forward_spec, "local")?;
+
+            cmd.arg("-L").arg(forward_spec);
+            debug!("Added local port forward: {}", forward_spec);
+        }
+
+        // Add remote port forwarding arguments
+        for forward_spec in &options.remote_forward {
+            // Validate format: remote_port:local_host:local_port
+            let (_remote_port, _host, _local_port) =
+                Self::parse_port_forward_spec(forward_spec, "remote")?;
+
+            cmd.arg("-R").arg(forward_spec);
+            debug!("Added remote port forward: {}", forward_spec);
+        }
+
+        // Add the target host
+        cmd.arg(format!("{}@{}", details.username, details.host));
+
+        // If there's a command to execute, add it
+        if !options.command.is_empty() {
+            for arg in &options.command {
+                cmd.arg(arg);
+            }
+            debug!("Added SSH command: {:?}", options.command);
+        }
+
+        let status = cmd
+            .status()
+            .map_err(|e| CliError::ssh(format!("Failed to start SSH session: {}", e)))?;
+
+        if !status.success() {
+            return Err(CliError::ssh("SSH session terminated with error"));
+        }
+
+        Ok(())
+    }
+
     /// Upload file via SSH
     pub async fn upload_file(
         &self,

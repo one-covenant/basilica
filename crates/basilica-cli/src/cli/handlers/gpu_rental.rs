@@ -416,7 +416,7 @@ pub async fn handle_exec(target: String, command: String, config: &CliConfig) ->
 /// Handle the `ssh` command - SSH into instances
 pub async fn handle_ssh(
     target: String,
-    _options: crate::cli::commands::SshOptions,
+    options: crate::cli::commands::SshOptions,
     config: &CliConfig,
 ) -> Result<()> {
     debug!("Opening SSH connection to rental: {}", target);
@@ -444,9 +444,20 @@ pub async fn handle_ssh(
         username,
     };
 
-    // Use SSH client to open interactive session
+    // Use SSH client to handle connection with options
     let ssh_client = SshClient::new(&config.ssh)?;
-    ssh_client.interactive_session(&ssh_access).await
+
+    // If a command is provided, execute it directly without opening interactive session
+    if !options.command.is_empty() {
+        let command = options.command.join(" ");
+        debug!("Executing SSH command: {}", command);
+        return ssh_client.execute_command(&ssh_access, &command).await;
+    }
+
+    // Otherwise, open interactive session with port forwarding options
+    ssh_client
+        .interactive_session_with_options(&ssh_access, &options)
+        .await
 }
 
 /// Handle the `cp` command - copy files via SSH
