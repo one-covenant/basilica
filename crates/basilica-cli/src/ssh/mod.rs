@@ -72,8 +72,6 @@ impl SshClient {
     pub async fn execute_command(&self, ssh_access: &SshAccess, command: &str) -> Result<()> {
         let details = self.ssh_access_to_connection_details(ssh_access)?;
 
-        info!("Executing command: {}", command);
-
         let output = self
             .client
             .execute_command(&details, command, true)

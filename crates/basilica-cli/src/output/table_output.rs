@@ -25,9 +25,9 @@ fn truncate_container_id(container_id: &str) -> String {
 fn format_timestamp(timestamp: &str) -> String {
     DateTime::parse_from_rfc3339(timestamp)
         .ok()
-        .and_then(|dt| {
+        .map(|dt| {
             let local_dt = dt.with_timezone(&Local);
-            Some(local_dt.format("%y-%m-%d %H:%M:%S").to_string())
+            local_dt.format("%y-%m-%d %H:%M:%S").to_string()
         })
         .unwrap_or_else(|| timestamp.to_string())
 }

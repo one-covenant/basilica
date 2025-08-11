@@ -326,10 +326,79 @@ impl SimplePersistence {
         .execute(&self.pool)
         .await?;
 
-        // Add new columns if they don't exist (for migration)
-        let _ = sqlx::query("ALTER TABLE rentals ADD COLUMN executor_ssh_credentials TEXT")
+        // Migration: Handle ssh_credentials nullability and add executor_ssh_credentials
+        // Check if we need to migrate the rentals table
+        let needs_migration: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('rentals')
+            WHERE name = 'ssh_credentials' AND "notnull" = 1
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if needs_migration {
+            info!("Migrating rentals table to make ssh_credentials nullable");
+
+            // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+            sqlx::query(
+                r#"
+                -- Create new table with updated schema
+                CREATE TABLE rentals_new (
+                    id TEXT PRIMARY KEY,
+                    validator_hotkey TEXT NOT NULL,
+                    executor_id TEXT NOT NULL,
+                    container_id TEXT NOT NULL,
+                    ssh_session_id TEXT NOT NULL,
+                    ssh_credentials TEXT,  -- Now nullable
+                    executor_ssh_credentials TEXT,
+                    state TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    container_spec TEXT NOT NULL,
+                    miner_id TEXT NOT NULL DEFAULT '',
+                    customer_public_key TEXT,
+                    docker_image TEXT,
+                    env_vars TEXT,
+                    gpu_requirements TEXT,
+                    ssh_access_info TEXT,
+                    cost_per_hour REAL,
+                    status TEXT,
+                    updated_at TEXT,
+                    started_at TEXT,
+                    terminated_at TEXT,
+                    termination_reason TEXT,
+                    total_cost REAL
+                );
+                
+                -- Copy data from old table, using ssh_credentials for executor_ssh_credentials if missing
+                INSERT INTO rentals_new 
+                SELECT 
+                    id, validator_hotkey, executor_id, container_id, ssh_session_id,
+                    ssh_credentials, 
+                    COALESCE(ssh_credentials, ''),  -- Use ssh_credentials as executor_ssh_credentials for old records
+                    state, created_at, container_spec, miner_id,
+                    customer_public_key, docker_image, env_vars, gpu_requirements,
+                    ssh_access_info, cost_per_hour, status, updated_at,
+                    started_at, terminated_at, termination_reason, total_cost
+                FROM rentals;
+                
+                -- Drop old table and rename new one
+                DROP TABLE rentals;
+                ALTER TABLE rentals_new RENAME TO rentals;
+                "#,
+            )
             .execute(&self.pool)
-            .await; // Ignore error if column already exists
+            .await?;
+
+            info!("Successfully migrated rentals table");
+        } else {
+            // Just try to add executor_ssh_credentials column if it doesn't exist
+            let _ = sqlx::query("ALTER TABLE rentals ADD COLUMN executor_ssh_credentials TEXT")
+                .execute(&self.pool)
+                .await; // Ignore error if column already exists
+        }
 
         // Create indexes
         sqlx::query(
@@ -1214,13 +1283,11 @@ impl SimplePersistence {
 
             let gpu_specs: Vec<crate::api::types::GpuSpec> =
                 serde_json::from_str(&gpu_specs_json).unwrap_or_default();
-            let cpu_specs: crate::api::types::CpuSpec =
-                serde_json::from_str(&cpu_specs_json).unwrap_or_else(|_| {
-                    crate::api::types::CpuSpec {
-                        cores: 0,
-                        model: "unknown".to_string(),
-                        memory_gb: 0,
-                    }
+            let cpu_specs: crate::api::types::CpuSpec = serde_json::from_str(&cpu_specs_json)
+                .unwrap_or_else(|_| crate::api::types::CpuSpec {
+                    cores: 0,
+                    model: "unknown".to_string(),
+                    memory_gb: 0,
                 });
 
             Ok(Some(crate::api::types::ExecutorDetails {
