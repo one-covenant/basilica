@@ -47,6 +47,7 @@ async fn disable_whitelist() -> Result<(), anyhow::Error> {
         .await?;
 
     println!("Value: {result:?}");
+    assert_eq!(result, Some(true));
 
     Ok(())
 }

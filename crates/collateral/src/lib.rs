@@ -35,8 +35,16 @@ pub struct Reclaim {
 impl From<(FixedBytes<32>, FixedBytes<16>, Address, U256, u64)> for Reclaim {
     fn from(tuple: (FixedBytes<32>, FixedBytes<16>, Address, U256, u64)) -> Self {
         Self {
-            hotkey: tuple.0.to_vec().try_into().unwrap(),
-            executor_id: u128::from_be_bytes(tuple.1.to_vec().try_into().unwrap()),
+            hotkey: {
+                let mut hk = [0u8; 32];
+                hk.copy_from_slice(tuple.0.as_slice());
+                hk
+            },
+            executor_id: {
+                let mut b = [0u8; 16];
+                b.copy_from_slice(tuple.1.as_slice());
+                u128::from_be_bytes(b)
+            },
             miner: tuple.2,
             amount: tuple.3,
             deny_timeout: tuple.4,
