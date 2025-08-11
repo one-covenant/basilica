@@ -27,6 +27,7 @@ jobs:
       validator: ${{ steps.changes.outputs.validator }}
       miner: ${{ steps.changes.outputs.miner }}
       basilica-api: ${{ steps.changes.outputs.basilica-api }}
+      billing: ${{ steps.changes.outputs.billing }}
       workspace: ${{ steps.changes.outputs.workspace }}
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +62,13 @@ jobs:
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/basilica-api/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            billing:
+              - 'crates/basilica-billing/**'
+              - 'crates/basilica-common/**'
+              - 'crates/basilica-protocol/**'
+              - 'scripts/billing/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             workspace:
@@ -148,6 +156,8 @@ jobs:
           cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
           # Run clippy on basilica-api
           cargo clippy -p basilica-api --all-targets --all-features -- -D warnings
+          # Run clippy on billing
+          cargo clippy -p basilica-billing --all-targets --all-features -- -D warnings
 
   # Build and test executor
   build-executor:
@@ -382,6 +392,89 @@ jobs:
           chmod +x scripts/basilica-api/build.sh
           BITTENSOR_NETWORK=finney ./scripts/basilica-api/build.sh --no-extract
 
+  # Build and test billing
+  build-billing:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.workspace == 'true'
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: billing
+          POSTGRES_PASSWORD: billing_dev_password
+          POSTGRES_DB: basilica_billing
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang postgresql-client
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+      - name: Check billing builds
+        run: |
+          cargo check -p basilica-billing
+      - name: Run billing migrations
+        run: |
+          export DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
+          export BILLING_DATABASE_URL="$DATABASE_URL"
+          export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
+          cargo build -p basilica-billing --bin basilica-billing
+          ./target/debug/basilica-billing --gen-config > billing.toml
+          # Run migrations via the billing service
+          cargo run -p basilica-billing -- --config billing.toml --dry-run
+      - name: Test billing crate (unit tests only)
+        run: |
+          export BILLING_DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
+          export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
+          cargo nextest run -p basilica-billing --lib
+      - name: Test billing BDD integration tests
+        run: |
+          export BILLING_DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
+          export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
+          cargo test -p basilica-billing --test bdd_integration_tests -- --test-threads=1
+      - name: Test billing CLI functionality
+        run: |
+          cargo build -p basilica-billing
+          ./target/debug/basilica-billing --help
+          ./target/debug/basilica-billing --gen-config
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
+      - name: Test Docker build script
+        run: |
+          chmod +x scripts/billing/build.sh
+          ./scripts/billing/build.sh --no-extract
+
   # Final status check
   ci-success:
     runs-on: ubuntu-latest
@@ -392,6 +485,7 @@ jobs:
       - build-validator
       - build-miner
       - build-api
+      - build-billing
     if: always()
     steps:
       - name: Check if all jobs succeeded
@@ -401,7 +495,8 @@ jobs:
                 ("${{ needs.build-executor.result }}" == "success" || "${{ needs.build-executor.result }}" == "skipped") && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
-                ("${{ needs.build-api.result }}" == "success" || "${{ needs.build-api.result }}" == "skipped") ]]; then
+                ("${{ needs.build-api.result }}" == "success" || "${{ needs.build-api.result }}" == "skipped") && \
+                ("${{ needs.build-billing.result }}" == "success" || "${{ needs.build-billing.result }}" == "skipped") ]]; then
             echo "All CI checks passed!"
             exit 0
           else
