@@ -1,15 +1,17 @@
 // The unit tests are for testing against local network
 // Just can be executed if local subtensor node is running
 use super::*;
+use alloy::hex::FromHex;
 use alloy_primitives::Bytes;
 use alloy_sol_types::SolCall;
 use alloy_sol_types::sol;
 use bittensor::api::api::{self as bittensorapi};
 use proxy::Proxy;
+use std::fs;
 use subxt::{OnlineClient, PolkadotConfig};
 use subxt_signer::sr25519::dev;
 
-use config::{LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
+use config::{LOCAL_RPC_URL, LOCAL_WS_URL, PRIVATE_KEY_FILE, TEST_CHAIN_ID, TEST_RPC_URL};
 
 // function to initialize the contract
 sol! {
@@ -153,4 +155,65 @@ async fn test_collateral_deploy() {
         .await
         .unwrap();
     assert_eq!(collaterals_result, amount);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_deploy_upgradable_collateral_in_testnet() {
+    let private_key = fs::read_to_string(PRIVATE_KEY_FILE).unwrap();
+    println!("private_key: {:?}", private_key);
+
+    let mut signer: PrivateKeySigner = private_key.trim().parse().unwrap();
+    signer.set_chain_id(Some(TEST_CHAIN_ID));
+
+    let provider = ProviderBuilder::new()
+        .wallet(signer)
+        .connect(TEST_RPC_URL)
+        .await
+        .unwrap();
+
+    let contract = CollateralUpgradeable::deploy(provider.clone())
+        .await
+        .unwrap();
+
+    println!("Deployed contract at: {:?}", contract.address());
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_deploy_proxy_in_testnet() {
+    let contract_address = Address::from_hex("0x4894035ccc55143c791ef85e31bc225b7918eb68").unwrap();
+    let private_key = fs::read_to_string(PRIVATE_KEY_FILE).unwrap();
+
+    let mut signer: PrivateKeySigner = private_key.trim().parse().unwrap();
+    signer.set_chain_id(Some(TEST_CHAIN_ID));
+
+    let provider = ProviderBuilder::new()
+        .wallet(signer.clone())
+        .connect(TEST_RPC_URL)
+        .await
+        .unwrap();
+
+    let netuid = 1;
+    let trustee = signer.address();
+    let min_collateral_increase = U256::from(1);
+    let decision_timeout = 1; // 1 hour
+    let admin = signer.address();
+
+    let data: Bytes = Bytes::from(
+        initializeCall {
+            netuid,
+            trustee,
+            minCollateralIncrease: min_collateral_increase,
+            decisionTimeout: decision_timeout,
+            admin,
+        }
+        .abi_encode(),
+    );
+
+    let contract = Proxy::deploy(provider.clone(), contract_address, data)
+        .await
+        .unwrap();
+
+    println!("Deployed proxy at: {:?}", contract.address());
 }
