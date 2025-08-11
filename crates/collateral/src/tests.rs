@@ -111,7 +111,7 @@ async fn test_collateral_deploy() {
     let amount = U256::from(2_000_000_000_000_000_000u128); // 2 TAO
 
     // Call through proxy address
-    let proxied = CollateralUpgradeable::new(*proxy.address(), &provider);
+    let proxied = CollateralUpgradeable::new(*proxy.address(), provider.clone());
 
     let tx = proxied
         .deposit(
@@ -161,7 +161,6 @@ async fn test_collateral_deploy() {
 #[ignore]
 async fn test_deploy_upgradable_collateral_in_testnet() {
     let private_key = fs::read_to_string(PRIVATE_KEY_FILE).unwrap();
-    println!("private_key: {:?}", private_key);
 
     let mut signer: PrivateKeySigner = private_key.trim().parse().unwrap();
     signer.set_chain_id(Some(TEST_CHAIN_ID));
