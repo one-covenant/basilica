@@ -11,7 +11,7 @@ pub mod proxy;
 #[cfg(test)]
 mod test;
 
-use config::{CHAIN_ID, COLLATERAL_ADDRESS, PROXY_ADDRESS, RPC_URL};
+use config::{CHAIN_ID, PROXY_ADDRESS, RPC_URL};
 
 sol!(
     #[allow(missing_docs)]
