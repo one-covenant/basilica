@@ -189,6 +189,7 @@ impl CreditRepository for SqlCreditRepository {
             r#"
             INSERT INTO billing.credits (user_id, balance, reserved_balance, lifetime_spent, last_updated)
             VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (user_id) DO NOTHING
             "#,
         )
         .bind(user_uuid)

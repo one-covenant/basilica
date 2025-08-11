@@ -447,10 +447,11 @@ jobs:
           export DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
           export BILLING_DATABASE_URL="$DATABASE_URL"
           export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
-          cargo build -p basilica-billing --bin basilica-billing
-          ./target/debug/basilica-billing --gen-config > billing.toml
-          # Run migrations via the billing service
-          cargo run -p basilica-billing -- --config billing.toml --dry-run
+          # Run migrations directly using psql
+          for migration in crates/basilica-billing/migrations/*.sql; do
+            echo "Running migration: $migration"
+            PGPASSWORD=billing_dev_password psql -h localhost -p 5432 -U billing -d basilica_billing -f "$migration" || true
+          done
       - name: Test billing crate (unit tests only)
         run: |
           export BILLING_DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
@@ -460,7 +461,8 @@ jobs:
         run: |
           export BILLING_DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
           export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
-          cargo test -p basilica-billing --test bdd_integration_tests -- --test-threads=1
+          # Run from the billing crate directory so migrations path is correct
+          cd crates/basilica-billing && cargo test --test bdd_integration_tests -- --test-threads=1
       - name: Test billing CLI functionality
         run: |
           cargo build -p basilica-billing

@@ -170,14 +170,20 @@ impl CreditManager {
     }
 
     async fn get_or_create_account(&self, user_id: &UserId) -> Result<CreditAccount> {
-        match self.repository.get_account(user_id).await? {
-            Some(account) => Ok(account),
-            None => {
-                let account = CreditAccount::new(user_id.clone());
-                self.repository.create_account(&account).await?;
-                Ok(account)
-            }
+        if let Some(account) = self.repository.get_account(user_id).await? {
+            return Ok(account);
         }
+
+        let new_account = CreditAccount::new(user_id.clone());
+        self.repository.create_account(&new_account).await?;
+
+        self.repository
+            .get_account(user_id)
+            .await?
+            .ok_or_else(|| BillingError::DatabaseError {
+                operation: "get_or_create_account".to_string(),
+                source: "Failed to fetch account after creation".into(),
+            })
     }
 }
 
