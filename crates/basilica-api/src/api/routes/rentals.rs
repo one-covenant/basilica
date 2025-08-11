@@ -100,7 +100,7 @@ pub async fn stop_rental(
 
 /// Stream rental logs
 pub async fn stream_rental_logs(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(rental_id): Path<String>,
     Query(query): Query<LogStreamQuery>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, std::io::Error>>>> {
@@ -109,32 +109,53 @@ pub async fn stream_rental_logs(
     let follow = query.follow.unwrap_or(false);
     let tail_lines = query.tail;
 
-    // For now, return a simple stream that indicates logs are not available
-    // Full implementation would require websocket or SSE proxy to validator
+    // Create query parameters for validator
+    let log_query = basilica_validator::api::types::LogQuery {
+        follow: Some(follow),
+        tail: tail_lines,
+    };
+
+    // Get SSE stream from validator
+    let validator_stream = state
+        .validator_client
+        .stream_rental_logs(&rental_id, log_query)
+        .await
+        .map_err(|e| {
+            error!("Failed to get log stream from validator: {}", e);
+            crate::error::Error::ValidatorCommunication {
+                message: format!("Failed to stream logs: {}", e),
+            }
+        })?;
+
+    // Convert validator Event stream to axum SSE Events
     let stream = async_stream::stream! {
-        let data = serde_json::json!({
-            "timestamp": chrono::Utc::now(),
-            "stream": "stderr",
-            "message": format!("Log streaming not yet implemented for rental {}", rental_id),
-        });
-
-        yield Ok(Event::default().data(data.to_string()));
-
-        if !follow {
-            // If not following, just send one message and close
-            return;
-        }
-
-        // For follow mode, send periodic updates
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            let data = serde_json::json!({
-                "timestamp": chrono::Utc::now(),
-                "stream": "info",
-                "message": format!("Rental {} log streaming active (tail: {:?})", rental_id, tail_lines),
-            });
-            yield Ok(Event::default().data(data.to_string()));
+        use futures::StreamExt;
+        futures::pin_mut!(validator_stream);
+        
+        while let Some(result) = validator_stream.next().await {
+            match result {
+                Ok(event) => {
+                    // Convert validator Event to SSE data
+                    let data = serde_json::json!({
+                        "timestamp": event.timestamp,
+                        "stream": event.stream,
+                        "message": event.message,
+                    });
+                    
+                    yield Ok(Event::default().data(data.to_string()));
+                }
+                Err(e) => {
+                    error!("Error in log stream: {}", e);
+                    // Send error as an SSE event
+                    let data = serde_json::json!({
+                        "timestamp": chrono::Utc::now(),
+                        "stream": "error",
+                        "message": format!("Stream error: {}", e),
+                    });
+                    yield Ok(Event::default().data(data.to_string()));
+                    break;
+                }
+            }
         }
     };
 

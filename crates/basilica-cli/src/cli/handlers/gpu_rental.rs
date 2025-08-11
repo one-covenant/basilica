@@ -148,39 +148,93 @@ pub async fn handle_status(target: String, json: bool, config: &CliConfig) -> Re
 pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfig) -> Result<()> {
     debug!("Viewing logs for rental: {}", target);
 
-    // Load rental cache and get SSH credentials
-    let cache = RentalCache::load().await?;
-    let cached_rental = cache.get_rental(&target)
-        .ok_or_else(|| CliError::not_found(format!(
-            "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
-            target
-        )))?;
+    // Create API client
+    let api_client = ClientBuilder::default()
+        .base_url(&config.api.base_url)
+        .api_key(config.api.api_key.clone().unwrap_or_default())
+        .build()
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    // Check if SSH credentials are available
-    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
-        CliError::not_supported(
-            "This rental does not have SSH access. Container was created without SSH port mapping.",
-        )
-    })?;
-
-    // Parse SSH credentials
-    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
-    let ssh_access = SshAccess {
-        host,
-        port,
-        username,
-    };
-
-    // Use SSH client to stream logs
-    let ssh_client = SshClient::new(&config.ssh)?;
-    ssh_client
-        .stream_logs(
-            &ssh_access,
-            &cached_rental.container_id,
-            options.follow,
-            options.tail,
-        )
+    // Get log stream from API
+    let response = api_client
+        .get_rental_logs(&target, options.follow, options.tail)
         .await
+        .map_err(|e| CliError::internal(format!("Failed to get logs: {e}")))?;
+
+    // Check content type
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !content_type.contains("text/event-stream") {
+        // Not an SSE stream, try to get error message
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        
+        if status == 404 {
+            return Err(CliError::not_found(format!("Rental {} not found", target)));
+        } else {
+            return Err(CliError::internal(format!(
+                "Failed to get logs (status {}): {}",
+                status, body
+            )));
+        }
+    }
+
+    // Parse and display SSE stream
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+    use serde::Deserialize;
+    
+    #[derive(Debug, Deserialize)]
+    struct LogEntry {
+        timestamp: chrono::DateTime<chrono::Utc>,
+        stream: String,
+        message: String,
+    }
+    
+    let stream = response.bytes_stream().eventsource();
+    
+    println!("Streaming logs for rental {}...", target);
+    if options.follow {
+        println!("Following log output - press Ctrl+C to stop");
+    }
+    
+    futures::pin_mut!(stream);
+    
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(sse_event) => {
+                // Parse the data field as JSON
+                match serde_json::from_str::<LogEntry>(&sse_event.data) {
+                    Ok(entry) => {
+                        let timestamp = entry.timestamp.format("%Y-%m-%d %H:%M:%S%.3f");
+                        let stream_indicator = match entry.stream.as_str() {
+                            "stdout" => "OUT",
+                            "stderr" => "ERR",
+                            "error" => "ERR",
+                            _ => &entry.stream,
+                        };
+                        println!("[{} {}] {}", timestamp, stream_indicator, entry.message);
+                    }
+                    Err(e) => {
+                        debug!("Failed to parse log event: {}, data: {}", e, sse_event.data);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading log stream: {}", e);
+                break;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Handle the `down` command - terminate rentals
