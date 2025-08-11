@@ -6,8 +6,9 @@ use utoipa::ToSchema;
 // Re-export common types from validator that now have ToSchema support
 pub use basilica_validator::api::types::{
     AvailabilityInfo, AvailableExecutor, CpuSpec, ExecutorDetails, GpuRequirements, GpuSpec,
-    ListCapacityQuery, ListCapacityResponse, LogQuery, RentCapacityRequest, RentCapacityResponse,
-    RentalStatus, RentalStatusResponse, SshAccess, TerminateRentalRequest, TerminateRentalResponse,
+    ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, RentCapacityRequest,
+    RentCapacityResponse, RentalStatus, RentalStatusResponse, SshAccess, TerminateRentalRequest,
+    TerminateRentalResponse,
 };
 
 // Re-export rental-specific types from validator

@@ -11,7 +11,10 @@ use axum::{
     Json,
 };
 use basilica_validator::{
-    api::{rental_routes::StartRentalRequest, types::ListRentalsResponse},
+    api::{
+        rental_routes::StartRentalRequest,
+        types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, ListRentalsResponse},
+    },
     RentalResponse,
 };
 use futures::stream::Stream;
@@ -131,7 +134,7 @@ pub async fn stream_rental_logs(
     let stream = async_stream::stream! {
         use futures::StreamExt;
         futures::pin_mut!(validator_stream);
-        
+
         while let Some(result) = validator_stream.next().await {
             match result {
                 Ok(event) => {
@@ -141,7 +144,7 @@ pub async fn stream_rental_logs(
                         "stream": event.stream,
                         "message": event.message,
                     });
-                    
+
                     yield Ok(Event::default().data(data.to_string()));
                 }
                 Err(e) => {
@@ -199,6 +202,21 @@ fn is_valid_ssh_public_key(key: &str) -> bool {
     }
 
     true
+}
+
+/// List available executors for rentals
+pub async fn list_available_executors(
+    State(state): State<AppState>,
+    Query(query): Query<ListAvailableExecutorsQuery>,
+) -> Result<Json<ListAvailableExecutorsResponse>> {
+    info!("Listing available executors with filters: {:?}", query);
+
+    let response = state
+        .validator_client
+        .list_available_executors(Some(query))
+        .await?;
+
+    Ok(Json(response))
 }
 
 fn is_valid_container_image(image: &str) -> bool {

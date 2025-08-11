@@ -10,12 +10,104 @@ use crate::ssh::SshClient;
 use basilica_api::api::types::{RentalStatusResponse, ResourceRequirementsRequest, SshAccess};
 use basilica_api::ClientBuilder;
 use basilica_validator::api::rental_routes::StartRentalRequest;
+use basilica_validator::api::types::ListAvailableExecutorsQuery;
 use std::path::PathBuf;
+use tabled::{settings::Style, Table, Tabled};
 use tracing::{debug, info};
 
-/// Handle the `ls` command - list rentals
-pub async fn handle_ls(_filters: ListFilters, _json: bool, _config: &CliConfig) -> Result<()> {
-    todo!();
+/// Handle the `ls` command - list available executors for rental
+pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> Result<()> {
+    let api_client = ClientBuilder::default()
+        .base_url(&config.api.base_url)
+        .api_key(config.api.api_key.clone().unwrap_or_default())
+        .build()
+        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+
+    // Build query from filters
+    let query = ListAvailableExecutorsQuery {
+        min_gpu_memory: filters.memory_min,
+        gpu_type: filters.gpu_type,
+        min_gpu_count: filters.gpu_min,
+    };
+
+    info!("Fetching available executors...");
+
+    let response = api_client
+        .list_available_executors(Some(query))
+        .await
+        .map_err(|e| CliError::internal(format!("Failed to list available executors: {e}")))?;
+
+    if json {
+        json_output(&response)?;
+    } else {
+        if response.available_executors.is_empty() {
+            println!("No available executors found matching the specified criteria.");
+            return Ok(());
+        }
+
+        // Format as table
+        #[derive(Tabled)]
+        struct ExecutorRow {
+            #[tabled(rename = "Executor ID")]
+            id: String,
+            #[tabled(rename = "GPUs")]
+            gpu_count: String,
+            #[tabled(rename = "GPU Info")]
+            gpu_info: String,
+            #[tabled(rename = "CPU")]
+            cpu: String,
+            #[tabled(rename = "RAM")]
+            ram: String,
+            #[tabled(rename = "Score")]
+            score: String,
+            #[tabled(rename = "Uptime")]
+            uptime: String,
+        }
+
+        let rows: Vec<ExecutorRow> = response
+            .available_executors
+            .into_iter()
+            .map(|executor| {
+                let (gpu_count, gpu_info) = if executor.executor.gpu_specs.is_empty() {
+                    ("0".to_string(), "No GPU".to_string())
+                } else {
+                    let gpu_names: Vec<String> = executor
+                        .executor
+                        .gpu_specs
+                        .iter()
+                        .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                        .collect();
+                    (
+                        executor.executor.gpu_specs.len().to_string(),
+                        gpu_names.join(", "),
+                    )
+                };
+
+                // Remove miner prefix from executor ID if present
+                let executor_id = match executor.executor.id.split_once("__") {
+                    Some((_, second)) => second.to_string(),
+                    None => executor.executor.id,
+                };
+
+                ExecutorRow {
+                    id: executor_id,
+                    gpu_count,
+                    gpu_info,
+                    cpu: format!("{} cores", executor.executor.cpu_specs.cores),
+                    ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
+                    score: format!("{:.2}", executor.availability.verification_score),
+                    uptime: format!("{:.1}%", executor.availability.uptime_percentage),
+                }
+            })
+            .collect();
+
+        let mut table = Table::new(rows);
+        table.with(Style::modern());
+        println!("{}", table);
+        println!("\nTotal available executors: {}", response.total_count);
+    }
+
+    Ok(())
 }
 
 /// Handle the `up` command - provision GPU instances
@@ -175,7 +267,7 @@ pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfi
             .text()
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
-        
+
         if status == 404 {
             return Err(CliError::not_found(format!("Rental {} not found", target)));
         } else {
@@ -190,23 +282,23 @@ pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfi
     use eventsource_stream::Eventsource;
     use futures::StreamExt;
     use serde::Deserialize;
-    
+
     #[derive(Debug, Deserialize)]
     struct LogEntry {
         timestamp: chrono::DateTime<chrono::Utc>,
         stream: String,
         message: String,
     }
-    
+
     let stream = response.bytes_stream().eventsource();
-    
+
     println!("Streaming logs for rental {}...", target);
     if options.follow {
         println!("Following log output - press Ctrl+C to stop");
     }
-    
+
     futures::pin_mut!(stream);
-    
+
     while let Some(event) = stream.next().await {
         match event {
             Ok(sse_event) => {

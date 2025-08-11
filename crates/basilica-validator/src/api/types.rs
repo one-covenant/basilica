@@ -105,10 +105,10 @@ pub enum RentalStatus {
     Failed,
 }
 
-/// Available capacity listing
+/// Available executors listing
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
-pub struct ListCapacityResponse {
+pub struct ListAvailableExecutorsResponse {
     pub available_executors: Vec<AvailableExecutor>,
     pub total_count: usize,
 }
@@ -118,7 +118,6 @@ pub struct ListCapacityResponse {
 pub struct AvailableExecutor {
     pub executor: ExecutorDetails,
     pub availability: AvailabilityInfo,
-    pub cost_per_hour: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -129,14 +128,13 @@ pub struct AvailabilityInfo {
     pub uptime_percentage: f64,
 }
 
-/// Query parameters for capacity listing
+/// Query parameters for listing available executors
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
-pub struct ListCapacityQuery {
+pub struct ListAvailableExecutorsQuery {
     pub min_gpu_memory: Option<u32>,
     pub gpu_type: Option<String>,
     pub min_gpu_count: Option<u32>,
-    pub max_cost_per_hour: Option<f64>,
 }
 
 /// Log streaming query parameters

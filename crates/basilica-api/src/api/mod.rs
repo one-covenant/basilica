@@ -30,6 +30,11 @@ pub fn routes(state: AppState) -> Router<AppState> {
         )
         .route("/rental/logs/:id", get(routes::rentals::stream_rental_logs))
         .route("/rental/stop/:id", post(routes::rentals::stop_rental))
+        // Available executors endpoint
+        .route(
+            "/executors/available",
+            get(routes::rentals::list_available_executors),
+        )
         // Health and telemetry (keep existing)
         .route("/health", get(routes::health::health_check))
         .route("/telemetry", get(routes::telemetry::get_telemetry))

@@ -176,7 +176,11 @@ impl ValidatorClient {
                         match serde_json::from_str::<Event>(&sse_event.data) {
                             Ok(event) => Some(Ok(event)),
                             Err(e) => {
-                                tracing::error!("Failed to parse log event: {}, data: {}", e, sse_event.data);
+                                tracing::error!(
+                                    "Failed to parse log event: {}, data: {}",
+                                    e,
+                                    sse_event.data
+                                );
                                 None
                             }
                         }
@@ -186,6 +190,56 @@ impl ValidatorClient {
             });
 
         Ok(Box::pin(stream))
+    }
+
+    /// List available executors for rental
+    pub async fn list_available_executors(
+        &self,
+        query: Option<ListAvailableExecutorsQuery>,
+    ) -> Result<ListAvailableExecutorsResponse> {
+        let url = format!("{}/executors/available", self.base_url);
+
+        let mut req = self.http_client.get(&url);
+
+        if let Some(query_params) = query {
+            let mut params = vec![];
+
+            if let Some(min_gpu_memory) = query_params.min_gpu_memory {
+                params.push(("min_gpu_memory", min_gpu_memory.to_string()));
+            }
+            if let Some(ref gpu_type) = query_params.gpu_type {
+                params.push(("gpu_type", gpu_type.clone()));
+            }
+            if let Some(min_gpu_count) = query_params.min_gpu_count {
+                params.push(("min_gpu_count", min_gpu_count.to_string()));
+            }
+
+            if !params.is_empty() {
+                req = req.query(&params);
+            }
+        }
+
+        let response = req
+            .send()
+            .await
+            .context("Failed to send available executors request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Failed to list available executors: {} - {}",
+                status,
+                error_body
+            );
+        }
+
+        let json = response
+            .json()
+            .await
+            .context("Failed to parse available executors response")?;
+
+        Ok(json)
     }
 }
 

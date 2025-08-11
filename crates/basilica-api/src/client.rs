@@ -10,7 +10,10 @@ use crate::{
     },
     error::{Error, ErrorResponse, Result},
 };
-use basilica_validator::api::{rental_routes::StartRentalRequest, types::ListRentalsResponse};
+use basilica_validator::api::{
+    rental_routes::StartRentalRequest,
+    types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, ListRentalsResponse},
+};
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
@@ -105,6 +108,36 @@ impl BasilicaClient {
 
         if let Some(state_filter) = state {
             path.push_str(&format!("?status={state_filter}"));
+        }
+
+        let response = self.get(&path).await?;
+        Ok(response)
+    }
+
+    /// List available executors for rental
+    pub async fn list_available_executors(
+        &self,
+        query: Option<ListAvailableExecutorsQuery>,
+    ) -> Result<ListAvailableExecutorsResponse> {
+        let mut path = "/executors/available".to_string();
+
+        if let Some(q) = query {
+            let mut params = vec![];
+
+            if let Some(min_gpu_memory) = q.min_gpu_memory {
+                params.push(format!("min_gpu_memory={}", min_gpu_memory));
+            }
+            if let Some(ref gpu_type) = q.gpu_type {
+                params.push(format!("gpu_type={}", gpu_type));
+            }
+            if let Some(min_gpu_count) = q.min_gpu_count {
+                params.push(format!("min_gpu_count={}", min_gpu_count));
+            }
+
+            if !params.is_empty() {
+                path.push('?');
+                path.push_str(&params.join("&"));
+            }
         }
 
         let response = self.get(&path).await?;
