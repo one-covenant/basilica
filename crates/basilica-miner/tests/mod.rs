@@ -22,7 +22,7 @@ mod tests {
         let config = MinerConfig::load()?;
         let rpc_url = TESTNET_URL;
         let private_key = config.security.get_private_key()?;
-        let contract_address = address!("0xa8b2b82247e3f2b49ee8858b088405e35755c096");
+        let proxy_contract_address = address!("0xa8b2b82247e3f2b49ee8858b088405e35755c096");
 
         let mut signer: PrivateKeySigner = private_key.parse().unwrap();
         signer.set_chain_id(Some(945));
@@ -32,7 +32,7 @@ mod tests {
             .connect(rpc_url)
             .await?;
 
-        let contract = CollateralUpgradeable::new(contract_address, provider);
+        let contract = CollateralUpgradeable::new(proxy_contract_address, provider);
         Ok(contract)
     }
 
