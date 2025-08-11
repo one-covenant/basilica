@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
     info!("Environment: {}", config.service.environment);
     info!("Service ID: {}", config.service.service_id);
 
-    let server = BillingServer::new(config.clone()).await?;
+    let server = BillingServer::new_with_config(config.clone()).await?;
 
     if args.dry_run {
         info!("Configuration validated successfully (dry-run mode)");

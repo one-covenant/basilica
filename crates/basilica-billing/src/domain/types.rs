@@ -15,6 +15,10 @@ impl UserId {
         Self(id)
     }
 
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid.to_string())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }

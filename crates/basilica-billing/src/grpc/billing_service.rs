@@ -11,6 +11,7 @@ use crate::domain::{
 use crate::error::BillingError;
 use crate::storage::events::{EventType, UsageEvent};
 use crate::storage::rds::RdsConnection;
+use crate::storage::SqlRulesRepository;
 use crate::storage::{
     CreditRepository, RentalRepository, SqlCreditRepository, SqlRentalRepository,
 };
@@ -62,6 +63,7 @@ impl BillingServiceImpl {
         let credit_repository = Arc::new(SqlCreditRepository::new(rds_connection.clone()));
         let rental_repository = Arc::new(SqlRentalRepository::new(rds_connection.clone()));
         let package_repository = Arc::new(SqlPackageRepository::new(rds_connection.pool().clone()));
+        let rules_repository = Arc::new(SqlRulesRepository::new(rds_connection.pool().clone()));
         let user_preferences_repository =
             Arc::new(SqlUserPreferencesRepository::new(rds_connection.clone()));
 
@@ -81,8 +83,11 @@ impl BillingServiceImpl {
 
         Self {
             credit_manager: Arc::new(CreditManager::new(credit_repository.clone())),
-            rental_manager: Arc::new(RentalManager::new()),
-            _rules_engine: Arc::new(RulesEngine::new()),
+            rental_manager: Arc::new(RentalManager::new(rental_repository.clone())),
+            _rules_engine: Arc::new(RulesEngine::new(
+                package_repository.clone(),
+                rules_repository,
+            )),
             telemetry_processor,
             telemetry_ingester,
             credit_repository: credit_repository.clone(),
@@ -98,6 +103,24 @@ impl BillingServiceImpl {
             field: "amount".to_string(),
             message: format!("Invalid decimal value: {}", e),
         })
+    }
+
+    fn format_decimal(d: Decimal) -> String {
+        let normalized = d.normalize();
+        if normalized.fract().is_zero() {
+            normalized.trunc().to_string()
+        } else {
+            let s = normalized.to_string();
+            if s.contains('.') {
+                s.trim_end_matches('0').trim_end_matches('.').to_string()
+            } else {
+                s
+            }
+        }
+    }
+
+    fn format_credit_balance(b: CreditBalance) -> String {
+        Self::format_decimal(b.as_decimal())
     }
 
     fn rental_status_to_domain(status: RentalStatus) -> RentalState {
@@ -156,7 +179,7 @@ impl BillingService for BillingServiceImpl {
 
         let response = ApplyCreditsResponse {
             success: true,
-            new_balance: new_balance.to_string(),
+            new_balance: Self::format_credit_balance(new_balance),
             credit_id: req.transaction_id,
             applied_at: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
         };
@@ -178,9 +201,9 @@ impl BillingService for BillingServiceImpl {
             .map_err(|e| Status::internal(format!("Failed to get account: {}", e)))?;
 
         let response = GetBalanceResponse {
-            available_balance: account.available_balance().to_string(),
-            reserved_balance: account.reserved.to_string(),
-            total_balance: account.balance.to_string(),
+            available_balance: Self::format_credit_balance(account.available_balance()),
+            reserved_balance: Self::format_credit_balance(account.reserved),
+            total_balance: Self::format_credit_balance(account.balance),
             last_updated: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
                 account.last_updated,
             ))),
@@ -234,11 +257,6 @@ impl BillingService for BillingServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Failed to get reservation: {}", e)))?;
 
-        self.credit_repository
-            .create_reservation(&reservation)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to persist reservation: {}", e)))?;
-
         let response = ReserveCreditsResponse {
             success: true,
             reservation_id: reservation_id.to_string(),
@@ -270,7 +288,15 @@ impl BillingService for BillingServiceImpl {
             reservation_id, final_amount
         );
 
-        let released_amount = self
+        let reservation = self
+            .credit_manager
+            .get_reservation(&reservation_id)
+            .await
+            .map_err(|e| Status::not_found(format!("Reservation not found: {}", e)))?;
+
+        let reserved_amount = reservation.amount;
+
+        let new_balance = self
             .credit_manager
             .charge_from_reservation(&reservation_id, final_balance)
             .await
@@ -284,20 +310,15 @@ impl BillingService for BillingServiceImpl {
                 _ => Status::internal(format!("Failed to release reservation: {}", e)),
             })?;
 
-        self.credit_repository
-            .release_reservation(&reservation_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to update reservation: {}", e)))?;
-
-        let refunded = released_amount
+        let refunded = reserved_amount
             .subtract(final_balance)
             .unwrap_or(CreditBalance::zero());
 
         let response = ReleaseReservationResponse {
             success: true,
-            charged_amount: final_amount.to_string(),
-            refunded_amount: refunded.to_string(),
-            new_balance: released_amount.to_string(),
+            charged_amount: Self::format_decimal(final_amount),
+            refunded_amount: Self::format_credit_balance(refunded),
+            new_balance: Self::format_credit_balance(new_balance),
         };
 
         Ok(Response::new(response))
@@ -373,7 +394,7 @@ impl BillingService for BillingServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Failed to create rental: {}", e)))?;
 
-        let created = self
+        let _created = self
             .rental_manager
             .get_rental(&rental_id)
             .await
@@ -393,11 +414,6 @@ impl BillingService for BillingServiceImpl {
                 _ => Status::internal(format!("Failed to reserve credits: {}", e)),
             })?;
 
-        self.rental_repository
-            .create_rental(&created)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to persist rental: {}", e)))?;
-
         let rental_start_event = UsageEvent {
             event_id: uuid::Uuid::new_v4(),
             rental_id: rental_id.as_uuid(),
@@ -407,9 +423,9 @@ impl BillingService for BillingServiceImpl {
             event_type: EventType::RentalStart,
             event_data: serde_json::json!({
                 "package_id": package_id_str,
-                "hourly_rate": hourly_rate.to_string(),
+                "hourly_rate": Self::format_decimal(hourly_rate),
                 "resource_spec": resource_spec_value,
-                "estimated_cost": estimated_cost.to_string(),
+                "estimated_cost": Self::format_credit_balance(estimated_cost),
                 "max_duration_hours": req.max_duration_hours,
             }),
             timestamp: chrono::Utc::now(),
@@ -427,7 +443,7 @@ impl BillingService for BillingServiceImpl {
             success: true,
             tracking_id: rental_id.to_string(),
             reservation_id: reservation_id.to_string(),
-            estimated_cost: estimated_cost.to_string(),
+            estimated_cost: Self::format_credit_balance(estimated_cost),
         };
 
         Ok(Response::new(response))
@@ -492,7 +508,7 @@ impl BillingService for BillingServiceImpl {
 
         let response = UpdateRentalStatusResponse {
             success: true,
-            current_cost: rental.cost_breakdown.total_cost.to_string(),
+            current_cost: Self::format_credit_balance(rental.cost_breakdown.total_cost),
             updated_at: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
         };
 
@@ -576,8 +592,8 @@ impl BillingService for BillingServiceImpl {
                     validator_id: r.validator_id.clone(),
                     status: Self::domain_status_to_proto(r.state).into(),
                     resource_spec,
-                    hourly_rate: r.cost_breakdown.base_cost.to_string(),
-                    current_cost: r.cost_breakdown.total_cost.to_string(),
+                    hourly_rate: Self::format_credit_balance(r.cost_breakdown.base_cost),
+                    current_cost: Self::format_credit_balance(r.cost_breakdown.total_cost),
                     start_time: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
                         r.created_at,
                     ))),
@@ -612,7 +628,7 @@ impl BillingService for BillingServiceImpl {
 
         let rental = self
             .rental_manager
-            .update_status(&rental_id, RentalState::Completed)
+            .finalize_rental(&rental_id)
             .await
             .map_err(|e| Status::internal(format!("Failed to finalize rental: {}", e)))?;
 
@@ -661,10 +677,10 @@ impl BillingService for BillingServiceImpl {
 
         let response = FinalizeRentalResponse {
             success: true,
-            total_cost: final_cost.to_string(),
+            total_cost: Self::format_decimal(final_cost),
             duration_hours: duration_hours.to_string(),
-            charged_amount: charged_amount.to_string(),
-            refunded_amount: refunded_amount.to_string(),
+            charged_amount: Self::format_credit_balance(charged_amount),
+            refunded_amount: Self::format_credit_balance(refunded_amount),
         };
 
         Ok(Response::new(response))
@@ -741,8 +757,8 @@ impl BillingService for BillingServiceImpl {
             .get_rental_events(
                 uuid::Uuid::parse_str(&rental_id.to_string())
                     .map_err(|_| Status::internal("Invalid rental ID format"))?,
-                Some(rental.created_at),
-                rental.ended_at,
+                None,
+                None,
             )
             .await
             .map_err(|e| Status::internal(format!("Failed to get telemetry events: {}", e)))?;
@@ -845,7 +861,7 @@ impl BillingService for BillingServiceImpl {
                     rental.created_at,
                 ))),
                 usage: None,
-                cost: rental.cost_breakdown.base_cost.to_string(),
+                cost: Self::format_credit_balance(rental.cost_breakdown.base_cost),
             });
         }
 
@@ -853,7 +869,7 @@ impl BillingService for BillingServiceImpl {
             rental_id: rental_id.to_string(),
             data_points,
             summary: Some(summary),
-            total_cost: rental.cost_breakdown.total_cost.to_string(),
+            total_cost: Self::format_credit_balance(rental.cost_breakdown.total_cost),
         };
 
         Ok(Response::new(response))

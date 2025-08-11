@@ -3,6 +3,7 @@ pub mod events;
 pub mod packages;
 pub mod rds;
 pub mod rentals;
+pub mod rules;
 pub mod usage;
 pub mod user_preferences;
 
@@ -24,3 +25,5 @@ pub use events::{
 pub use user_preferences::{
     SqlUserPreferencesRepository, UserPreference, UserPreferencesRepository,
 };
+
+pub use rules::{RulesRepository, SqlRulesRepository};

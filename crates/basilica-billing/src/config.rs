@@ -48,14 +48,14 @@ pub struct GrpcConfig {
     pub listen_address: String,
     pub port: u16,
     pub max_message_size: usize,
-    pub keepalive_interval_seconds: u64,
-    pub keepalive_timeout_seconds: u64,
+    pub keepalive_interval_seconds: Option<u64>,
+    pub keepalive_timeout_seconds: Option<u64>,
     pub tls_enabled: bool,
     pub tls_cert_path: Option<PathBuf>,
     pub tls_key_path: Option<PathBuf>,
-    pub max_concurrent_requests: usize,
-    pub max_concurrent_streams: u32,
-    pub request_timeout_seconds: u64,
+    pub max_concurrent_requests: Option<usize>,
+    pub max_concurrent_streams: Option<u32>,
+    pub request_timeout_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,7 +77,7 @@ pub struct AggregatorConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelemetryConfig {
-    pub ingest_buffer_size: usize,
+    pub ingest_buffer_size: Option<usize>,
     pub flush_interval_seconds: u64,
     pub max_batch_size: usize,
     pub compression_enabled: bool,
@@ -126,14 +126,14 @@ impl Default for BillingConfig {
                 listen_address: "0.0.0.0".to_string(),
                 port: 50051,
                 max_message_size: 4 * 1024 * 1024, // 4MB
-                keepalive_interval_seconds: 300,
-                keepalive_timeout_seconds: 20,
+                keepalive_interval_seconds: Some(300),
+                keepalive_timeout_seconds: Some(20),
                 tls_enabled: false,
                 tls_cert_path: None,
                 tls_key_path: None,
-                max_concurrent_requests: 1000,
-                max_concurrent_streams: 100,
-                request_timeout_seconds: 60,
+                max_concurrent_requests: Some(1000),
+                max_concurrent_streams: Some(100),
+                request_timeout_seconds: Some(60),
             },
             http: HttpConfig {
                 listen_address: "0.0.0.0".to_string(),
@@ -149,7 +149,7 @@ impl Default for BillingConfig {
                 max_events_per_second: 10000,
             },
             telemetry: TelemetryConfig {
-                ingest_buffer_size: 10000,
+                ingest_buffer_size: Some(10000),
                 flush_interval_seconds: 10,
                 max_batch_size: 500,
                 compression_enabled: true,

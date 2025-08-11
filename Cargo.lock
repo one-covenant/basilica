@@ -2152,6 +2152,7 @@ dependencies = [
  "deadpool-postgres",
  "figment",
  "futures",
+ "futures-util",
  "mockall 0.12.1",
  "once_cell",
  "opentelemetry",
