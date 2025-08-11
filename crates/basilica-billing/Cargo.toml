@@ -12,7 +12,7 @@ basilica-protocol = { path = "../basilica-protocol" }
 toml = "0.8"
 
 tokio = { version = "1.35", features = ["full"] }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["net"] }
 
 sqlx = { version = "0.7", features = [
   "runtime-tokio-rustls",
@@ -78,6 +78,7 @@ pretty_assertions = "1.4"
 tempfile = "3.8"
 wiremock = "0.5"
 portpicker = "0.1"
+futures-util = "0.3"
 
 [[bin]]
 name = "basilica-billing"
