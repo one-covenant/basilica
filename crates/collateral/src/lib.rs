@@ -11,7 +11,7 @@ pub mod proxy;
 #[cfg(test)]
 mod test;
 
-use config::{CHAIN_ID, COLLATERAL_ADDRESS, RPC_URL};
+use config::{CHAIN_ID, COLLATERAL_ADDRESS, PROXY_ADDRESS, RPC_URL};
 
 sol!(
     #[allow(missing_docs)]
@@ -67,9 +67,9 @@ pub async fn get_collateral(
         .connect(RPC_URL)
         .await?;
 
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, provider);
+    let proxied = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
 
-    Ok(contract)
+    Ok(proxied)
 }
 
 // transactions
@@ -79,16 +79,7 @@ pub async fn deposit(
     executor_id: u128,
     amount: U256,
 ) -> Result<(), anyhow::Error> {
-    let mut signer: PrivateKeySigner = private_key.parse()?;
-
-    signer.set_chain_id(Some(CHAIN_ID));
-
-    let provider = ProviderBuilder::new()
-        .wallet(signer)
-        .connect(RPC_URL)
-        .await?;
-
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = get_collateral(private_key).await?;
 
     let executor_bytes = executor_id.to_be_bytes();
     let tx = contract
@@ -110,15 +101,7 @@ pub async fn reclaim_collateral(
     url: &str,
     url_content_md5_checksum: u128,
 ) -> Result<(), anyhow::Error> {
-    let mut signer: PrivateKeySigner = private_key.parse()?;
-    signer.set_chain_id(Some(CHAIN_ID));
-
-    let provider = ProviderBuilder::new()
-        .wallet(signer)
-        .connect(RPC_URL)
-        .await?;
-
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = get_collateral(private_key).await?;
 
     let executor_bytes = executor_id.to_be_bytes();
     let tx = contract.reclaimCollateral(
@@ -136,15 +119,7 @@ pub async fn finalize_reclaim(
     private_key: &str,
     reclaim_request_id: U256,
 ) -> Result<(), anyhow::Error> {
-    let mut signer: PrivateKeySigner = private_key.parse()?;
-    signer.set_chain_id(Some(CHAIN_ID));
-
-    let provider = ProviderBuilder::new()
-        .wallet(signer)
-        .connect(RPC_URL)
-        .await?;
-
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = get_collateral(private_key).await?;
 
     let tx = contract.finalizeReclaim(reclaim_request_id);
     let tx = tx.send().await?;
@@ -158,15 +133,7 @@ pub async fn deny_reclaim(
     url: &str,
     url_content_md5_checksum: u128,
 ) -> Result<(), anyhow::Error> {
-    let mut signer: PrivateKeySigner = private_key.parse()?;
-    signer.set_chain_id(Some(CHAIN_ID));
-
-    let provider = ProviderBuilder::new()
-        .wallet(signer)
-        .connect(RPC_URL)
-        .await?;
-
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = get_collateral(private_key).await?;
 
     let tx = contract.denyReclaimRequest(
         reclaim_request_id,
@@ -185,15 +152,7 @@ pub async fn slash_collateral(
     url: &str,
     url_content_md5_checksum: u128,
 ) -> Result<(), anyhow::Error> {
-    let mut signer: PrivateKeySigner = private_key.parse()?;
-    signer.set_chain_id(Some(CHAIN_ID));
-
-    let provider = ProviderBuilder::new()
-        .wallet(signer)
-        .connect(RPC_URL)
-        .await?;
-
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = get_collateral(private_key).await?;
 
     let executor_bytes = executor_id.to_be_bytes();
     let tx = contract.slashCollateral(
@@ -211,28 +170,28 @@ pub async fn slash_collateral(
 
 pub async fn netuid() -> Result<u16, anyhow::Error> {
     let provider = ProviderBuilder::new().connect(RPC_URL).await?;
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
     let netuid = contract.NETUID().call().await?;
     Ok(netuid)
 }
 
 pub async fn trustee() -> Result<Address, anyhow::Error> {
     let provider = ProviderBuilder::new().connect(RPC_URL).await?;
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
     let trustee = contract.TRUSTEE().call().await?;
     Ok(trustee)
 }
 
 pub async fn decision_timeout() -> Result<u64, anyhow::Error> {
     let provider = ProviderBuilder::new().connect(RPC_URL).await?;
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
     let decision_timeout = contract.DECISION_TIMEOUT().call().await?;
     Ok(decision_timeout)
 }
 
 pub async fn min_collateral_increase() -> Result<U256, anyhow::Error> {
     let provider = ProviderBuilder::new().connect(RPC_URL).await?;
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
     let min_collateral_increase = contract.MIN_COLLATERAL_INCREASE().call().await?;
     Ok(min_collateral_increase)
 }
@@ -242,7 +201,7 @@ pub async fn executor_to_miner(
     executor_id: u128,
 ) -> Result<Address, anyhow::Error> {
     let provider = ProviderBuilder::new().connect(RPC_URL).await?;
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
     let executor_bytes = executor_id.to_be_bytes();
     let executor_to_miner = contract
         .executorToMiner(
@@ -256,7 +215,7 @@ pub async fn executor_to_miner(
 
 pub async fn collaterals(hotkey: [u8; 32], executor_id: u128) -> Result<U256, anyhow::Error> {
     let provider = ProviderBuilder::new().connect(RPC_URL).await?;
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
     let executor_bytes = executor_id.to_be_bytes();
     let collaterals = contract
         .collaterals(
@@ -270,7 +229,7 @@ pub async fn collaterals(hotkey: [u8; 32], executor_id: u128) -> Result<U256, an
 
 pub async fn reclaims(reclaim_request_id: U256) -> Result<Reclaim, anyhow::Error> {
     let provider = ProviderBuilder::new().connect(RPC_URL).await?;
-    let contract = CollateralUpgradeable::new(COLLATERAL_ADDRESS, &provider);
+    let contract = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
     let result = contract.reclaims(reclaim_request_id).call().await?;
     let reclaim = Reclaim::from((
         result.hotkey,

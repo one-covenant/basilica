@@ -1,6 +1,7 @@
 use alloy_primitives::{Address, address};
 // Deployed Collateral contract address in product environment
 pub const COLLATERAL_ADDRESS: Address = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+pub const PROXY_ADDRESS: Address = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
 pub const CHAIN_ID: u64 = 964;
 pub const RPC_URL: &str = "https://lite.chain.opentensor.ai:443";
 
