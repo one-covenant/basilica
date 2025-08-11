@@ -638,6 +638,102 @@ impl SimplePersistence {
         Ok(entries)
     }
 
+    /// Get available executors for rental (not currently rented)
+    pub async fn get_available_executors(
+        &self,
+        min_gpu_memory: Option<u32>,
+        gpu_type: Option<String>,
+        min_gpu_count: Option<u32>,
+    ) -> Result<Vec<AvailableExecutorData>, anyhow::Error> {
+        // Build the base query with LEFT JOIN to find executors without active rentals
+        let mut query_str = String::from(
+            "SELECT 
+                me.executor_id,
+                me.miner_id,
+                me.gpu_specs,
+                me.cpu_specs,
+                me.location,
+                me.status,
+                me.gpu_count,
+                m.verification_score,
+                m.uptime_percentage
+            FROM miner_executors me
+            JOIN miners m ON me.miner_id = m.id
+            LEFT JOIN rentals r ON me.executor_id = r.executor_id 
+                AND r.state IN ('Active', 'Provisioning', 'active', 'provisioning')
+            WHERE r.id IS NULL
+                AND (me.status IS NULL OR me.status != 'offline')"
+        );
+
+        // Add GPU count filter if specified
+        if let Some(min_count) = min_gpu_count {
+            query_str.push_str(&format!(" AND me.gpu_count >= {}", min_count));
+        }
+
+        let rows = sqlx::query(&query_str)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut executors = Vec::new();
+        for row in rows {
+            let gpu_specs_json: String = row.get("gpu_specs");
+            let cpu_specs_json: String = row.get("cpu_specs");
+            
+            // Parse GPU specs
+            let gpu_specs: Vec<crate::api::types::GpuSpec> = match serde_json::from_str(&gpu_specs_json) {
+                Ok(specs) => specs,
+                Err(e) => {
+                    tracing::warn!("Failed to parse GPU specs: {}", e);
+                    vec![]
+                }
+            };
+
+            // Apply GPU memory filter if specified
+            if let Some(min_memory) = min_gpu_memory {
+                let meets_memory = gpu_specs.iter().any(|gpu| gpu.memory_gb >= min_memory);
+                if !meets_memory {
+                    continue;
+                }
+            }
+
+            // Apply GPU type filter if specified
+            if let Some(ref gpu_type_filter) = gpu_type {
+                let matches_type = gpu_specs.iter().any(|gpu| 
+                    gpu.name.to_lowercase().contains(&gpu_type_filter.to_lowercase())
+                );
+                if !matches_type {
+                    continue;
+                }
+            }
+
+            // Parse CPU specs
+            let cpu_specs: crate::api::types::CpuSpec = match serde_json::from_str(&cpu_specs_json) {
+                Ok(specs) => specs,
+                Err(e) => {
+                    tracing::warn!("Failed to parse CPU specs: {}", e);
+                    crate::api::types::CpuSpec {
+                        cores: 0,
+                        model: "Unknown".to_string(),
+                        memory_gb: 0,
+                    }
+                }
+            };
+
+            executors.push(AvailableExecutorData {
+                executor_id: row.get("executor_id"),
+                miner_id: row.get("miner_id"),
+                gpu_specs,
+                cpu_specs,
+                location: row.get("location"),
+                verification_score: row.get("verification_score"),
+                uptime_percentage: row.get("uptime_percentage"),
+                status: row.get("status"),
+            });
+        }
+
+        Ok(executors)
+    }
+
     /// Helper function to convert database row to VerificationLog
     fn row_to_verification_log(
         &self,
@@ -1564,6 +1660,19 @@ pub struct ExecutorData {
     pub gpu_specs: Vec<crate::api::types::GpuSpec>,
     pub cpu_specs: crate::api::types::CpuSpec,
     pub location: Option<String>,
+}
+
+/// Available executor data for rental listings
+#[derive(Debug, Clone)]
+pub struct AvailableExecutorData {
+    pub executor_id: String,
+    pub miner_id: String,
+    pub gpu_specs: Vec<crate::api::types::GpuSpec>,
+    pub cpu_specs: crate::api::types::CpuSpec,
+    pub location: Option<String>,
+    pub verification_score: f64,
+    pub uptime_percentage: f64,
+    pub status: Option<String>,
 }
 
 #[cfg(test)]

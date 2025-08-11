@@ -137,6 +137,8 @@ impl ApiHandler {
             .route("/rental/status/:id", get(rental_routes::get_rental_status))
             .route("/rental/logs/:id", get(rental_routes::stream_rental_logs))
             .route("/rental/stop/:id", post(rental_routes::stop_rental))
+            // Capacity route
+            .route("/capacity", get(routes::list_available_capacity))
             // Existing miner routes
             .route("/miners", get(routes::list_miners))
             .route("/miners/register", post(routes::register_miner))
