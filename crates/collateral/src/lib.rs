@@ -9,7 +9,7 @@ pub mod config;
 pub mod proxy;
 
 #[cfg(test)]
-mod test;
+mod tests;
 
 use config::{CHAIN_ID, PROXY_ADDRESS, RPC_URL};
 

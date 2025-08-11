@@ -11,3 +11,5 @@ pub const TEST_RPC_URL: &str = "https://test.finney.opentensor.ai";
 
 pub const LOCAL_RPC_URL: &str = "http://localhost:9944";
 pub const LOCAL_WS_URL: &str = "ws://localhost:9944";
+
+pub const PRIVATE_KEY_FILE: &str = "/home/user/.basilca/private_key";
