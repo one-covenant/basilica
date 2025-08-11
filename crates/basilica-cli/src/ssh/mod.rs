@@ -134,23 +134,32 @@ impl SshClient {
             ssh_access.username, ssh_access.host
         );
 
-        // Use system SSH command for interactive session
-        let ssh_command = format!(
-            "ssh -i {} -p {} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {}@{}",
-            details.private_key_path.display(),
-            details.port,
-            details.username,
-            details.host
+        debug!(
+            "Running interactive SSH to {}@{}:{}",
+            details.username, details.host, details.port
         );
 
-        debug!("Running interactive SSH: {}", ssh_command);
+        // Use SSH command directly with proper arguments for TTY support
+        let mut cmd = std::process::Command::new("ssh");
+        cmd.arg("-i")
+            .arg(details.private_key_path.display().to_string())
+            .arg("-p")
+            .arg(details.port.to_string())
+            .arg("-o")
+            .arg("StrictHostKeyChecking=no")
+            .arg("-o")
+            .arg("UserKnownHostsFile=/dev/null")
+            .arg("-o")
+            .arg("LogLevel=error")
+            .arg(format!("{}@{}", details.username, details.host));
 
-        // Execute using system command for TTY support
-        std::process::Command::new("sh")
-            .arg("-c")
-            .arg(&ssh_command)
+        let status = cmd
             .status()
             .map_err(|e| CliError::ssh(format!("Failed to start SSH session: {}", e)))?;
+
+        if !status.success() {
+            return Err(CliError::ssh("SSH session terminated with error"));
+        }
 
         Ok(())
     }
