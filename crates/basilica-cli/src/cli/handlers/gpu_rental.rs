@@ -1,11 +1,13 @@
 //! GPU rental command handlers
 
+use crate::cache::{parse_ssh_credentials, CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
 use crate::output::{json_output, table_output};
-use basilica_api::api::types::{RentalStatusResponse, ResourceRequirementsRequest};
+use crate::ssh::SshClient;
+use basilica_api::api::types::{RentalStatusResponse, ResourceRequirementsRequest, SshAccess};
 use basilica_api::ClientBuilder;
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use std::path::PathBuf;
@@ -68,8 +70,28 @@ pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig) -
         .await
         .map_err(|e| CliError::internal(format!("Failed to start rental: {e}")))?;
 
+    // Cache the rental information
+    let mut cache = RentalCache::load().await.unwrap_or_default();
+    cache.add_rental(CachedRental {
+        rental_id: response.rental_id.clone(),
+        ssh_credentials: response.ssh_credentials.clone(),
+        container_id: response.container_info.container_id.clone(),
+        container_name: response.container_info.container_name.clone(),
+        executor_id: target.clone(),
+        created_at: chrono::Utc::now(),
+        cached_at: chrono::Utc::now(),
+    });
+    cache.save().await?;
+
     println!("✅ Successfully created rental: {}", response.rental_id);
-    println!("🔗 SSH: {}", response.ssh_credentials);
+
+    // Display SSH credentials if available
+    if let Some(ref ssh_creds) = response.ssh_credentials {
+        println!("🔗 SSH: {}", ssh_creds);
+        println!("💾 Credentials cached for future use");
+    } else {
+        println!("ℹ️  No SSH access configured for this container (port 22 not mapped)");
+    }
 
     Ok(())
 }
@@ -123,16 +145,42 @@ pub async fn handle_status(target: String, json: bool, config: &CliConfig) -> Re
 }
 
 /// Handle the `logs` command - view rental logs
-pub async fn handle_logs(target: String, _options: LogsOptions, _config: &CliConfig) -> Result<()> {
+pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfig) -> Result<()> {
     debug!("Viewing logs for rental: {}", target);
 
-    // TODO: Implement SSH-based log streaming
-    // This requires storing SSH access details when rentals are created
-    // or obtaining them from the rental creation response
+    // Load rental cache and get SSH credentials
+    let cache = RentalCache::load().await?;
+    let cached_rental = cache.get_rental(&target)
+        .ok_or_else(|| CliError::not_found(format!(
+            "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
+            target
+        )))?;
 
-    Err(CliError::not_supported(
-        "Log streaming via SSH is not yet implemented. SSH access details need to be stored from rental creation."
-    ))
+    // Check if SSH credentials are available
+    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+        CliError::not_supported(
+            "This rental does not have SSH access. Container was created without SSH port mapping.",
+        )
+    })?;
+
+    // Parse SSH credentials
+    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let ssh_access = SshAccess {
+        host,
+        port,
+        username,
+    };
+
+    // Use SSH client to stream logs
+    let ssh_client = SshClient::new(&config.ssh)?;
+    ssh_client
+        .stream_logs(
+            &ssh_access,
+            &cached_rental.container_id,
+            options.follow,
+            options.tail,
+        )
+        .await
 }
 
 /// Handle the `down` command - terminate rentals
@@ -161,42 +209,62 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()>
         targets
     };
 
-    for rental_id in rental_ids {
+    // Load rental cache
+    let mut cache = RentalCache::load().await.unwrap_or_default();
+
+    for rental_id in &rental_ids {
         info!("Stopping rental: {}", rental_id);
 
         match api_client
-            .stop_rental(&rental_id)
+            .stop_rental(rental_id)
             .await
             .map_err(|e| CliError::internal(format!("Failed to stop rental: {e}")))
         {
-            Ok(_) => println!("✅ Successfully stopped rental: {rental_id}"),
+            Ok(_) => {
+                println!("✅ Successfully stopped rental: {rental_id}");
+                // Remove from cache
+                cache.remove_rental(rental_id);
+            }
             Err(e) => eprintln!("❌ Failed to stop rental {rental_id}: {e}"),
         }
     }
+
+    // Save updated cache
+    cache.save().await?;
 
     Ok(())
 }
 
 /// Handle the `exec` command - execute commands via SSH
-pub async fn handle_exec(target: String, _command: String, config: &CliConfig) -> Result<()> {
+pub async fn handle_exec(target: String, command: String, config: &CliConfig) -> Result<()> {
     debug!("Executing command on rental: {}", target);
-    let _api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    // TODO: The rental status endpoint doesn't return SSH access information.
-    // Need to either:
-    // 1. Store SSH access info locally when rental is created
-    // 2. Add an endpoint to retrieve SSH access info
-    // 3. Include SSH access in rental status response
+    // Load rental cache and get SSH credentials
+    let cache = RentalCache::load().await?;
+    let cached_rental = cache.get_rental(&target)
+        .ok_or_else(|| CliError::not_found(format!(
+            "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
+            target
+        )))?;
 
-    // For now, return not supported error
-    Err(CliError::not_supported(
-        "SSH command execution requires storing SSH access details from rental creation. \
-         Please save the SSH connection details when creating a rental.",
-    ))
+    // Check if SSH credentials are available
+    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+        CliError::not_supported(
+            "This rental does not have SSH access. Container was created without SSH port mapping.",
+        )
+    })?;
+
+    // Parse SSH credentials
+    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let ssh_access = SshAccess {
+        host,
+        port,
+        username,
+    };
+
+    // Use SSH client to execute command
+    let ssh_client = SshClient::new(&config.ssh)?;
+    ssh_client.execute_command(&ssh_access, &command).await
 }
 
 /// Handle the `ssh` command - SSH into instances
@@ -206,23 +274,33 @@ pub async fn handle_ssh(
     config: &CliConfig,
 ) -> Result<()> {
     debug!("Opening SSH connection to rental: {}", target);
-    let _api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    // TODO: The rental status endpoint doesn't return SSH access information.
-    // Need to either:
-    // 1. Store SSH access info locally when rental is created
-    // 2. Add an endpoint to retrieve SSH access info
-    // 3. Include SSH access in rental status response
+    // Load rental cache and get SSH credentials
+    let cache = RentalCache::load().await?;
+    let cached_rental = cache.get_rental(&target)
+        .ok_or_else(|| CliError::not_found(format!(
+            "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
+            target
+        )))?;
 
-    // For now, return not supported error
-    Err(CliError::not_supported(
-        "SSH access requires storing SSH access details from rental creation. \
-         Please save the SSH connection details when creating a rental.",
-    ))
+    // Check if SSH credentials are available
+    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+        CliError::not_supported(
+            "This rental does not have SSH access. Container was created without SSH port mapping.",
+        )
+    })?;
+
+    // Parse SSH credentials
+    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let ssh_access = SshAccess {
+        host,
+        port,
+        username,
+    };
+
+    // Use SSH client to open interactive session
+    let ssh_client = SshClient::new(&config.ssh)?;
+    ssh_client.interactive_session(&ssh_access).await
 }
 
 /// Handle the `cp` command - copy files via SSH
@@ -230,26 +308,43 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
     debug!("Copying files from {} to {}", source, destination);
 
     // Parse source and destination to determine which is remote
-    let (_rental_id, _is_upload, _local_path, _remote_path) =
-        parse_copy_paths(&source, &destination)?;
+    let (rental_id, is_upload, local_path, remote_path) = parse_copy_paths(&source, &destination)?;
 
-    let _api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    // Load rental cache and get SSH credentials
+    let cache = RentalCache::load().await?;
+    let cached_rental = cache.get_rental(&rental_id)
+        .ok_or_else(|| CliError::not_found(format!(
+            "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
+            rental_id
+        )))?;
 
-    // TODO: The rental status endpoint doesn't return SSH access information.
-    // Need to either:
-    // 1. Store SSH access info locally when rental is created
-    // 2. Add an endpoint to retrieve SSH access info
-    // 3. Include SSH access in rental status response
+    // Check if SSH credentials are available
+    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+        CliError::not_supported(
+            "This rental does not have SSH access. Container was created without SSH port mapping.",
+        )
+    })?;
 
-    // For now, return not supported error
-    Err(CliError::not_supported(
-        "File transfer requires storing SSH access details from rental creation. \
-         Please save the SSH connection details when creating a rental.",
-    ))
+    // Parse SSH credentials
+    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let ssh_access = SshAccess {
+        host,
+        port,
+        username,
+    };
+
+    // Use SSH client for file transfer
+    let ssh_client = SshClient::new(&config.ssh)?;
+
+    if is_upload {
+        ssh_client
+            .upload_file(&ssh_access, &local_path, &remote_path)
+            .await
+    } else {
+        ssh_client
+            .download_file(&ssh_access, &remote_path, &local_path)
+            .await
+    }
 }
 
 // Helper functions

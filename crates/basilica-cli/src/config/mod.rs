@@ -1,6 +1,7 @@
 //! Configuration management for the Basilica CLI
 
 use crate::error::{CliError, Result};
+use etcetera::{choose_base_strategy, BaseStrategy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -258,15 +259,30 @@ impl CliConfig {
 
     /// Get configuration directory
     pub fn config_dir() -> Result<PathBuf> {
-        let home_dir = dirs::home_dir()
-            .ok_or_else(|| CliError::internal("Could not determine home directory"))?;
-        Ok(home_dir.join(".basilica"))
+        let strategy = choose_base_strategy().map_err(|e| {
+            CliError::internal(format!("Failed to determine base directories: {}", e))
+        })?;
+        Ok(strategy.config_dir().join("basilica"))
+    }
+
+    /// Get data directory
+    pub fn data_dir() -> Result<PathBuf> {
+        let strategy = choose_base_strategy().map_err(|e| {
+            CliError::internal(format!("Failed to determine base directories: {}", e))
+        })?;
+        Ok(strategy.data_dir().join("basilica"))
     }
 
     /// Get cache file path
     pub fn cache_path() -> Result<PathBuf> {
         let config_dir = Self::config_dir()?;
         Ok(config_dir.join("cache.json"))
+    }
+
+    /// Get rental cache file path
+    pub fn rental_cache_path() -> Result<PathBuf> {
+        let data_dir = Self::data_dir()?;
+        Ok(data_dir.join("rentals").join("cache.json"))
     }
 }
 

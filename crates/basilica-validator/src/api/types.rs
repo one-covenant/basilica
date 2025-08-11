@@ -36,7 +36,7 @@ pub struct RentCapacityResponse {
     pub ssh_access: SshAccess,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ExecutorDetails {
     pub id: String,

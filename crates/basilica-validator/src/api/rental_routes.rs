@@ -15,6 +15,7 @@ use tracing::{error, info};
 
 use crate::{
     api::types::{ListRentalsResponse, RentalStatusResponse},
+    persistence::validator_persistence::ValidatorPersistence,
     rental::{RentalInfo, RentalRequest, RentalState},
 };
 use crate::{
@@ -301,6 +302,20 @@ pub async fn get_rental_status(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Get rental info first to get executor details
+    let rental_info = state
+        .persistence
+        .load_rental(&rental_id)
+        .await
+        .map_err(|e| {
+            error!("Failed to load rental info: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            error!("Rental {} not found", rental_id);
+            StatusCode::NOT_FOUND
+        })?;
+
     let status = rental_manager
         .get_rental_status(&rental_id)
         .await
@@ -314,6 +329,29 @@ pub async fn get_rental_status(
         CpuSpec, ExecutorDetails, RentalStatus as ApiRentalStatus, RentalStatusResponse,
     };
 
+    // Use executor details from rental info if available, otherwise fetch from database
+    let executor = if let Some(executor_details) = rental_info.executor_details {
+        executor_details
+    } else {
+        // Try to fetch executor details from database
+        state
+            .persistence
+            .get_executor_details(&rental_info.executor_id)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| ExecutorDetails {
+                id: rental_info.executor_id.clone(),
+                gpu_specs: vec![],
+                cpu_specs: CpuSpec {
+                    cores: 0,
+                    model: "unknown".to_string(),
+                    memory_gb: 0,
+                },
+                location: None,
+            })
+    };
+
     let response = RentalStatusResponse {
         rental_id: status.rental_id,
         status: match status.state {
@@ -324,16 +362,7 @@ pub async fn get_rental_status(
             }
             crate::rental::RentalState::Failed => ApiRentalStatus::Failed,
         },
-        executor: ExecutorDetails {
-            id: "unknown".to_string(), // TODO: Get from rental info
-            gpu_specs: vec![],         // TODO: Get from executor registration
-            cpu_specs: CpuSpec {
-                cores: 0,
-                model: "unknown".to_string(),
-                memory_gb: 0,
-            },
-            location: None,
-        },
+        executor,
         created_at: status.created_at,
         updated_at: status.created_at, // Use created_at for now
     };

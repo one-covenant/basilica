@@ -131,6 +131,31 @@ impl RentalManager {
             }
         };
 
+        // Check if SSH port is mapped and construct proper SSH credentials for end-user
+        let ssh_credentials = container_info
+            .mapped_ports
+            .iter()
+            .find(|p| p.container_port == 22)
+            .map(|ssh_mapping| {
+                // Parse host from original credentials (format: "user@host:port")
+                let host =
+                    if let Some((_, host_port)) = ssh_session.access_credentials.split_once('@') {
+                        host_port.split(':').next().unwrap_or("localhost")
+                    } else {
+                        "localhost"
+                    };
+                // Always use root as username for containers with the mapped port
+                format!("root@{}:{}", host, ssh_mapping.host_port)
+            });
+
+        // Fetch executor details from persistence
+        let executor_details = self
+            .persistence
+            .get_executor_details(&request.executor_id)
+            .await
+            .ok()
+            .flatten();
+
         // Store rental info
         let rental_info = RentalInfo {
             rental_id: rental_id.clone(),
@@ -138,11 +163,13 @@ impl RentalManager {
             executor_id: request.executor_id.clone(),
             container_id: container_info.container_id.clone(),
             ssh_session_id: ssh_session.session_id.clone(),
-            ssh_credentials: ssh_session.access_credentials.clone(),
+            ssh_credentials: ssh_credentials.clone(),
+            executor_ssh_credentials: ssh_session.access_credentials.clone(), // Store executor credentials for validator operations
             state: RentalState::Active,
             created_at: chrono::Utc::now(),
             container_spec: request.container_spec.clone(),
             miner_id: request.miner_id.clone(),
+            executor_details,
         };
 
         // Save to persistence
@@ -160,7 +187,7 @@ impl RentalManager {
 
         Ok(RentalResponse {
             rental_id,
-            ssh_credentials: ssh_session.access_credentials,
+            ssh_credentials,
             container_info,
         })
     }
@@ -173,9 +200,9 @@ impl RentalManager {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
-        // Get container status
+        // Get container status using executor SSH credentials
         let container_client = ContainerClient::new(
-            rental_info.ssh_credentials.clone(),
+            rental_info.executor_ssh_credentials.clone(),
             self.ssh_key_manager
                 .as_ref()
                 .and_then(|km| km.get_persistent_key())
@@ -211,9 +238,9 @@ impl RentalManager {
         // Stop health monitoring
         self.health_monitor.stop_monitoring(rental_id).await?;
 
-        // Stop container
+        // Stop container using executor SSH credentials
         let container_client = ContainerClient::new(
-            rental_info.ssh_credentials.clone(),
+            rental_info.executor_ssh_credentials.clone(),
             self.ssh_key_manager
                 .as_ref()
                 .and_then(|km| km.get_persistent_key())
@@ -257,7 +284,7 @@ impl RentalManager {
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
         let container_client = ContainerClient::new(
-            rental_info.ssh_credentials.clone(),
+            rental_info.executor_ssh_credentials.clone(),
             self.ssh_key_manager
                 .as_ref()
                 .and_then(|km| km.get_persistent_key())

@@ -312,7 +312,11 @@ async fn handle_start_rental(
 
     info!("Rental started successfully!");
     info!("Rental ID: {}", rental_response.rental_id);
-    info!("SSH Access: {}", rental_response.ssh_credentials);
+    if let Some(ref ssh_creds) = rental_response.ssh_credentials {
+        info!("SSH Access: {}", ssh_creds);
+    } else {
+        info!("SSH Access: Not available (port 22 not mapped)");
+    }
     info!(
         "Container: {} ({})",
         rental_response.container_info.container_name, rental_response.container_info.container_id

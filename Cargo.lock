@@ -1769,6 +1769,7 @@ dependencies = [
  "console",
  "dialoguer",
  "dirs",
+ "etcetera",
  "figment",
  "futures-util",
  "indicatif",

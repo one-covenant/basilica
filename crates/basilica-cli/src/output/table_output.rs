@@ -3,18 +3,33 @@
 use crate::error::Result;
 use basilica_api::api::types::{ExecutorDetails, RentalStatusResponse};
 use basilica_validator::api::types::RentalListItem;
+use chrono::{DateTime, Local};
 use std::collections::HashMap;
 use tabled::{settings::Style, Table, Tabled};
 
 /// Truncate container ID to first N characters for display (similar to Docker)
 fn truncate_container_id(container_id: &str) -> String {
     const CONTAINER_ID_DISPLAY_LENGTH: usize = 12;
-    
+
     if container_id.len() <= CONTAINER_ID_DISPLAY_LENGTH {
         container_id.to_string()
     } else {
-        container_id.chars().take(CONTAINER_ID_DISPLAY_LENGTH).collect()
+        container_id
+            .chars()
+            .take(CONTAINER_ID_DISPLAY_LENGTH)
+            .collect()
     }
+}
+
+/// Format RFC3339 timestamp to YY-MM-DD HH:MM:SS format
+fn format_timestamp(timestamp: &str) -> String {
+    DateTime::parse_from_rfc3339(timestamp)
+        .ok()
+        .and_then(|dt| {
+            let local_dt = dt.with_timezone(&Local);
+            Some(local_dt.format("%y-%m-%d %H:%M:%S").to_string())
+        })
+        .unwrap_or_else(|| timestamp.to_string())
 }
 
 /// Display executors in table format
@@ -184,7 +199,7 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
             rental_id: rental.rental_id.clone(),
             status: format!("{:?}", rental.status),
             executor: rental.executor.id.clone(),
-            created: rental.created_at.format("%Y-%m-%d %H:%M").to_string(),
+            created: rental.created_at.format("%y-%m-%d %H:%M:%S").to_string(),
         })
         .collect();
 
@@ -221,7 +236,7 @@ pub fn display_rental_items(rentals: &[RentalListItem]) -> Result<()> {
             executor: rental.executor_id.clone(),
             container: truncate_container_id(&rental.container_id),
             image: rental.container_image.clone(),
-            created: rental.created_at.clone(),
+            created: format_timestamp(&rental.created_at),
         })
         .collect();
 

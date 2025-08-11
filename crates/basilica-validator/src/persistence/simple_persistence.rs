@@ -131,7 +131,8 @@ impl SimplePersistence {
                 executor_id TEXT NOT NULL,
                 container_id TEXT NOT NULL,
                 ssh_session_id TEXT NOT NULL,
-                ssh_credentials TEXT NOT NULL,
+                ssh_credentials TEXT,
+                executor_ssh_credentials TEXT,
                 state TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 container_spec TEXT NOT NULL,
@@ -324,6 +325,11 @@ impl SimplePersistence {
         )
         .execute(&self.pool)
         .await?;
+
+        // Add new columns if they don't exist (for migration)
+        let _ = sqlx::query("ALTER TABLE rentals ADD COLUMN executor_ssh_credentials TEXT")
+            .execute(&self.pool)
+            .await; // Ignore error if column already exists
 
         // Create indexes
         sqlx::query(
@@ -1184,6 +1190,50 @@ impl SimplePersistence {
         Ok(miner_id)
     }
 
+    /// Get detailed executor information including GPU and CPU specs
+    pub async fn get_executor_details(
+        &self,
+        executor_id: &str,
+    ) -> Result<Option<crate::api::types::ExecutorDetails>, anyhow::Error> {
+        let row = sqlx::query(
+            "SELECT executor_id, gpu_specs, cpu_specs, location
+             FROM miner_executors
+             WHERE executor_id = ? OR executor_id GLOB '*__' || ?
+             LIMIT 1",
+        )
+        .bind(executor_id)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let executor_id: String = row.get("executor_id");
+            let gpu_specs_json: String = row.get("gpu_specs");
+            let cpu_specs_json: String = row.get("cpu_specs");
+            let location: Option<String> = row.get("location");
+
+            let gpu_specs: Vec<crate::api::types::GpuSpec> =
+                serde_json::from_str(&gpu_specs_json).unwrap_or_default();
+            let cpu_specs: crate::api::types::CpuSpec =
+                serde_json::from_str(&cpu_specs_json).unwrap_or_else(|_| {
+                    crate::api::types::CpuSpec {
+                        cores: 0,
+                        model: "unknown".to_string(),
+                        memory_gb: 0,
+                    }
+                });
+
+            Ok(Some(crate::api::types::ExecutorDetails {
+                id: executor_id,
+                gpu_specs,
+                cpu_specs,
+                location,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Get the actual gpu_count for an executor from gpu_uuid_assignments
     pub async fn get_executor_gpu_count_from_assignments(
         &self,
@@ -1254,13 +1304,14 @@ impl ValidatorPersistence for SimplePersistence {
         sqlx::query(
             "INSERT INTO rentals (
                 id, validator_hotkey, executor_id, container_id, ssh_session_id,
-                ssh_credentials, state, created_at, container_spec, miner_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ssh_credentials, executor_ssh_credentials, state, created_at, container_spec, miner_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 state = excluded.state,
                 container_id = excluded.container_id,
                 ssh_session_id = excluded.ssh_session_id,
                 ssh_credentials = excluded.ssh_credentials,
+                executor_ssh_credentials = excluded.executor_ssh_credentials,
                 miner_id = excluded.miner_id",
         )
         .bind(&rental.rental_id)
@@ -1269,6 +1320,7 @@ impl ValidatorPersistence for SimplePersistence {
         .bind(&rental.container_id)
         .bind(&rental.ssh_session_id)
         .bind(&rental.ssh_credentials)
+        .bind(&rental.executor_ssh_credentials)
         .bind(match &rental.state {
             crate::rental::RentalState::Provisioning => "provisioning",
             crate::rental::RentalState::Active => "active",
@@ -1299,17 +1351,24 @@ impl ValidatorPersistence for SimplePersistence {
 
             let state = Self::parse_rental_state(&state_str, &rental_id);
 
+            // Handle backward compatibility - old records may not have executor_ssh_credentials
+            let executor_ssh_creds: Option<String> = row.try_get("executor_ssh_credentials").ok();
+            let ssh_creds: Option<String> = row.get("ssh_credentials");
+
             Ok(Some(RentalInfo {
                 rental_id,
                 validator_hotkey: row.get("validator_hotkey"),
                 executor_id: row.get("executor_id"),
                 container_id: row.get("container_id"),
                 ssh_session_id: row.get("ssh_session_id"),
-                ssh_credentials: row.get("ssh_credentials"),
+                ssh_credentials: ssh_creds.clone(),
+                executor_ssh_credentials: executor_ssh_creds
+                    .unwrap_or_else(|| ssh_creds.unwrap_or_default()),
                 state,
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
                 container_spec: serde_json::from_str(&container_spec_str)?,
                 miner_id: row.get::<String, _>("miner_id"),
+                executor_details: None, // Will be populated lazily when needed
             }))
         } else {
             Ok(None)
@@ -1336,17 +1395,24 @@ impl ValidatorPersistence for SimplePersistence {
 
             let state = Self::parse_rental_state(&state_str, &rental_id);
 
+            // Handle backward compatibility - old records may not have executor_ssh_credentials
+            let executor_ssh_creds: Option<String> = row.try_get("executor_ssh_credentials").ok();
+            let ssh_creds: Option<String> = row.get("ssh_credentials");
+
             rentals.push(RentalInfo {
                 rental_id,
                 validator_hotkey: row.get("validator_hotkey"),
                 executor_id: row.get("executor_id"),
                 container_id: row.get("container_id"),
                 ssh_session_id: row.get("ssh_session_id"),
-                ssh_credentials: row.get("ssh_credentials"),
+                ssh_credentials: ssh_creds.clone(),
+                executor_ssh_credentials: executor_ssh_creds
+                    .unwrap_or_else(|| ssh_creds.unwrap_or_default()),
                 state,
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
                 container_spec: serde_json::from_str(&container_spec_str)?,
                 miner_id: row.get::<String, _>("miner_id"),
+                executor_details: None, // Will be populated lazily when needed
             });
         }
 
