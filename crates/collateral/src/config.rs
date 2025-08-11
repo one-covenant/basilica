@@ -9,6 +9,7 @@ pub const RPC_URL: &str = "https://lite.chain.opentensor.ai:443";
 pub const TEST_CHAIN_ID: u64 = 945;
 pub const TEST_RPC_URL: &str = "https://test.finney.opentensor.ai";
 
+pub const LOCAL_CHAIN_ID: u64 = 0;
 pub const LOCAL_RPC_URL: &str = "http://localhost:9944";
 pub const LOCAL_WS_URL: &str = "ws://localhost:9944";
 

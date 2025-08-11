@@ -7,11 +7,10 @@ use alloy_sol_types::SolCall;
 use alloy_sol_types::sol;
 use bittensor::api::api::{self as bittensorapi};
 use proxy::Proxy;
-use std::fs;
 use subxt::{OnlineClient, PolkadotConfig};
 use subxt_signer::sr25519::dev;
 
-use config::{LOCAL_RPC_URL, LOCAL_WS_URL, PRIVATE_KEY_FILE, TEST_CHAIN_ID, TEST_RPC_URL};
+use config::{LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
 
 // function to initialize the contract
 sol! {
@@ -70,11 +69,11 @@ async fn test_collateral_deploy() {
     });
 
     let mut signer: PrivateKeySigner = alithe_private_key.parse().unwrap();
-    signer.set_chain_id(Some(TEST_CHAIN_ID));
+    signer.set_chain_id(Some(LOCAL_CHAIN_ID));
 
     let provider = ProviderBuilder::new()
         .wallet(signer.clone())
-        .connect(TEST_RPC_URL)
+        .connect(LOCAL_RPC_URL)
         .await
         .unwrap();
 
@@ -160,7 +159,7 @@ async fn test_collateral_deploy() {
 #[tokio::test]
 #[ignore]
 async fn test_deploy_upgradable_collateral_in_testnet() {
-    let private_key = fs::read_to_string(PRIVATE_KEY_FILE).unwrap();
+    let private_key = std::env::var("OPEN_EVM_PRIVATE_KEY").unwrap();
 
     let mut signer: PrivateKeySigner = private_key.trim().parse().unwrap();
     signer.set_chain_id(Some(TEST_CHAIN_ID));
@@ -182,7 +181,7 @@ async fn test_deploy_upgradable_collateral_in_testnet() {
 #[ignore]
 async fn test_deploy_proxy_in_testnet() {
     let contract_address = Address::from_hex("0x4894035ccc55143c791ef85e31bc225b7918eb68").unwrap();
-    let private_key = fs::read_to_string(PRIVATE_KEY_FILE).unwrap();
+    let private_key = std::env::var("OPEN_EVM_PRIVATE_KEY").unwrap();
 
     let mut signer: PrivateKeySigner = private_key.trim().parse().unwrap();
     signer.set_chain_id(Some(TEST_CHAIN_ID));
