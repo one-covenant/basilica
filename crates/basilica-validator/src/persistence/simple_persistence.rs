@@ -332,6 +332,9 @@ impl SimplePersistence {
             CREATE INDEX IF NOT EXISTS idx_executors_gpu_uuids ON miner_executors(gpu_uuids);
             CREATE INDEX IF NOT EXISTS idx_gpu_assignments_executor ON gpu_uuid_assignments(executor_id);
             CREATE INDEX IF NOT EXISTS idx_gpu_assignments_miner ON gpu_uuid_assignments(miner_id);
+            CREATE INDEX IF NOT EXISTS idx_gpu_assignments_miner_executor ON gpu_uuid_assignments(miner_id, executor_id);
+            CREATE INDEX IF NOT EXISTS idx_miner_executors_status ON miner_executors(status);
+            CREATE INDEX IF NOT EXISTS idx_miner_executors_health_check ON miner_executors(last_health_check);
             "#,
         )
         .execute(&self.pool)
@@ -1192,7 +1195,7 @@ impl SimplePersistence {
         let rows = sqlx::query(
             "SELECT ga.executor_id, COUNT(DISTINCT ga.gpu_uuid) as gpu_count, ga.gpu_name
              FROM gpu_uuid_assignments ga
-             JOIN miner_executors me ON ga.executor_id = me.executor_id
+             JOIN miner_executors me ON ga.executor_id = me.executor_id AND ga.miner_id = me.miner_id
              WHERE ga.miner_id = ?
                 AND me.status IN ('online', 'verified')
              GROUP BY ga.executor_id, ga.gpu_name
@@ -1219,8 +1222,11 @@ impl SimplePersistence {
         miner_id: &str,
     ) -> Result<u32, anyhow::Error> {
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(DISTINCT gpu_uuid) FROM gpu_uuid_assignments
-             WHERE miner_id = ?",
+            "SELECT COUNT(DISTINCT ga.gpu_uuid)
+             FROM gpu_uuid_assignments ga
+             INNER JOIN miner_executors me ON ga.executor_id = me.executor_id AND ga.miner_id = me.miner_id
+             WHERE ga.miner_id = ?
+                AND me.status IN ('online', 'verified')",
         )
         .bind(miner_id)
         .fetch_one(&self.pool)

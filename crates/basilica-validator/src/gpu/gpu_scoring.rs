@@ -721,30 +721,31 @@ mod tests {
         let mut h200_counts = HashMap::new();
         h200_counts.insert("H200".to_string(), 1);
 
+        let now = Utc::now();
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
                 gpu_counts: h100_counts_1,
                 total_score: 0.8,
                 verification_count: 1,
-                last_updated: Utc::now(),
-                last_successful_validation: None,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
                 gpu_counts: h100_counts_2,
                 total_score: 0.6,
                 verification_count: 1,
-                last_updated: Utc::now(),
-                last_successful_validation: None,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
                 gpu_counts: h200_counts,
                 total_score: 0.9,
                 verification_count: 1,
-                last_updated: Utc::now(),
-                last_successful_validation: None,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
             },
         ];
 

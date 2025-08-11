@@ -474,6 +474,12 @@ impl VerificationEngine {
         }
 
         let status = if success { "online" } else { "offline" };
+        let miner_id = format!("miner_{miner_uid}");
+
+        // Use transaction to ensure atomic updates
+        let mut tx = self.persistence.pool().begin().await?;
+
+        // Update executor status
         if let Err(e) = sqlx::query(
             "UPDATE miner_executors
              SET status = ?, last_health_check = ?, updated_at = ?
@@ -483,11 +489,40 @@ impl VerificationEngine {
         .bind(&now)
         .bind(&now)
         .bind(&verification_log.executor_id)
-        .execute(self.persistence.pool())
+        .execute(&mut *tx)
         .await
         {
             warn!("Failed to update executor health status: {}", e);
+            tx.rollback().await?;
+            return Err(anyhow::anyhow!("Failed to update executor status: {}", e));
         }
+
+        // If marking offline, immediately clean up GPU assignments
+        if !success {
+            info!(
+                "Executor {} failed verification, marking offline and cleaning GPU assignments",
+                verification_log.executor_id
+            );
+
+            let gpu_cleanup = sqlx::query(
+                "DELETE FROM gpu_uuid_assignments
+                 WHERE executor_id = ? AND miner_id = ?",
+            )
+            .bind(&verification_log.executor_id)
+            .bind(&miner_id)
+            .execute(&mut *tx)
+            .await?;
+
+            if gpu_cleanup.rows_affected() > 0 {
+                info!(
+                    "Cleaned up {} GPU assignments for offline executor {}",
+                    gpu_cleanup.rows_affected(),
+                    verification_log.executor_id
+                );
+            }
+        }
+
+        tx.commit().await?;
 
         // Extract GPU infos from executor result if available
         let gpu_infos = executor_result
@@ -650,7 +685,7 @@ impl VerificationEngine {
                 .bind("{}") // cpu_specs
                 //---------
                 .bind("discovered") // location
-                .bind("verified") // status
+                .bind("online") // status - online until verification completes
                 .execute(self.persistence.pool())
                 .await
                 .map_err(|e| {
@@ -744,6 +779,63 @@ impl VerificationEngine {
         let miner_id = format!("miner_{miner_uid}");
         let now = chrono::Utc::now().to_rfc3339();
 
+        // Collect all valid GPU UUIDs being reported
+        let reported_gpu_uuids: Vec<String> = gpu_infos
+            .iter()
+            .filter(|g| !g.gpu_uuid.is_empty() && g.gpu_uuid != "Unknown UUID")
+            .map(|g| g.gpu_uuid.clone())
+            .collect();
+
+        // Clean up GPU assignments based on what's reported
+        if !reported_gpu_uuids.is_empty() {
+            // Some GPUs reported - clean up any that are no longer reported
+            let placeholders = reported_gpu_uuids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(", ");
+            let query = format!(
+                "DELETE FROM gpu_uuid_assignments
+                 WHERE miner_id = ? AND executor_id = ?
+                 AND gpu_uuid NOT IN ({placeholders})"
+            );
+
+            let mut q = sqlx::query(&query).bind(&miner_id).bind(executor_id);
+
+            for uuid in &reported_gpu_uuids {
+                q = q.bind(uuid);
+            }
+
+            let deleted = q.execute(self.persistence.pool()).await?;
+
+            if deleted.rows_affected() > 0 {
+                info!(
+                    "Cleaned up {} stale GPU assignments for {}/{}",
+                    deleted.rows_affected(),
+                    miner_id,
+                    executor_id
+                );
+            }
+        } else {
+            // No GPUs reported - clean up all assignments for this executor
+            let deleted = sqlx::query(
+                "DELETE FROM gpu_uuid_assignments WHERE miner_id = ? AND executor_id = ?",
+            )
+            .bind(&miner_id)
+            .bind(executor_id)
+            .execute(self.persistence.pool())
+            .await?;
+
+            if deleted.rows_affected() > 0 {
+                info!(
+                    "Cleaned up {} GPU assignments for {}/{} (no GPUs reported)",
+                    deleted.rows_affected(),
+                    miner_id,
+                    executor_id
+                );
+            }
+        }
+
         for gpu_info in gpu_infos {
             // Skip invalid UUIDs
             if gpu_info.gpu_uuid.is_empty() || gpu_info.gpu_uuid == "Unknown UUID" {
@@ -763,31 +855,63 @@ impl VerificationEngine {
                 let existing_executor_id: String = row.get("executor_id");
 
                 if existing_miner_id != miner_id || existing_executor_id != executor_id {
-                    // GPU reassignment - update to new owner
-                    info!(
-                        "GPU {} reassigned from {}/{} to {}/{}",
-                        gpu_info.gpu_uuid,
-                        existing_miner_id,
-                        existing_executor_id,
-                        miner_id,
-                        executor_id
-                    );
+                    // Check if the existing executor is still active
+                    let executor_status_query =
+                        "SELECT status FROM miner_executors WHERE executor_id = ? AND miner_id = ?";
+                    let status_row = sqlx::query(executor_status_query)
+                        .bind(&existing_executor_id)
+                        .bind(&existing_miner_id)
+                        .fetch_optional(self.persistence.pool())
+                        .await?;
 
-                    sqlx::query(
-                        "UPDATE gpu_uuid_assignments
-                         SET miner_id = ?, executor_id = ?, gpu_index = ?, gpu_name = ?,
-                             last_verified = ?, updated_at = ?
-                         WHERE gpu_uuid = ?",
-                    )
-                    .bind(&miner_id)
-                    .bind(executor_id)
-                    .bind(gpu_info.index as i32)
-                    .bind(&gpu_info.gpu_name)
-                    .bind(&now)
-                    .bind(&now)
-                    .bind(&gpu_info.gpu_uuid)
-                    .execute(self.persistence.pool())
-                    .await?;
+                    let can_reassign = if let Some(row) = status_row {
+                        let status: String = row.get("status");
+                        // Allow reassignment if executor is offline, failed, or stale
+                        status == "offline" || status == "failed" || status == "stale"
+                    } else {
+                        // Executor doesn't exist in miner_executors table - allow reassignment
+                        true
+                    };
+
+                    if can_reassign {
+                        // GPU reassignment allowed - previous executor is inactive
+                        info!(
+                            "GPU {} reassigned from {}/{} to {}/{} (previous executor inactive)",
+                            gpu_info.gpu_uuid,
+                            existing_miner_id,
+                            existing_executor_id,
+                            miner_id,
+                            executor_id
+                        );
+
+                        sqlx::query(
+                            "UPDATE gpu_uuid_assignments
+                             SET miner_id = ?, executor_id = ?, gpu_index = ?, gpu_name = ?,
+                                 last_verified = ?, updated_at = ?
+                             WHERE gpu_uuid = ?",
+                        )
+                        .bind(&miner_id)
+                        .bind(executor_id)
+                        .bind(gpu_info.index as i32)
+                        .bind(&gpu_info.gpu_name)
+                        .bind(&now)
+                        .bind(&now)
+                        .bind(&gpu_info.gpu_uuid)
+                        .execute(self.persistence.pool())
+                        .await?;
+                    } else {
+                        // Executor is still active - reject the reassignment
+                        warn!(
+                            "GPU UUID {} still owned by active executor {}/{}, rejecting claim from {}/{}",
+                            gpu_info.gpu_uuid,
+                            existing_miner_id,
+                            existing_executor_id,
+                            miner_id,
+                            executor_id
+                        );
+                        // Skip this GPU - don't store it for the new claimant
+                        continue;
+                    }
                 } else {
                     // Same owner - just update last_verified
                     sqlx::query(
@@ -835,15 +959,55 @@ impl VerificationEngine {
         .fetch_one(self.persistence.pool())
         .await?;
 
+        let new_status = if gpu_count > 0 { "verified" } else { "offline" };
+
         sqlx::query(
-            "UPDATE miner_executors SET gpu_count = ?, updated_at = datetime('now')
+            "UPDATE miner_executors SET gpu_count = ?, status = ?, updated_at = datetime('now')
              WHERE miner_id = ? AND executor_id = ?",
         )
         .bind(gpu_count as i32)
+        .bind(new_status)
         .bind(&miner_id)
         .bind(executor_id)
         .execute(self.persistence.pool())
         .await?;
+
+        if gpu_count > 0 {
+            info!(
+                "Executor {}/{} verified with {} GPUs",
+                miner_id, executor_id, gpu_count
+            );
+        } else {
+            warn!(
+                "Executor {}/{} has no GPUs, marking as offline",
+                miner_id, executor_id
+            );
+        }
+
+        // Validate that the GPU count matches the expected count
+        let expected_gpu_count = gpu_infos
+            .iter()
+            .filter(|g| !g.gpu_uuid.is_empty() && g.gpu_uuid != "Unknown UUID")
+            .count() as i64;
+
+        if gpu_count != expected_gpu_count {
+            warn!(
+                "GPU assignment mismatch for {}/{}: stored {} GPUs but expected {}",
+                miner_id, executor_id, gpu_count, expected_gpu_count
+            );
+        }
+
+        // Fail verification if executor claims GPUs but none were stored
+        if expected_gpu_count > 0 && gpu_count == 0 {
+            error!(
+                "Failed to store GPU assignments for {}/{}: expected {} GPUs but stored 0",
+                miner_id, executor_id, expected_gpu_count
+            );
+            return Err(anyhow::anyhow!(
+                "GPU assignment validation failed: no valid GPU UUIDs stored despite {} GPUs reported",
+                expected_gpu_count
+            ));
+        }
 
         Ok(())
     }
@@ -1835,156 +1999,319 @@ impl VerificationEngine {
         )
     }
 
-    /// Clean up executors that have failed validation or are stale for more than N epochs
-    pub async fn cleanup_failed_executors_after_epoch(
+    /// Clean up executors that have consecutive failed validations
+    /// This is called periodically (every 15 minutes) to remove executors that:
+    /// 1. Are offline and still have GPU assignments (immediate cleanup)
+    /// 2. Have had 2+ consecutive failed validations with no successes (delete)
+    /// 3. Have been offline for 30+ minutes (stale cleanup)
+    pub async fn cleanup_failed_executors_after_failures(
         &self,
-        failed_epochs_threshold: i32,
+        consecutive_failures_threshold: i32,
     ) -> Result<()> {
-        // Get the last N distinct validation batch timestamps
-        let batch_query = r#"
-            SELECT DISTINCT datetime(substr(timestamp, 1, 13) || ':00:00') as batch_time
-            FROM verification_logs
-            ORDER BY batch_time DESC
-            LIMIT ?
+        info!(
+            "Running executor cleanup - checking for {} consecutive failures",
+            consecutive_failures_threshold
+        );
+
+        // Step 1: Clean up any GPU assignments for offline executors (immediate fix)
+        let offline_with_gpus_query = r#"
+            SELECT DISTINCT me.executor_id, me.miner_id, COUNT(ga.gpu_uuid) as gpu_count
+            FROM miner_executors me
+            INNER JOIN gpu_uuid_assignments ga ON me.executor_id = ga.executor_id AND me.miner_id = ga.miner_id
+            WHERE me.status = 'offline'
+            GROUP BY me.executor_id, me.miner_id
         "#;
 
-        let batch_times = sqlx::query(batch_query)
-            .bind(failed_epochs_threshold + 1)
+        let offline_with_gpus = sqlx::query(offline_with_gpus_query)
             .fetch_all(self.persistence.pool())
             .await?;
 
-        if batch_times.len() <= failed_epochs_threshold as usize {
-            debug!(
-                "Not enough validation batches yet to cleanup (need {} batches)",
-                failed_epochs_threshold
+        let mut gpu_assignments_cleaned = 0;
+        for row in offline_with_gpus {
+            let executor_id: String = row.try_get("executor_id")?;
+            let miner_id: String = row.try_get("miner_id")?;
+            let gpu_count: i64 = row.try_get("gpu_count")?;
+
+            info!(
+                "Cleaning up {} GPU assignments for offline executor {} (miner: {})",
+                gpu_count, executor_id, miner_id
             );
-            return Ok(());
+
+            let cleanup_result = sqlx::query(
+                "DELETE FROM gpu_uuid_assignments WHERE executor_id = ? AND miner_id = ?",
+            )
+            .bind(&executor_id)
+            .bind(&miner_id)
+            .execute(self.persistence.pool())
+            .await?;
+
+            gpu_assignments_cleaned += cleanup_result.rows_affected();
         }
 
-        // Get the cutoff batch time
-        let cutoff_batch: String =
-            batch_times[failed_epochs_threshold as usize].try_get("batch_time")?;
+        // Step 1b: Clean up executors with mismatched GPU counts
+        let mismatched_gpu_query = r#"
+            SELECT me.executor_id, me.miner_id, me.gpu_count, me.status
+            FROM miner_executors me
+            WHERE me.gpu_count > 0
+            AND NOT EXISTS (
+                SELECT 1 FROM gpu_uuid_assignments ga
+                WHERE ga.executor_id = me.executor_id AND ga.miner_id = me.miner_id
+            )
+        "#;
 
-        // Find executors that have only failures OR no recent verifications since the cutoff
-        let failed_executors_query = r#"
+        let mismatched_executors = sqlx::query(mismatched_gpu_query)
+            .fetch_all(self.persistence.pool())
+            .await?;
+
+        for row in mismatched_executors {
+            let executor_id: String = row.try_get("executor_id")?;
+            let miner_id: String = row.try_get("miner_id")?;
+            let gpu_count: i32 = row.try_get("gpu_count")?;
+            let status: String = row.try_get("status")?;
+
+            warn!(
+                "Executor {} (miner: {}) claims {} GPUs but has no assignments, status: {}. Resetting GPU count to 0",
+                executor_id, miner_id, gpu_count, status
+            );
+
+            // Reset GPU count to 0 to reflect reality
+            sqlx::query(
+                "UPDATE miner_executors SET gpu_count = 0, updated_at = datetime('now')
+                 WHERE executor_id = ? AND miner_id = ?",
+            )
+            .bind(&executor_id)
+            .bind(&miner_id)
+            .execute(self.persistence.pool())
+            .await?;
+
+            // Mark offline if they claim GPUs but have none
+            if status == "online" || status == "verified" {
+                sqlx::query(
+                    "UPDATE miner_executors SET status = 'offline', updated_at = datetime('now')
+                     WHERE executor_id = ? AND miner_id = ?",
+                )
+                .bind(&executor_id)
+                .bind(&miner_id)
+                .execute(self.persistence.pool())
+                .await?;
+
+                info!(
+                    "Marked executor {} as offline (claimed {} GPUs but has 0 assignments)",
+                    executor_id, gpu_count
+                );
+            }
+        }
+
+        // Step 1c: Clean up stale GPU assignments (GPUs that haven't been verified recently)
+        let stale_gpu_cleanup_query = r#"
+            DELETE FROM gpu_uuid_assignments
+            WHERE last_verified < datetime('now', '-1 hour')
+            OR (
+                EXISTS (
+                    SELECT 1 FROM miner_executors me
+                    WHERE me.executor_id = gpu_uuid_assignments.executor_id
+                    AND me.miner_id = gpu_uuid_assignments.miner_id
+                    AND me.status = 'offline'
+                )
+            )
+        "#;
+
+        let stale_gpu_result = sqlx::query(stale_gpu_cleanup_query)
+            .execute(self.persistence.pool())
+            .await?;
+
+        if stale_gpu_result.rows_affected() > 0 {
+            info!(
+                "Cleaned up {} stale GPU assignments (not verified in last hour or belonging to offline executors)",
+                stale_gpu_result.rows_affected()
+            );
+        }
+
+        // Step 2: Find and delete executors with consecutive failures
+        let delete_executors_query = r#"
+            WITH recent_verifications AS (
+                SELECT
+                    vl.executor_id,
+                    vl.success,
+                    vl.timestamp,
+                    ROW_NUMBER() OVER (PARTITION BY vl.executor_id ORDER BY vl.timestamp DESC) as rn
+                FROM verification_logs vl
+                WHERE vl.timestamp > datetime('now', '-1 hour')
+            )
             SELECT
                 me.executor_id,
-                COUNT(CASE WHEN vl.success = 1 AND substr(vl.timestamp, 1, 19) >= ? THEN 1 END) as recent_successes,
-                COUNT(CASE WHEN vl.success = 0 AND substr(vl.timestamp, 1, 19) >= ? THEN 1 END) as recent_failures,
-                MAX(vl.timestamp) as last_seen,
-                CASE
-                    WHEN MAX(vl.timestamp) IS NULL OR substr(MAX(vl.timestamp), 1, 19) < ? THEN 1
-                    ELSE 0
-                END as is_stale
+                me.miner_id,
+                me.status,
+                COALESCE(SUM(CASE WHEN rv.success = 0 AND rv.rn <= ? THEN 1 ELSE 0 END), 0) as consecutive_fails,
+                COALESCE(SUM(CASE WHEN rv.success = 1 AND rv.rn <= ? THEN 1 ELSE 0 END), 0) as recent_successes,
+                MAX(rv.timestamp) as last_verification
             FROM miner_executors me
-            LEFT JOIN verification_logs vl ON me.executor_id = vl.executor_id
-            WHERE me.status != 'offline'
-            GROUP BY me.executor_id
-            HAVING (recent_failures > 0 AND recent_successes = 0)
-                OR is_stale = 1
+            LEFT JOIN recent_verifications rv ON me.executor_id = rv.executor_id
+            WHERE me.status = 'offline'
+            GROUP BY me.executor_id, me.miner_id, me.status
+            HAVING consecutive_fails >= ? AND recent_successes = 0
         "#;
 
-        let failed_executors = sqlx::query(failed_executors_query)
-            .bind(&cutoff_batch)
-            .bind(&cutoff_batch)
-            .bind(&cutoff_batch)
+        let executors_to_delete = sqlx::query(delete_executors_query)
+            .bind(consecutive_failures_threshold)
+            .bind(consecutive_failures_threshold)
+            .bind(consecutive_failures_threshold)
             .fetch_all(self.persistence.pool())
             .await?;
 
-        let mut marked_offline = 0;
         let mut deleted = 0;
-        let mut stale_marked = 0;
-
-        for row in failed_executors {
+        for row in executors_to_delete {
             let executor_id: String = row.try_get("executor_id")?;
-            let recent_failures: i32 = row.try_get("recent_failures")?;
-            let is_stale: i32 = row.try_get("is_stale")?;
-            let last_seen: Option<String> = row.try_get("last_seen")?;
+            let miner_id: String = row.try_get("miner_id")?;
+            let consecutive_fails: i64 = row.try_get("consecutive_fails")?;
+            let last_verification: Option<String> = row.try_get("last_verification").ok();
 
-            // Handle stale executors (not verified recently)
-            if is_stale == 1 {
-                info!(
-                    "Executor {} is stale (last seen: {}), marking as offline",
-                    executor_id,
-                    last_seen.as_deref().unwrap_or("never")
-                );
-
-                // Mark as offline
-                sqlx::query(
-                    "UPDATE miner_executors
-                     SET status = 'offline',
-                         last_health_check = datetime('now'),
-                         updated_at = datetime('now')
-                     WHERE executor_id = ?",
-                )
-                .bind(&executor_id)
-                .execute(self.persistence.pool())
-                .await?;
-
-                stale_marked += 1;
-                marked_offline += 1;
-
-                // For stale executors, delete after 2x threshold without any verification
-                if last_seen.is_none() {
-                    sqlx::query("DELETE FROM miner_executors WHERE executor_id = ?")
-                        .bind(&executor_id)
-                        .execute(self.persistence.pool())
-                        .await?;
-                    deleted += 1;
-                    info!("Removed executor {} - never verified", executor_id);
-                }
-            }
-            // Handle executors with explicit failures
-            else if recent_failures >= failed_epochs_threshold {
-                // Mark as offline first
-                sqlx::query(
-                    "UPDATE miner_executors
-                     SET status = 'offline',
-                         last_health_check = datetime('now'),
-                         updated_at = datetime('now')
-                     WHERE executor_id = ?",
-                )
-                .bind(&executor_id)
-                .execute(self.persistence.pool())
-                .await?;
-
-                marked_offline += 1;
-
-                // If it's been failing for 2x the threshold, actually delete it
-                if recent_failures >= (failed_epochs_threshold * 2) {
-                    sqlx::query("DELETE FROM miner_executors WHERE executor_id = ?")
-                        .bind(&executor_id)
-                        .execute(self.persistence.pool())
-                        .await?;
-
-                    deleted += 1;
-                    info!(
-                        "Removed executor {} after {} consecutive failed epochs",
-                        executor_id, recent_failures
-                    );
-                }
-            }
-        }
-
-        if stale_marked > 0 {
             info!(
-                "Marked {} stale executors as offline (not verified in {} epochs)",
-                stale_marked, failed_epochs_threshold
+                "Permanently deleting executor {} (miner: {}) after {} consecutive failures, last seen: {}",
+                executor_id, miner_id, consecutive_fails,
+                last_verification.as_deref().unwrap_or("never")
             );
+
+            // Use transaction to ensure atomic deletion
+            let mut tx = self.persistence.pool().begin().await?;
+
+            // Clean up any remaining GPU assignments
+            sqlx::query("DELETE FROM gpu_uuid_assignments WHERE executor_id = ? AND miner_id = ?")
+                .bind(&executor_id)
+                .bind(&miner_id)
+                .execute(&mut *tx)
+                .await?;
+
+            // Delete the executor record
+            sqlx::query("DELETE FROM miner_executors WHERE executor_id = ? AND miner_id = ?")
+                .bind(&executor_id)
+                .bind(&miner_id)
+                .execute(&mut *tx)
+                .await?;
+
+            tx.commit().await?;
+            deleted += 1;
+
+            // Clean up any active SSH sessions
+            self.cleanup_active_session(&executor_id).await;
         }
 
-        if marked_offline > 0 {
+        // Step 3: Delete stale offline executors
+        let stale_delete_query = r#"
+            DELETE FROM miner_executors
+            WHERE status = 'offline'
+            AND (
+                last_health_check < datetime('now', '-10 minutes')
+                OR (last_health_check IS NULL AND updated_at < datetime('now', '-10 minutes'))
+            )
+        "#;
+
+        let stale_result = sqlx::query(stale_delete_query)
+            .execute(self.persistence.pool())
+            .await?;
+
+        let stale_deleted = stale_result.rows_affected();
+
+        // Step 4: Update GPU profiles for all miners with wrong gpu count profile
+        let affected_miners_query = r#"
+            SELECT DISTINCT miner_uid
+            FROM miner_gpu_profiles
+            WHERE miner_uid IN (
+                -- Miners with offline executors
+                SELECT DISTINCT CAST(SUBSTR(miner_id, 7) AS INTEGER)
+                FROM miner_executors
+                WHERE status = 'offline'
+
+                UNION
+
+                -- Miners with non-empty GPU profiles but no active executors
+                SELECT miner_uid
+                FROM miner_gpu_profiles
+                WHERE gpu_counts_json <> '{}'
+                AND NOT EXISTS (
+                    SELECT 1 FROM miner_executors
+                    WHERE miner_id = 'miner_' || miner_gpu_profiles.miner_uid
+                    AND status NOT IN ('offline', 'failed', 'stale')
+                )
+            )
+        "#;
+
+        let affected_miners = sqlx::query(affected_miners_query)
+            .fetch_all(self.persistence.pool())
+            .await?;
+
+        for row in affected_miners {
+            let miner_uid: i64 = row.try_get("miner_uid")?;
+            let miner_id = format!("miner_{}", miner_uid);
+
+            let gpu_counts = self
+                .persistence
+                .get_miner_gpu_counts_from_assignments(&miner_id)
+                .await?;
+
+            let mut gpu_map: std::collections::HashMap<String, u32> =
+                std::collections::HashMap::new();
+            for (_, count, gpu_name) in gpu_counts {
+                let model =
+                    crate::gpu::categorization::GpuCategorizer::normalize_gpu_model(&gpu_name);
+                *gpu_map.entry(model).or_insert(0) += count;
+            }
+
+            let update_query = if gpu_map.is_empty() {
+                r#"
+                UPDATE miner_gpu_profiles
+                SET gpu_counts_json = ?,
+                    total_score = 0.0,
+                    verification_count = 0,
+                    last_successful_validation = NULL,
+                    last_updated = datetime('now')
+                WHERE miner_uid = ?
+                "#
+            } else {
+                r#"
+                UPDATE miner_gpu_profiles
+                SET gpu_counts_json = ?,
+                    last_updated = datetime('now')
+                WHERE miner_uid = ?
+                "#
+            };
+
+            let gpu_json = serde_json::to_string(&gpu_map)?;
+            let result = sqlx::query(update_query)
+                .bind(&gpu_json)
+                .bind(miner_uid)
+                .execute(self.persistence.pool())
+                .await?;
+
+            if result.rows_affected() > 0 {
+                info!(
+                    "Updated GPU profile for miner {} after cleanup: {}",
+                    miner_uid, gpu_json
+                );
+            }
+        }
+
+        // Log summary
+        if gpu_assignments_cleaned > 0 {
             info!(
-                "Marked {} total executors as offline after {} validation epochs",
-                marked_offline, failed_epochs_threshold
+                "Deleted {} GPU assignments from offline executors",
+                gpu_assignments_cleaned
             );
         }
 
         if deleted > 0 {
             info!(
-                "Permanently removed {} executors after extended offline period",
-                deleted
+                "Deleted {} executors with {} or more consecutive failures",
+                deleted, consecutive_failures_threshold
             );
+        }
+
+        if stale_deleted > 0 {
+            info!("Deleted {} stale offline executors", stale_deleted);
+        }
+
+        if gpu_assignments_cleaned == 0 && deleted == 0 && stale_deleted == 0 {
+            debug!("No executors needed cleanup in this cycle");
         }
 
         Ok(())
