@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -199,6 +200,9 @@ pub struct SecurityConfig {
 
     /// Enable request signing verification
     pub verify_signatures: bool,
+
+    /// Ethereum private key for collateral contract
+    pub private_key_file: Option<PathBuf>,
 }
 
 /// TLS configuration
@@ -550,6 +554,7 @@ impl Default for SecurityConfig {
             token_expiration: Duration::from_secs(3600),
             allowed_validators: vec![],
             verify_signatures: true,
+            private_key_file: None,
         }
     }
 }
@@ -777,6 +782,24 @@ impl MinerConfig {
         }
 
         Ok(())
+    }
+}
+
+impl SecurityConfig {
+    pub fn get_private_key(&self) -> Result<String, anyhow::Error> {
+        match self.private_key_file {
+            Some(ref path) => {
+                if !Path::new(path).exists() {
+                    Err(anyhow::anyhow!("private key file does not exist"))
+                } else {
+                    match fs::read_to_string(path) {
+                        Ok(private_key) => Ok(private_key.trim().to_string()),
+                        Err(e) => Err(anyhow::anyhow!("Failed to read private key file: {}", e)),
+                    }
+                }
+            }
+            None => Err(anyhow::anyhow!("private_key_file config is required")),
+        }
     }
 }
 

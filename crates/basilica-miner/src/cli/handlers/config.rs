@@ -3,6 +3,8 @@
 //! Handles configuration validation, reloading, display, and management
 //! operations for the miner configuration system.
 
+use crate::config::MinerConfig;
+use alloy::signers::local::PrivateKeySigner;
 use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -10,7 +12,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{error, info};
 
-use crate::config::MinerConfig;
 use basilica_common::config::ConfigValidation;
 
 /// Configuration operation types
@@ -429,6 +430,39 @@ fn validate_security_config(
 
     if config.token_expiration.as_secs() > 86400 {
         warnings.push("Long token expiration may pose security risks".to_string());
+    }
+
+    match config.get_private_key() {
+        Ok(private_key) => {
+            validate_private_key_config(&private_key, errors, warnings, suggestions);
+        }
+        Err(e) => {
+            errors.push(format!("Failed to get private key: {e}"));
+        }
+    }
+}
+
+/// Validate private key configuration
+fn validate_private_key_config(
+    private_key: &str,
+    errors: &mut Vec<String>,
+    _warnings: &mut [String],
+    _suggestions: &mut [String],
+) {
+    if private_key.is_empty() {
+        errors.push("private_key cannot be empty".to_string());
+        return;
+    }
+
+    let private_key = private_key.trim_start_matches("0x");
+    if private_key.len() != 64 {
+        errors.push("private_key must be exactly 64 characters long".to_string());
+        return;
+    }
+
+    // Validate that the private key can be parsed and get the corresponding address
+    if private_key.parse::<PrivateKeySigner>().is_err() {
+        errors.push("Invalid private key format".to_string());
     }
 }
 

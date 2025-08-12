@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.28"
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/"
+]
+
+# RPC endpoints for different networks
+[rpc_endpoints]
+# Local testnet (your custom EVM)
+local = "http://localhost:9944"
+
+[profile.local]
+fork_url = "http://localhost:9944"
+
