@@ -5,8 +5,7 @@
 
 use crate::{
     api::types::{
-        CreditWalletResponse, HealthCheckResponse, ListMinersQuery, ListMinersResponse,
-        ListValidatorsResponse, RegisterRequest, RegisterResponse, RentalStatusResponse,
+        CreditWalletResponse, HealthCheckResponse, RegisterRequest, RegisterResponse, RentalStatusResponse,
     },
     error::{Error, ErrorResponse, Result},
 };
@@ -134,22 +133,7 @@ impl BasilicaClient {
 
     /// Health check
     pub async fn health_check(&self) -> Result<HealthCheckResponse> {
-        self.get("/health").await
-    }
-
-    /// List validators
-    pub async fn list_validators(&self) -> Result<ListValidatorsResponse> {
-        self.get("/validators").await
-    }
-
-    /// List miners
-    pub async fn list_miners(&self, query: ListMinersQuery) -> Result<ListMinersResponse> {
-        let url = format!("{}/api/v1/miners", self.base_url);
-        let request = self.http_client.get(&url).query(&query);
-        
-        let request = self.apply_auth(request);
-        let response = request.send().await.map_err(Error::HttpClient)?;
-        self.handle_response(response).await
+        self.get("/api/v1/health").await
     }
 
     // ===== Registration =====
@@ -159,9 +143,10 @@ impl BasilicaClient {
         self.post("/api/v1/register", &request).await
     }
 
-    /// Get credit wallet
-    pub async fn get_credit_wallet(&self) -> Result<CreditWalletResponse> {
-        self.get("/api/v1/register/wallet").await
+    /// Get credit wallet for a user
+    pub async fn get_credit_wallet(&self, user_id: &str) -> Result<CreditWalletResponse> {
+        let path = format!("/api/v1/register/wallet/{}", user_id);
+        self.get(&path).await
     }
 
     // ===== Private Helper Methods =====

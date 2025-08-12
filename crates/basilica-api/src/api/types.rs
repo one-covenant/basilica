@@ -105,45 +105,6 @@ pub struct ListRentalsQuery {
     pub page_size: Option<u32>,
 }
 
-/// List validators response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ListValidatorsResponse {
-    /// List of validators
-    pub validators: Vec<serde_json::Value>,
-
-    /// Total count
-    pub total_count: usize,
-}
-
-/// List miners query
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ListMinersQuery {
-    /// Minimum GPU count
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_gpu_count: Option<u32>,
-
-    /// Minimum score
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_score: Option<f64>,
-
-    /// Page number
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub page: Option<u32>,
-
-    /// Page size
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub page_size: Option<u32>,
-}
-
-/// List miners response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ListMinersResponse {
-    /// List of miners
-    pub miners: Vec<serde_json::Value>,
-
-    /// Total count
-    pub total_count: usize,
-}
 
 /// Rental status query parameters
 #[derive(Debug, Deserialize, ToSchema)]
