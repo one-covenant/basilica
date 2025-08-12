@@ -202,21 +202,7 @@ impl ValidatorClient {
         let mut req = self.http_client.get(&url);
 
         if let Some(query_params) = query {
-            let mut params = vec![];
-
-            if let Some(min_gpu_memory) = query_params.min_gpu_memory {
-                params.push(("min_gpu_memory", min_gpu_memory.to_string()));
-            }
-            if let Some(ref gpu_type) = query_params.gpu_type {
-                params.push(("gpu_type", gpu_type.clone()));
-            }
-            if let Some(min_gpu_count) = query_params.min_gpu_count {
-                params.push(("min_gpu_count", min_gpu_count.to_string()));
-            }
-
-            if !params.is_empty() {
-                req = req.query(&params);
-            }
+            req = req.query(&query_params);
         }
 
         let response = req

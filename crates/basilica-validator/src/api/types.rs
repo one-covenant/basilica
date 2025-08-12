@@ -132,8 +132,11 @@ pub struct AvailabilityInfo {
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ListAvailableExecutorsQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_memory: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_count: Option<u32>,
 }
 

@@ -80,38 +80,37 @@ impl BasilicaClient {
         follow: bool,
         tail: Option<u32>,
     ) -> Result<reqwest::Response> {
-        let mut path = format!("/rental/logs/{rental_id}");
-        let mut params = vec![];
-
+        let url = format!("{}/rental/logs/{}", self.base_url, rental_id);
+        let mut request = self.http_client.get(&url);
+        
+        let mut params: Vec<(&str, String)> = vec![];
         if follow {
-            params.push("follow=true".to_string());
+            params.push(("follow", "true".to_string()));
         }
         if let Some(tail_lines) = tail {
-            params.push(format!("tail={tail_lines}"));
+            params.push(("tail", tail_lines.to_string()));
         }
-
+        
         if !params.is_empty() {
-            path.push('?');
-            path.push_str(&params.join("&"));
+            request = request.query(&params);
         }
-
-        let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.get(&url);
+        
         let request = self.apply_auth(request);
-
         request.send().await.map_err(Error::HttpClient)
     }
 
     /// List rentals
     pub async fn list_rentals(&self, state: Option<&str>) -> Result<ListRentalsResponse> {
-        let mut path = "/rental/list".to_string();
-
+        let url = format!("{}/rental/list", self.base_url);
+        let mut request = self.http_client.get(&url);
+        
         if let Some(state_filter) = state {
-            path.push_str(&format!("?status={state_filter}"));
+            request = request.query(&[("status", state_filter)]);
         }
-
-        let response = self.get(&path).await?;
-        Ok(response)
+        
+        let request = self.apply_auth(request);
+        let response = request.send().await.map_err(Error::HttpClient)?;
+        self.handle_response(response).await
     }
 
     /// List available executors for rental
@@ -119,29 +118,16 @@ impl BasilicaClient {
         &self,
         query: Option<ListAvailableExecutorsQuery>,
     ) -> Result<ListAvailableExecutorsResponse> {
-        let mut path = "/executors/available".to_string();
-
+        let url = format!("{}/executors/available", self.base_url);
+        let mut request = self.http_client.get(&url);
+        
         if let Some(q) = query {
-            let mut params = vec![];
-
-            if let Some(min_gpu_memory) = q.min_gpu_memory {
-                params.push(format!("min_gpu_memory={}", min_gpu_memory));
-            }
-            if let Some(ref gpu_type) = q.gpu_type {
-                params.push(format!("gpu_type={}", gpu_type));
-            }
-            if let Some(min_gpu_count) = q.min_gpu_count {
-                params.push(format!("min_gpu_count={}", min_gpu_count));
-            }
-
-            if !params.is_empty() {
-                path.push('?');
-                path.push_str(&params.join("&"));
-            }
+            request = request.query(&q);
         }
-
-        let response = self.get(&path).await?;
-        Ok(response)
+        
+        let request = self.apply_auth(request);
+        let response = request.send().await.map_err(Error::HttpClient)?;
+        self.handle_response(response).await
     }
 
     // ===== Health & Discovery =====
@@ -158,28 +144,12 @@ impl BasilicaClient {
 
     /// List miners
     pub async fn list_miners(&self, query: ListMinersQuery) -> Result<ListMinersResponse> {
-        let mut path = "/api/v1/miners".to_string();
-        let mut params = vec![];
-
-        if let Some(min_gpu_count) = query.min_gpu_count {
-            params.push(format!("min_gpu_count={min_gpu_count}"));
-        }
-        if let Some(min_score) = query.min_score {
-            params.push(format!("min_score={min_score}"));
-        }
-        if let Some(page) = query.page {
-            params.push(format!("page={page}"));
-        }
-        if let Some(page_size) = query.page_size {
-            params.push(format!("page_size={page_size}"));
-        }
-
-        if !params.is_empty() {
-            path.push('?');
-            path.push_str(&params.join("&"));
-        }
-
-        self.get(&path).await
+        let url = format!("{}/api/v1/miners", self.base_url);
+        let request = self.http_client.get(&url).query(&query);
+        
+        let request = self.apply_auth(request);
+        let response = request.send().await.map_err(Error::HttpClient)?;
+        self.handle_response(response).await
     }
 
     // ===== Registration =====

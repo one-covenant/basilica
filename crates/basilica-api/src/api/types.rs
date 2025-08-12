@@ -116,18 +116,22 @@ pub struct ListValidatorsResponse {
 }
 
 /// List miners query
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ListMinersQuery {
     /// Minimum GPU count
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_count: Option<u32>,
 
     /// Minimum score
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_score: Option<f64>,
 
     /// Page number
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<u32>,
 
     /// Page size
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub page_size: Option<u32>,
 }
 
