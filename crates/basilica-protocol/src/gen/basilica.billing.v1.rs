@@ -61,8 +61,8 @@ pub struct ReserveCreditsRequest {
     /// Decimal string
     #[prost(string, tag = "3")]
     pub amount: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "4")]
-    pub duration_hours: u32,
+    #[prost(message, optional, tag = "4")]
+    pub duration: ::core::option::Option<::prost_types::Duration>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -121,8 +121,8 @@ pub struct TrackRentalRequest {
     pub hourly_rate: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "7")]
     pub start_time: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(uint32, tag = "8")]
-    pub max_duration_hours: u32,
+    #[prost(message, optional, tag = "8")]
+    pub max_duration: ::core::option::Option<::prost_types::Duration>,
     #[prost(map = "string, string", tag = "9")]
     pub metadata: ::std::collections::HashMap<
         ::prost::alloc::string::String,
@@ -273,9 +273,8 @@ pub struct FinalizeRentalResponse {
     /// Decimal string
     #[prost(string, tag = "2")]
     pub total_cost: ::prost::alloc::string::String,
-    /// Decimal string
-    #[prost(string, tag = "3")]
-    pub duration_hours: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub duration: ::core::option::Option<::prost_types::Duration>,
     /// Decimal string
     #[prost(string, tag = "4")]
     pub charged_amount: ::prost::alloc::string::String,
@@ -390,9 +389,8 @@ pub struct UsageSummary {
     pub total_disk_bytes: u64,
     #[prost(double, tag = "5")]
     pub avg_gpu_utilization: f64,
-    /// Decimal string
-    #[prost(string, tag = "6")]
-    pub duration_hours: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "6")]
+    pub duration: ::core::option::Option<::prost_types::Duration>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

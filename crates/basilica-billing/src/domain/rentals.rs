@@ -93,10 +93,12 @@ impl Rental {
         }
 
         self.state = new_state;
-        self.updated_at = Utc::now();
+        let now = Utc::now();
+        self.updated_at = now;
+        self.last_updated = now;
 
         if new_state.is_terminal() && self.ended_at.is_none() {
-            self.ended_at = Some(Utc::now());
+            self.ended_at = Some(now);
         }
 
         Ok(())

@@ -1,6 +1,7 @@
 // The unit tests are for testing against local network
 // Just can be executed if local subtensor node is running
 use super::*;
+use crate::config::LOCAL_CHAIN_ID;
 use alloy::hex::FromHex;
 use alloy_primitives::Bytes;
 use alloy_sol_types::SolCall;

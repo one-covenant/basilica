@@ -1,6 +1,7 @@
 -- Initial schema for Basilica Billing Service
 -- Create extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 -- Create schema
 CREATE SCHEMA IF NOT EXISTS billing;
@@ -20,12 +21,13 @@ CREATE TABLE IF NOT EXISTS billing.credits (
   reserved_balance DECIMAL(20, 8) NOT NULL DEFAULT 0,
   lifetime_credits DECIMAL(20, 8) NOT NULL DEFAULT 0,
   lifetime_spent DECIMAL(20, 8) NOT NULL DEFAULT 0,
-  last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   version INTEGER NOT NULL DEFAULT 1,
   -- For optimistic locking
   CONSTRAINT positive_balance CHECK (balance >= 0),
-  CONSTRAINT positive_reserved CHECK (reserved_balance >= 0)
+  CONSTRAINT positive_reserved CHECK (reserved_balance >= 0),
+  CONSTRAINT credits_user_id_unique UNIQUE (user_id)
 );
 -- Credit transactions for audit trail
 CREATE TABLE IF NOT EXISTS billing.credit_transactions (

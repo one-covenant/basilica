@@ -229,11 +229,16 @@ impl BillingService for BillingServiceImpl {
         let amount = Self::parse_decimal(&req.amount)
             .map_err(|e| Status::invalid_argument(format!("Invalid amount: {}", e)))?;
         let credit_balance = CreditBalance::from_decimal(amount);
-        let duration = Duration::hours(req.duration_hours as i64);
+        let proto_duration = req
+            .duration
+            .ok_or_else(|| Status::invalid_argument("Duration is required"))?;
+        let duration = Duration::seconds(proto_duration.seconds)
+            + Duration::nanoseconds(proto_duration.nanos as i64);
+        let hours = duration.num_hours();
 
         info!(
             "Reserving {} credits for user {} for {} hours",
-            amount, user_id, req.duration_hours
+            amount, user_id, hours
         );
 
         let reservation_id = self
@@ -400,8 +405,13 @@ impl BillingService for BillingServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Failed to get created rental: {}", e)))?;
 
-        let max_duration = Duration::hours(req.max_duration_hours as i64);
-        let estimated_cost = credit_rate.multiply(Decimal::from(req.max_duration_hours));
+        let proto_duration = req
+            .max_duration
+            .ok_or_else(|| Status::invalid_argument("Max duration is required"))?;
+        let max_duration = Duration::seconds(proto_duration.seconds)
+            + Duration::nanoseconds(proto_duration.nanos as i64);
+        let max_duration_hours = max_duration.num_hours() as u32;
+        let estimated_cost = credit_rate.multiply(Decimal::from(max_duration_hours));
 
         let reservation_id = self
             .credit_manager
@@ -426,7 +436,7 @@ impl BillingService for BillingServiceImpl {
                 "hourly_rate": Self::format_decimal(hourly_rate),
                 "resource_spec": resource_spec_value,
                 "estimated_cost": Self::format_credit_balance(estimated_cost),
-                "max_duration_hours": req.max_duration_hours,
+                "max_duration_hours": max_duration_hours,
             }),
             timestamp: chrono::Utc::now(),
             processed: false,
@@ -633,7 +643,7 @@ impl BillingService for BillingServiceImpl {
             .map_err(|e| Status::internal(format!("Failed to finalize rental: {}", e)))?;
 
         let duration = rental.last_updated - rental.created_at;
-        let duration_hours =
+        let _duration_hours =
             duration.num_hours() as f64 + (duration.num_minutes() % 60) as f64 / 60.0;
 
         let reservations = self
@@ -675,10 +685,15 @@ impl BillingService for BillingServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Failed to persist rental: {}", e)))?;
 
+        let duration_proto = prost_types::Duration {
+            seconds: duration.num_seconds(),
+            nanos: (duration.num_nanoseconds().unwrap_or(0) % 1_000_000_000) as i32,
+        };
+
         let response = FinalizeRentalResponse {
             success: true,
             total_cost: Self::format_decimal(final_cost),
-            duration_hours: duration_hours.to_string(),
+            duration: Some(duration_proto),
             charged_amount: Self::format_credit_balance(charged_amount),
             refunded_amount: Self::format_credit_balance(refunded_amount),
         };
@@ -749,7 +764,7 @@ impl BillingService for BillingServiceImpl {
             .ok_or_else(|| Status::not_found("Rental not found"))?;
 
         let duration = rental.last_updated - rental.created_at;
-        let duration_hours =
+        let _duration_hours =
             duration.num_hours() as f64 + (duration.num_minutes() % 60) as f64 / 60.0;
 
         let events = self
@@ -834,6 +849,11 @@ impl BillingService for BillingServiceImpl {
             }
         }
 
+        let duration_proto = prost_types::Duration {
+            seconds: duration.num_seconds(),
+            nanos: (duration.num_nanoseconds().unwrap_or(0) % 1_000_000_000) as i32,
+        };
+
         let summary = UsageSummary {
             avg_cpu_percent: if telemetry_count > 0 {
                 total_cpu_percent / telemetry_count as f64
@@ -852,7 +872,7 @@ impl BillingService for BillingServiceImpl {
             } else {
                 0.0
             },
-            duration_hours: duration_hours.to_string(),
+            duration: Some(duration_proto),
         };
 
         if data_points.is_empty() {

@@ -82,7 +82,20 @@ VALUES (
     'Hourly',
     300,
     true
-  ) ON CONFLICT (package_id) DO NOTHING;
+  ) ON CONFLICT (package_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    hourly_rate = EXCLUDED.hourly_rate,
+    cpu_rate_per_hour = EXCLUDED.cpu_rate_per_hour,
+    memory_rate_per_gb_hour = EXCLUDED.memory_rate_per_gb_hour,
+    network_rate_per_gb = EXCLUDED.network_rate_per_gb,
+    disk_iops_rate = EXCLUDED.disk_iops_rate,
+    base_rate_per_hour = EXCLUDED.base_rate_per_hour,
+    gpu_model = EXCLUDED.gpu_model,
+    billing_period = EXCLUDED.billing_period,
+    priority = EXCLUDED.priority,
+    active = EXCLUDED.active,
+    updated_at = NOW();
 -- Add comment to table
 COMMENT ON TABLE billing.billing_packages IS 'Stores available billing packages for GPU rentals';
 COMMENT ON COLUMN billing.billing_packages.package_id IS 'Unique identifier for the package';

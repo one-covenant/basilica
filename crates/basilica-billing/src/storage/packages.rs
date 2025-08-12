@@ -477,7 +477,7 @@ impl PackageRepository for SqlPackageRepository {
                 WHERE package_id = $1
                   AND active = true
                   AND (
-                      gpu_model = 'Custom'
+                      LOWER(gpu_model) = 'custom'
                       OR LOWER(gpu_model) = LOWER($2)
                       OR LOWER(gpu_model) LIKE '%' || LOWER($2) || '%'
                       OR LOWER($2) LIKE '%' || LOWER(gpu_model) || '%'

@@ -12,7 +12,7 @@ services:
       POSTGRES_HOST_AUTH_METHOD: md5
     volumes:
       - billing_postgres_data:/var/lib/postgresql/data
-      - ../../crates/basilica-billing/migrations:/docker-entrypoint-initdb.d:ro
+      # Migrations are handled by sqlx in the application, not by Docker
     ports:
       - "5432:5432"
     networks:

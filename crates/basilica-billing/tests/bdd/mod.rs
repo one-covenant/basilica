@@ -228,12 +228,12 @@ impl TestContext {
 
         // Then insert/update credits using ON CONFLICT to handle race conditions
         sqlx::query(
-            "INSERT INTO billing.credits (user_id, balance, reserved_balance, lifetime_spent, last_updated) 
+            "INSERT INTO billing.credits (user_id, balance, reserved_balance, lifetime_spent, updated_at) 
              VALUES ($1, $2, 0, 0, NOW())
              ON CONFLICT (user_id) DO UPDATE SET 
                balance = EXCLUDED.balance,
                reserved_balance = 0,
-               last_updated = NOW()",
+               updated_at = NOW()",
         )
         .bind(user_uuid)
         .bind(initial_balance.parse::<rust_decimal::Decimal>().unwrap())

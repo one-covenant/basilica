@@ -157,7 +157,7 @@ impl CreditRepository for SqlCreditRepository {
 
         let row = sqlx::query(
             r#"
-            SELECT c.user_id, c.balance, c.reserved_balance, c.lifetime_spent, c.last_updated
+            SELECT c.user_id, c.balance, c.reserved_balance, c.lifetime_spent, c.updated_at
             FROM billing.credits c
             WHERE c.user_id = $1
             "#,
@@ -177,7 +177,7 @@ impl CreditRepository for SqlCreditRepository {
                 balance: CreditBalance::from_decimal(r.get("balance")),
                 reserved: CreditBalance::from_decimal(r.get("reserved_balance")),
                 lifetime_spent: CreditBalance::from_decimal(r.get("lifetime_spent")),
-                last_updated: r.get("last_updated"),
+                last_updated: r.get("updated_at"),
             }
         }))
     }
@@ -187,7 +187,7 @@ impl CreditRepository for SqlCreditRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO billing.credits (user_id, balance, reserved_balance, lifetime_spent, last_updated)
+            INSERT INTO billing.credits (user_id, balance, reserved_balance, lifetime_spent, updated_at)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (user_id) DO NOTHING
             "#,
@@ -213,7 +213,7 @@ impl CreditRepository for SqlCreditRepository {
         let result = sqlx::query(
             r#"
             UPDATE billing.credits
-            SET balance = $2, reserved_balance = $3, lifetime_spent = $4, last_updated = $5
+            SET balance = $2, reserved_balance = $3, lifetime_spent = $4, updated_at = $5
             WHERE user_id = $1
             "#,
         )
@@ -428,7 +428,7 @@ impl CreditRepository for SqlCreditRepository {
         sqlx::query(
             r#"
             UPDATE billing.credits
-            SET balance = $2, last_updated = NOW()
+            SET balance = $2, updated_at = NOW()
             WHERE user_id = $1
             "#,
         )
@@ -522,7 +522,7 @@ impl CreditRepository for SqlCreditRepository {
             r#"
             UPDATE billing.credits
             SET reserved_balance = reserved_balance + $2,
-                last_updated = NOW()
+                updated_at = NOW()
             WHERE user_id = $1
             "#,
         )
@@ -565,7 +565,7 @@ impl CreditRepository for SqlCreditRepository {
             UPDATE billing.credits
             SET balance = balance - $2,
                 lifetime_spent = lifetime_spent + $2,
-                last_updated = NOW()
+                updated_at = NOW()
             WHERE user_id = $1 AND balance >= $2
             "#,
         )

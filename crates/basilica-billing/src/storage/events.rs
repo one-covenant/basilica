@@ -152,6 +152,12 @@ impl SqlEventRepository {
     }
 
     fn validate_event_ids(event: &UsageEvent) -> Result<()> {
+        if event.event_id.is_nil() {
+            return Err(BillingError::ValidationError {
+                field: "event_id".to_string(),
+                message: "event_id cannot be nil for usage event".to_string(),
+            });
+        }
         if event.user_id.is_empty() {
             return Err(BillingError::ValidationError {
                 field: "user_id".to_string(),
@@ -191,8 +197,6 @@ impl EventRepository for SqlEventRepository {
     async fn append_usage_event(&self, event: &UsageEvent) -> Result<Uuid> {
         Self::validate_event_ids(event)?;
 
-        let event_id = Uuid::new_v4();
-
         sqlx::query(
             r#"
             INSERT INTO billing.usage_events (
@@ -201,7 +205,7 @@ impl EventRepository for SqlEventRepository {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
         )
-        .bind(event_id)
+        .bind(event.event_id)
         .bind(event.rental_id)
         .bind(&event.user_id)
         .bind(&event.executor_id)
@@ -217,7 +221,7 @@ impl EventRepository for SqlEventRepository {
             source: Box::new(e),
         })?;
 
-        Ok(event_id)
+        Ok(event.event_id)
     }
 
     async fn append_usage_events_batch(&self, events: &[UsageEvent]) -> Result<Vec<Uuid>> {
@@ -239,7 +243,6 @@ impl EventRepository for SqlEventRepository {
 
         for event in events {
             Self::validate_event_ids(event)?;
-            let event_id = Uuid::new_v4();
 
             sqlx::query(
                 r#"
@@ -249,7 +252,7 @@ impl EventRepository for SqlEventRepository {
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 "#,
             )
-            .bind(event_id)
+            .bind(event.event_id)
             .bind(event.rental_id)
             .bind(&event.user_id)
             .bind(&event.executor_id)
@@ -265,7 +268,7 @@ impl EventRepository for SqlEventRepository {
                 source: Box::new(e),
             })?;
 
-            event_ids.push(event_id);
+            event_ids.push(event.event_id);
         }
 
         tx.commit()

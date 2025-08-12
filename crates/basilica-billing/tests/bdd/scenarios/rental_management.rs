@@ -6,6 +6,14 @@ use basilica_protocol::billing::{
 };
 use uuid::Uuid;
 
+// Helper function to convert hours to protobuf Duration
+fn hours_to_duration(hours: u32) -> prost_types::Duration {
+    prost_types::Duration {
+        seconds: (hours as i64) * 3600,
+        nanos: 0,
+    }
+}
+
 #[tokio::test]
 async fn test_track_rental_creates_new_rental_with_reservation() {
     let mut context = TestContext::new().await;
@@ -22,7 +30,7 @@ async fn test_track_rental_creates_new_rental_with_reservation() {
         executor_id: executor_id.to_string(),
         validator_id: validator_id.to_string(),
         hourly_rate: "10.0".to_string(),
-        max_duration_hours: 24,
+        max_duration: Some(hours_to_duration(24)),
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: Some(ResourceSpec {
@@ -92,7 +100,7 @@ async fn test_track_rental_fails_with_insufficient_balance() {
         executor_id: "executor_002".to_string(),
         validator_id: "validator_002".to_string(),
         hourly_rate: "100.0".to_string(),
-        max_duration_hours: 10,
+        max_duration: Some(hours_to_duration(10)),
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: None,
@@ -129,7 +137,7 @@ async fn test_update_rental_status_transitions() {
         executor_id: "executor_003".to_string(),
         validator_id: "validator_003".to_string(),
         hourly_rate: "5.0".to_string(),
-        max_duration_hours: 10,
+        max_duration: Some(hours_to_duration(10)),
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: None,
@@ -210,7 +218,7 @@ async fn test_get_active_rentals_by_user() {
             executor_id: format!("executor_{}", i),
             validator_id: format!("validator_{}", i),
             hourly_rate: "2.0".to_string(),
-            max_duration_hours: 5,
+            max_duration: Some(hours_to_duration(5)),
             start_time: None,
             metadata: std::collections::HashMap::new(),
             resource_spec: None,
@@ -283,7 +291,7 @@ async fn test_get_active_rentals_by_executor() {
             executor_id: executor_id.to_string(),
             validator_id: "validator_001".to_string(),
             hourly_rate: "3.0".to_string(),
-            max_duration_hours: 8,
+            max_duration: Some(hours_to_duration(8)),
             start_time: None,
             metadata: std::collections::HashMap::new(),
             resource_spec: None,
@@ -350,7 +358,7 @@ async fn test_finalize_rental_charges_correct_amount() {
         executor_id: "executor_final".to_string(),
         validator_id: "validator_final".to_string(),
         hourly_rate: "10.0".to_string(),
-        max_duration_hours: 10,
+        max_duration: Some(hours_to_duration(10)),
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: None,
@@ -451,7 +459,7 @@ async fn test_finalize_rental_without_reservation_charges_directly() {
         executor_id: "executor_direct".to_string(),
         validator_id: "validator_direct".to_string(),
         hourly_rate: "5.0".to_string(),
-        max_duration_hours: 2, // Small duration to ensure we have enough balance
+        max_duration: Some(hours_to_duration(2)), // Small duration to ensure we have enough balance
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: None,

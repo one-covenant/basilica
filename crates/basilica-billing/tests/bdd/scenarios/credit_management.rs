@@ -4,6 +4,14 @@ use basilica_protocol::billing::{
 };
 use uuid::Uuid;
 
+// Helper function to convert hours to protobuf Duration
+fn hours_to_duration(hours: u32) -> prost_types::Duration {
+    prost_types::Duration {
+        seconds: (hours as i64) * 3600,
+        nanos: 0,
+    }
+}
+
 #[tokio::test]
 async fn test_apply_credits_increases_balance() {
     let mut context = TestContext::new().await;
@@ -92,7 +100,7 @@ async fn test_get_balance_returns_correct_amounts() {
     let reserve_request = ReserveCreditsRequest {
         user_id: user_id.to_string(),
         amount: "150.0".to_string(),
-        duration_hours: 24,
+        duration: Some(hours_to_duration(24)),
         rental_id: String::new(),
     };
 
@@ -140,7 +148,7 @@ async fn test_reserve_credits_blocks_amount() {
     let request = ReserveCreditsRequest {
         user_id: user_id.to_string(),
         amount: "300.0".to_string(),
-        duration_hours: 48,
+        duration: Some(hours_to_duration(48)),
         rental_id: Uuid::new_v4().to_string(),
     };
 
@@ -187,7 +195,7 @@ async fn test_reserve_credits_fails_when_insufficient_balance() {
     let request = ReserveCreditsRequest {
         user_id: user_id.to_string(),
         amount: "500.0".to_string(),
-        duration_hours: 10,
+        duration: Some(hours_to_duration(10)),
         rental_id: String::new(),
     };
 
@@ -217,7 +225,7 @@ async fn test_release_reservation_charges_and_refunds() {
     let reserve_request = ReserveCreditsRequest {
         user_id: user_id.to_string(),
         amount: "200.0".to_string(),
-        duration_hours: 24,
+        duration: Some(hours_to_duration(24)),
         rental_id: String::new(),
     };
 
@@ -304,7 +312,7 @@ async fn test_multiple_reservations_tracked_correctly() {
         let request = ReserveCreditsRequest {
             user_id: user_id.to_string(),
             amount: amount.to_string(),
-            duration_hours: 12,
+            duration: Some(hours_to_duration(12)),
             rental_id: String::new(),
         };
 
@@ -393,7 +401,7 @@ async fn test_decimal_precision_preserved() {
     let reserve_request = ReserveCreditsRequest {
         user_id: user_id.to_string(),
         amount: "333.33".to_string(),
-        duration_hours: 8,
+        duration: Some(hours_to_duration(8)),
         rental_id: String::new(),
     };
 

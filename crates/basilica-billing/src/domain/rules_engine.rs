@@ -180,16 +180,7 @@ impl RulesEvaluator for RulesEngine {
     ) -> Result<CostBreakdown> {
         let package = self.package_repository.get_package(package_id).await?;
 
-        let total_hours = usage.gpu_hours.max(Decimal::from(1)); // Minimum 1 hour
-        let total_cost = package.hourly_rate.multiply(total_hours);
-
-        let mut cost_breakdown = CostBreakdown {
-            base_cost: total_cost,
-            usage_cost: CreditBalance::zero(), // No separate usage cost with flat rate
-            discounts: CreditBalance::zero(),
-            overage_charges: CreditBalance::zero(),
-            total_cost,
-        };
+        let mut cost_breakdown = package.calculate_cost(usage);
 
         // Apply custom rules for discounts
         let rules = self.evaluate_rules(usage, metadata).await?;

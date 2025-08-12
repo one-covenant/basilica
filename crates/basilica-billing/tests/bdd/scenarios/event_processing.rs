@@ -4,6 +4,14 @@ use basilica_protocol::billing::{
 };
 use uuid::Uuid;
 
+// Helper function to convert hours to protobuf Duration
+fn hours_to_duration(hours: u32) -> prost_types::Duration {
+    prost_types::Duration {
+        seconds: (hours as i64) * 3600,
+        nanos: 0,
+    }
+}
+
 #[tokio::test]
 async fn test_rental_start_event_created() {
     let mut context = TestContext::new().await;
@@ -18,7 +26,7 @@ async fn test_rental_start_event_created() {
         executor_id: "executor_event_001".to_string(),
         validator_id: "validator_event_001".to_string(),
         hourly_rate: "8.0".to_string(),
-        max_duration_hours: 12,
+        max_duration: Some(hours_to_duration(12)),
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: None,
@@ -88,7 +96,7 @@ async fn test_status_change_events_tracked() {
         executor_id: "executor_status".to_string(),
         validator_id: "validator_status".to_string(),
         hourly_rate: "5.0".to_string(),
-        max_duration_hours: 8,
+        max_duration: Some(hours_to_duration(8)),
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: None,
@@ -168,7 +176,7 @@ async fn test_event_timestamps_ordered() {
         executor_id: "executor_order".to_string(),
         validator_id: "validator_order".to_string(),
         hourly_rate: "7.0".to_string(),
-        max_duration_hours: 6,
+        max_duration: Some(hours_to_duration(6)),
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: None,
@@ -247,7 +255,7 @@ async fn test_event_processing_flags() {
         executor_id: "executor_flags".to_string(),
         validator_id: "validator_flags".to_string(),
         hourly_rate: "6.0".to_string(),
-        max_duration_hours: 10,
+        max_duration: Some(hours_to_duration(10)),
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: None,
@@ -307,7 +315,7 @@ async fn test_event_metadata_preserved() {
         executor_id: executor_id.to_string(),
         validator_id: validator_id.to_string(),
         hourly_rate: "9.0".to_string(),
-        max_duration_hours: 15,
+        max_duration: Some(hours_to_duration(15)),
         start_time: None,
         metadata: std::collections::HashMap::new(),
         resource_spec: None,
@@ -366,7 +374,7 @@ async fn test_concurrent_event_creation() {
                 executor_id: format!("executor_concurrent_{}", i),
                 validator_id: format!("validator_concurrent_{}", i),
                 hourly_rate: "4.0".to_string(),
-                max_duration_hours: 4,
+                max_duration: Some(hours_to_duration(4)),
                 start_time: None,
                 metadata: std::collections::HashMap::new(),
                 resource_spec: None,

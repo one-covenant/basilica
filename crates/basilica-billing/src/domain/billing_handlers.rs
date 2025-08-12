@@ -12,6 +12,7 @@ use crate::storage::{
 };
 use async_trait::async_trait;
 use chrono::Utc;
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -464,12 +465,23 @@ impl EventHandlers for BillingEventHandlers {
             .get_usage_for_rental(&rental_id)
             .await?;
 
-        let _package = self
+        let package = self
             .package_repository
             .get_package(&rental.package_id)
             .await?;
 
-        let final_cost = CreditBalance::from_decimal(end_data.final_cost);
+        let cost_breakdown = package.calculate_cost(&usage);
+        let computed_cost = cost_breakdown.total_cost;
+
+        let client_provided_cost = CreditBalance::from_decimal(end_data.final_cost);
+        if (computed_cost.as_decimal() - client_provided_cost.as_decimal()).abs()
+            > Decimal::from_f64(0.01).unwrap()
+        {
+            warn!(
+                "Client-provided final_cost ({}) differs from computed cost ({}) for rental {}",
+                client_provided_cost, computed_cost, rental_id
+            );
+        }
 
         rental.state = if end_data.termination_reason.as_deref() == Some("failed") {
             RentalState::Failed
@@ -477,11 +489,11 @@ impl EventHandlers for BillingEventHandlers {
             RentalState::Completed
         };
         rental.actual_end_time = Some(end_data.end_time);
-        rental.actual_cost = final_cost;
+        rental.actual_cost = computed_cost;
 
         let charge_result = self
             .credit_repository
-            .deduct_credits(&rental.user_id, final_cost)
+            .deduct_credits(&rental.user_id, computed_cost)
             .await;
 
         if let Err(e) = &charge_result {
@@ -511,7 +523,8 @@ impl EventHandlers for BillingEventHandlers {
             &rental_id.to_string(),
             rental.user_id.as_uuid().ok(),
             serde_json::json!({
-                "final_cost": final_cost.to_string(),
+                "computed_cost": computed_cost.to_string(),
+                "client_provided_cost": client_provided_cost.to_string(),
                 "end_time": end_data.end_time,
                 "termination_reason": end_data.termination_reason,
                 "usage_metrics": usage,
@@ -522,8 +535,8 @@ impl EventHandlers for BillingEventHandlers {
         .await?;
 
         info!(
-            "Ended rental {} with final cost {} (reason: {:?})",
-            rental_id, final_cost, end_data.termination_reason
+            "Ended rental {} with computed cost {} (client provided: {}, reason: {:?})",
+            rental_id, computed_cost, client_provided_cost, end_data.termination_reason
         );
 
         Ok(())

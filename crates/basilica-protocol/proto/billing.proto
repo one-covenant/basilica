@@ -3,6 +3,7 @@ syntax = "proto3";
 package basilica.billing.v1;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 
 // Billing service for credit management, rental tracking, and telemetry ingestion
 service BillingService {
@@ -59,7 +60,7 @@ message ReserveCreditsRequest {
     string user_id = 1;
     string rental_id = 2;
     string amount = 3; // Decimal string
-    uint32 duration_hours = 4;
+    google.protobuf.Duration duration = 4;
 }
 
 message ReserveCreditsResponse {
@@ -92,7 +93,7 @@ message TrackRentalRequest {
     ResourceSpec resource_spec = 5;
     string hourly_rate = 6; // Decimal string
     google.protobuf.Timestamp start_time = 7;
-    uint32 max_duration_hours = 8;
+    google.protobuf.Duration max_duration = 8;
     map<string, string> metadata = 9;
 }
 
@@ -178,7 +179,7 @@ message FinalizeRentalRequest {
 message FinalizeRentalResponse {
     bool success = 1;
     string total_cost = 2; // Decimal string
-    string duration_hours = 3; // Decimal string
+    google.protobuf.Duration duration = 3;
     string charged_amount = 4; // Decimal string
     string refunded_amount = 5; // Decimal string
 }
@@ -251,7 +252,7 @@ message UsageSummary {
     uint64 total_network_bytes = 3;
     uint64 total_disk_bytes = 4;
     double avg_gpu_utilization = 5;
-    string duration_hours = 6; // Decimal string
+    google.protobuf.Duration duration = 6;
 }
 
 // Billing Rules and Packages
