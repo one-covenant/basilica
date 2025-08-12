@@ -3,7 +3,7 @@
 //! This module provides functionality for validators to rent GPU resources
 //! and deploy containers on executor machines.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -36,6 +36,41 @@ pub struct RentalManager {
     miner_client: Arc<MinerClient>,
     /// SSH key manager for validator keys
     ssh_key_manager: Option<Arc<ValidatorSshKeyManager>>,
+}
+
+/// Parse SSH host from credentials string format "user@host:port"
+fn parse_ssh_host(credentials: &str) -> Result<&str> {
+    let (_, host_port) = credentials
+        .split_once('@')
+        .context("Invalid SSH credentials format: missing '@' separator")?;
+    
+    let host = host_port
+        .split(':')
+        .next()
+        .filter(|h| !h.is_empty())
+        .context("Invalid SSH credentials format: empty host")?;
+    
+    Ok(host)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ssh_host() {
+        // Valid formats
+        assert_eq!(parse_ssh_host("user@example.com:22").unwrap(), "example.com");
+        assert_eq!(parse_ssh_host("root@192.168.1.1:2222").unwrap(), "192.168.1.1");
+        assert_eq!(parse_ssh_host("admin@host").unwrap(), "host");
+        
+        // Invalid formats should return errors
+        assert!(parse_ssh_host("no-at-sign").is_err());
+        assert!(parse_ssh_host("@:22").is_err());
+        assert!(parse_ssh_host("user@").is_err());
+        assert!(parse_ssh_host("user@:22").is_err());
+        assert!(parse_ssh_host("").is_err());
+    }
 }
 
 impl RentalManager {
@@ -138,23 +173,41 @@ impl RentalManager {
             .find(|p| p.container_port == 22)
             .map(|ssh_mapping| {
                 // Parse host from original credentials (format: "user@host:port")
-                let host =
-                    if let Some((_, host_port)) = ssh_session.access_credentials.split_once('@') {
-                        host_port.split(':').next().unwrap_or("localhost")
-                    } else {
+                let host = parse_ssh_host(&ssh_session.access_credentials)
+                    .unwrap_or_else(|e| {
+                        tracing::warn!("Failed to parse SSH host from credentials: {}", e);
                         "localhost"
-                    };
+                    });
                 // Always use root as username for containers with the mapped port
                 format!("root@{}:{}", host, ssh_mapping.host_port)
             });
 
         // Fetch executor details from persistence
-        let executor_details = self
+        let executor_details = match self
             .persistence
             .get_executor_details(&request.executor_id)
             .await
-            .ok()
-            .flatten();
+        {
+            Ok(Some(details)) => Some(details),
+            Ok(None) => {
+                tracing::warn!(
+                    "Executor details not found for executor_id: {}",
+                    request.executor_id
+                );
+                None
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to fetch executor details for executor_id {}: {}",
+                    request.executor_id,
+                    e
+                );
+                return Err(anyhow::anyhow!(
+                    "Failed to fetch executor details: {}",
+                    e
+                ));
+            }
+        };
 
         // Store rental info
         let rental_info = RentalInfo {
