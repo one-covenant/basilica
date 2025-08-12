@@ -2243,17 +2243,21 @@ dependencies = [
  "chrono",
  "clap",
  "figment",
+ "flume",
  "fs_extra",
  "futures-util",
  "hex",
+ "http 0.2.12",
  "metrics",
  "metrics-exporter-prometheus",
  "mockall 0.11.4",
  "num_cpus",
  "nvml-wrapper",
+ "once_cell",
  "prost 0.12.6",
  "prost-types",
  "rand 0.8.5",
+ "regex",
  "serde",
  "serde_json",
  "serial_test",
@@ -4994,6 +4998,7 @@ checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
 dependencies = [
  "futures-core",
  "futures-sink",
+ "nanorand",
  "spin",
 ]
 
@@ -7318,6 +7323,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.104",
+]
+
+[[package]]
+name = "nanorand"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
+dependencies = [
+ "getrandom 0.2.16",
 ]
 
 [[package]]

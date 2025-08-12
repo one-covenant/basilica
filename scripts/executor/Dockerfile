@@ -64,11 +64,18 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
             cargo build -p basilica-executor; \
         fi; \
     fi && \
-    # Clean up intermediate build artifacts to save space
-    rm -rf /tmp/target/debug /tmp/target/release/deps /tmp/target/release/incremental /tmp/target/release/build && \
-    find /tmp/target -name "*.rlib" -delete 2>/dev/null || true && \
-    find /tmp/target -name "*.rmeta" -delete 2>/dev/null || true && \
-    rm -rf /root/.cargo/registry/cache /root/.cargo/git/db
+    # Clean up intermediate build artifacts to save space but keep the binary
+    # Keep the binary, only remove build artifacts
+    rm -rf /tmp/target/${BUILD_MODE}/deps \
+           /tmp/target/${BUILD_MODE}/incremental \
+           /tmp/target/${BUILD_MODE}/build \
+           /tmp/target/${BUILD_MODE}/.fingerprint \
+           /tmp/target/${BUILD_MODE}/examples \
+           /tmp/target/${BUILD_MODE}/*.d \
+           /tmp/target/${BUILD_MODE}/*.rlib && \
+    rm -rf /root/.cargo/registry/cache /root/.cargo/git/db && \
+    # Verify binary exists
+    ls -la /tmp/target/${BUILD_MODE}/basilica-executor || echo "Binary not found at expected location"
 
 # Runtime image
 FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04

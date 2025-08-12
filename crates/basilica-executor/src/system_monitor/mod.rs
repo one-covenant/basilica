@@ -2,18 +2,24 @@
 //!
 //! Monitors system resources including CPU, memory, GPU, disk, and network.
 
+pub mod collector;
 pub mod cpu;
 pub mod disk;
 pub mod gpu;
+pub mod lifecycle;
 pub mod memory;
+pub mod metrics;
 pub mod network;
+pub mod stream;
 pub mod types;
+pub mod volumes;
 
 use crate::config::SystemConfig;
 use anyhow::Result;
+use basilica_common::metrics::traits::GpuMetrics as CommonGpuMetrics;
 use basilica_common::metrics::{
-    metric_names::*,
-    traits::{GpuDevice, GpuMetrics, MetricsRecorder, SystemMetricsProvider},
+    metric_names::{CPU_USAGE, DISK_USAGE, GPU_UTILIZATION, MEMORY_USAGE, NETWORK_IO},
+    traits::{GpuDevice, MetricsRecorder, SystemMetricsProvider},
 };
 use cpu::CpuMonitor;
 use disk::DiskMonitor;
@@ -25,6 +31,7 @@ use sysinfo::System;
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
+pub use metrics::{Metrics, MetricsChannel, MetricsReceiver};
 pub use types::*;
 
 /// System monitoring service
@@ -369,8 +376,11 @@ impl SystemMonitor {
     }
 
     /// Get resource utilization percentages
-    pub async fn get_resource_utilization(&self) -> Result<ResourceUtilization> {
+    pub async fn get_resource_utilization(&mut self) -> Result<ResourceUtilization> {
         let info = self.get_system_info().await?;
+
+        // Calculate network bandwidth
+        let network_bandwidth_mbps = self.network_monitor.calculate_bandwidth_mbps() as f32;
 
         Ok(ResourceUtilization {
             cpu_percent: info.cpu.usage_percent,
@@ -393,7 +403,7 @@ impl SystemMonitor {
                 .map(|g| g.memory_usage_percent)
                 .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                 .unwrap_or(0.0),
-            network_bandwidth_mbps: 0.0, // TODO: Calculate actual bandwidth usage
+            network_bandwidth_mbps,
         })
     }
 
@@ -472,7 +482,7 @@ impl SystemMetricsProvider for SystemMonitor {
         ))
     }
 
-    async fn collect_gpu_metrics(&self) -> Result<Option<GpuMetrics>, anyhow::Error> {
+    async fn collect_gpu_metrics(&self) -> Result<Option<CommonGpuMetrics>, anyhow::Error> {
         if !self.config.enable_gpu_monitoring {
             return Ok(None);
         }
@@ -495,7 +505,7 @@ impl SystemMetricsProvider for SystemMonitor {
             })
             .collect();
 
-        Ok(Some(GpuMetrics {
+        Ok(Some(CommonGpuMetrics {
             gpu_count: devices.len() as u32,
             devices,
         }))
@@ -507,4 +517,174 @@ impl Default for SystemMonitor {
         let config = SystemConfig::default();
         SystemMonitor::new(config).expect("Failed to create default SystemMonitor")
     }
+}
+
+/// Start the monitoring pipeline.
+///
+/// - Uses centralized collector to eliminate duplicate monitoring
+/// - Collects system, container, and GPU metrics from single source
+/// - Fans out metrics to both billing stream and Prometheus endpoint
+/// - Manages container lifecycle status updates separately
+///
+/// This function returns immediately after spawning all tasks.
+pub fn spawn_monitoring(
+    executor_id: String,
+    docker_host: String,
+    monitor_cfg: crate::config::types::TelemetryMonitorConfig,
+    telemetry_cfg_raw: crate::config::types::TelemetryConfig,
+    metrics_recorder: Option<Arc<dyn MetricsRecorder>>,
+) {
+    let mut stream_cfg: stream::StreamConfig = telemetry_cfg_raw.into();
+    stream_cfg.queue_capacity = monitor_cfg.queue_capacity;
+
+    // Start lifecycle management if enabled
+    if monitor_cfg.update_lifecycle_status {
+        let lifecycle_cfg = lifecycle::LifecycleConfig {
+            docker_host: docker_host.clone(),
+            check_interval_secs: monitor_cfg.container_sample_secs,
+            enabled: true,
+        };
+        let stream_cfg_lifecycle = stream_cfg.clone();
+        tokio::spawn(async move {
+            if let Err(e) = lifecycle::run(lifecycle_cfg, stream_cfg_lifecycle).await {
+                warn!("Lifecycle management error: {}", e);
+            }
+        });
+    }
+
+    // Create metrics collector
+    let collector_result = tokio::runtime::Handle::current().block_on(async {
+        collector::Collector::new(
+            executor_id.clone(),
+            docker_host.clone(),
+            monitor_cfg.clone(),
+        )
+        .await
+    });
+
+    let (collector, broadcast_tx) = match collector_result {
+        Ok((c, tx)) => (c, tx),
+        Err(e) => {
+            error!("Failed to create metrics collector: {}", e);
+            return;
+        }
+    };
+
+    // Channel for billing stream
+    let (billing_tx, billing_rx) = tokio::sync::mpsc::channel::<
+        basilica_protocol::billing::TelemetryData,
+    >(stream_cfg.queue_capacity);
+
+    // Subscribe to metrics and convert to TelemetryData for billing
+    let mut metrics_rx = broadcast_tx.subscribe();
+    let billing_tx_clone = billing_tx;
+    tokio::spawn(async move {
+        while let Ok(metrics) = metrics_rx.recv().await {
+            // Convert metrics to telemetry data
+            // Send host metrics
+            if metrics.system_metrics.is_some() {
+                let telemetry = metrics.to_host_telemetry();
+                let _ = billing_tx_clone.send(telemetry).await;
+            }
+
+            // Send container metrics
+            for container in &metrics.container_metrics {
+                let telemetry = metrics.to_container_telemetry(container);
+                let _ = billing_tx_clone.send(telemetry).await;
+            }
+        }
+    });
+
+    // If metrics recorder is provided, also record to Prometheus
+    if let Some(recorder) = metrics_recorder {
+        let mut prom_rx = broadcast_tx.subscribe();
+        tokio::spawn(async move {
+            while let Ok(metrics) = prom_rx.recv().await {
+                // Record system metrics
+                if let Some(ref sys) = metrics.system_metrics {
+                    recorder
+                        .record_gauge("executor_cpu_usage", sys.cpu_percent, &[])
+                        .await;
+                    recorder
+                        .record_gauge("executor_memory_used_mb", sys.memory_used_mb as f64, &[])
+                        .await;
+                    recorder
+                        .record_gauge("executor_memory_total_mb", sys.memory_total_mb as f64, &[])
+                        .await;
+                    recorder
+                        .record_gauge(
+                            "executor_network_rx_bytes",
+                            sys.network_rx_bytes as f64,
+                            &[],
+                        )
+                        .await;
+                    recorder
+                        .record_gauge(
+                            "executor_network_tx_bytes",
+                            sys.network_tx_bytes as f64,
+                            &[],
+                        )
+                        .await;
+                }
+
+                // Record container metrics
+                for container in &metrics.container_metrics {
+                    let labels = &[
+                        ("container_id", container.container_id.as_str()),
+                        ("rental_id", container.rental_id.as_str()),
+                    ];
+                    recorder
+                        .record_gauge("container_cpu_percent", container.cpu_percent, labels)
+                        .await;
+                    recorder
+                        .record_gauge("container_memory_mb", container.memory_mb as f64, labels)
+                        .await;
+                    recorder
+                        .record_gauge(
+                            "container_network_rx_bytes",
+                            container.network_rx_bytes as f64,
+                            labels,
+                        )
+                        .await;
+                    recorder
+                        .record_gauge(
+                            "container_network_tx_bytes",
+                            container.network_tx_bytes as f64,
+                            labels,
+                        )
+                        .await;
+                }
+
+                // Record GPU metrics
+                for gpu in &metrics.gpu_metrics {
+                    let gpu_index_str = gpu.index.to_string();
+                    let labels = &[("gpu_index", gpu_index_str.as_str())];
+                    recorder
+                        .record_gauge("gpu_utilization_percent", gpu.utilization_percent, labels)
+                        .await;
+                    recorder
+                        .record_gauge("gpu_memory_used_mb", gpu.memory_used_mb as f64, labels)
+                        .await;
+                    recorder
+                        .record_gauge("gpu_temperature_celsius", gpu.temperature_celsius, labels)
+                        .await;
+                    recorder
+                        .record_gauge("gpu_power_watts", gpu.power_watts as f64, labels)
+                        .await;
+                }
+            }
+        });
+    }
+
+    // Start metrics collector
+    tokio::spawn(async move {
+        collector.start().await;
+    });
+
+    // Start billing data stream
+    tokio::spawn(async move {
+        if let Err(e) = stream::run(stream_cfg, billing_rx).await {
+            warn!("data stream error: {e}");
+        }
+    });
 }

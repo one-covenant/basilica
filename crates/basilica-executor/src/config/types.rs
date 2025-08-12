@@ -29,6 +29,67 @@ pub struct ExecutorAdvertisedEndpoint {
     pub port_mappings: HashMap<String, u16>,
 }
 
+/// Telemetry service configuration
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TelemetryConfig {
+    /// Telemetry service endpoint
+    pub url: String,
+    /// API key for authentication
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Header name for API key
+    #[serde(default = "default_api_key_header")]
+    pub api_key_header: String,
+}
+
+/// Telemetry monitor configuration
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TelemetryMonitorConfig {
+    /// Enable telemetry collection (opt-in)
+    #[serde(default = "default_telemetry_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_host_interval_secs")]
+    pub host_interval_secs: u64,
+    #[serde(default = "default_queue_capacity")]
+    pub queue_capacity: usize,
+    #[serde(default = "default_container_sample_secs")]
+    pub container_sample_secs: u64,
+    #[serde(default = "default_update_lifecycle")]
+    pub update_lifecycle_status: bool,
+}
+
+// Default functions for telemetry configuration
+fn default_telemetry_enabled() -> bool {
+    false
+} // Opt-in
+fn default_api_key_header() -> String {
+    "x-api-key".to_string()
+}
+fn default_host_interval_secs() -> u64 {
+    5
+}
+fn default_queue_capacity() -> usize {
+    4096
+}
+fn default_container_sample_secs() -> u64 {
+    2
+}
+fn default_update_lifecycle() -> bool {
+    true
+}
+
+impl Default for TelemetryMonitorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_telemetry_enabled(),
+            host_interval_secs: default_host_interval_secs(),
+            queue_capacity: default_queue_capacity(),
+            container_sample_secs: default_container_sample_secs(),
+            update_lifecycle_status: default_update_lifecycle(),
+        }
+    }
+}
+
 /// Main executor configuration
 ///
 /// Aggregates all configuration sections following the Single Responsibility Principle.
@@ -59,6 +120,11 @@ pub struct ExecutorConfig {
     /// Advertised endpoint configuration
     #[serde(default)]
     pub advertised_endpoint: ExecutorAdvertisedEndpoint,
+
+    /// Optional executor ID (format: minerXXX__<UUID>)
+    /// If not specified, will be generated from ExecutorState
+    #[serde(default)]
+    pub executor_id: Option<String>,
 }
 
 impl Default for ExecutorConfig {
@@ -80,6 +146,7 @@ impl Default for ExecutorConfig {
             )
             .unwrap(), // Default Alice hotkey
             advertised_endpoint: ExecutorAdvertisedEndpoint::default(),
+            executor_id: None,
         }
     }
 }

@@ -1,5 +1,3 @@
-//! System monitoring data types and structures
-
 use serde::{Deserialize, Serialize};
 
 /// System information snapshot
@@ -61,6 +59,17 @@ pub struct DiskInfo {
     pub available_bytes: u64,
     pub usage_percent: f32,
     pub filesystem: String,
+}
+
+/// Disk usage summary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskSummary {
+    pub disk_count: usize,
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+    pub available_bytes: u64,
+    pub overall_usage_percent: f32,
+    pub disks: Vec<DiskInfo>,
 }
 
 /// Network information
@@ -158,4 +167,58 @@ pub struct ResourceUtilization {
     pub gpu_percent: f32,
     pub gpu_memory_percent: f32,
     pub network_bandwidth_mbps: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct SystemMetrics {
+    pub cpu_percent: f64,
+    pub memory_total_mb: u64,
+    pub memory_used_mb: u64,
+    pub memory_available_mb: u64,
+    pub load_average: (f64, f64, f64),
+    pub network_rx_bytes: u64,
+    pub network_tx_bytes: u64,
+    pub disk_usage: Vec<DiskUsage>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContainerMetrics {
+    pub container_id: String,
+    pub rental_id: String,
+    pub user_id: Option<String>,
+    pub validator_id: Option<String>,
+    pub cpu_percent: f64,
+    pub memory_mb: u64,
+    pub network_rx_bytes: u64,
+    pub network_tx_bytes: u64,
+    pub disk_read_bytes: u64,
+    pub disk_write_bytes: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct GpuMetrics {
+    pub index: u32,
+    pub name: String,
+    pub utilization_percent: f64,
+    pub memory_used_mb: u64,
+    pub memory_total_mb: u64,
+    pub temperature_celsius: f64,
+    pub power_watts: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiskUsage {
+    pub mount_point: String,
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+    pub available_bytes: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct VolumeMetrics {
+    pub volume_name: String,
+    pub rental_id: Option<String>,
+    pub size_bytes: Option<u64>,
+    pub mount_point: String,
+    pub container_count: usize,
 }

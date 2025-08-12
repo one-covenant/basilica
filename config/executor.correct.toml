@@ -62,6 +62,20 @@ enable_metrics_recording = true
 secs = 5
 nanos = 0
 
+# Telemetry configuration for billing service (optional - uncomment to enable)
+# [system.telemetry]
+# url = "https://billing.basilica.network:50051"  # Billing service gRPC endpoint
+# api_key = "YOUR_API_KEY_HERE"                    # Optional API key (not currently enforced by billing service)
+# api_key_header = "x-api-key"                     # Header name for API key ("x-api-key" or "authorization")
+
+# Telemetry monitoring configuration
+[system.telemetry_monitor]
+enabled = false                    # Opt-in: set to true to enable telemetry streaming
+host_interval_secs = 5            # How often to collect host metrics
+container_sample_secs = 2         # How often to sample container stats
+queue_capacity = 4096             # Size of telemetry buffer
+update_lifecycle_status = true    # Send container lifecycle events (ACTIVE/STOPPED)
+
 [docker]
 socket_path = "/var/run/docker.sock"
 default_image = "ubuntu:22.04"

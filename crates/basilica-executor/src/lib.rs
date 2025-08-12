@@ -7,6 +7,7 @@ pub mod config;
 pub mod container_manager;
 pub mod grpc_server;
 pub mod journal;
+pub mod metrics_recorder;
 pub mod miner_auth;
 pub mod system_monitor;
 pub mod validation_session;
