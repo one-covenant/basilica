@@ -16,6 +16,9 @@ pub use basilica_validator::api::rental_routes::{
     PortMappingRequest, ResourceRequirementsRequest, VolumeMountRequest,
 };
 
+// Import RentalState from validator
+use basilica_validator::rental::types::RentalState;
+
 // API-specific types that don't exist in validator
 
 /// Health check response
@@ -91,7 +94,7 @@ pub struct CreditWalletResponse {
 pub struct ListRentalsQuery {
     /// Status filter
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub status: Option<RentalState>,
 
     /// GPU type filter
     #[serde(skip_serializing_if = "Option::is_none")]

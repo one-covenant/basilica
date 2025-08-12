@@ -94,7 +94,7 @@ pub struct LogStreamQuery {
 /// List rentals query parameters
 #[derive(Debug, Deserialize)]
 pub struct ListRentalsQuery {
-    pub state: Option<String>,
+    pub state: Option<RentalState>,
     /// Type of listing: "rentals" (default) or "available" for available capacity
     pub list_type: Option<String>,
     /// Filters for available capacity queries
@@ -355,12 +355,10 @@ pub async fn get_rental_status(
     let response = RentalStatusResponse {
         rental_id: status.rental_id,
         status: match status.state {
-            crate::rental::RentalState::Provisioning => ApiRentalStatus::Pending,
-            crate::rental::RentalState::Active => ApiRentalStatus::Active,
-            crate::rental::RentalState::Stopping | crate::rental::RentalState::Stopped => {
-                ApiRentalStatus::Terminated
-            }
-            crate::rental::RentalState::Failed => ApiRentalStatus::Failed,
+            RentalState::Provisioning => ApiRentalStatus::Pending,
+            RentalState::Active => ApiRentalStatus::Active,
+            RentalState::Stopping | RentalState::Stopped => ApiRentalStatus::Terminated,
+            RentalState::Failed => ApiRentalStatus::Failed,
         },
         executor,
         created_at: status.created_at,
@@ -459,20 +457,13 @@ pub async fn list_rentals(
         })?;
 
     // Filter by state if specified
-    let filtered_rentals: Vec<RentalInfo> = match query.state.as_deref() {
-        Some("active") => rentals
+    let filtered_rentals: Vec<RentalInfo> = if let Some(state_filter) = query.state {
+        rentals
             .into_iter()
-            .filter(|r| matches!(r.state, RentalState::Active))
-            .collect(),
-        Some("stopped") => rentals
-            .into_iter()
-            .filter(|r| matches!(r.state, RentalState::Stopped))
-            .collect(),
-        Some("failed") => rentals
-            .into_iter()
-            .filter(|r| matches!(r.state, RentalState::Failed))
-            .collect(),
-        _ => rentals, // "all" or any other value shows all rentals
+            .filter(|r| r.state == state_filter)
+            .collect()
+    } else {
+        rentals // No filter shows all rentals
     };
 
     // Convert to API response format

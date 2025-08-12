@@ -11,7 +11,8 @@ use crate::config::ValidatorConfig;
 use crate::miner_prover::miner_client::{BittensorServiceSigner, MinerClient, MinerClientConfig};
 use crate::persistence::{SimplePersistence, ValidatorPersistence};
 use crate::rental::{
-    ContainerSpec, NetworkConfig, PortMapping, RentalManager, RentalRequest, ResourceRequirements,
+    ContainerSpec, NetworkConfig, PortMapping, RentalManager, RentalRequest, RentalState,
+    ResourceRequirements,
 };
 use crate::ssh::ValidatorSshKeyManager;
 use basilica_common::identity::Hotkey;
@@ -437,11 +438,11 @@ async fn handle_list_rentals(
     let filtered_rentals: Vec<_> = match state_filter.as_str() {
         "active" => rentals
             .into_iter()
-            .filter(|r| matches!(r.state, crate::rental::RentalState::Active))
+            .filter(|r| matches!(r.state, RentalState::Active))
             .collect(),
         "stopped" => rentals
             .into_iter()
-            .filter(|r| matches!(r.state, crate::rental::RentalState::Stopped))
+            .filter(|r| matches!(r.state, RentalState::Stopped))
             .collect(),
         _ => rentals, // "all" or any other value shows all rentals
     };

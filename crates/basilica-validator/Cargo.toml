@@ -100,3 +100,5 @@ test-utils = []
 dev-mode = ["tracing-subscriber/env-filter"]
 # Enable OpenAPI schema generation support
 openapi = ["utoipa"]
+# Enable CLI support with clap derives
+cli = []

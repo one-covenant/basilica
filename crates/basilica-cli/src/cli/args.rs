@@ -106,9 +106,9 @@ impl Args {
             } => handlers::gpu_rental::handle_cp(source, destination, &config).await,
 
             // Network component delegation
-            Commands::Validator { args } => handlers::external::handle_validator(args).await,
-            Commands::Miner { args } => handlers::external::handle_miner(args).await,
-            Commands::Executor { args } => handlers::external::handle_executor(args).await,
+            Commands::Validator { args } => handlers::external::handle_validator(args),
+            Commands::Miner { args } => handlers::external::handle_miner(args),
+            Commands::Executor { args } => handlers::external::handle_executor(args),
         }
     }
 }

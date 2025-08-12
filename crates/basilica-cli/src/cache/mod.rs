@@ -47,8 +47,7 @@ impl RentalCache {
             .await
             .map_err(CliError::Io)?;
 
-        let cache: Self = serde_json::from_str(&content)
-            .map_err(|e| CliError::internal(format!("Failed to parse rental cache: {}", e)))?;
+        let cache: Self = serde_json::from_str(&content).map_err(CliError::Serialization)?;
 
         debug!("Loaded {} cached rentals", cache.rentals.len());
         Ok(cache)
@@ -69,8 +68,7 @@ impl RentalCache {
                 .map_err(CliError::Io)?;
         }
 
-        let content = serde_json::to_string_pretty(self)
-            .map_err(|e| CliError::internal(format!("Failed to serialize rental cache: {}", e)))?;
+        let content = serde_json::to_string_pretty(self).map_err(CliError::Serialization)?;
 
         tokio::fs::write(path, content)
             .await

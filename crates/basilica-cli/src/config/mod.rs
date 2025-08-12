@@ -52,6 +52,13 @@ impl Default for ApiConfig {
 pub struct SshConfig {
     /// Default SSH public key path
     pub key_path: PathBuf,
+    /// SSH connection timeout in seconds (default: 30)
+    #[serde(default = "default_ssh_timeout")]
+    pub connection_timeout: u64,
+}
+
+fn default_ssh_timeout() -> u64 {
+    30
 }
 
 impl Default for SshConfig {
@@ -59,6 +66,7 @@ impl Default for SshConfig {
         let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
         Self {
             key_path: home_dir.join(".ssh").join("basilica_rsa.pub"),
+            connection_timeout: 30,
         }
     }
 }
@@ -188,6 +196,7 @@ impl CliConfig {
             "api.base_url" | "api-url" => Ok(self.api.base_url.clone()),
             "api.network" | "network" => Ok(self.api.network.clone()),
             "ssh.key_path" | "ssh-key" => Ok(self.ssh.key_path.to_string_lossy().to_string()),
+            "ssh.connection_timeout" | "ssh-timeout" => Ok(self.ssh.connection_timeout.to_string()),
             "image.name" | "default-image" => Ok(self.image.name.clone()),
             "wallet.default_wallet" | "default-wallet" => Ok(self.wallet.default_wallet.clone()),
             "wallet.base_wallet_path" | "base-wallet-path" => {
@@ -216,6 +225,17 @@ impl CliConfig {
             "ssh.key_path" | "ssh-key" => {
                 self.ssh.key_path = PathBuf::from(value);
             }
+            "ssh.connection_timeout" | "ssh-timeout" => {
+                let timeout: u64 = value.parse().map_err(|_| {
+                    CliError::invalid_argument("SSH connection timeout must be a positive number")
+                })?;
+                if timeout == 0 {
+                    return Err(CliError::invalid_argument(
+                        "SSH connection timeout must be greater than 0",
+                    ));
+                }
+                self.ssh.connection_timeout = timeout;
+            }
             "image.name" | "default-image" => {
                 self.image.name = value.to_string();
             }
@@ -243,6 +263,10 @@ impl CliConfig {
         map.insert(
             "ssh.key_path".to_string(),
             self.ssh.key_path.to_string_lossy().to_string(),
+        );
+        map.insert(
+            "ssh.connection_timeout".to_string(),
+            self.ssh.connection_timeout.to_string(),
         );
         map.insert("image.name".to_string(), self.image.name.clone());
         map.insert(

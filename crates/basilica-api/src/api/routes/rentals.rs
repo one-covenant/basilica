@@ -174,7 +174,7 @@ pub async fn list_rentals_validator(
     // Use the validator client to list rentals
     let rental_items = state
         .validator_client
-        .list_rentals(query.status.as_deref())
+        .list_rentals(query.status)
         .await
         .map_err(|e| crate::error::Error::ValidatorCommunication {
             message: format!("Failed to list rentals: {e}"),

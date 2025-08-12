@@ -38,13 +38,16 @@ pub async fn handle_wallet(config: &CliConfig, wallet_name: Option<String>) -> R
     if wallet::wallet_exists(&config.wallet.base_wallet_path, &wallet_to_use) {
         // Try to load wallet and get addresses
         let password = if wallet_needs_password(&config.wallet.base_wallet_path, &wallet_to_use) {
-            Some(
-                Password::new()
-                    .with_prompt("Enter wallet password")
-                    .interact()
-                    .ok()
-                    .unwrap_or_default(),
-            )
+            match Password::new()
+                .with_prompt("Enter wallet password")
+                .interact()
+            {
+                Ok(pw) => Some(pw),
+                Err(_) => {
+                    eprintln!("Password input canceled. Aborting wallet load.");
+                    return Ok(());
+                }
+            }
         } else {
             None
         };

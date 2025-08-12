@@ -4,6 +4,7 @@
 //! to interact with the Validator's REST API endpoints.
 
 use crate::api::types::*;
+use crate::rental::types::RentalState;
 use anyhow::{Context, Result};
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
@@ -41,12 +42,17 @@ impl ValidatorClient {
     }
 
     /// List rentals with optional state filter
-    pub async fn list_rentals(&self, state: Option<&str>) -> Result<ListRentalsResponse> {
+    pub async fn list_rentals(&self, state: Option<RentalState>) -> Result<ListRentalsResponse> {
         let url = format!("{}/rental/list", self.base_url);
 
         let mut req = self.http_client.get(&url);
         if let Some(state_filter) = state {
-            req = req.query(&[("state", state_filter)]);
+            // Serialize the enum value as lowercase string for the query parameter
+            let state_str = serde_json::to_string(&state_filter)
+                .unwrap_or_else(|_| "active".to_string())
+                .trim_matches('"')
+                .to_string();
+            req = req.query(&[("state", state_str)]);
         }
 
         let response = req.send().await.context("Failed to send list request")?;

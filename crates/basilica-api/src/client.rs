@@ -5,7 +5,8 @@
 
 use crate::{
     api::types::{
-        CreditWalletResponse, HealthCheckResponse, ListRentalsQuery, RegisterRequest, RegisterResponse, RentalStatusResponse,
+        CreditWalletResponse, HealthCheckResponse, ListRentalsQuery, RegisterRequest,
+        RegisterResponse, RentalStatusResponse,
     },
     error::{Error, ErrorResponse, Result},
 };
@@ -81,7 +82,7 @@ impl BasilicaClient {
     ) -> Result<reqwest::Response> {
         let url = format!("{}/rental/logs/{}", self.base_url, rental_id);
         let mut request = self.http_client.get(&url);
-        
+
         let mut params: Vec<(&str, String)> = vec![];
         if follow {
             params.push(("follow", "true".to_string()));
@@ -89,24 +90,27 @@ impl BasilicaClient {
         if let Some(tail_lines) = tail {
             params.push(("tail", tail_lines.to_string()));
         }
-        
+
         if !params.is_empty() {
             request = request.query(&params);
         }
-        
+
         let request = self.apply_auth(request);
         request.send().await.map_err(Error::HttpClient)
     }
 
     /// List rentals
-    pub async fn list_rentals(&self, query: Option<ListRentalsQuery>) -> Result<ListRentalsResponse> {
+    pub async fn list_rentals(
+        &self,
+        query: Option<ListRentalsQuery>,
+    ) -> Result<ListRentalsResponse> {
         let url = format!("{}/rental/list", self.base_url);
         let mut request = self.http_client.get(&url);
-        
+
         if let Some(q) = query {
             request = request.query(&q);
         }
-        
+
         let request = self.apply_auth(request);
         let response = request.send().await.map_err(Error::HttpClient)?;
         self.handle_response(response).await
@@ -119,11 +123,11 @@ impl BasilicaClient {
     ) -> Result<ListAvailableExecutorsResponse> {
         let url = format!("{}/executors/available", self.base_url);
         let mut request = self.http_client.get(&url);
-        
+
         if let Some(q) = query {
             request = request.query(&q);
         }
-        
+
         let request = self.apply_auth(request);
         let response = request.send().await.map_err(Error::HttpClient)?;
         self.handle_response(response).await
@@ -133,7 +137,7 @@ impl BasilicaClient {
 
     /// Health check
     pub async fn health_check(&self) -> Result<HealthCheckResponse> {
-        self.get("/api/v1/health").await
+        self.get("/health").await
     }
 
     // ===== Registration =====
@@ -332,7 +336,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/health"))
+            .and(path("/health"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": "healthy",
                 "version": "1.0.0",
@@ -355,7 +359,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/health"))
+            .and(path("/health"))
             .and(header("Authorization", "Bearer test-key"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": "healthy",
@@ -382,7 +386,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/health"))
+            .and(path("/health"))
             .respond_with(ResponseTemplate::new(401).set_body_json(json!({
                 "error": {
                     "code": "UNAUTHORIZED",

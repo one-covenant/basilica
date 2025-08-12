@@ -43,36 +43,15 @@ fn parse_ssh_host(credentials: &str) -> Result<&str> {
     let (_, host_port) = credentials
         .split_once('@')
         .context("Invalid SSH credentials format: missing '@' separator")?;
-    
+
     let host = host_port
         .split(':')
         .next()
         .filter(|h| !h.is_empty())
         .context("Invalid SSH credentials format: empty host")?;
-    
+
     Ok(host)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_ssh_host() {
-        // Valid formats
-        assert_eq!(parse_ssh_host("user@example.com:22").unwrap(), "example.com");
-        assert_eq!(parse_ssh_host("root@192.168.1.1:2222").unwrap(), "192.168.1.1");
-        assert_eq!(parse_ssh_host("admin@host").unwrap(), "host");
-        
-        // Invalid formats should return errors
-        assert!(parse_ssh_host("no-at-sign").is_err());
-        assert!(parse_ssh_host("@:22").is_err());
-        assert!(parse_ssh_host("user@").is_err());
-        assert!(parse_ssh_host("user@:22").is_err());
-        assert!(parse_ssh_host("").is_err());
-    }
-}
-
 impl RentalManager {
     /// Create a new rental manager
     pub fn new(miner_client: Arc<MinerClient>, persistence: Arc<SimplePersistence>) -> Self {
@@ -173,11 +152,10 @@ impl RentalManager {
             .find(|p| p.container_port == 22)
             .map(|ssh_mapping| {
                 // Parse host from original credentials (format: "user@host:port")
-                let host = parse_ssh_host(&ssh_session.access_credentials)
-                    .unwrap_or_else(|e| {
-                        tracing::warn!("Failed to parse SSH host from credentials: {}", e);
-                        "localhost"
-                    });
+                let host = parse_ssh_host(&ssh_session.access_credentials).unwrap_or_else(|e| {
+                    tracing::warn!("Failed to parse SSH host from credentials: {}", e);
+                    "localhost"
+                });
                 // Always use root as username for containers with the mapped port
                 format!("root@{}:{}", host, ssh_mapping.host_port)
             });
@@ -202,10 +180,7 @@ impl RentalManager {
                     request.executor_id,
                     e
                 );
-                return Err(anyhow::anyhow!(
-                    "Failed to fetch executor details: {}",
-                    e
-                ));
+                return Err(anyhow::anyhow!("Failed to fetch executor details: {}", e));
             }
         };
 
@@ -392,5 +367,31 @@ impl RentalManager {
         self.persistence
             .list_validator_rentals(validator_hotkey)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ssh_host() {
+        // Valid formats
+        assert_eq!(
+            parse_ssh_host("user@example.com:22").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            parse_ssh_host("root@192.168.1.1:2222").unwrap(),
+            "192.168.1.1"
+        );
+        assert_eq!(parse_ssh_host("admin@host").unwrap(), "host");
+
+        // Invalid formats should return errors
+        assert!(parse_ssh_host("no-at-sign").is_err());
+        assert!(parse_ssh_host("@:22").is_err());
+        assert!(parse_ssh_host("user@").is_err());
+        assert!(parse_ssh_host("user@:22").is_err());
+        assert!(parse_ssh_host("").is_err());
     }
 }

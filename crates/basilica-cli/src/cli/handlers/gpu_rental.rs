@@ -7,10 +7,13 @@ use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
 use crate::output::{json_output, table_output};
 use crate::ssh::SshClient;
-use basilica_api::api::types::{ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess};
+use basilica_api::api::types::{
+    ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
+};
 use basilica_api::ClientBuilder;
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
+use basilica_validator::rental::types::RentalState;
 use std::path::PathBuf;
 use tabled::{settings::Style, Table, Tabled};
 use tracing::{debug, info};
@@ -118,19 +121,6 @@ pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig) -
         .build()
         .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    // Log the mode we're using
-    // if let Some(ref executor_id) = target {
-    //     info!(
-    //         "Provisioning instance on specific executor: {}",
-    //         executor_id
-    //     );
-    // } else {
-    //     info!("Provisioning instance based on requirements");
-    //     if options.gpu_type.is_none() && options.gpu_min.is_none() {
-    //         debug!("No specific GPU requirements provided, system will select best available");
-    //     }
-    // }
-
     // Build rental request
     let ssh_public_key = load_ssh_public_key(&options.ssh_key, config)?;
     let container_image = options.image.unwrap_or_else(|| config.image.name.clone());
@@ -197,13 +187,13 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
         .build()
         .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    // Build query from filters
+    // Build query from filters - default to "active" if no status specified
     let query = Some(ListRentalsQuery {
-        status: filters.status,
+        status: filters.status.or(Some(RentalState::Active)),
         gpu_type: filters.gpu_type,
         min_gpu_count: filters.min_gpu_count,
     });
-    
+
     let rentals_list = api_client
         .list_rentals(query)
         .await
@@ -544,19 +534,26 @@ fn parse_port_mappings(
         // Support format: host:container or just port (same for both)
         let (host_port, container_port) = if let Some((host, container)) = port_spec.split_once(':')
         {
-            let host = host
-                .parse::<u32>()
-                .map_err(|_| CliError::invalid_argument(format!("Invalid host port: {host}")))?;
-            let container = container.parse::<u32>().map_err(|_| {
-                CliError::invalid_argument(format!("Invalid container port: {container}"))
+            // Parse as u16 to ensure valid port range (0-65535)
+            let host = host.parse::<u16>().map_err(|_| {
+                CliError::invalid_argument(format!(
+                    "Invalid host port: {host}. Port must be between 0 and 65535"
+                ))
             })?;
-            (host, container)
+            let container = container.parse::<u16>().map_err(|_| {
+                CliError::invalid_argument(format!(
+                    "Invalid container port: {container}. Port must be between 0 and 65535"
+                ))
+            })?;
+            (host as u32, container as u32)
         } else {
             // Single port means same for host and container
-            let port = port_spec
-                .parse::<u32>()
-                .map_err(|_| CliError::invalid_argument(format!("Invalid port: {port_spec}")))?;
-            (port, port)
+            let port = port_spec.parse::<u16>().map_err(|_| {
+                CliError::invalid_argument(format!(
+                    "Invalid port: {port_spec}. Port must be between 0 and 65535"
+                ))
+            })?;
+            (port as u32, port as u32)
         };
 
         mappings.push(basilica_api::api::types::PortMappingRequest {

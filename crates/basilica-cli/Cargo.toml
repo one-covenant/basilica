@@ -59,6 +59,7 @@ basilica-api = { path = "../basilica-api", features = ["client"] }
 basilica-validator = { path = "../basilica-validator", features = [
     "client",
     "openapi",
+    "cli",
 ] }
 
 [dev-dependencies]

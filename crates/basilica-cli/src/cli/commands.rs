@@ -1,3 +1,4 @@
+use basilica_validator::rental::types::RentalState;
 use clap::Subcommand;
 use std::path::PathBuf;
 
@@ -28,7 +29,7 @@ pub enum Commands {
 
     /// Provision and start GPU instances
     Up {
-        /// Target executor UID/HUID (optional for interactive mode)
+        /// Target executor UID/HUID
         target: String,
 
         #[command(flatten)]
@@ -210,9 +211,9 @@ pub struct UpOptions {
 /// Filters for listing active rentals
 #[derive(clap::Args, Debug)]
 pub struct PsFilters {
-    /// Filter by status (running, pending, terminated)
-    #[arg(long)]
-    pub status: Option<String>,
+    /// Filter by status (defaults to 'active' if not specified)
+    #[arg(long, value_enum)]
+    pub status: Option<RentalState>,
 
     /// Filter by GPU type
     #[arg(long)]

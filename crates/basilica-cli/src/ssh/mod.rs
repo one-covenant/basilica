@@ -20,9 +20,15 @@ pub struct SshClient {
 impl SshClient {
     /// Create new SSH client
     pub fn new(config: &SshConfig) -> Result<Self> {
-        // Create SSH connection config with default timeout settings
+        // Create SSH connection config using configured timeout
+        let connection_timeout = if config.connection_timeout > 0 {
+            Duration::from_secs(config.connection_timeout)
+        } else {
+            Duration::from_secs(30) // Default fallback
+        };
+
         let ssh_config = SshConnectionConfig {
-            connection_timeout: Duration::from_secs(30),
+            connection_timeout,
             execution_timeout: Duration::from_secs(300),
             retry_attempts: 3,
             max_transfer_size: 100 * 1024 * 1024, // 100MB
@@ -64,7 +70,11 @@ impl SshClient {
             port: ssh_access.port,
             username: ssh_access.username.clone(),
             private_key_path,
-            timeout: Duration::from_secs(30),
+            timeout: if self.config.connection_timeout > 0 {
+                Duration::from_secs(self.config.connection_timeout)
+            } else {
+                Duration::from_secs(30) // Default fallback
+            },
         })
     }
 

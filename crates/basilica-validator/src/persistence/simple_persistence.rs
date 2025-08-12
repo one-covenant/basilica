@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::persistence::entities::{Rental, RentalStatus, VerificationLog};
 use crate::persistence::ValidatorPersistence;
-use crate::rental::RentalInfo;
+use crate::rental::{RentalInfo, RentalState};
 
 /// Extract GPU memory size in GB from GPU name string
 fn extract_gpu_memory_gb(gpu_name: &str) -> u32 {
@@ -929,19 +929,19 @@ impl SimplePersistence {
     }
 
     /// Helper function to parse rental state from string
-    fn parse_rental_state(state_str: &str, rental_id: &str) -> crate::rental::RentalState {
+    fn parse_rental_state(state_str: &str, rental_id: &str) -> RentalState {
         match state_str {
-            "provisioning" => crate::rental::RentalState::Provisioning,
-            "active" => crate::rental::RentalState::Active,
-            "stopping" => crate::rental::RentalState::Stopping,
-            "stopped" => crate::rental::RentalState::Stopped,
-            "failed" => crate::rental::RentalState::Failed,
+            "provisioning" => RentalState::Provisioning,
+            "active" => RentalState::Active,
+            "stopping" => RentalState::Stopping,
+            "stopped" => RentalState::Stopped,
+            "failed" => RentalState::Failed,
             unknown => {
                 warn!(
                     "Unknown rental state '{}' for rental {}, defaulting to Failed",
                     unknown, rental_id
                 );
-                crate::rental::RentalState::Failed
+                RentalState::Failed
             }
         }
     }
@@ -1652,11 +1652,11 @@ impl ValidatorPersistence for SimplePersistence {
         .bind(&rental.ssh_credentials)
         .bind(&rental.executor_ssh_credentials)
         .bind(match &rental.state {
-            crate::rental::RentalState::Provisioning => "provisioning",
-            crate::rental::RentalState::Active => "active",
-            crate::rental::RentalState::Stopping => "stopping",
-            crate::rental::RentalState::Stopped => "stopped",
-            crate::rental::RentalState::Failed => "failed",
+            RentalState::Provisioning => "provisioning",
+            RentalState::Active => "active",
+            RentalState::Stopping => "stopping",
+            RentalState::Stopped => "stopped",
+            RentalState::Failed => "failed",
         })
         .bind(rental.created_at.to_rfc3339())
         .bind(serde_json::to_string(&rental.container_spec)?)

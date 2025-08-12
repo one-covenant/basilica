@@ -2,6 +2,7 @@
 //!
 //! All request/response types, enums, and shared data structures for the validator API
 
+use crate::rental::RentalState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -302,7 +303,7 @@ pub struct RentalListItem {
     pub rental_id: String,
     pub executor_id: String,
     pub container_id: String,
-    pub state: crate::rental::RentalState,
+    pub state: RentalState,
     pub created_at: String,
     pub miner_id: String,
     pub container_image: String,
