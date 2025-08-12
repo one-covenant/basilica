@@ -87,24 +87,20 @@ pub struct CreditWalletResponse {
 }
 
 /// List rentals query
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ListRentalsQuery {
     /// Status filter
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
 
     /// GPU type filter
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_type: Option<String>,
 
     /// Minimum GPU count
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_count: Option<u32>,
-
-    /// Page number
-    pub page: Option<u32>,
-
-    /// Page size  
-    pub page_size: Option<u32>,
 }
-
 
 /// Rental status query parameters
 #[derive(Debug, Deserialize, ToSchema)]

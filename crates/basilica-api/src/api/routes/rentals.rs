@@ -58,7 +58,6 @@ pub async fn start_rental(
         });
     }
 
-    // Check if executor_id is provided
     let executor_id = request.executor_id;
 
     // Convert to validator's StartRentalRequest format

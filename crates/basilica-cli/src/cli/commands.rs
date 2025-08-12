@@ -217,6 +217,10 @@ pub struct PsFilters {
     /// Filter by GPU type
     #[arg(long)]
     pub gpu_type: Option<String>,
+
+    /// Minimum GPU count
+    #[arg(long)]
+    pub min_gpu_count: Option<u32>,
 }
 
 /// Options for viewing logs

@@ -5,7 +5,7 @@
 
 use crate::{
     api::types::{
-        CreditWalletResponse, HealthCheckResponse, RegisterRequest, RegisterResponse, RentalStatusResponse,
+        CreditWalletResponse, HealthCheckResponse, ListRentalsQuery, RegisterRequest, RegisterResponse, RentalStatusResponse,
     },
     error::{Error, ErrorResponse, Result},
 };
@@ -99,12 +99,12 @@ impl BasilicaClient {
     }
 
     /// List rentals
-    pub async fn list_rentals(&self, state: Option<&str>) -> Result<ListRentalsResponse> {
+    pub async fn list_rentals(&self, query: Option<ListRentalsQuery>) -> Result<ListRentalsResponse> {
         let url = format!("{}/rental/list", self.base_url);
         let mut request = self.http_client.get(&url);
         
-        if let Some(state_filter) = state {
-            request = request.query(&[("status", state_filter)]);
+        if let Some(q) = query {
+            request = request.query(&q);
         }
         
         let request = self.apply_auth(request);

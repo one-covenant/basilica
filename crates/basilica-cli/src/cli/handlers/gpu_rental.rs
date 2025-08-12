@@ -7,7 +7,7 @@ use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
 use crate::output::{json_output, table_output};
 use crate::ssh::SshClient;
-use basilica_api::api::types::{RentalStatusResponse, ResourceRequirementsRequest, SshAccess};
+use basilica_api::api::types::{ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess};
 use basilica_api::ClientBuilder;
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
@@ -197,9 +197,15 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
         .build()
         .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
 
-    // Use the status filter if provided
+    // Build query from filters
+    let query = Some(ListRentalsQuery {
+        status: filters.status,
+        gpu_type: filters.gpu_type,
+        min_gpu_count: filters.min_gpu_count,
+    });
+    
     let rentals_list = api_client
-        .list_rentals(filters.status.as_deref())
+        .list_rentals(query)
         .await
         .map_err(|e| CliError::internal(format!("Failed to list rentals: {e}")))?;
 
