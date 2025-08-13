@@ -67,8 +67,7 @@ pub async fn handle_test_auth(config: &CliConfig, _config_path: impl AsRef<Path>
     let client = create_authenticated_client(config, no_auth).await?;
 
     // Use Auth0 domain from constants
-    let domain = basilica_common::AUTH0_DOMAIN;
-    let userinfo_url = format!("https://{}/userinfo", domain);
+    let userinfo_url = format!("https://{}/userinfo", basilica_common::AUTH0_DOMAIN);
 
     debug!("Calling Auth0 userinfo endpoint: {}", userinfo_url);
 
@@ -108,11 +107,6 @@ pub async fn handle_test_auth(config: &CliConfig, _config_path: impl AsRef<Path>
             if let Some(verified) = user_info.email_verified {
                 println!("  Email Verified: {}", verified);
             }
-        }
-
-        // Display name if present (no masking as requested for email only)
-        if let Some(name) = &user_info.name {
-            println!("  Name: {}", name);
         }
 
         if let Some(updated) = &user_info.updated_at {

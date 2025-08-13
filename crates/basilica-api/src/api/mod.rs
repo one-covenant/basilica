@@ -15,16 +15,10 @@ use utoipa_swagger_ui::SwaggerUi;
 
 /// Create all API routes
 pub fn routes(state: AppState) -> Router<AppState> {
-    // Protected routes with Auth0 authentication (initially just health for testing)
+    // Protected routes with Auth0 authentication
     let protected_routes = Router::new()
+        // Health endpoint
         .route("/health", get(routes::health::health_check))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            middleware::auth0_middleware,
-        ));
-
-    // Unprotected routes (for now)
-    let public_routes = Router::new()
         // Validator-compatible rental endpoints
         .route("/rental/list", get(routes::rentals::list_rentals_validator))
         .route("/rental/start", post(routes::rentals::start_rental))
@@ -39,13 +33,16 @@ pub fn routes(state: AppState) -> Router<AppState> {
             "/executors/available",
             get(routes::rentals::list_available_executors),
         )
-        // Telemetry (keep unprotected for monitoring)
-        .route("/telemetry", get(routes::telemetry::get_telemetry));
+        // Telemetry endpoint
+        .route("/telemetry", get(routes::telemetry::get_telemetry))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::auth0_middleware,
+        ));
 
-    // Merge protected and public routes
+    // Build the router with all protected routes
     let router = Router::new()
         .merge(protected_routes)
-        .merge(public_routes)
         .with_state(state.clone());
 
     // Apply general middleware

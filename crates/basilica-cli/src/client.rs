@@ -19,7 +19,7 @@ use tracing::{debug, warn};
 /// * `bypass_auth` - If true, creates client without any authentication (debug builds only)
 pub async fn create_authenticated_client(config: &CliConfig, bypass_auth: bool) -> Result<BasilicaClient> {
     let api_url = config
-        .get("api.url")
+        .get("api.base_url")
         .unwrap_or_else(|_| "https://api.basilica.network".to_string());
 
     let mut builder = ClientBuilder::default().base_url(api_url);
