@@ -1,3 +1,4 @@
+use super::docker_utils;
 use super::metrics::{Metrics, MetricsChannel};
 use super::types::{ContainerMetrics, DiskUsage, GpuMetrics, SystemMetrics};
 use super::volumes::VolumeMonitor;
@@ -35,7 +36,7 @@ impl Collector {
         docker_host: String,
         config: TelemetryMonitorConfig,
     ) -> Result<(Self, MetricsChannel)> {
-        let docker = Self::connect_docker(&docker_host).await?;
+        let docker = docker_utils::connect_docker(&docker_host).await?;
 
         let mut system = System::new_all();
         system.refresh_all();
@@ -60,22 +61,6 @@ impl Collector {
         };
 
         Ok((collector, tx_clone))
-    }
-
-    async fn connect_docker(docker_host: &str) -> Result<Docker> {
-        let docker = match docker_host {
-            s if s.starts_with("unix://") => {
-                Docker::connect_with_unix(s, 120, bollard::API_DEFAULT_VERSION)?
-            }
-            s if s.starts_with("tcp://")
-                || s.starts_with("http://")
-                || s.starts_with("https://") =>
-            {
-                Docker::connect_with_http(s, 120, bollard::API_DEFAULT_VERSION)?
-            }
-            _ => Docker::connect_with_local_defaults()?,
-        };
-        Ok(docker)
     }
 
     /// Start the unified collection loop
@@ -178,7 +163,10 @@ impl Collector {
 
             let (rental_id, user_id, validator_id) = match metadata {
                 Some(m) => m,
-                None => continue,
+                None => {
+                    // Container without telemetry metadata - skip
+                    continue;
+                }
             };
 
             let stats = self
@@ -196,7 +184,7 @@ impl Collector {
             if let Some(Ok(stats)) = stats {
                 let container_metrics = Self::parse_container_stats(
                     &container_id,
-                    &rental_id,
+                    rental_id,
                     user_id,
                     validator_id,
                     &stats,
@@ -280,7 +268,19 @@ impl Collector {
     fn extract_container_metadata(
         labels: &Option<HashMap<String, String>>,
         names: &Option<Vec<String>>,
-    ) -> Option<(String, Option<String>, Option<String>)> {
+    ) -> Option<(Option<String>, Option<String>, Option<String>)> {
+        // Check if telemetry is enabled for this container
+        let telemetry_enabled = labels
+            .as_ref()
+            .and_then(|l| l.get("io.basilica.telemetry"))
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
+        // Skip containers without telemetry enabled
+        if !telemetry_enabled {
+            return None;
+        }
+
         let rental_id = labels
             .as_ref()
             .and_then(|l| {
@@ -293,7 +293,7 @@ impl Collector {
                 names
                     .as_ref()
                     .and_then(|names| names.iter().find_map(|name| Self::extract_uuid(name)))
-            })?;
+            });
 
         let user_id = labels
             .as_ref()
@@ -302,6 +302,7 @@ impl Collector {
             .as_ref()
             .and_then(|l| l.get("io.basilica.validator_id").cloned());
 
+        // Return metadata even if rental_id is None
         Some((rental_id, user_id, validator_id))
     }
 
@@ -348,7 +349,7 @@ impl Collector {
     /// Parse container stats into metrics
     fn parse_container_stats(
         container_id: &str,
-        rental_id: &str,
+        rental_id: Option<String>,
         user_id: Option<String>,
         validator_id: Option<String>,
         stats: &Stats,
@@ -403,7 +404,7 @@ impl Collector {
 
         ContainerMetrics {
             container_id: container_id.to_string(),
-            rental_id: rental_id.to_string(),
+            rental_id,
             user_id,
             validator_id,
             cpu_percent,

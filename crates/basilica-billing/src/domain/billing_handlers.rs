@@ -488,7 +488,8 @@ impl EventHandlers for BillingEventHandlers {
         } else {
             RentalState::Completed
         };
-        rental.actual_end_time = Some(end_data.end_time);
+        // Use server time as authoritative end timestamp
+        rental.actual_end_time = Some(Utc::now());
         rental.actual_cost = computed_cost;
 
         let charge_result = self

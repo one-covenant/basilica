@@ -184,7 +184,7 @@ pub struct SystemMetrics {
 #[derive(Debug, Clone)]
 pub struct ContainerMetrics {
     pub container_id: String,
-    pub rental_id: String,
+    pub rental_id: Option<String>,
     pub user_id: Option<String>,
     pub validator_id: Option<String>,
     pub cpu_percent: f64,

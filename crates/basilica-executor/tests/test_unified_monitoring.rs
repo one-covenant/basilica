@@ -67,7 +67,7 @@ async fn test_metrics_to_telemetry_conversion() {
         }),
         container_metrics: vec![types::ContainerMetrics {
             container_id: "abc123".to_string(),
-            rental_id: "rental-456".to_string(),
+            rental_id: Some("rental-456".to_string()),
             user_id: Some("user-789".to_string()),
             validator_id: Some("validator-012".to_string()),
             cpu_percent: 25.0,

@@ -178,9 +178,9 @@ impl TestContext {
             };
 
             sqlx::query(
-                "INSERT INTO billing.billing_packages (package_id, name, description, gpu_model, hourly_rate, cpu_rate_per_hour, memory_rate_per_gb_hour, network_rate_per_gb, disk_iops_rate, is_active) 
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
-                 ON CONFLICT (package_id) DO UPDATE SET 
+                "INSERT INTO billing.billing_packages (package_id, name, description, gpu_model, hourly_rate, cpu_rate_per_hour, memory_rate_per_gb_hour, network_rate_per_gb, disk_iops_rate, is_active)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 ON CONFLICT (package_id) DO UPDATE SET
                  name = EXCLUDED.name,
                  description = EXCLUDED.description,
                  gpu_model = EXCLUDED.gpu_model,
@@ -216,8 +216,8 @@ impl TestContext {
 
         // First ensure user exists in users table
         let user_uuid = sqlx::query_scalar::<_, uuid::Uuid>(
-            "INSERT INTO billing.users (external_id) 
-             VALUES ($1) 
+            "INSERT INTO billing.users (external_id)
+             VALUES ($1)
              ON CONFLICT (external_id) DO UPDATE SET updated_at = NOW()
              RETURNING user_id",
         )
@@ -228,9 +228,9 @@ impl TestContext {
 
         // Then insert/update credits using ON CONFLICT to handle race conditions
         sqlx::query(
-            "INSERT INTO billing.credits (user_id, balance, reserved_balance, lifetime_spent, updated_at) 
+            "INSERT INTO billing.credits (user_id, balance, reserved_balance, lifetime_spent, updated_at)
              VALUES ($1, $2, 0, 0, NOW())
-             ON CONFLICT (user_id) DO UPDATE SET 
+             ON CONFLICT (user_id) DO UPDATE SET
                balance = EXCLUDED.balance,
                reserved_balance = 0,
                updated_at = NOW()",
@@ -246,8 +246,8 @@ impl TestContext {
 
     pub async fn get_user_balance(&self, user_id: &str) -> rust_decimal::Decimal {
         sqlx::query_scalar::<_, rust_decimal::Decimal>(
-            "SELECT c.balance FROM billing.credits c 
-             JOIN billing.users u ON c.user_id = u.user_id 
+            "SELECT c.balance FROM billing.credits c
+             JOIN billing.users u ON c.user_id = u.user_id
              WHERE u.external_id = $1",
         )
         .bind(user_id)
@@ -258,8 +258,8 @@ impl TestContext {
 
     pub async fn get_reserved_balance(&self, user_id: &str) -> rust_decimal::Decimal {
         sqlx::query_scalar::<_, rust_decimal::Decimal>(
-            "SELECT COALESCE(c.reserved_balance, 0) FROM billing.credits c 
-             JOIN billing.users u ON c.user_id = u.user_id 
+            "SELECT COALESCE(c.reserved_balance, 0) FROM billing.credits c
+             JOIN billing.users u ON c.user_id = u.user_id
              WHERE u.external_id = $1",
         )
         .bind(user_id)
@@ -272,12 +272,12 @@ impl TestContext {
     pub async fn count_active_rentals(&self, user_id: Option<&str>) -> i64 {
         let query = if let Some(uid) = user_id {
             sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM billing.rentals WHERE user_id = $1 AND state IN ('active', 'pending')"
+                "SELECT COUNT(*) FROM billing.rentals WHERE user_id = $1 AND status IN ('active', 'pending')"
             )
             .bind(uid)
         } else {
             sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM billing.rentals WHERE state IN ('active', 'pending')",
+                "SELECT COUNT(*) FROM billing.rentals WHERE status IN ('active', 'pending')",
             )
         };
 

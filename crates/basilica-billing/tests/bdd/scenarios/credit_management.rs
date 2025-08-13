@@ -164,7 +164,7 @@ async fn test_reserve_credits_blocks_amount() {
         !response.reservation_id.is_empty(),
         "Should return reservation ID"
     );
-    assert_eq!(response.reserved_amount, "300.0");
+    assert_eq!(response.reserved_amount, "300");
     assert!(
         response.reserved_until.is_some(),
         "Should have expiration time"

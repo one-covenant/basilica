@@ -5,6 +5,7 @@
 pub mod collector;
 pub mod cpu;
 pub mod disk;
+pub mod docker_utils;
 pub mod gpu;
 pub mod lifecycle;
 pub mod memory;
@@ -629,9 +630,10 @@ pub fn spawn_monitoring(
 
                 // Record container metrics
                 for container in &metrics.container_metrics {
+                    let rental_id_str = container.rental_id.as_deref().unwrap_or("unknown");
                     let labels = &[
                         ("container_id", container.container_id.as_str()),
-                        ("rental_id", container.rental_id.as_str()),
+                        ("rental_id", rental_id_str),
                     ];
                     recorder
                         .record_gauge("container_cpu_percent", container.cpu_percent, labels)

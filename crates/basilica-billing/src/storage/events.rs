@@ -101,6 +101,27 @@ pub enum BatchType {
     TelemetryProcessing,
 }
 
+impl std::fmt::Display for BatchType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BatchType::UsageAggregation => write!(f, "usage_aggregation"),
+            BatchType::BillingCalculation => write!(f, "billing_calculation"),
+            BatchType::TelemetryProcessing => write!(f, "telemetry_processing"),
+        }
+    }
+}
+
+impl BatchType {
+    fn from_str(s: &str) -> Self {
+        match s {
+            "usage_aggregation" => BatchType::UsageAggregation,
+            "billing_calculation" => BatchType::BillingCalculation,
+            "telemetry_processing" => BatchType::TelemetryProcessing,
+            _ => BatchType::UsageAggregation,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum BatchStatus {
@@ -108,6 +129,29 @@ pub enum BatchStatus {
     Processing,
     Completed,
     Failed,
+}
+
+impl std::fmt::Display for BatchStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BatchStatus::Pending => write!(f, "pending"),
+            BatchStatus::Processing => write!(f, "processing"),
+            BatchStatus::Completed => write!(f, "completed"),
+            BatchStatus::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+impl BatchStatus {
+    fn from_str(s: &str) -> Self {
+        match s {
+            "pending" => BatchStatus::Pending,
+            "processing" => BatchStatus::Processing,
+            "completed" => BatchStatus::Completed,
+            "failed" => BatchStatus::Failed,
+            _ => BatchStatus::Pending,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -571,8 +615,8 @@ impl BatchRepository for SqlBatchRepository {
             "#,
         )
         .bind(batch_id)
-        .bind(serde_json::to_string(&batch_type).unwrap())
-        .bind(serde_json::to_string(&BatchStatus::Pending).unwrap())
+        .bind(batch_type.to_string())
+        .bind(BatchStatus::Pending.to_string())
         .execute(self.connection.pool())
         .await
         .map_err(|e| BillingError::DatabaseError {
@@ -609,7 +653,7 @@ impl BatchRepository for SqlBatchRepository {
             WHERE batch_id = $3
             "#,
         )
-        .bind(serde_json::to_string(&status).unwrap())
+        .bind(status.to_string())
         .bind(events_count)
         .bind(batch_id)
         .execute(self.connection.pool())
@@ -644,7 +688,7 @@ impl BatchRepository for SqlBatchRepository {
             WHERE batch_id = $4
             "#,
         )
-        .bind(serde_json::to_string(&status).unwrap())
+        .bind(status.to_string())
         .bind(processed_count)
         .bind(failed_count)
         .bind(batch_id)
@@ -681,8 +725,8 @@ impl BatchRepository for SqlBatchRepository {
 
             Ok(Some(ProcessingBatch {
                 batch_id: row.get("batch_id"),
-                batch_type: serde_json::from_str(&batch_type_str).unwrap(),
-                status: serde_json::from_str(&status_str).unwrap(),
+                batch_type: BatchType::from_str(&batch_type_str),
+                status: BatchStatus::from_str(&status_str),
                 events_count: row.get("events_count"),
                 events_processed: row.get("events_processed"),
                 events_failed: row.get("events_failed"),

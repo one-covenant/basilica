@@ -1,3 +1,4 @@
+use super::docker_utils;
 use super::types::VolumeMetrics;
 use anyhow::Result;
 use bollard::volume::ListVolumesOptions;
@@ -27,19 +28,7 @@ pub struct VolumeMonitor {
 impl VolumeMonitor {
     /// Create a new volume monitor
     pub async fn new(docker_host: &str) -> Result<Self> {
-        let docker = match docker_host {
-            s if s.starts_with("unix://") => {
-                Docker::connect_with_unix(s, 120, bollard::API_DEFAULT_VERSION)?
-            }
-            s if s.starts_with("tcp://")
-                || s.starts_with("http://")
-                || s.starts_with("https://") =>
-            {
-                Docker::connect_with_http(s, 120, bollard::API_DEFAULT_VERSION)?
-            }
-            _ => Docker::connect_with_local_defaults()?,
-        };
-
+        let docker = docker_utils::connect_docker(docker_host).await?;
         Ok(Self { docker })
     }
 

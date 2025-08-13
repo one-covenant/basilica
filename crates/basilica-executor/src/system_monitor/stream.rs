@@ -6,7 +6,7 @@ use basilica_protocol::billing::{
 use prost_types::Timestamp;
 use tonic::transport::{Channel, Endpoint};
 use tonic::Request;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_stream::wrappers::ReceiverStream;
@@ -31,11 +31,41 @@ impl From<crate::config::types::TelemetryConfig> for StreamConfig {
     }
 }
 
+/// Helper function to inject API key into request metadata
+fn inject_api_key<T>(req: &mut Request<T>, cfg: &StreamConfig) -> anyhow::Result<()> {
+    if let Some(key) = &cfg.api_key {
+        let header_name = match cfg.api_key_header.as_str() {
+            "authorization" => "authorization",
+            "x-api-key" => "x-api-key",
+            _ => "x-api-key", // default
+        };
+        match key.parse() {
+            Ok(val) => {
+                req.metadata_mut().insert(header_name, val);
+            }
+            Err(e) => {
+                error!("Failed to parse API key as metadata value: {}", e);
+                return Err(anyhow::anyhow!("Invalid API key format: {}", e));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn ts_now() -> Timestamp {
-    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    Timestamp {
-        seconds: d.as_secs() as i64,
-        nanos: d.subsec_nanos() as i32,
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => Timestamp {
+            seconds: d.as_secs() as i64,
+            nanos: d.subsec_nanos() as i32,
+        },
+        Err(e) => {
+            // System time is before UNIX_EPOCH
+            let d = e.duration();
+            Timestamp {
+                seconds: -(d.as_secs() as i64),
+                nanos: -(d.subsec_nanos() as i32),
+            }
+        }
     }
 }
 
@@ -71,13 +101,9 @@ pub async fn run(
         let stream = ReceiverStream::new(rx);
 
         let mut req = Request::new(stream);
-        if let Some(key) = &cfg.api_key {
-            let header_name = match cfg.api_key_header.as_str() {
-                "authorization" => "authorization",
-                "x-api-key" => "x-api-key",
-                _ => "x-api-key", // default
-            };
-            req.metadata_mut().insert(header_name, key.parse().unwrap());
+        if let Err(e) = inject_api_key(&mut req, &cfg) {
+            warn!("Failed to inject API key: {}", e);
+            // Continue without API key rather than failing the stream
         }
 
         info!("opening data ingest stream");
@@ -119,14 +145,9 @@ pub async fn update_lifecycle_status(
         timestamp: Some(ts_now()),
         reason: reason.to_string(),
     });
-    if let Some(key) = &cfg.api_key {
-        // Use a static string for the header name
-        let header_name = match cfg.api_key_header.as_str() {
-            "authorization" => "authorization",
-            "x-api-key" => "x-api-key",
-            _ => "x-api-key", // default
-        };
-        req.metadata_mut().insert(header_name, key.parse().unwrap());
+    if let Err(e) = inject_api_key(&mut req, cfg) {
+        warn!("Failed to inject API key for lifecycle update: {}", e);
+        // Continue without API key for lifecycle status updates
     }
     info!("UpdateLifecycleStatus({entity_id}, {status:?}, {reason})");
     client.update_rental_status(req).await?;

@@ -12,10 +12,8 @@ use crate::error::BillingError;
 use crate::storage::events::{EventType, UsageEvent};
 use crate::storage::rds::RdsConnection;
 use crate::storage::SqlRulesRepository;
-use crate::storage::{
-    CreditRepository, RentalRepository, SqlCreditRepository, SqlRentalRepository,
-};
 use crate::storage::{PackageRepository, SqlPackageRepository};
+use crate::storage::{RentalRepository, SqlCreditRepository, SqlRentalRepository};
 use crate::storage::{SqlUserPreferencesRepository, UserPreferencesRepository};
 use crate::telemetry::{TelemetryIngester, TelemetryProcessor};
 
@@ -47,7 +45,6 @@ pub struct BillingServiceImpl {
     #[allow(dead_code)] // Used in server's consumer loop
     telemetry_processor: Arc<TelemetryProcessor>,
     telemetry_ingester: Arc<TelemetryIngester>,
-    credit_repository: Arc<dyn CreditRepository + Send + Sync>,
     rental_repository: Arc<dyn RentalRepository + Send + Sync>,
     package_repository: Arc<dyn PackageRepository + Send + Sync>,
     user_preferences_repository: Arc<dyn UserPreferencesRepository + Send + Sync>,
@@ -90,7 +87,6 @@ impl BillingServiceImpl {
             )),
             telemetry_processor,
             telemetry_ingester,
-            credit_repository: credit_repository.clone(),
             rental_repository: rental_repository.clone(),
             package_repository: package_repository.clone(),
             user_preferences_repository: user_preferences_repository.clone(),
@@ -165,17 +161,6 @@ impl BillingService for BillingServiceImpl {
             .apply_credits(&user_id, credit_balance)
             .await
             .map_err(|e| Status::internal(format!("Failed to apply credits: {}", e)))?;
-
-        let account = self
-            .credit_manager
-            .get_account(&user_id)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to get account: {}", e)))?;
-
-        self.credit_repository
-            .update_balance(&user_id, account.balance)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to persist balance: {}", e)))?;
 
         let response = ApplyCreditsResponse {
             success: true,
@@ -265,7 +250,7 @@ impl BillingService for BillingServiceImpl {
         let response = ReserveCreditsResponse {
             success: true,
             reservation_id: reservation_id.to_string(),
-            reserved_amount: req.amount,
+            reserved_amount: Self::format_credit_balance(reservation.amount),
             reserved_until: Some(prost_types::Timestamp::from(std::time::SystemTime::from(
                 reservation.expires_at,
             ))),
@@ -570,7 +555,10 @@ impl BillingService for BillingServiceImpl {
                 }
             }
         } else {
-            Vec::new()
+            self.rental_repository
+                .get_active_rentals(None)
+                .await
+                .map_err(|e| Status::internal(format!("Failed to list rentals: {}", e)))?
         };
 
         let active_rentals: Vec<ActiveRental> = rentals

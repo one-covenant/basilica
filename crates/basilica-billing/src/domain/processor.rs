@@ -119,13 +119,14 @@ impl EventProcessor {
 
         let mut processed_count = 0;
         let mut failed_count = 0;
-        let mut event_ids = Vec::new();
+        let mut processed_ids = Vec::new();
 
         for event in &events {
-            event_ids.push(event.event_id);
-
             match self.process_single_event(event).await {
-                Ok(_) => processed_count += 1,
+                Ok(_) => {
+                    processed_count += 1;
+                    processed_ids.push(event.event_id);
+                }
                 Err(e) => {
                     error!("Failed to process event {}: {}", event.event_id, e);
                     failed_count += 1;
@@ -133,9 +134,9 @@ impl EventProcessor {
             }
         }
 
-        if processed_count > 0 {
+        if !processed_ids.is_empty() {
             self.event_store
-                .mark_events_processed(&event_ids, batch.batch_id)
+                .mark_events_processed(&processed_ids, batch.batch_id)
                 .await?;
         }
 

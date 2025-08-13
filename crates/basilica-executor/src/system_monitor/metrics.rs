@@ -16,16 +16,19 @@ pub struct Metrics {
 }
 
 impl Metrics {
+    /// Helper function to safely convert SystemTime to protobuf Timestamp
+    fn to_timestamp(&self) -> Option<Timestamp> {
+        match self.timestamp.duration_since(UNIX_EPOCH) {
+            Ok(duration) => Some(Timestamp {
+                seconds: duration.as_secs() as i64,
+                nanos: duration.subsec_nanos() as i32,
+            }),
+            Err(_) => None, // System time is before UNIX_EPOCH
+        }
+    }
     /// Convert to TelemetryData for a specific container
     pub fn to_container_telemetry(&self, container: &ContainerMetrics) -> TelemetryData {
-        let timestamp = Some(Timestamp {
-            seconds: self.timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
-            nanos: self
-                .timestamp
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos() as i32,
-        });
+        let timestamp = self.to_timestamp();
 
         let gpu_usage: Vec<BillingGpuUsage> = self
             .gpu_metrics
@@ -62,7 +65,7 @@ impl Metrics {
         }
 
         TelemetryData {
-            rental_id: container.rental_id.clone(),
+            rental_id: container.rental_id.clone().unwrap_or_default(),
             executor_id: self.executor_id.clone(),
             timestamp,
             resource_usage,
@@ -72,14 +75,7 @@ impl Metrics {
 
     /// Convert to TelemetryData for host metrics
     pub fn to_host_telemetry(&self) -> TelemetryData {
-        let timestamp = Some(Timestamp {
-            seconds: self.timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64,
-            nanos: self
-                .timestamp
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos() as i32,
-        });
+        let timestamp = self.to_timestamp();
 
         let mut custom_metrics = HashMap::new();
 

@@ -100,9 +100,13 @@ impl RdsConnection {
                 message: format!("Failed to parse secret: {}", e),
             })?;
 
+        // Percent-encode credentials to handle special characters
+        let encoded_username = urlencoding::encode(&secret.username);
+        let encoded_password = urlencoding::encode(&secret.password);
+
         Ok(format!(
             "postgres://{}:{}@{}:{}/{}",
-            secret.username, secret.password, secret.host, secret.port, secret.database
+            encoded_username, encoded_password, secret.host, secret.port, secret.database
         ))
     }
 
@@ -305,7 +309,7 @@ impl ConnectionPool for RdsConnection {
     }
 
     async fn health_check(&self) -> Result<()> {
-        self.health_check().await
+        RdsConnection::health_check(self).await
     }
 
     async fn close(&self) {
