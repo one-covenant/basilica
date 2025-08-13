@@ -1,7 +1,12 @@
 //! API middleware stack
 
+mod auth;
 mod rate_limit;
 
+pub use auth::{
+    auth_middleware, extract_bearer_token, get_user_claims, has_any_scope, has_scope,
+    optional_auth_middleware, validate_request, UserClaims,
+};
 pub use rate_limit::RateLimitMiddleware;
 
 use crate::server::AppState;

@@ -2,6 +2,7 @@
 
 use crate::cache::{parse_ssh_credentials, CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
+use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
@@ -10,7 +11,6 @@ use crate::ssh::SshClient;
 use basilica_api::api::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
 };
-use basilica_api::ClientBuilder;
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
 use basilica_validator::rental::types::RentalState;
@@ -20,11 +20,7 @@ use tracing::{debug, info};
 
 /// Handle the `ls` command - list available executors for rental
 pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> Result<()> {
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config).await?;
 
     // Build query from filters
     let query = ListAvailableExecutorsQuery {
@@ -115,11 +111,7 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
 
 /// Handle the `up` command - provision GPU instances
 pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig) -> Result<()> {
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config).await?;
 
     // Build rental request
     let ssh_public_key = load_ssh_public_key(&options.ssh_key, config)?;
@@ -181,11 +173,7 @@ pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig) -
 /// Handle the `ps` command - list active rentals
 pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Result<()> {
     debug!("Listing active rentals with filters: {:?}", filters);
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config).await?;
 
     // Build query from filters - default to "active" if no status specified
     let query = Some(ListRentalsQuery {
@@ -212,11 +200,7 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
 /// Handle the `status` command - check rental status
 pub async fn handle_status(target: String, json: bool, config: &CliConfig) -> Result<()> {
     debug!("Checking status for rental: {}", target);
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config).await?;
 
     let status = api_client
         .get_rental_status(&target)
@@ -237,11 +221,7 @@ pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfi
     debug!("Viewing logs for rental: {}", target);
 
     // Create API client
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config).await?;
 
     // Get log stream from API
     let response = api_client
@@ -327,11 +307,7 @@ pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfi
 
 /// Handle the `down` command - terminate rentals
 pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()> {
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config).await?;
 
     let rental_ids = if targets.is_empty() {
         // Interactive mode - let user select from active rentals

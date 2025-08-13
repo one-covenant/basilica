@@ -49,6 +49,7 @@ figment = { workspace = true }
 
 # Authentication
 jsonwebtoken = "9.2"
+jwks-client = "0.2"
 argon2 = "0.5"
 
 # Rate limiting

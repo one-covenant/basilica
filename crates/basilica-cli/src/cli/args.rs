@@ -34,7 +34,12 @@ NETWORK COMPONENTS:
 
 CONFIGURATION:
   basilica config show              # Show configuration
-  basilica wallet                   # Show wallet info"
+  basilica wallet                   # Show wallet info
+
+AUTHENTICATION:
+  basilica login                    # Log in to Basilica
+  basilica login --device-code      # Log in using device flow
+  basilica logout                   # Log out of Basilica"
 )]
 pub struct Args {
     /// Configuration file path
@@ -58,7 +63,7 @@ impl Args {
     /// Execute the CLI command
     pub async fn run(self) -> Result<()> {
         // Initialize logging based on verbosity
-        let log_level = if self.verbose { "debug" } else { "info" };
+        let log_level = if self.verbose { "debug" } else { "warn" };
 
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new(log_level))
@@ -76,6 +81,17 @@ impl Args {
                 handlers::config::handle_config(action, &config, config_path).await
             }
             Commands::Wallet { name } => handlers::wallet::handle_wallet(&config, name).await,
+            Commands::Login { device_code } => {
+                handlers::auth::handle_login(device_code, &config, config_path).await
+            }
+            Commands::Logout => handlers::auth::handle_logout(&config).await,
+            Commands::TestAuth { api } => {
+                if api {
+                    handlers::test_auth::handle_test_api_auth(&config, config_path).await
+                } else {
+                    handlers::test_auth::handle_test_auth(&config, config_path).await
+                }
+            }
 
             // GPU rental operations
             Commands::Ls { filters } => {

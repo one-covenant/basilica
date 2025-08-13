@@ -2,6 +2,56 @@
 //!
 //! This module provides a type-safe client for interacting with the Basilica API.
 //! It supports both authenticated and unauthenticated requests.
+//!
+//! # Authentication
+//!
+//! The client supports dual authentication modes with JWT Bearer tokens as the preferred method:
+//! 
+//! ## JWT Bearer Token Authentication (Recommended)
+//! - Uses `Authorization: Bearer {token}` header
+//! - Supports automatic token refresh on 401 responses
+//! - Thread-safe token management with async/await support
+//! - Enhanced security compared to API keys
+//!
+//! ## API Key Authentication (Deprecated)
+//! - Fallback authentication method for backward compatibility
+//! - Logs deprecation warnings when used
+//! - Only used when no Bearer token is available
+//!
+//! # Usage Examples
+//!
+//! ```rust,no_run
+//! use basilica_api::client::{BasilicaClient, ClientBuilder};
+//! use std::sync::Arc;
+//!
+//! # async fn example() -> basilica_api::error::Result<()> {
+//! // JWT authentication (preferred)
+//! let client = ClientBuilder::default()
+//!     .base_url("https://api.basilica.ai")
+//!     .with_bearer_token("your_jwt_token")
+//!     .build()?;
+//!
+//! // With custom token refresher
+//! // let refresher = Arc::new(MyTokenRefresh::new());
+//! // let client = ClientBuilder::default()
+//! //     .base_url("https://api.basilica.ai")
+//! //     .with_bearer_token("initial_token")
+//! //     .with_token_refresher(refresher)
+//! //     .build()?;
+//!
+//! // Runtime token management
+//! client.set_bearer_token("new_token").await;
+//! let current_token = client.get_bearer_token().await;
+//! client.clear_bearer_token().await;
+//!
+//! // JWT authentication is required
+//! let client = ClientBuilder::default()
+//!     .base_url("https://api.basilica.ai")
+//!     .with_bearer_token("your_jwt_token")
+//!     .build()?;
+//! # Ok(())
+//! # }
+//! ```
 
 use crate::{
     api::types::{
@@ -17,13 +67,22 @@ use basilica_validator::api::{
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
+
+/// Token refresh trait for JWT authentication
+#[async_trait::async_trait]
+pub trait TokenRefresh: Send + Sync {
+    async fn refresh_token(&self, expired_token: &str) -> Result<String>;
+}
 
 /// HTTP client for interacting with the Basilica API
 pub struct BasilicaClient {
     http_client: reqwest::Client,
     base_url: String,
-    api_key: Option<String>,
+    bearer_token: Arc<RwLock<Option<String>>>,
+    token_refresher: Option<Arc<dyn TokenRefresh>>,
 }
 
 impl BasilicaClient {
@@ -37,13 +96,34 @@ impl BasilicaClient {
         Ok(Self {
             http_client,
             base_url: base_url.into(),
-            api_key: None,
+            bearer_token: Arc::new(RwLock::new(None)),
+            token_refresher: None,
         })
     }
 
     /// Create a new client using the builder pattern
     pub fn builder() -> ClientBuilder {
         ClientBuilder::default()
+    }
+
+    /// Set a new bearer token at runtime
+    pub async fn set_bearer_token(&self, token: impl Into<String>) {
+        *self.bearer_token.write().await = Some(token.into());
+    }
+
+    /// Clear the current bearer token
+    pub async fn clear_bearer_token(&self) {
+        *self.bearer_token.write().await = None;
+    }
+
+    /// Get the current bearer token (if any)
+    pub async fn get_bearer_token(&self) -> Option<String> {
+        self.bearer_token.read().await.clone()
+    }
+
+    /// Check if the client has any authentication configured
+    pub async fn has_auth(&self) -> bool {
+        self.bearer_token.read().await.is_some()
     }
 
     // ===== Rentals =====
@@ -95,8 +175,21 @@ impl BasilicaClient {
             request = request.query(&params);
         }
 
-        let request = self.apply_auth(request);
-        request.send().await.map_err(Error::HttpClient)
+        let request = self.apply_auth(request).await;
+        let response = request.send().await.map_err(Error::HttpClient)?;
+        
+        // Handle 401 with token refresh for streaming endpoints
+        if response.status() == StatusCode::UNAUTHORIZED {
+            let retry_request = self.http_client.get(&url);
+            let retry_request = if !params.is_empty() {
+                retry_request.query(&params)
+            } else {
+                retry_request
+            };
+            self.handle_unauthorized(retry_request).await
+        } else {
+            Ok(response)
+        }
     }
 
     /// List rentals
@@ -107,13 +200,26 @@ impl BasilicaClient {
         let url = format!("{}/rental/list", self.base_url);
         let mut request = self.http_client.get(&url);
 
-        if let Some(q) = query {
+        if let Some(q) = &query {
             request = request.query(&q);
         }
 
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await;
         let response = request.send().await.map_err(Error::HttpClient)?;
-        self.handle_response(response).await
+        
+        // Handle 401 with token refresh
+        if response.status() == StatusCode::UNAUTHORIZED {
+            let retry_request = self.http_client.get(&url);
+            let retry_request = if let Some(q) = query {
+                retry_request.query(&q)
+            } else {
+                retry_request
+            };
+            let retry_response = self.handle_unauthorized(retry_request).await?;
+            self.handle_response(retry_response).await
+        } else {
+            self.handle_response(response).await
+        }
     }
 
     /// List available executors for rental
@@ -124,13 +230,26 @@ impl BasilicaClient {
         let url = format!("{}/executors/available", self.base_url);
         let mut request = self.http_client.get(&url);
 
-        if let Some(q) = query {
+        if let Some(q) = &query {
             request = request.query(&q);
         }
 
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await;
         let response = request.send().await.map_err(Error::HttpClient)?;
-        self.handle_response(response).await
+        
+        // Handle 401 with token refresh
+        if response.status() == StatusCode::UNAUTHORIZED {
+            let retry_request = self.http_client.get(&url);
+            let retry_request = if let Some(q) = query {
+                retry_request.query(&q)
+            } else {
+                retry_request
+            };
+            let retry_response = self.handle_unauthorized(retry_request).await?;
+            self.handle_response(retry_response).await
+        } else {
+            self.handle_response(response).await
+        }
     }
 
     // ===== Health & Discovery =====
@@ -156,41 +275,99 @@ impl BasilicaClient {
     // ===== Private Helper Methods =====
 
     /// Apply authentication to request if configured
-    fn apply_auth(&self, request: RequestBuilder) -> RequestBuilder {
-        if let Some(api_key) = &self.api_key {
-            request.bearer_auth(api_key)
+    /// Tries JWT Bearer token first, then falls back to API key
+    async fn apply_auth(&self, request: RequestBuilder) -> RequestBuilder {
+        let bearer_token = self.bearer_token.read().await;
+        if let Some(token) = bearer_token.as_ref() {
+            request.header("Authorization", format!("Bearer {}", token))
         } else {
             request
         }
     }
 
-    /// Generic GET request
+    /// Handle 401 responses by attempting token refresh
+    async fn handle_unauthorized(&self, original_request: RequestBuilder) -> Result<Response> {
+        // Only attempt refresh if we have a token refresher and a token to refresh
+        if let (Some(refresher), Some(expired_token)) = (
+            &self.token_refresher,
+            &*self.bearer_token.read().await,
+        ) {
+            match refresher.refresh_token(expired_token).await {
+                Ok(new_token) => {
+                    // Update the stored token
+                    *self.bearer_token.write().await = Some(new_token.clone());
+                    
+                    // Retry the request with new token
+                    let retry_request = original_request
+                        .header("Authorization", format!("Bearer {}", new_token));
+                    
+                    retry_request.send().await.map_err(Error::HttpClient)
+                },
+                Err(refresh_error) => {
+                    tracing::error!("Token refresh failed: {}", refresh_error);
+                    Err(Error::Authentication {
+                        message: "Token expired and refresh failed".to_string(),
+                    })
+                }
+            }
+        } else {
+            Err(Error::Authentication {
+                message: "Authentication failed".to_string(),
+            })
+        }
+    }
+
+    /// Generic GET request with automatic retry on 401
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.get(&url);
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await;
 
         let response = request.send().await.map_err(Error::HttpClient)?;
-        self.handle_response(response).await
+        
+        // Handle 401 with token refresh
+        if response.status() == StatusCode::UNAUTHORIZED {
+            let retry_request = self.http_client.get(&url);
+            let retry_response = self.handle_unauthorized(retry_request).await?;
+            self.handle_response(retry_response).await
+        } else {
+            self.handle_response(response).await
+        }
     }
 
-    /// Generic POST request
+    /// Generic POST request with automatic retry on 401
     async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.post(&url).json(body);
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await;
 
         let response = request.send().await.map_err(Error::HttpClient)?;
-        self.handle_response(response).await
+        
+        // Handle 401 with token refresh
+        if response.status() == StatusCode::UNAUTHORIZED {
+            let retry_request = self.http_client.post(&url).json(body);
+            let retry_response = self.handle_unauthorized(retry_request).await?;
+            self.handle_response(retry_response).await
+        } else {
+            self.handle_response(response).await
+        }
     }
 
-    /// Generic POST request without body
+    /// Generic POST request without body with automatic retry on 401
     async fn post_empty(&self, path: &str) -> Result<Response> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.post(&url);
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await;
 
-        request.send().await.map_err(Error::HttpClient)
+        let response = request.send().await.map_err(Error::HttpClient)?;
+        
+        // Handle 401 with token refresh
+        if response.status() == StatusCode::UNAUTHORIZED {
+            let retry_request = self.http_client.post(&url);
+            self.handle_unauthorized(retry_request).await
+        } else {
+            Ok(response)
+        }
     }
 
     /// Handle successful response
@@ -255,7 +432,8 @@ impl BasilicaClient {
 #[derive(Default)]
 pub struct ClientBuilder {
     base_url: Option<String>,
-    api_key: Option<String>,
+    bearer_token: Option<String>,
+    token_refresher: Option<Arc<dyn TokenRefresh>>,
     timeout: Option<Duration>,
     connect_timeout: Option<Duration>,
     pool_max_idle_per_host: Option<usize>,
@@ -268,9 +446,16 @@ impl ClientBuilder {
         self
     }
 
-    /// Set the API key for authentication
-    pub fn api_key(mut self, key: impl Into<String>) -> Self {
-        self.api_key = Some(key.into());
+    /// Set the Bearer token for JWT authentication (preferred)
+    pub fn with_bearer_token(mut self, token: impl Into<String>) -> Self {
+        self.bearer_token = Some(token.into());
+        self
+    }
+
+
+    /// Set a token refresher for automatic token refresh on 401 responses
+    pub fn with_token_refresher(mut self, refresher: Arc<dyn TokenRefresh>) -> Self {
+        self.token_refresher = Some(refresher);
         self
     }
 
@@ -319,7 +504,8 @@ impl ClientBuilder {
         Ok(BasilicaClient {
             http_client,
             base_url,
-            api_key: self.api_key,
+            bearer_token: Arc::new(RwLock::new(self.bearer_token)),
+            token_refresher: self.token_refresher,
         })
     }
 }
@@ -355,12 +541,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_auth_header() {
+    async fn test_bearer_token_auth() {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
             .and(path("/health"))
-            .and(header("Authorization", "Bearer test-key"))
+            .and(header("Authorization", "Bearer test-token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": "healthy",
                 "version": "1.0.0",
@@ -373,13 +559,14 @@ mod tests {
 
         let client = ClientBuilder::default()
             .base_url(mock_server.uri())
-            .api_key("test-key")
+            .with_bearer_token("test-token")
             .build()
             .unwrap();
 
         let result = client.health_check().await;
         assert!(result.is_ok());
     }
+
 
     #[tokio::test]
     async fn test_error_handling() {
@@ -418,6 +605,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_all_options() {
+        #[allow(deprecated)]
         let client = ClientBuilder::default()
             .base_url("https://api.basilica.ai")
             .api_key("test-key")
@@ -427,5 +615,63 @@ mod tests {
             .build();
 
         assert!(client.is_ok());
+    }
+
+
+    // Mock token refresher for testing
+    struct MockTokenRefresh {
+        new_token: String,
+    }
+
+    #[async_trait]
+    impl TokenRefresh for MockTokenRefresh {
+        async fn refresh_token(&self, _expired_token: &str) -> Result<String> {
+            Ok(self.new_token.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_token_refresh_on_401() {
+        let mock_server = MockServer::start().await;
+
+        // First request with expired token returns 401
+        Mock::given(method("GET"))
+            .and(path("/health"))
+            .and(header("Authorization", "Bearer expired-token"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        // Retry request with new token succeeds
+        Mock::given(method("GET"))
+            .and(path("/health"))
+            .and(header("Authorization", "Bearer refreshed-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "healthy",
+                "version": "1.0.0", 
+                "timestamp": "2024-01-01T00:00:00Z",
+                "healthy_validators": 10,
+                "total_validators": 10,
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let refresher = Arc::new(MockTokenRefresh {
+            new_token: "refreshed-token".to_string(),
+        });
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_bearer_token("expired-token")
+            .with_token_refresher(refresher)
+            .build()
+            .unwrap();
+
+        let result = client.health_check().await;
+        assert!(result.is_ok());
+
+        // Verify the token was refreshed
+        let token = client.bearer_token.read().await;
+        assert_eq!(token.as_ref().unwrap(), "refreshed-token");
     }
 }

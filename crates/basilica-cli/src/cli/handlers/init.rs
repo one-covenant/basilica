@@ -1,9 +1,10 @@
 //! Initialization and setup command handlers
 
+use crate::client::create_authenticated_client;
 use crate::config::{CliCache, CliConfig, RegistrationCache};
 use crate::error::{CliError, Result};
 use basilica_api::api::types::RegisterRequest;
-use basilica_api::{BasilicaClient, ClientBuilder};
+use basilica_api::BasilicaClient;
 use std::io;
 use tracing::debug;
 
@@ -43,11 +44,7 @@ pub async fn handle_init(config: &CliConfig) -> Result<()> {
     // Perform registration
     println!("📝 Registering with Basilica API...");
 
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config).await?;
     let hotwallet = register_user(&api_client).await?;
 
     // Save registration to cache
@@ -102,11 +99,7 @@ async fn register_user(api_client: &BasilicaClient) -> Result<String> {
 async fn validate_registration(config: &CliConfig, hotwallet: &str) -> Result<bool> {
     debug!("Validating registration for hotwallet: {}", hotwallet);
 
-    let _api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let _api_client = create_authenticated_client(config).await?;
 
     // TODO: Implement actual validation API call
     // For now, assume registration is valid

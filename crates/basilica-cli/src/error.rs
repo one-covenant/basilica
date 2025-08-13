@@ -105,3 +105,19 @@ impl CliError {
         }
     }
 }
+
+impl From<anyhow::Error> for CliError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Internal {
+            message: err.to_string(),
+        }
+    }
+}
+
+impl From<basilica_api::Error> for CliError {
+    fn from(err: basilica_api::Error) -> Self {
+        Self::Internal {
+            message: format!("API error: {}", err),
+        }
+    }
+}

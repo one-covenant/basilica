@@ -1,7 +1,6 @@
 //! Authentication command handlers
 
 use crate::auth::{AuthConfig, DeviceFlow, OAuthFlow, TokenStore, should_use_device_flow};
-use crate::cli::commands::AuthAction;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use std::path::Path;
@@ -12,58 +11,19 @@ const SERVICE_NAME: &str = "basilica-cli";
 
 /// Load authentication configuration from auth.toml
 async fn load_auth_config() -> Result<AuthConfig> {
-    let config_dir = CliConfig::config_dir()?;
-    let auth_config_path = config_dir.parent()
-        .ok_or_else(|| CliError::internal("Unable to find config directory parent"))?
-        .join("config")
-        .join("auth.toml");
+    // Use the config module's auth config loading
+    let auth_config = CliConfig::load_auth_config().await
+        .map_err(|e| CliError::internal(format!("Failed to load auth configuration: {}", e)))?;
     
-    if !auth_config_path.exists() {
-        return Err(CliError::internal(format!(
-            "Auth configuration not found at {}. Please ensure config/auth.toml exists.",
-            auth_config_path.display()
-        )));
-    }
-
-    let _content = tokio::fs::read_to_string(&auth_config_path)
-        .await
-        .map_err(|e| CliError::internal(format!(
-            "Failed to read auth configuration: {}", e
-        )))?;
-
-    // For now, we'll create a basic AuthConfig with default values
-    // This can be extended to parse the TOML and extract Auth0 configuration
-    // TODO: Parse the TOML properly and extract OAuth configuration from auth0 section
-    let auth_config = AuthConfig {
-        client_id: "basilica-cli".to_string(),
-        auth_endpoint: "https://your-domain.auth0.com/oauth/authorize".to_string(),
-        token_endpoint: "https://your-domain.auth0.com/oauth/token".to_string(),
-        device_auth_endpoint: Some("https://your-domain.auth0.com/oauth/device/code".to_string()),
-        redirect_uri: "http://localhost:8080/callback".to_string(),
-        scopes: vec!["openid".to_string(), "profile".to_string(), "email".to_string()],
-        additional_params: std::collections::HashMap::new(),
-    };
-
-    Ok(auth_config)
-}
-
-/// Handle authentication commands
-pub async fn handle_auth(
-    action: AuthAction,
-    config: &CliConfig,
-    config_path: impl AsRef<Path>,
-) -> Result<()> {
-    match action {
-        AuthAction::Login { device_code } => handle_login(device_code, config, config_path).await,
-        AuthAction::Logout => handle_logout(config, config_path).await,
-    }
+    // Convert to the auth module's AuthConfig format
+    Ok(auth_config.to_auth_config())
 }
 
 /// Handle login command
-async fn handle_login(
+pub async fn handle_login(
     device_code: bool,
     _config: &CliConfig,
-    config_path: impl AsRef<Path>,
+    _config_path: impl AsRef<Path>,
 ) -> Result<()> {
     debug!("Starting login process, device_code: {}", device_code);
 
@@ -85,16 +45,13 @@ async fn handle_login(
     let use_device_flow = device_code || should_use_device_flow();
 
     let token_set = if use_device_flow {
-        info!("Using device authorization flow");
-        println!("🔐 Starting device authorization flow...");
+        info!("Starting device authorization flow");
         
-        let device_flow = DeviceFlow::new(auth_config).map_err(|e| {
-            CliError::internal(format!("Failed to initialize device flow: {}", e))
-        })?;
+        let device_flow = DeviceFlow::new(auth_config);
 
         match device_flow.start_flow().await {
             Ok(tokens) => {
-                println!("✅ Successfully logged in with device flow!");
+                println!("Successfully logged in!");
                 tokens
             }
             Err(e) => {
@@ -105,14 +62,13 @@ async fn handle_login(
             }
         }
     } else {
-        info!("Using browser OAuth flow");
-        println!("🔐 Starting browser-based OAuth flow...");
+        info!("Starting browser-based OAuth flow");
         
         let mut oauth_flow = OAuthFlow::new(auth_config);
 
         match oauth_flow.start_flow().await {
             Ok(tokens) => {
-                println!("✅ Successfully logged in with browser flow!");
+                println!("Successfully logged in!");
                 tokens
             }
             Err(e) => {
@@ -132,7 +88,7 @@ async fn handle_login(
         )));
     }
 
-    // Display token information (without sensitive details)
+    // Log token expiration information
     if let Some(expires_at) = token_set.expires_at {
         let duration = std::time::Duration::from_secs(expires_at.saturating_sub(
             std::time::SystemTime::now()
@@ -140,7 +96,7 @@ async fn handle_login(
                 .unwrap_or_default()
                 .as_secs()
         ));
-        println!("🕐 Token expires in approximately {} minutes", duration.as_secs() / 60);
+        info!("Token expires in approximately {} minutes", duration.as_secs() / 60);
     }
 
     info!("Login completed successfully");
@@ -148,10 +104,10 @@ async fn handle_login(
 }
 
 /// Handle logout command
-async fn handle_logout(_config: &CliConfig, _config_path: impl AsRef<Path>) -> Result<()> {
+pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
     debug!("Starting logout process");
 
-    println!("🔐 Logging out...");
+    info!("Logging out...");
 
     // Initialize token store
     let token_store = TokenStore::new().map_err(|e| {
@@ -164,7 +120,7 @@ async fn handle_logout(_config: &CliConfig, _config_path: impl AsRef<Path>) -> R
             info!("Found existing tokens, proceeding with logout");
         }
         Ok(None) => {
-            println!("ℹ️  You are not currently logged in.");
+            println!("You are not currently logged in.");
             return Ok(());
         }
         Err(e) => {
@@ -185,7 +141,7 @@ async fn handle_logout(_config: &CliConfig, _config_path: impl AsRef<Path>) -> R
     // This would require storing the auth config and implementing token revocation
     // For now, we just clear local tokens
 
-    println!("✅ Successfully logged out!");
+    println!("Successfully logged out!");
     info!("All authentication tokens have been cleared");
     
     info!("Logout completed successfully");

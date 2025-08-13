@@ -49,6 +49,21 @@ dirs = "5.0"
 shellexpand = "3.1"
 etcetera = "0.8"
 
+# OAuth dependencies
+oauth2 = "4.4"
+openidconnect = "3.4"
+axum = { workspace = true }
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.4", features = ["cors"] }
+rand = "0.8"
+base64 = "0.21"
+sha2 = "0.10"
+ring = "0.17"
+keyring = "2.0"
+directories = "5.0"
+webbrowser = "0.8"
+url = "2.4"
+
 # Wallet management
 bittensor_wallet = { git = "https://github.com/opentensor/btwallet", tag = "v3.1.0", default-features = false }
 sp-core = "34.0.0"
