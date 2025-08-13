@@ -585,13 +585,17 @@ pub fn spawn_monitoring(
             // Send host metrics
             if metrics.system_metrics.is_some() {
                 let telemetry = metrics.to_host_telemetry();
-                let _ = billing_tx_clone.send(telemetry).await;
+                if billing_tx_clone.send(telemetry).await.is_err() {
+                    warn!("Failed to send host telemetry to billing: channel full or closed");
+                }
             }
 
             // Send container metrics
             for container in &metrics.container_metrics {
                 let telemetry = metrics.to_container_telemetry(container);
-                let _ = billing_tx_clone.send(telemetry).await;
+                if billing_tx_clone.send(telemetry).await.is_err() {
+                    warn!("Failed to send container telemetry to billing: channel full or closed");
+                }
             }
         }
     });
