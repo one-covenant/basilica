@@ -1,9 +1,9 @@
 //! Local HTTP callback server for OAuth authorization code flow
-//! 
+//!
 //! This module implements a temporary local HTTP server to receive
 //! the authorization callback from the OAuth provider.
 
-use super::types::{AuthResult, AuthError};
+use super::types::{AuthError, AuthResult};
 use axum::{
     extract::Query,
     http::{header, StatusCode},
@@ -59,7 +59,7 @@ impl CallbackServer {
     pub fn find_available_port() -> AuthResult<u16> {
         // Try port 8080 first, then find any available port
         let preferred_port = 8080;
-        
+
         match TcpListener::bind(("127.0.0.1", preferred_port)) {
             Ok(listener) => {
                 let port = listener.local_addr()?.port();
@@ -68,8 +68,9 @@ impl CallbackServer {
             }
             Err(_) => {
                 // Port 8080 is occupied, find any available port
-                let listener = TcpListener::bind(("127.0.0.1", 0))
-                    .map_err(|e| AuthError::CallbackServerError(format!("Failed to bind to any port: {}", e)))?;
+                let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| {
+                    AuthError::CallbackServerError(format!("Failed to bind to any port: {}", e))
+                })?;
                 let port = listener.local_addr()?.port();
                 drop(listener);
                 Ok(port)
@@ -80,36 +81,36 @@ impl CallbackServer {
     /// Start the callback server and wait for OAuth response
     pub async fn start_and_wait(&self, expected_state: &str) -> AuthResult<CallbackData> {
         let (tx, rx) = mpsc::channel();
-        
+
         // Create shared state
         let callback_state = Arc::new(Mutex::new(CallbackState {
             sender: tx,
             expected_state: expected_state.to_string(),
         }));
-        
+
         // Create the router - CORS not needed for localhost
         let app = Router::new()
             .route("/callback", get(handle_callback))
             .route("/auth/callback", get(handle_callback))
             .with_state(callback_state.clone());
-        
+
         // Create the server address
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
-        
+
         // Start the server
-        let listener = TokioTcpListener::bind(&addr)
-            .await
-            .map_err(|e| AuthError::CallbackServerError(format!("Failed to bind to {}: {}", addr, e)))?;
-        
+        let listener = TokioTcpListener::bind(&addr).await.map_err(|e| {
+            AuthError::CallbackServerError(format!("Failed to bind to {}: {}", addr, e))
+        })?;
+
         tracing::info!("OAuth callback server listening on http://{}", addr);
-        
+
         // Start the server in a background task
         let server_handle = tokio::spawn(async move {
             axum::serve(listener, app)
                 .await
                 .map_err(|e| AuthError::CallbackServerError(format!("Server error: {}", e)))
         });
-        
+
         // Wait for callback with timeout
         let result = tokio::select! {
             callback_result = tokio::task::spawn_blocking(move || rx.recv()) => {
@@ -123,13 +124,12 @@ impl CallbackServer {
                 Err(AuthError::Timeout)
             }
         };
-        
+
         // Abort the server
         server_handle.abort();
-        
+
         result
     }
-
 
     /// Generate success HTML page to display to user
     fn generate_success_page(&self) -> String {
@@ -199,12 +199,14 @@ impl CallbackServer {
     </script>
 </body>
 </html>
-        "#.to_string()
+        "#
+        .to_string()
     }
 
     /// Generate error HTML page to display to user
     fn generate_error_page(&self, error: &str) -> String {
-        format!(r#"
+        format!(
+            r#"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -281,9 +283,14 @@ impl CallbackServer {
     </script>
 </body>
 </html>
-        "#, error.replace('<', "&lt;").replace('>', "&gt;").replace('&', "&amp;").replace('\"', "&quot;"))
+        "#,
+            error
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('&', "&amp;")
+                .replace('\"', "&quot;")
+        )
     }
-
 }
 
 /// Axum handler for OAuth callback
@@ -297,12 +304,10 @@ async fn handle_callback(
         error: params.error.clone(),
         error_description: params.error_description.clone(),
     };
-    
+
     let response_html = if let Some(error) = &params.error {
         // Generate error page
-        let error_msg = params.error_description
-            .as_deref()
-            .unwrap_or(error);
+        let error_msg = params.error_description.as_deref().unwrap_or(error);
         CallbackServer::new(8080, Duration::from_secs(300)).generate_error_page(error_msg)
     } else if params.code.is_some() {
         // Validate state parameter
@@ -310,10 +315,13 @@ async fn handle_callback(
             let state_guard = state.lock().unwrap();
             state_guard.expected_state.clone()
         };
-        
+
         if let Some(received_state) = &params.state {
             if received_state != &expected_state {
-                let error_msg = format!("State mismatch: expected {}, got {}", expected_state, received_state);
+                let error_msg = format!(
+                    "State mismatch: expected {}, got {}",
+                    expected_state, received_state
+                );
                 CallbackServer::new(8080, Duration::from_secs(300)).generate_error_page(&error_msg)
             } else {
                 // Send the callback data through the channel
@@ -323,12 +331,14 @@ async fn handle_callback(
                 CallbackServer::new(8080, Duration::from_secs(300)).generate_success_page()
             }
         } else {
-            CallbackServer::new(8080, Duration::from_secs(300)).generate_error_page("Missing state parameter")
+            CallbackServer::new(8080, Duration::from_secs(300))
+                .generate_error_page("Missing state parameter")
         }
     } else {
-        CallbackServer::new(8080, Duration::from_secs(300)).generate_error_page("Missing authorization code")
+        CallbackServer::new(8080, Duration::from_secs(300))
+            .generate_error_page("Missing authorization code")
     };
-    
+
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],

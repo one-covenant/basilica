@@ -101,22 +101,22 @@ pub async fn fetch_jwks(auth0_domain: &str) -> Result<JwkSet> {
 #[instrument(level = "debug")]
 pub async fn fetch_jwks_with_ttl(auth0_domain: &str, cache_ttl: Duration) -> Result<JwkSet> {
     let jwks_url = format!("https://{}/.well-known/jwks.json", auth0_domain);
-    
+
     debug!("Fetching JWKS from: {} (TTL: {:?})", jwks_url, cache_ttl);
-    
+
     // Check cache first
     if let Some(cached_jwks) = JWKS_CACHE.get(&jwks_url).await {
         debug!("Using cached JWKS for: {}", jwks_url);
         return Ok((*cached_jwks).clone());
     }
-    
+
     // Create HTTP client with reasonable timeouts
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
-    
+
     // Fetch JWKS from Auth0
     let response = client
         .get(&jwks_url)
@@ -124,7 +124,7 @@ pub async fn fetch_jwks_with_ttl(auth0_domain: &str, cache_ttl: Duration) -> Res
         .send()
         .await
         .map_err(|e| anyhow!("Failed to fetch JWKS: {}", e))?;
-    
+
     // Check response status
     if !response.status().is_success() {
         return Err(anyhow!(
@@ -133,27 +133,27 @@ pub async fn fetch_jwks_with_ttl(auth0_domain: &str, cache_ttl: Duration) -> Res
             response.status().canonical_reason().unwrap_or("Unknown")
         ));
     }
-    
+
     // Parse JSON response
     let jwks_text = response
         .text()
         .await
         .map_err(|e| anyhow!("Failed to read JWKS response body: {}", e))?;
-    
+
     let jwks: JwkSet = serde_json::from_str(&jwks_text)
         .map_err(|e| anyhow!("Failed to parse JWKS JSON: {}", e))?;
-    
+
     // Validate JWKS format
     if jwks.keys.is_empty() {
         return Err(anyhow!("JWKS contains no keys"));
     }
-    
+
     debug!("Successfully fetched JWKS with {} keys", jwks.keys.len());
-    
+
     // Cache the result
     let cached_jwks = Arc::new(jwks.clone());
     JWKS_CACHE.insert(jwks_url, cached_jwks).await;
-    
+
     Ok(jwks)
 }
 
@@ -206,73 +206,79 @@ pub fn validate_jwt_with_options(
     clock_skew: Option<Duration>,
 ) -> Result<Claims> {
     debug!("Validating JWT token with options");
-    
+
     // Step 1: Decode header without verification to get key ID
-    let header = decode_header(token)
-        .map_err(|e| anyhow!("Failed to decode JWT header: {}", e))?;
-    
+    let header = decode_header(token).map_err(|e| anyhow!("Failed to decode JWT header: {}", e))?;
+
     let key_id = header
         .kid
         .ok_or_else(|| anyhow!("JWT header missing key ID (kid)"))?;
-    
+
     debug!("JWT key ID: {}", key_id);
-    
+
     // Step 2: Find matching JWK by key ID
     let jwk = jwks
         .keys
         .iter()
         .find(|k| k.kid.as_ref() == Some(&key_id))
         .ok_or_else(|| anyhow!("No matching key found for key ID: {}", key_id))?;
-    
+
     // Step 3: Convert JWK to DecodingKey for RS256
     let decoding_key = if jwk.kty == "RSA" {
         // Use standard library base64 decoding for RSA components
-        let n = jwk.n.as_ref()
+        let n = jwk
+            .n
+            .as_ref()
             .ok_or_else(|| anyhow!("RSA key missing modulus (n)"))?;
-        let e = jwk.e.as_ref()
+        let e = jwk
+            .e
+            .as_ref()
             .ok_or_else(|| anyhow!("RSA key missing exponent (e)"))?;
-            
-        let n_bytes = decode_base64_url(n)
-            .map_err(|e| anyhow!("Failed to decode RSA modulus: {}", e))?;
-        let e_bytes = decode_base64_url(e)
-            .map_err(|e| anyhow!("Failed to decode RSA exponent: {}", e))?;
-        
+
+        let n_bytes =
+            decode_base64_url(n).map_err(|e| anyhow!("Failed to decode RSA modulus: {}", e))?;
+        let e_bytes =
+            decode_base64_url(e).map_err(|e| anyhow!("Failed to decode RSA exponent: {}", e))?;
+
         // Build a minimal RSA public key structure in DER format
         // This is a simplified approach that works with common RSA keys
         create_rsa_decoding_key(&n_bytes, &e_bytes)?
     } else {
         return Err(anyhow!("Unsupported key type: {}", jwk.kty));
     };
-    
+
     // Step 4: Set up validation parameters
     let mut validation = Validation::new(Algorithm::RS256);
-    
+
     // Set audience validation if provided
     if let Some(aud) = expected_audience {
         validation.set_audience(&[aud]);
     } else {
         validation.validate_aud = false;
     }
-    
+
     // Set clock skew tolerance
     if let Some(skew) = clock_skew {
         validation.leeway = skew.as_secs();
     }
-    
+
     // We'll validate issuer separately for more flexibility
     // Note: jsonwebtoken doesn't have validate_iss field, issuer is validated through set_issuer
-    
+
     debug!(
         "JWT validation configured: aud={}, leeway={}",
         validation.validate_aud, validation.leeway
     );
-    
+
     // Step 5: Decode and validate the token
     let token_data = decode::<Claims>(token, &decoding_key, &validation)
         .map_err(|e| anyhow!("JWT validation failed: {}", e))?;
-    
-    debug!("JWT validation successful for subject: {}", token_data.claims.sub);
-    
+
+    debug!(
+        "JWT validation successful for subject: {}",
+        token_data.claims.sub
+    );
+
     // Step 6: Return claims
     Ok(token_data.claims)
 }
@@ -287,9 +293,9 @@ fn decode_base64_url(input: &str) -> Result<Vec<u8>> {
         3 => format!("{}=", input),
         _ => return Err(anyhow!("Invalid base64url length")),
     };
-    
+
     let standard_b64 = padded.replace('-', "+").replace('_', "/");
-    
+
     // Use standard library base64 decoding
     base64_decode(&standard_b64).map_err(|e| anyhow!("Base64 decode error: {}", e))
 }
@@ -298,27 +304,30 @@ fn decode_base64_url(input: &str) -> Result<Vec<u8>> {
 fn base64_decode(input: &str) -> Result<Vec<u8>> {
     // This is a simplified base64 decoder
     // In production, you'd typically use the base64 crate
-    
+
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    
+
     let mut result = Vec::new();
     let input = input.trim_end_matches('=');
     let mut buffer = 0u32;
     let mut bits = 0;
-    
+
     for &byte in input.as_bytes() {
-        let val = CHARS.iter().position(|&x| x == byte)
-            .ok_or_else(|| anyhow!("Invalid base64 character: {}", byte as char))? as u32;
-        
+        let val = CHARS
+            .iter()
+            .position(|&x| x == byte)
+            .ok_or_else(|| anyhow!("Invalid base64 character: {}", byte as char))?
+            as u32;
+
         buffer = (buffer << 6) | val;
         bits += 6;
-        
+
         if bits >= 8 {
             result.push((buffer >> (bits - 8)) as u8);
             bits -= 8;
         }
     }
-    
+
     Ok(result)
 }
 
@@ -326,20 +335,20 @@ fn base64_decode(input: &str) -> Result<Vec<u8>> {
 fn create_rsa_decoding_key(n_bytes: &[u8], e_bytes: &[u8]) -> Result<DecodingKey> {
     // For RSA public key validation, we need to create a proper DER-encoded key
     // This is a simplified approach that works with jsonwebtoken
-    
+
     // Create a minimal ASN.1 DER structure for RSA public key
     // RSA public key structure: SEQUENCE { modulus INTEGER, publicExponent INTEGER }
-    
+
     let mut der_key = Vec::new();
-    
+
     // SEQUENCE tag and length
     der_key.push(0x30); // SEQUENCE
-    
+
     // Calculate total length (we'll update this)
     let n_der = encode_der_integer(n_bytes);
     let e_der = encode_der_integer(e_bytes);
     let content_len = n_der.len() + e_der.len();
-    
+
     if content_len < 128 {
         der_key.push(content_len as u8);
     } else {
@@ -349,32 +358,32 @@ fn create_rsa_decoding_key(n_bytes: &[u8], e_bytes: &[u8]) -> Result<DecodingKey
         der_key.push(0x80 | len_bytes.len() as u8);
         der_key.extend_from_slice(len_bytes);
     }
-    
+
     // Add modulus and exponent
     der_key.extend_from_slice(&n_der);
     der_key.extend_from_slice(&e_der);
-    
+
     Ok(DecodingKey::from_rsa_der(&der_key))
 }
 
 /// Encode a big integer as DER INTEGER
 fn encode_der_integer(bytes: &[u8]) -> Vec<u8> {
     let mut result = Vec::new();
-    
+
     // INTEGER tag
     result.push(0x02);
-    
+
     // Remove leading zeros but keep at least one byte
     let mut start = 0;
     while start < bytes.len() - 1 && bytes[start] == 0 {
         start += 1;
     }
     let content = &bytes[start..];
-    
+
     // If the first bit is set, we need to add a 0x00 byte to indicate positive number
     let needs_padding = !content.is_empty() && (content[0] & 0x80) != 0;
     let content_len = content.len() + if needs_padding { 1 } else { 0 };
-    
+
     // Length
     if content_len < 128 {
         result.push(content_len as u8);
@@ -384,13 +393,13 @@ fn encode_der_integer(bytes: &[u8]) -> Vec<u8> {
         result.push(0x80 | len_bytes.len() as u8);
         result.extend_from_slice(len_bytes);
     }
-    
+
     // Content
     if needs_padding {
         result.push(0x00);
     }
     result.extend_from_slice(content);
-    
+
     result
 }
 
@@ -425,12 +434,12 @@ fn encode_der_integer(bytes: &[u8]) -> Vec<u8> {
 #[instrument(level = "debug")]
 pub fn verify_audience(claims: &Claims, expected: &str) -> Result<()> {
     debug!("Verifying audience: expected={}", expected);
-    
+
     // TODO: Implement audience verification
     // - Handle single audience (string)
     // - Handle multiple audiences (array)
     // - Return appropriate error if not found
-    
+
     match &claims.aud {
         serde_json::Value::String(aud) => {
             if aud == expected {
@@ -438,21 +447,23 @@ pub fn verify_audience(claims: &Claims, expected: &str) -> Result<()> {
                 Ok(())
             } else {
                 warn!("Audience mismatch: expected={}, got={}", expected, aud);
-                Err(anyhow!("Invalid audience: expected '{}', got '{}'", expected, aud))
+                Err(anyhow!(
+                    "Invalid audience: expected '{}', got '{}'",
+                    expected,
+                    aud
+                ))
             }
         }
         serde_json::Value::Array(audiences) => {
             // Check if expected audience is in the array
-            let found = audiences
-                .iter()
-                .any(|aud| {
-                    if let serde_json::Value::String(aud_str) = aud {
-                        aud_str == expected
-                    } else {
-                        false
-                    }
-                });
-            
+            let found = audiences.iter().any(|aud| {
+                if let serde_json::Value::String(aud_str) = aud {
+                    aud_str == expected
+                } else {
+                    false
+                }
+            });
+
             if found {
                 debug!("Audience verification successful (array)");
                 Ok(())
@@ -504,18 +515,22 @@ pub fn verify_audience(claims: &Claims, expected: &str) -> Result<()> {
 #[instrument(level = "debug")]
 pub fn verify_issuer(claims: &Claims, expected: &str) -> Result<()> {
     debug!("Verifying issuer: expected={}", expected);
-    
+
     // TODO: Implement issuer verification
     // - Compare claims.iss with expected value
     // - Consider trailing slash normalization
     // - Return appropriate error if mismatch
-    
+
     if claims.iss == expected {
         debug!("Issuer verification successful");
         Ok(())
     } else {
         warn!("Issuer mismatch: expected={}, got={}", expected, claims.iss);
-        Err(anyhow!("Invalid issuer: expected '{}', got '{}'", expected, claims.iss))
+        Err(anyhow!(
+            "Invalid issuer: expected '{}', got '{}'",
+            expected,
+            claims.iss
+        ))
     }
 }
 
@@ -543,16 +558,16 @@ pub async fn validate_auth0_jwt(
 ) -> Result<Claims> {
     // Fetch JWKS
     let jwks = fetch_jwks(auth0_domain).await?;
-    
+
     // Validate JWT with options
     let claims = validate_jwt_with_options(token, &jwks, Some(expected_audience), clock_skew)?;
-    
+
     // Verify issuer
     verify_issuer(&claims, expected_issuer)?;
-    
+
     // Verify audience (additional check since we also set it in validation options)
     verify_audience(&claims, expected_audience)?;
-    
+
     Ok(claims)
 }
 
@@ -592,37 +607,25 @@ mod tests {
 
     #[test]
     fn test_verify_audience_string_success() {
-        let claims = create_test_claims(
-            json!("api.basilica.ai"),
-            "https://basilica.auth0.com/"
-        );
+        let claims = create_test_claims(json!("api.basilica.ai"), "https://basilica.auth0.com/");
         assert!(verify_audience(&claims, "api.basilica.ai").is_ok());
     }
 
     #[test]
     fn test_verify_audience_string_failure() {
-        let claims = create_test_claims(
-            json!("api.basilica.ai"),
-            "https://basilica.auth0.com/"
-        );
+        let claims = create_test_claims(json!("api.basilica.ai"), "https://basilica.auth0.com/");
         assert!(verify_audience(&claims, "wrong.audience").is_err());
     }
 
     #[test]
     fn test_verify_issuer_success() {
-        let claims = create_test_claims(
-            json!("api.basilica.ai"),
-            "https://basilica.auth0.com/"
-        );
+        let claims = create_test_claims(json!("api.basilica.ai"), "https://basilica.auth0.com/");
         assert!(verify_issuer(&claims, "https://basilica.auth0.com/").is_ok());
     }
 
     #[test]
     fn test_verify_issuer_failure() {
-        let claims = create_test_claims(
-            json!("api.basilica.ai"),
-            "https://basilica.auth0.com/"
-        );
+        let claims = create_test_claims(json!("api.basilica.ai"), "https://basilica.auth0.com/");
         assert!(verify_issuer(&claims, "https://wrong.auth0.com/").is_err());
     }
 
@@ -630,7 +633,7 @@ mod tests {
     fn test_verify_audience_array_success() {
         let claims = create_test_claims(
             json!(["api.basilica.ai", "admin.basilica.ai"]),
-            "https://basilica.auth0.com/"
+            "https://basilica.auth0.com/",
         );
         assert!(verify_audience(&claims, "api.basilica.ai").is_ok());
         assert!(verify_audience(&claims, "admin.basilica.ai").is_ok());
@@ -640,7 +643,7 @@ mod tests {
     fn test_verify_audience_array_failure() {
         let claims = create_test_claims(
             json!(["api.basilica.ai", "admin.basilica.ai"]),
-            "https://basilica.auth0.com/"
+            "https://basilica.auth0.com/",
         );
         assert!(verify_audience(&claims, "wrong.audience").is_err());
     }
@@ -649,7 +652,7 @@ mod tests {
     fn test_verify_audience_invalid_format() {
         let claims = create_test_claims(
             json!(123), // Invalid format (should be string or array)
-            "https://basilica.auth0.com/"
+            "https://basilica.auth0.com/",
         );
         assert!(verify_audience(&claims, "api.basilica.ai").is_err());
     }
@@ -672,7 +675,7 @@ mod tests {
         }
     }
 
-    #[test] 
+    #[test]
     fn test_base64_decode() {
         let encoded = "SGVsbG9Xb3JsZA==";
         let decoded = base64_decode(encoded).expect("Failed to decode");

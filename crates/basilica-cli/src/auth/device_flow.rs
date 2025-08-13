@@ -1,9 +1,10 @@
 //! Device Authorization Grant implementation (RFC 8628)
-//! 
+//!
 //! This module implements OAuth 2.0 Device Authorization Grant for
 //! devices that lack a web browser or have limited input capabilities.
 
-use super::types::{AuthResult, AuthConfig, TokenSet, AuthError};
+use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
+use console::Term;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
@@ -58,8 +59,9 @@ impl DeviceFlow {
 
     /// Initiate device authorization flow
     pub async fn initiate_device_auth(&self) -> AuthResult<DeviceAuthResponse> {
-        let device_endpoint = self.config.device_auth_endpoint.as_ref()
-            .ok_or_else(|| AuthError::ConfigError("Device authorization endpoint not configured".to_string()))?;
+        let device_endpoint = self.config.device_auth_endpoint.as_ref().ok_or_else(|| {
+            AuthError::ConfigError("Device authorization endpoint not configured".to_string())
+        })?;
 
         let scope = self.config.scopes.join(" ");
         let request_body = DeviceAuthRequest {
@@ -77,51 +79,85 @@ impl DeviceFlow {
             .map_err(|e| AuthError::NetworkError(e.to_string()))?;
 
         if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(AuthError::InvalidResponse(format!("Device auth request failed: {}", error_text)));
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(AuthError::InvalidResponse(format!(
+                "Device auth request failed: {}",
+                error_text
+            )));
         }
 
-        let auth_response: DeviceAuthResponse = response
-            .json()
-            .await
-            .map_err(|e| AuthError::InvalidResponse(format!("Failed to parse device auth response: {}", e)))?;
+        let auth_response: DeviceAuthResponse = response.json().await.map_err(|e| {
+            AuthError::InvalidResponse(format!("Failed to parse device auth response: {}", e))
+        })?;
 
         Ok(auth_response)
     }
 
     /// Display user instructions for device authorization
-    pub fn display_user_instructions(&self, response: &DeviceAuthResponse) {
-        println!("\n=== Device Authorization Required ===");
-        println!();
-        
+    pub fn display_user_instructions(&self, response: &DeviceAuthResponse) -> AuthResult<()> {
+        let term = Term::stdout();
+
+        term.write_line("")
+            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+
         // Format user code with dashes for better readability (e.g., "ABCD1234" -> "ABCD-1234")
         let formatted_code = if response.user_code.len() >= 4 {
             let mid = response.user_code.len() / 2;
-            format!("{}-{}", &response.user_code[..mid], &response.user_code[mid..])
+            format!(
+                "{}-{}",
+                &response.user_code[..mid],
+                &response.user_code[mid..]
+            )
         } else {
             response.user_code.clone()
         };
-        
-        println!("1. Visit: {}", response.verification_uri);
-        println!("2. Enter code: {}", formatted_code);
-        
+
+        term.write_line(&format!(
+            "1. Visit: \x1B[90m{}\x1B[0m",
+            response.verification_uri
+        ))
+        .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?; // Grey URL
+        term.write_line(&format!("2. Enter code: \x1B[1m{}\x1B[0m", formatted_code))
+            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?; // Bold code for emphasis
+
         if let Some(complete_uri) = &response.verification_uri_complete {
-            println!("\n   Or visit this direct link: {}", complete_uri);
+            term.write_line(&format!(
+                "\n   Or visit this direct link: \x1B[90m{}\x1B[0m",
+                complete_uri
+            ))
+            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+            // Grey URL
         }
-        
-        println!();
-        println!("Waiting for authorization... (expires in {} seconds)", response.expires_in);
-        println!("Press Ctrl+C to cancel");
-        println!();
+
+        term.write_line("")
+            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+        term.write_line(&format!(
+            "Waiting for authorization... (expires in {} seconds)",
+            response.expires_in
+        ))
+        .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+        term.write_line("Press Ctrl+C to cancel")
+            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+        term.write_line("")
+            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+
+        Ok(())
     }
 
     /// Poll for device authorization completion
-    pub async fn poll_for_token(&self, device_code: &str, interval: Duration) -> AuthResult<TokenSet> {
+    pub async fn poll_for_token(
+        &self,
+        device_code: &str,
+        interval: Duration,
+    ) -> AuthResult<TokenSet> {
         let client = reqwest::Client::new();
         let mut current_interval = interval;
         let start_time = Instant::now();
         let timeout_duration = Duration::from_secs(600); // 10 minute timeout
-        
+
         let request_body = DeviceTokenRequest {
             grant_type: "urn:ietf:params:oauth:grant-type:device_code".to_string(),
             device_code: device_code.to_string(),
@@ -146,17 +182,23 @@ impl DeviceFlow {
                 .await
                 .map_err(|e| AuthError::NetworkError(e.to_string()))?;
 
-            let response_text = response.text().await
+            let response_text = response
+                .text()
+                .await
                 .map_err(|e| AuthError::NetworkError(e.to_string()))?;
 
             match self.handle_poll_response(&response_text)? {
                 Some(token_set) => return Ok(token_set),
                 None => {
                     // Check if we need to slow down
-                    if let Ok(poll_response) = serde_json::from_str::<PollResponse>(&response_text) {
+                    if let Ok(poll_response) = serde_json::from_str::<PollResponse>(&response_text)
+                    {
                         if poll_response.error.as_deref() == Some("slow_down") {
                             current_interval = Duration::from_secs(current_interval.as_secs() + 5);
-                            println!("Rate limited, slowing down polling interval to {} seconds", current_interval.as_secs());
+                            println!(
+                                "Rate limited, slowing down polling interval to {} seconds",
+                                current_interval.as_secs()
+                            );
                         }
                     }
                     continue;
@@ -169,22 +211,37 @@ impl DeviceFlow {
     pub async fn start_flow(&self) -> AuthResult<TokenSet> {
         // Step 1: Initiate device authorization
         let device_response = self.initiate_device_auth().await?;
-        
+
         // Step 2: Display instructions to user
-        self.display_user_instructions(&device_response);
-        
+        self.display_user_instructions(&device_response)?;
+
         // Step 3: Poll for token with the specified interval (default to 5 seconds)
         let poll_interval = Duration::from_secs(device_response.interval.unwrap_or(5));
-        let token_set = self.poll_for_token(&device_response.device_code, poll_interval).await?;
-        
-        println!("Authorization successful!");
+        let token_set = self
+            .poll_for_token(&device_response.device_code, poll_interval)
+            .await?;
+
+        // Clear the authorization instructions using console crate
+        let term = Term::stdout();
+        // We need to clear about 6-8 lines depending on if there's a complete URI
+        let lines_to_clear = if device_response.verification_uri_complete.is_some() {
+            8
+        } else {
+            6
+        };
+        term.clear_last_lines(lines_to_clear)
+            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+        term.write_line("✓ Authentication successful!")
+            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+
         Ok(token_set)
     }
 
     /// Handle different polling responses (authorization_pending, slow_down, etc.)
     fn handle_poll_response(&self, response_body: &str) -> AuthResult<Option<TokenSet>> {
-        let poll_response: PollResponse = serde_json::from_str(response_body)
-            .map_err(|e| AuthError::InvalidResponse(format!("Failed to parse poll response: {}", e)))?;
+        let poll_response: PollResponse = serde_json::from_str(response_body).map_err(|e| {
+            AuthError::InvalidResponse(format!("Failed to parse poll response: {}", e))
+        })?;
 
         // Handle error responses
         if let Some(error) = &poll_response.error {
@@ -199,38 +256,51 @@ impl DeviceFlow {
                 }
                 "access_denied" => {
                     return Err(AuthError::AuthorizationDenied(
-                        poll_response.error_description.unwrap_or_else(|| "User denied authorization".to_string())
+                        poll_response
+                            .error_description
+                            .unwrap_or_else(|| "User denied authorization".to_string()),
                     ));
                 }
                 "expired_token" => {
-                    return Err(AuthError::DeviceFlowError("Device code expired".to_string()));
+                    return Err(AuthError::DeviceFlowError(
+                        "Device code expired".to_string(),
+                    ));
                 }
                 _ => {
-                    return Err(AuthError::DeviceFlowError(
-                        format!("Unknown error: {} - {}", 
-                            error, 
-                            poll_response.error_description.unwrap_or_else(|| "No description".to_string())
-                        )
-                    ));
+                    return Err(AuthError::DeviceFlowError(format!(
+                        "Unknown error: {} - {}",
+                        error,
+                        poll_response
+                            .error_description
+                            .unwrap_or_else(|| "No description".to_string())
+                    )));
                 }
             }
         }
 
         // Handle successful response
         if let Some(access_token) = poll_response.access_token {
-            let scopes = poll_response.scope
-                .map(|s| s.split_whitespace().map(|scope| scope.to_string()).collect())
+            let scopes = poll_response
+                .scope
+                .map(|s| {
+                    s.split_whitespace()
+                        .map(|scope| scope.to_string())
+                        .collect()
+                })
                 .unwrap_or_else(|| self.config.scopes.clone());
 
             let token_set = TokenSet {
                 access_token,
                 refresh_token: poll_response.refresh_token,
-                token_type: poll_response.token_type.unwrap_or_else(|| "Bearer".to_string()),
+                token_type: poll_response
+                    .token_type
+                    .unwrap_or_else(|| "Bearer".to_string()),
                 expires_at: poll_response.expires_in.map(|expires_in| {
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
-                        .as_secs() + expires_in
+                        .as_secs()
+                        + expires_in
                 }),
                 scopes,
             };
@@ -238,7 +308,9 @@ impl DeviceFlow {
             Ok(Some(token_set))
         } else {
             // No error but also no access token - this shouldn't happen
-            Err(AuthError::InvalidResponse("Response contains neither error nor access token".to_string()))
+            Err(AuthError::InvalidResponse(
+                "Response contains neither error nor access token".to_string(),
+            ))
         }
     }
 }

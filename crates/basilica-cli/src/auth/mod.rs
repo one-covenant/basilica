@@ -1,23 +1,23 @@
 //! Authentication module for Basilica CLI
-//! 
+//!
 //! This module provides OAuth 2.0 authentication capabilities including:
 //! - PKCE (Proof Key for Code Exchange) flow
 //! - Device authorization flow
 //! - Secure token storage and management
 //! - Local HTTP callback server for authorization
 
-pub mod oauth_flow;
-pub mod device_flow;
 pub mod callback_server;
+pub mod device_flow;
+pub mod oauth_flow;
 pub mod token_store;
 pub mod types;
 
 // Re-export commonly used types and functions
-pub use types::{TokenSet, AuthConfig, AuthError, AuthResult};
-pub use oauth_flow::OAuthFlow;
-pub use device_flow::DeviceFlow;
 pub use callback_server::CallbackServer;
+pub use device_flow::DeviceFlow;
+pub use oauth_flow::OAuthFlow;
 pub use token_store::TokenStore;
+pub use types::{AuthConfig, AuthError, AuthResult, TokenSet};
 
 /// Environment detection utilities for determining authentication flow
 
@@ -35,12 +35,12 @@ pub fn is_ssh_session() -> bool {
 
 /// Detect if running inside a container runtime
 pub fn is_container_runtime() -> bool {
-    std::path::Path::new("/.dockerenv").exists() 
+    std::path::Path::new("/.dockerenv").exists()
         || std::path::Path::new("/run/.containerenv").exists()
 }
 
 /// Determine if device flow should be used for authentication
-/// 
+///
 /// Device flow is preferred when:
 /// - Running in WSL environment
 /// - Running in SSH session

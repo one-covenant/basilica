@@ -21,19 +21,19 @@ use crate::{error::Error, server::AppState};
 pub struct UserClaims {
     /// Subject (user ID or identifier)
     pub sub: String,
-    
+
     /// Issued at timestamp
     pub iat: i64,
-    
+
     /// Expiration timestamp
     pub exp: i64,
-    
+
     /// User permissions/scopes
     pub scopes: Vec<String>,
-    
+
     /// Whether this is an admin user
     pub admin: bool,
-    
+
     /// API key identifier (if applicable)
     pub api_key_id: Option<String>,
 }
@@ -57,12 +57,15 @@ pub fn validate_request(token: &str, jwt_secret: &str) -> Result<UserClaims, Err
     let mut validation = Validation::new(Algorithm::HS256);
     // Allow some clock skew
     validation.leeway = 30;
-    
+
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
-    
+
     match decode::<UserClaims>(token, &decoding_key, &validation) {
         Ok(token_data) => {
-            debug!("Successfully validated JWT token for user: {}", token_data.claims.sub);
+            debug!(
+                "Successfully validated JWT token for user: {}",
+                token_data.claims.sub
+            );
             Ok(token_data.claims)
         }
         Err(e) => {
@@ -98,7 +101,7 @@ pub async fn auth_middleware(
     next: Next,
 ) -> Result<Response, Error> {
     let headers = req.headers();
-    
+
     // Try to extract and validate authentication
     let claims = if let Some(token) = extract_bearer_token(headers) {
         // JWT authentication
@@ -108,20 +111,22 @@ pub async fn auth_middleware(
         let api_key_str = api_key.to_str().map_err(|_| Error::Authentication {
             message: "Invalid API key format".to_string(),
         })?;
-        
-        validate_api_key(api_key_str, &state.config.auth.master_api_keys)
-            .ok_or_else(|| Error::Authentication {
+
+        validate_api_key(api_key_str, &state.config.auth.master_api_keys).ok_or_else(|| {
+            Error::Authentication {
                 message: "Invalid API key".to_string(),
-            })?
+            }
+        })?
     } else {
         return Err(Error::Authentication {
-            message: "No authentication provided. Please provide a valid JWT token or API key".to_string(),
+            message: "No authentication provided. Please provide a valid JWT token or API key"
+                .to_string(),
         });
     };
-    
+
     // Store claims in request extensions for use by handlers
     req.extensions_mut().insert(claims);
-    
+
     Ok(next.run(req).await)
 }
 
@@ -133,7 +138,7 @@ pub async fn optional_auth_middleware(
     next: Next,
 ) -> Result<Response, Error> {
     let headers = req.headers();
-    
+
     // Try to extract and validate authentication, but don't fail if missing
     if let Some(token) = extract_bearer_token(headers) {
         // JWT authentication
@@ -145,14 +150,15 @@ pub async fn optional_auth_middleware(
     } else if let Some(api_key) = headers.get(&state.config.auth.api_key_header) {
         // API key authentication
         if let Ok(api_key_str) = api_key.to_str() {
-            if let Some(claims) = validate_api_key(api_key_str, &state.config.auth.master_api_keys) {
+            if let Some(claims) = validate_api_key(api_key_str, &state.config.auth.master_api_keys)
+            {
                 req.extensions_mut().insert(claims);
             } else {
                 debug!("Invalid API key provided, continuing without authentication");
             }
         }
     }
-    
+
     Ok(next.run(req).await)
 }
 
@@ -166,9 +172,11 @@ pub fn has_any_scope(claims: &UserClaims, required_scopes: &[&str]) -> bool {
     if claims.admin {
         return true;
     }
-    
+
     let user_scopes: HashSet<&str> = claims.scopes.iter().map(|s| s.as_str()).collect();
-    required_scopes.iter().any(|scope| user_scopes.contains(scope))
+    required_scopes
+        .iter()
+        .any(|scope| user_scopes.contains(scope))
 }
 
 /// Extract user claims from request extensions
@@ -181,8 +189,8 @@ pub fn get_user_claims(req: &Request) -> Option<&UserClaims> {
 mod tests {
     use super::*;
     use axum::http::HeaderValue;
-    use jsonwebtoken::{encode, Header, EncodingKey};
-    
+    use jsonwebtoken::{encode, EncodingKey, Header};
+
     #[test]
     fn test_extract_bearer_token() {
         let mut headers = HeaderMap::new();
@@ -190,24 +198,24 @@ mod tests {
             axum::http::header::AUTHORIZATION,
             HeaderValue::from_static("Bearer test_token_123"),
         );
-        
+
         assert_eq!(
             extract_bearer_token(&headers),
             Some("test_token_123".to_string())
         );
-        
+
         // Test without Bearer prefix
         headers.insert(
             axum::http::header::AUTHORIZATION,
             HeaderValue::from_static("test_token_123"),
         );
         assert_eq!(extract_bearer_token(&headers), None);
-        
+
         // Test empty headers
         let empty_headers = HeaderMap::new();
         assert_eq!(extract_bearer_token(&empty_headers), None);
     }
-    
+
     #[test]
     fn test_validate_request() {
         let secret = "test_secret";
@@ -219,38 +227,39 @@ mod tests {
             admin: false,
             api_key_id: None,
         };
-        
+
         let token = encode(
             &Header::default(),
             &claims,
             &EncodingKey::from_secret(secret.as_ref()),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let result = validate_request(&token, secret);
         assert!(result.is_ok());
-        
+
         let validated_claims = result.unwrap();
         assert_eq!(validated_claims.sub, "test_user");
         assert_eq!(validated_claims.scopes, vec!["read"]);
         assert!(!validated_claims.admin);
     }
-    
+
     #[test]
     fn test_validate_api_key() {
         let master_keys = vec!["key1".to_string(), "key2".to_string()];
-        
+
         // Valid key
         let result = validate_api_key("key1", &master_keys);
         assert!(result.is_some());
         let claims = result.unwrap();
         assert!(claims.admin);
         assert!(claims.scopes.contains(&"admin".to_string()));
-        
+
         // Invalid key
         let result = validate_api_key("invalid_key", &master_keys);
         assert!(result.is_none());
     }
-    
+
     #[test]
     fn test_has_scope() {
         let admin_claims = UserClaims {
@@ -261,7 +270,7 @@ mod tests {
             admin: true,
             api_key_id: None,
         };
-        
+
         let user_claims = UserClaims {
             sub: "user".to_string(),
             iat: chrono::Utc::now().timestamp(),
@@ -270,18 +279,18 @@ mod tests {
             admin: false,
             api_key_id: None,
         };
-        
+
         // Admin should have all scopes
         assert!(has_scope(&admin_claims, "read"));
         assert!(has_scope(&admin_claims, "write"));
         assert!(has_scope(&admin_claims, "admin"));
-        
+
         // User should only have assigned scopes
         assert!(has_scope(&user_claims, "read"));
         assert!(has_scope(&user_claims, "write"));
         assert!(!has_scope(&user_claims, "admin"));
     }
-    
+
     #[test]
     fn test_has_any_scope() {
         let user_claims = UserClaims {
@@ -292,7 +301,7 @@ mod tests {
             admin: false,
             api_key_id: None,
         };
-        
+
         assert!(has_any_scope(&user_claims, &["read", "write"]));
         assert!(has_any_scope(&user_claims, &["read"]));
         assert!(!has_any_scope(&user_claims, &["write", "admin"]));

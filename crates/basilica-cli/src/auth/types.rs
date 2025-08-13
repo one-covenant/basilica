@@ -1,5 +1,5 @@
 //! Authentication-related types and data structures
-//! 
+//!
 //! This module defines all the types used throughout the auth module
 //! including configuration, token data, and error types.
 
@@ -27,7 +27,6 @@ pub struct AuthConfig {
     /// Additional OAuth parameters
     pub additional_params: std::collections::HashMap<String, String>,
 }
-
 
 /// OAuth token set containing access token and optional refresh token
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,9 +56,10 @@ impl TokenSet {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_secs() + seconds
+                .as_secs()
+                + seconds
         });
-        
+
         Self {
             access_token,
             refresh_token,

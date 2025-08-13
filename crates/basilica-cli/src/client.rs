@@ -69,7 +69,9 @@ async fn get_valid_jwt_token(config: &CliConfig) -> Result<String> {
                 }
             }
         } else if tokens.is_expired() {
-            return Err(anyhow::anyhow!("Token expired and no refresh token available"));
+            return Err(anyhow::anyhow!(
+                "Token expired and no refresh token available"
+            ));
         }
     }
 
@@ -77,16 +79,10 @@ async fn get_valid_jwt_token(config: &CliConfig) -> Result<String> {
 }
 
 /// Loads auth configuration for token refresh
-async fn load_auth_config_for_refresh(config: &CliConfig) -> Result<AuthConfig> {
-    // Try to get auth config from the config
-    if let Some(auth_config) = config.auth_config() {
-        return Ok(auth_config.to_auth_config());
-    }
-
-    // Otherwise load it directly
-    let auth_config = CliConfig::load_auth_config().await
-        .map_err(|e| anyhow::anyhow!("Failed to load auth config: {}", e))?;
-    Ok(auth_config.to_auth_config())
+async fn load_auth_config_for_refresh(_config: &CliConfig) -> Result<AuthConfig> {
+    // Use the static configuration
+    use crate::config::AuthConfig as ConfigAuthConfig;
+    Ok(ConfigAuthConfig::to_auth_config())
 }
 
 /// Checks if the user is authenticated (has valid tokens)

@@ -123,7 +123,7 @@ pub enum Commands {
 
     /// Log out of Basilica
     Logout,
-    
+
     /// Test authentication token
     TestAuth {
         /// Test against Basilica API instead of Auth0

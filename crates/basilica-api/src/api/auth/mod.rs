@@ -6,7 +6,7 @@
 pub mod jwt_validator;
 
 // Re-export commonly used types and functions
-pub use jwt_validator::{Claims, fetch_jwks, validate_jwt, verify_audience, verify_issuer};
+pub use jwt_validator::{fetch_jwks, validate_jwt, verify_audience, verify_issuer, Claims};
 
 // TODO: Add additional authentication modules as needed:
 // - auth_middleware: Axum middleware for JWT validation

@@ -21,10 +21,6 @@ pub struct CliConfig {
 
     /// Wallet configuration
     pub wallet: WalletConfig,
-
-    /// Authentication configuration (loaded separately from auth.toml)
-    #[serde(skip)]
-    pub auth: Option<AuthConfig>,
 }
 
 /// API configuration
@@ -120,15 +116,17 @@ pub struct AuthConfig {
 /// Auth0 specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Auth0Config {
-    /// Auth0 domain URL
-    pub domain: String,
-    
-    /// Auth0 client ID
-    pub client_id: String,
-    
     /// Advanced Auth0 configuration
     #[serde(default)]
     pub advanced: Auth0AdvancedConfig,
+}
+
+impl Default for Auth0Config {
+    fn default() -> Self {
+        Self {
+            advanced: Auth0AdvancedConfig::default(),
+        }
+    }
 }
 
 /// Advanced Auth0 configuration settings
@@ -137,15 +135,15 @@ pub struct Auth0AdvancedConfig {
     /// Token refresh margin in seconds - refresh tokens this many seconds before expiry
     #[serde(default = "default_token_refresh_margin")]
     pub token_refresh_margin_seconds: u64,
-    
+
     /// Maximum number of retry attempts for Auth0 API calls
     #[serde(default = "default_max_retry_attempts")]
     pub max_retry_attempts: u32,
-    
+
     /// Timeout for OAuth callback handling in seconds
     #[serde(default = "default_callback_timeout")]
     pub callback_timeout_seconds: u64,
-    
+
     /// Allowed clock skew in seconds for JWT validation
     #[serde(default = "default_allowed_clock_skew")]
     pub allowed_clock_skew_seconds: u64,
@@ -162,27 +160,45 @@ impl Default for Auth0AdvancedConfig {
     }
 }
 
-fn default_token_refresh_margin() -> u64 { 300 }
-fn default_max_retry_attempts() -> u32 { 3 }
-fn default_callback_timeout() -> u64 { 30 }
-fn default_allowed_clock_skew() -> u64 { 60 }
+fn default_token_refresh_margin() -> u64 {
+    300
+}
+fn default_max_retry_attempts() -> u32 {
+    3
+}
+fn default_callback_timeout() -> u64 {
+    30
+}
+fn default_allowed_clock_skew() -> u64 {
+    60
+}
 
 impl AuthConfig {
     /// Convert config AuthConfig to auth module's AuthConfig
-    /// This bridges the gap between the configuration file structure and the auth module's requirements
-    pub fn to_auth_config(&self) -> crate::auth::types::AuthConfig {
-        // Extract domain without protocol for Auth0 endpoints
-        let domain = self.auth0.domain.trim_end_matches('/');
-        let domain_without_protocol = domain.trim_start_matches("https://").trim_start_matches("http://");
-        
+    /// This bridges the gap between the configuration structure and the auth module's requirements
+    pub fn to_auth_config() -> crate::auth::types::AuthConfig {
+        // Use constants from basilica-common
+        let domain = basilica_common::AUTH0_DOMAIN;
+
         crate::auth::types::AuthConfig {
-            client_id: self.auth0.client_id.clone(),
-            auth_endpoint: format!("https://{}/authorize", domain_without_protocol),
-            token_endpoint: format!("https://{}/oauth/token", domain_without_protocol),
-            device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain_without_protocol)),
+            client_id: basilica_common::AUTH0_CLIENT_ID.to_string(),
+            auth_endpoint: format!("https://{}/authorize", domain),
+            token_endpoint: format!("https://{}/oauth/token", domain),
+            device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),
             redirect_uri: "http://localhost:8080/auth/callback".to_string(), // Default redirect URI
-            scopes: vec!["openid".to_string(), "profile".to_string(), "email".to_string()], // Default scopes
+            scopes: vec![
+                "openid".to_string(),
+                "profile".to_string(),
+                "email".to_string(),
+            ], // Default scopes
             additional_params: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Create a default AuthConfig
+    pub fn default() -> Self {
+        Self {
+            auth0: Auth0Config::default(),
         }
     }
 }
@@ -217,9 +233,8 @@ impl CliConfig {
 
     /// Load configuration with auth configuration from default locations
     pub async fn load_with_auth() -> Result<Self> {
-        let mut config = Self::load_default().await?;
-        config.auth = Self::load_auth_config().await.ok();
-        Ok(config)
+        // Just load the default config, auth is now built-in
+        Self::load_default().await
     }
 
     /// Load configuration from specific path
@@ -290,19 +305,9 @@ impl CliConfig {
             "wallet.base_wallet_path" | "base-wallet-path" => {
                 Ok(self.wallet.base_wallet_path.to_string_lossy().to_string())
             }
-            "auth.auth0.domain" | "auth0-domain" => {
-                if let Some(auth) = &self.auth {
-                    Ok(auth.auth0.domain.clone())
-                } else {
-                    Err(CliError::internal("Auth configuration not loaded"))
-                }
-            }
+            "auth.auth0.domain" | "auth0-domain" => Ok(basilica_common::AUTH0_DOMAIN.to_string()),
             "auth.auth0.client_id" | "auth0-client-id" => {
-                if let Some(auth) = &self.auth {
-                    Ok(auth.auth0.client_id.clone())
-                } else {
-                    Err(CliError::internal("Auth configuration not loaded"))
-                }
+                Ok(basilica_common::AUTH0_CLIENT_ID.to_string())
             }
             _ => Err(CliError::invalid_argument(format!(
                 "Unknown configuration key: {key}"
@@ -380,11 +385,15 @@ impl CliConfig {
             self.wallet.base_wallet_path.to_string_lossy().to_string(),
         );
 
-        // Add auth configuration if loaded
-        if let Some(auth) = &self.auth {
-            map.insert("auth.auth0.domain".to_string(), auth.auth0.domain.clone());
-            map.insert("auth.auth0.client_id".to_string(), auth.auth0.client_id.clone());
-        }
+        // Add auth configuration (from constants)
+        map.insert(
+            "auth.auth0.domain".to_string(),
+            basilica_common::AUTH0_DOMAIN.to_string(),
+        );
+        map.insert(
+            "auth.auth0.client_id".to_string(),
+            basilica_common::AUTH0_CLIENT_ID.to_string(),
+        );
 
         map
     }
@@ -417,52 +426,9 @@ impl CliConfig {
         Ok(data_dir.join("rentals").join("cache.json"))
     }
 
-    /// Load auth configuration from auth.toml with environment variable overrides
-    pub async fn load_auth_config() -> Result<AuthConfig> {
-        let config_path = Path::new("config/auth.toml");
-        
-        debug!("Loading auth configuration from: {}", config_path.display());
-
-        if !config_path.exists() {
-            return Err(CliError::internal(format!(
-                "Auth configuration file not found: {}",
-                config_path.display()
-            )));
-        }
-
-        let content = tokio::fs::read_to_string(config_path)
-            .await
-            .map_err(CliError::Io)?;
-
-        let mut auth_config: AuthConfig = toml::from_str(&content)
-            .map_err(|e| CliError::internal(format!("Failed to parse auth config: {e}")))?;
-
-        // Override with environment variables if present
-        if let Ok(client_id) = std::env::var("BASILICA_AUTH0_CLIENT_ID") {
-            debug!("Overriding Auth0 client ID from environment variable");
-            auth_config.auth0.client_id = client_id;
-        }
-
-        if let Ok(domain) = std::env::var("BASILICA_AUTH0_DOMAIN") {
-            debug!("Overriding Auth0 domain from environment variable");
-            auth_config.auth0.domain = domain;
-        }
-
-        debug!("Successfully loaded auth configuration");
-        Ok(auth_config)
-    }
-
-    /// Get the auth configuration, loading it if not already loaded
-    pub async fn get_auth_config(&mut self) -> Result<&AuthConfig> {
-        if self.auth.is_none() {
-            self.auth = Some(Self::load_auth_config().await?);
-        }
-        self.auth.as_ref().ok_or_else(|| CliError::internal("Auth config not available"))
-    }
-
-    /// Get the auth configuration if already loaded
-    pub fn auth_config(&self) -> Option<&AuthConfig> {
-        self.auth.as_ref()
+    /// Get the auth configuration
+    pub fn get_auth_config() -> AuthConfig {
+        AuthConfig::default()
     }
 }
 
