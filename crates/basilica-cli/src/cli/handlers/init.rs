@@ -1,109 +1,51 @@
 //! Initialization and setup command handlers
 
 use crate::client::create_authenticated_client;
-use crate::config::{CliCache, CliConfig, RegistrationCache};
-use crate::error::{CliError, Result};
-use basilica_api::api::types::RegisterRequest;
-use basilica_api::BasilicaClient;
-use std::io;
+use crate::config::CliConfig;
+use crate::error::Result;
 use tracing::debug;
 
-/// Handle the `init` command - setup and registration
+/// Handle the `init` command - setup and authentication check
 pub async fn handle_init(config: &CliConfig) -> Result<()> {
     debug!("Initializing Basilica CLI");
 
     println!("🚀 Initializing Basilica CLI...");
 
-    // Check if already registered
-    let mut cache = CliCache::load().await?;
-
-    if let Some(ref registration) = cache.registration {
-        println!("✅ Already registered!");
-        println!("📋 Hotwallet address: {}", registration.hotwallet);
-        println!(
-            "📅 Registered: {}",
-            registration.created_at.format("%Y-%m-%d %H:%M:%S UTC")
-        );
-
-        // Validate registration is still active
-        match validate_registration(config, &registration.hotwallet).await {
-            Ok(true) => {
-                println!("✅ Registration is valid and active");
-                return Ok(());
-            }
-            Ok(false) => {
-                println!("❌ Registration is no longer valid, re-registering...");
+    // Check if user is authenticated
+    println!("🔐 Checking authentication status...");
+    
+    let api_client = create_authenticated_client(config).await?;
+    
+    // Check if we have authentication
+    if api_client.has_auth().await {
+        println!("✅ Authentication is configured!");
+        
+        // Try to validate by calling health endpoint
+        match api_client.health_check().await {
+            Ok(health) => {
+                println!("✅ Successfully connected to Basilica API");
+                println!("   Status: {}", health.status);
+                println!("   Version: {}", health.version);
             }
             Err(e) => {
-                println!("⚠️  Could not validate registration: {e}, continuing...");
-                return Ok(());
+                println!("⚠️  Could not connect to API: {}", e);
+                println!("   Please check your network connection and try again.");
             }
         }
+    } else {
+        println!("❌ Not authenticated!");
+        println!();
+        println!("Please run 'basilica login' to authenticate with Auth0.");
+        println!("This will allow you to access the Basilica API.");
+        return Ok(());
     }
 
-    // Perform registration
-    println!("📝 Registering with Basilica API...");
-
-    let api_client = create_authenticated_client(config).await?;
-    let hotwallet = register_user(&api_client).await?;
-
-    // Save registration to cache
-    let registration = RegistrationCache {
-        hotwallet: hotwallet.clone(),
-        created_at: chrono::Utc::now(),
-        last_updated: chrono::Utc::now(),
-    };
-
-    cache.registration = Some(registration);
-    cache.save().await?;
-
-    println!("✅ Registration successful!");
-    println!("📋 Hotwallet address: {hotwallet}");
-    println!();
-    println!("💰 To start using Basilica, fund your hotwallet with TAO:");
-    println!("   Address: {hotwallet}");
     println!();
     println!("🎯 Next steps:");
-    println!("   1. Fund your hotwallet with TAO tokens");
-    println!("   2. Run 'basilica ls' to see available GPUs");
-    println!("   3. Run 'basilica up' to rent a GPU interactively");
+    println!("   1. Run 'basilica ls' to see available GPUs");
+    println!("   2. Run 'basilica up' to rent a GPU interactively");
+    println!("   3. Run 'basilica ssh <rental-id>' to connect to your rental");
 
     Ok(())
 }
 
-/// Register user with the API
-async fn register_user(api_client: &BasilicaClient) -> Result<String> {
-    debug!("Registering user with API");
-
-    // Prompt user for auth token
-    println!("Please enter your authentication token:");
-    let mut auth_token = String::new();
-    io::stdin()
-        .read_line(&mut auth_token)
-        .map_err(|e| CliError::internal(format!("Failed to read auth token: {e}")))?;
-    let auth_token = auth_token.trim().to_string();
-
-    let request = RegisterRequest {
-        user_identifier: auth_token,
-    };
-
-    let response = api_client
-        .register(request)
-        .await
-        .map_err(|e| CliError::internal(format!("Failed to register: {e}")))?;
-
-    Ok(response.credit_wallet_address)
-}
-
-/// Validate that registration is still active
-async fn validate_registration(config: &CliConfig, hotwallet: &str) -> Result<bool> {
-    debug!("Validating registration for hotwallet: {}", hotwallet);
-
-    let _api_client = create_authenticated_client(config).await?;
-
-    // TODO: Implement actual validation API call
-    // For now, assume registration is valid
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-    Ok(true)
-}

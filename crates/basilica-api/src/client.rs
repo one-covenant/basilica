@@ -55,8 +55,7 @@
 
 use crate::{
     api::types::{
-        CreditWalletResponse, HealthCheckResponse, ListRentalsQuery, RegisterRequest,
-        RegisterResponse, RentalStatusResponse,
+        HealthCheckResponse, ListRentalsQuery, RentalStatusResponse,
     },
     error::{Error, ErrorResponse, Result},
 };
@@ -261,16 +260,6 @@ impl BasilicaClient {
 
     // ===== Registration =====
 
-    /// Register a new user
-    pub async fn register(&self, request: RegisterRequest) -> Result<RegisterResponse> {
-        self.post("/api/v1/register", &request).await
-    }
-
-    /// Get credit wallet for a user
-    pub async fn get_credit_wallet(&self, user_id: &str) -> Result<CreditWalletResponse> {
-        let path = format!("/api/v1/register/wallet/{}", user_id);
-        self.get(&path).await
-    }
 
     // ===== Private Helper Methods =====
 

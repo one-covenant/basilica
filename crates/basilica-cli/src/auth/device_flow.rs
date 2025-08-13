@@ -24,6 +24,8 @@ pub struct DeviceAuthResponse {
 struct DeviceAuthRequest {
     client_id: String,
     scope: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audience: Option<String>,
 }
 
 /// Token request for device flow
@@ -67,6 +69,7 @@ impl DeviceFlow {
         let request_body = DeviceAuthRequest {
             client_id: self.config.client_id.clone(),
             scope,
+            audience: Some(basilica_common::AUTH0_AUDIENCE.to_string()),
         };
 
         let client = reqwest::Client::new();

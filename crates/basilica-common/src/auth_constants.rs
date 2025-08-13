@@ -8,3 +8,10 @@ pub const AUTH0_DOMAIN: &str = "dev-tjmaan0xhd7k6nek.us.auth0.com";
 
 /// Auth0 client ID for the Basilica CLI application
 pub const AUTH0_CLIENT_ID: &str = "fZwc5GzY8CZ9BJYuEQT2WjJ9aqktaSsY";
+
+/// Auth0 audience for the Basilica API
+/// Using a generic identifier instead of URL for local/prod compatibility
+pub const AUTH0_AUDIENCE: &str = "basilica-api";
+
+/// Auth0 issuer URL
+pub const AUTH0_ISSUER: &str = "https://dev-tjmaan0xhd7k6nek.us.auth0.com/";
