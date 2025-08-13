@@ -19,8 +19,8 @@ use tabled::{settings::Style, Table, Tabled};
 use tracing::{debug, info};
 
 /// Handle the `ls` command - list available executors for rental
-pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> Result<()> {
-    let api_client = create_authenticated_client(config).await?;
+pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig, no_auth: bool) -> Result<()> {
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     // Build query from filters
     let query = ListAvailableExecutorsQuery {
@@ -110,8 +110,8 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
 }
 
 /// Handle the `up` command - provision GPU instances
-pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig) -> Result<()> {
-    let api_client = create_authenticated_client(config).await?;
+pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig, no_auth: bool) -> Result<()> {
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     // Build rental request
     let ssh_public_key = load_ssh_public_key(&options.ssh_key, config)?;
@@ -171,9 +171,9 @@ pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig) -
 }
 
 /// Handle the `ps` command - list active rentals
-pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Result<()> {
+pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig, no_auth: bool) -> Result<()> {
     debug!("Listing active rentals with filters: {:?}", filters);
-    let api_client = create_authenticated_client(config).await?;
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     // Build query from filters - default to "active" if no status specified
     let query = Some(ListRentalsQuery {
@@ -198,9 +198,9 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
 }
 
 /// Handle the `status` command - check rental status
-pub async fn handle_status(target: String, json: bool, config: &CliConfig) -> Result<()> {
+pub async fn handle_status(target: String, json: bool, config: &CliConfig, no_auth: bool) -> Result<()> {
     debug!("Checking status for rental: {}", target);
-    let api_client = create_authenticated_client(config).await?;
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     let status = api_client
         .get_rental_status(&target)
@@ -217,11 +217,11 @@ pub async fn handle_status(target: String, json: bool, config: &CliConfig) -> Re
 }
 
 /// Handle the `logs` command - view rental logs
-pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfig) -> Result<()> {
+pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfig, no_auth: bool) -> Result<()> {
     debug!("Viewing logs for rental: {}", target);
 
     // Create API client
-    let api_client = create_authenticated_client(config).await?;
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     // Get log stream from API
     let response = api_client
@@ -306,8 +306,8 @@ pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfi
 }
 
 /// Handle the `down` command - terminate rentals
-pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()> {
-    let api_client = create_authenticated_client(config).await?;
+pub async fn handle_down(targets: Vec<String>, config: &CliConfig, no_auth: bool) -> Result<()> {
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     let rental_ids = if targets.is_empty() {
         // Interactive mode - let user select from active rentals
@@ -354,7 +354,7 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()>
 }
 
 /// Handle the `exec` command - execute commands via SSH
-pub async fn handle_exec(target: String, command: String, config: &CliConfig) -> Result<()> {
+pub async fn handle_exec(target: String, command: String, config: &CliConfig, _no_auth: bool) -> Result<()> {
     debug!("Executing command on rental: {}", target);
 
     // Load rental cache and get SSH credentials
@@ -390,6 +390,7 @@ pub async fn handle_ssh(
     target: String,
     options: crate::cli::commands::SshOptions,
     config: &CliConfig,
+    _no_auth: bool,
 ) -> Result<()> {
     debug!("Opening SSH connection to rental: {}", target);
 
@@ -433,7 +434,7 @@ pub async fn handle_ssh(
 }
 
 /// Handle the `cp` command - copy files via SSH
-pub async fn handle_cp(source: String, destination: String, config: &CliConfig) -> Result<()> {
+pub async fn handle_cp(source: String, destination: String, config: &CliConfig, _no_auth: bool) -> Result<()> {
     debug!("Copying files from {} to {}", source, destination);
 
     // Parse source and destination to determine which is remote

@@ -10,22 +10,36 @@ use tracing::{debug, warn};
 /// Creates an authenticated BasilicaClient with JWT or API key authentication
 ///
 /// This function:
-/// 1. Attempts to use JWT tokens from TokenStore
+/// 1. Attempts to use JWT tokens from TokenStore (unless bypass_auth is true)
 /// 2. Refreshes expired tokens if possible
 /// 3. Falls back to API key authentication if JWT is unavailable
-pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaClient> {
+/// 
+/// # Arguments
+/// * `config` - CLI configuration
+/// * `bypass_auth` - If true, creates client without any authentication (debug builds only)
+pub async fn create_authenticated_client(config: &CliConfig, bypass_auth: bool) -> Result<BasilicaClient> {
     let api_url = config
         .get("api.url")
         .unwrap_or_else(|_| "https://api.basilica.network".to_string());
 
     let mut builder = ClientBuilder::default().base_url(api_url);
 
-    // Use JWT authentication
-    if let Ok(jwt_token) = get_valid_jwt_token(config).await {
-        debug!("Using JWT authentication");
-        builder = builder.with_bearer_token(jwt_token);
+    if !bypass_auth {
+        // Use JWT authentication
+        if let Ok(jwt_token) = get_valid_jwt_token(config).await {
+            debug!("Using JWT authentication");
+            builder = builder.with_bearer_token(jwt_token);
+        } else {
+            warn!("No authentication configured - please run 'basilica login' to authenticate");
+        }
     } else {
-        warn!("No authentication configured - please run 'basilica login' to authenticate");
+        #[cfg(debug_assertions)]
+        debug!("Authentication bypassed (debug mode)");
+        #[cfg(not(debug_assertions))]
+        {
+            // This should never happen in release builds
+            unreachable!("bypass_auth should always be false in release builds");
+        }
     }
 
     builder.build().map_err(|e| CliError::from(e).into())

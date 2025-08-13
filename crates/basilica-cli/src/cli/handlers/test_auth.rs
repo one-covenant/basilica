@@ -60,11 +60,11 @@ fn mask_email(email: &str) -> String {
 }
 
 /// Test the authentication token by calling Auth0's /userinfo endpoint
-pub async fn handle_test_auth(config: &CliConfig, _config_path: impl AsRef<Path>) -> Result<()> {
+pub async fn handle_test_auth(config: &CliConfig, _config_path: impl AsRef<Path>, no_auth: bool) -> Result<()> {
     println!("Testing authentication token...\n");
 
     // Get the authenticated client
-    let client = create_authenticated_client(config).await?;
+    let client = create_authenticated_client(config, no_auth).await?;
 
     // Use Auth0 domain from constants
     let domain = basilica_common::AUTH0_DOMAIN;
@@ -146,11 +146,12 @@ pub async fn handle_test_auth(config: &CliConfig, _config_path: impl AsRef<Path>
 pub async fn handle_test_api_auth(
     config: &CliConfig,
     _config_path: impl AsRef<Path>,
+    no_auth: bool,
 ) -> Result<()> {
     println!("Testing Basilica API authentication...\n");
 
     // Create authenticated client
-    let client = create_authenticated_client(config).await?;
+    let client = create_authenticated_client(config, no_auth).await?;
 
     // Try to call the health endpoint (which should work even without full auth)
     match client.health_check().await {

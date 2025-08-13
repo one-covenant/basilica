@@ -6,7 +6,7 @@ use crate::error::Result;
 use tracing::debug;
 
 /// Handle the `init` command - setup and authentication check
-pub async fn handle_init(config: &CliConfig) -> Result<()> {
+pub async fn handle_init(config: &CliConfig, no_auth: bool) -> Result<()> {
     debug!("Initializing Basilica CLI");
 
     println!("🚀 Initializing Basilica CLI...");
@@ -14,7 +14,7 @@ pub async fn handle_init(config: &CliConfig) -> Result<()> {
     // Check if user is authenticated
     println!("🔐 Checking authentication status...");
     
-    let api_client = create_authenticated_client(config).await?;
+    let api_client = create_authenticated_client(config, no_auth).await?;
     
     // Check if we have authentication
     if api_client.has_auth().await {
