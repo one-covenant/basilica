@@ -225,7 +225,7 @@ pub fn validate_jwt_with_options(
 
     // Step 3: Convert JWK to DecodingKey for RS256
     let decoding_key = if jwk.kty == "RSA" {
-        // Use standard library base64 decoding for RSA components
+        // Extract RSA components
         let n = jwk
             .n
             .as_ref()
@@ -235,14 +235,10 @@ pub fn validate_jwt_with_options(
             .as_ref()
             .ok_or_else(|| anyhow!("RSA key missing exponent (e)"))?;
 
-        let n_bytes =
-            decode_base64_url(n).map_err(|e| anyhow!("Failed to decode RSA modulus: {}", e))?;
-        let e_bytes =
-            decode_base64_url(e).map_err(|e| anyhow!("Failed to decode RSA exponent: {}", e))?;
-
-        // Build a minimal RSA public key structure in DER format
-        // This is a simplified approach that works with common RSA keys
-        create_rsa_decoding_key(&n_bytes, &e_bytes)?
+        // Use jsonwebtoken's built-in RSA key support
+        // The library handles base64url decoding internally
+        DecodingKey::from_rsa_components(n, e)
+            .map_err(|e| anyhow!("Failed to create RSA decoding key: {}", e))?
     } else {
         return Err(anyhow!("Unsupported key type: {}", jwk.kty));
     };
@@ -283,125 +279,6 @@ pub fn validate_jwt_with_options(
     Ok(token_data.claims)
 }
 
-/// Decode base64url-encoded bytes (used by JWK format)
-fn decode_base64_url(input: &str) -> Result<Vec<u8>> {
-    // Base64url is like base64 but uses - instead of + and _ instead of /
-    // and removes padding
-    let padded = match input.len() % 4 {
-        0 => input.to_string(),
-        2 => format!("{}==", input),
-        3 => format!("{}=", input),
-        _ => return Err(anyhow!("Invalid base64url length")),
-    };
-
-    let standard_b64 = padded.replace('-', "+").replace('_', "/");
-
-    // Use standard library base64 decoding
-    base64_decode(&standard_b64).map_err(|e| anyhow!("Base64 decode error: {}", e))
-}
-
-/// Simple base64 decoder without external dependencies
-fn base64_decode(input: &str) -> Result<Vec<u8>> {
-    // This is a simplified base64 decoder
-    // In production, you'd typically use the base64 crate
-
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    let mut result = Vec::new();
-    let input = input.trim_end_matches('=');
-    let mut buffer = 0u32;
-    let mut bits = 0;
-
-    for &byte in input.as_bytes() {
-        let val = CHARS
-            .iter()
-            .position(|&x| x == byte)
-            .ok_or_else(|| anyhow!("Invalid base64 character: {}", byte as char))?
-            as u32;
-
-        buffer = (buffer << 6) | val;
-        bits += 6;
-
-        if bits >= 8 {
-            result.push((buffer >> (bits - 8)) as u8);
-            bits -= 8;
-        }
-    }
-
-    Ok(result)
-}
-
-/// Create a DecodingKey from RSA modulus and exponent
-fn create_rsa_decoding_key(n_bytes: &[u8], e_bytes: &[u8]) -> Result<DecodingKey> {
-    // For RSA public key validation, we need to create a proper DER-encoded key
-    // This is a simplified approach that works with jsonwebtoken
-
-    // Create a minimal ASN.1 DER structure for RSA public key
-    // RSA public key structure: SEQUENCE { modulus INTEGER, publicExponent INTEGER }
-
-    let mut der_key = Vec::new();
-
-    // SEQUENCE tag and length
-    der_key.push(0x30); // SEQUENCE
-
-    // Calculate total length (we'll update this)
-    let n_der = encode_der_integer(n_bytes);
-    let e_der = encode_der_integer(e_bytes);
-    let content_len = n_der.len() + e_der.len();
-
-    if content_len < 128 {
-        der_key.push(content_len as u8);
-    } else {
-        // Long form length encoding
-        let len_bytes = content_len.to_be_bytes();
-        let len_bytes = &len_bytes[len_bytes.iter().position(|&x| x != 0).unwrap_or(7)..];
-        der_key.push(0x80 | len_bytes.len() as u8);
-        der_key.extend_from_slice(len_bytes);
-    }
-
-    // Add modulus and exponent
-    der_key.extend_from_slice(&n_der);
-    der_key.extend_from_slice(&e_der);
-
-    Ok(DecodingKey::from_rsa_der(&der_key))
-}
-
-/// Encode a big integer as DER INTEGER
-fn encode_der_integer(bytes: &[u8]) -> Vec<u8> {
-    let mut result = Vec::new();
-
-    // INTEGER tag
-    result.push(0x02);
-
-    // Remove leading zeros but keep at least one byte
-    let mut start = 0;
-    while start < bytes.len() - 1 && bytes[start] == 0 {
-        start += 1;
-    }
-    let content = &bytes[start..];
-
-    // If the first bit is set, we need to add a 0x00 byte to indicate positive number
-    let needs_padding = !content.is_empty() && (content[0] & 0x80) != 0;
-    let content_len = content.len() + if needs_padding { 1 } else { 0 };
-
-    // Length
-    if content_len < 128 {
-        result.push(content_len as u8);
-    } else {
-        let len_bytes = content_len.to_be_bytes();
-        let len_bytes = &len_bytes[len_bytes.iter().position(|&x| x != 0).unwrap_or(7)..];
-        result.push(0x80 | len_bytes.len() as u8);
-        result.extend_from_slice(len_bytes);
-    }
-
-    // Content
-    if needs_padding {
-        result.push(0x00);
-    }
-    result.extend_from_slice(content);
-
-    result
-}
 
 /// Verifies that the token audience matches the expected audience
 ///
@@ -659,6 +536,8 @@ mod tests {
 
     #[test]
     fn test_base64_url_decode() {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        
         // Test cases for base64url decoding
         let test_cases = vec![
             ("SGVsbG8", "Hello"),
@@ -669,18 +548,10 @@ mod tests {
         ];
 
         for (input, expected) in test_cases {
-            let decoded = decode_base64_url(input).expect("Failed to decode");
+            let decoded = URL_SAFE_NO_PAD.decode(input).expect("Failed to decode");
             let result = String::from_utf8(decoded).expect("Invalid UTF-8");
             assert_eq!(result, expected, "Failed for input: {}", input);
         }
-    }
-
-    #[test]
-    fn test_base64_decode() {
-        let encoded = "SGVsbG9Xb3JsZA==";
-        let decoded = base64_decode(encoded).expect("Failed to decode");
-        let result = String::from_utf8(decoded).expect("Invalid UTF-8");
-        assert_eq!(result, "HelloWorld");
     }
 
     // TODO: Add integration tests for:

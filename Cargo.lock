@@ -1799,6 +1799,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum 0.7.9",
+ "base64 0.21.7",
  "basilica-common",
  "basilica-protocol",
  "basilica-validator",

@@ -51,6 +51,7 @@ figment = { workspace = true }
 jsonwebtoken = "9.2"
 jwks-client = "0.2"
 argon2 = "0.5"
+base64 = "0.21"
 
 # Rate limiting
 governor = "0.6"
