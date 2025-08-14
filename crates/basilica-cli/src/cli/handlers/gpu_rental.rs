@@ -14,7 +14,7 @@ use basilica_api::api::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
 };
 use basilica_validator::api::rental_routes::StartRentalRequest;
-use basilica_validator::api::types::ListAvailableExecutorsQuery;
+use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
 use basilica_validator::rental::types::RentalState;
 use std::path::PathBuf;
 use tabled::{settings::Style, Table, Tabled};
@@ -232,6 +232,18 @@ pub async fn handle_status(
         .await
         .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
 
+    // Check if rental is stopped and clean up cache
+    if matches!(
+        status.status,
+        RentalStatus::Terminated | RentalStatus::Failed
+    ) {
+        let mut cache = RentalCache::load().await.unwrap_or_default();
+        if cache.remove_rental(&target).is_some() {
+            cache.save().await?;
+            debug!("Removed stopped rental {} from cache", target);
+        }
+    }
+
     if json {
         json_output(&status)?;
     } else {
@@ -388,27 +400,33 @@ pub async fn handle_exec(
     target: String,
     command: String,
     config: &CliConfig,
-    _no_auth: bool,
+    no_auth: bool,
 ) -> Result<()> {
     debug!("Executing command on rental: {}", target);
 
+    // Create API client to verify rental status
+    let api_client = create_authenticated_client(config, no_auth).await?;
+
     // Load rental cache and get SSH credentials
-    let cache = RentalCache::load().await?;
+    let mut cache = RentalCache::load().await?;
     let cached_rental = cache.get_rental(&target)
         .ok_or_else(|| CliError::not_found(format!(
             "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
             target
         )))?;
 
-    // Check if SSH credentials are available
-    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+    // Clone SSH credentials before status check to avoid borrowing issues
+    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
         CliError::not_supported(
             "This rental does not have SSH access. Container was created without SSH port mapping.",
         )
     })?;
 
+    // Verify rental is still active before proceeding
+    verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
+
     // Parse SSH credentials
-    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
     let ssh_access = SshAccess {
         host,
         port,
@@ -425,27 +443,33 @@ pub async fn handle_ssh(
     target: String,
     options: crate::cli::commands::SshOptions,
     config: &CliConfig,
-    _no_auth: bool,
+    no_auth: bool,
 ) -> Result<()> {
     debug!("Opening SSH connection to rental: {}", target);
 
+    // Create API client to verify rental status
+    let api_client = create_authenticated_client(config, no_auth).await?;
+
     // Load rental cache and get SSH credentials
-    let cache = RentalCache::load().await?;
+    let mut cache = RentalCache::load().await?;
     let cached_rental = cache.get_rental(&target)
         .ok_or_else(|| CliError::not_found(format!(
             "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
             target
         )))?;
 
-    // Check if SSH credentials are available
-    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+    // Clone SSH credentials before status check to avoid borrowing issues
+    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
         CliError::not_supported(
             "This rental does not have SSH access. Container was created without SSH port mapping.",
         )
     })?;
 
+    // Verify rental is still active before proceeding
+    verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
+
     // Parse SSH credentials
-    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
     let ssh_access = SshAccess {
         host,
         port,
@@ -473,30 +497,36 @@ pub async fn handle_cp(
     source: String,
     destination: String,
     config: &CliConfig,
-    _no_auth: bool,
+    no_auth: bool,
 ) -> Result<()> {
     debug!("Copying files from {} to {}", source, destination);
 
     // Parse source and destination to determine which is remote
     let (rental_id, is_upload, local_path, remote_path) = parse_copy_paths(&source, &destination)?;
 
+    // Create API client to verify rental status
+    let api_client = create_authenticated_client(config, no_auth).await?;
+
     // Load rental cache and get SSH credentials
-    let cache = RentalCache::load().await?;
+    let mut cache = RentalCache::load().await?;
     let cached_rental = cache.get_rental(&rental_id)
         .ok_or_else(|| CliError::not_found(format!(
             "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
             rental_id
         )))?;
 
-    // Check if SSH credentials are available
-    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+    // Clone SSH credentials before status check to avoid borrowing issues
+    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
         CliError::not_supported(
             "This rental does not have SSH access. Container was created without SSH port mapping.",
         )
     })?;
 
+    // Verify rental is still active before proceeding
+    verify_rental_status_and_cleanup_cache(&rental_id, &api_client, &mut cache).await?;
+
     // Parse SSH credentials
-    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
     let ssh_access = SshAccess {
         host,
         port,
@@ -518,6 +548,32 @@ pub async fn handle_cp(
 }
 
 // Helper functions
+
+/// Verify rental is still active and clean up cache if not
+async fn verify_rental_status_and_cleanup_cache(
+    rental_id: &str,
+    api_client: &basilica_api::client::BasilicaClient,
+    cache: &mut RentalCache,
+) -> Result<()> {
+    let status = api_client
+        .get_rental_status(rental_id)
+        .await
+        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
+
+    if matches!(
+        status.status,
+        RentalStatus::Terminated | RentalStatus::Failed
+    ) {
+        cache.remove_rental(rental_id);
+        cache.save().await?;
+        return Err(CliError::internal(format!(
+            "Rental {} is no longer active (status: {:?}). Removed from cache.",
+            rental_id, status.status
+        )));
+    }
+
+    Ok(())
+}
 
 fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result<String> {
     let path = key_path.as_ref().unwrap_or(&config.ssh.key_path);
