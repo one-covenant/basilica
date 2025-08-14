@@ -19,10 +19,12 @@ impl SimplePersistence {
                 collateral TEXT NOT NULL,
                 url TEXT,
                 url_content_md5_checksum TEXT,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(hotkey, executor_id)
             );
 
             CREATE TABLE IF NOT EXISTS collateral_scan_status (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
                 last_scanned_block_number INTEGER NOT NULL,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
@@ -49,7 +51,7 @@ impl SimplePersistence {
     }
 
     pub async fn get_last_scanned_block_number(&self) -> Result<u64, anyhow::Error> {
-        let query = "SELECT last_scanned_block_number FROM collateral_scan_status ";
+        let query = "SELECT last_scanned_block_number FROM collateral_scan_status WHERE id = 1";
 
         let row = sqlx::query(&query).fetch_one(self.pool()).await?;
 
@@ -63,7 +65,7 @@ impl SimplePersistence {
     ) -> Result<(), anyhow::Error> {
         let now = Utc::now().to_rfc3339();
         let query =
-            "UPDATE collateral_scan_status SET last_scanned_block_number = ?, updated_at = ? ";
+            "UPDATE collateral_scan_status SET last_scanned_block_number = ?, updated_at = ? WHERE id = 1";
 
         sqlx::query(&query)
             .bind(last_scanned_block as i64)
@@ -111,7 +113,7 @@ impl SimplePersistence {
                 let now = Utc::now().to_rfc3339();
                 let query =
                     "UPDATE collateral_status SET collateral = ?, updated_at = ? WHERE id = ?";
-                let new_collateral = collateral + deposit.amount;
+                let new_collateral = collateral.saturating_add(deposit.amount);
                 sqlx::query(&query)
                     .bind(new_collateral.to_string())
                     .bind(now)
@@ -149,7 +151,7 @@ impl SimplePersistence {
                 let now = Utc::now().to_rfc3339();
                 let query =
                     "UPDATE collateral_status SET collateral = ?, updated_at = ? WHERE id = ?";
-                let new_collateral = collateral - reclaimed.amount;
+                let new_collateral = collateral.saturating_sub(reclaimed.amount);
                 sqlx::query(&query)
                     .bind(new_collateral.to_string())
                     .bind(now)

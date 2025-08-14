@@ -57,6 +57,12 @@ impl From<(FixedBytes<32>, FixedBytes<16>, Address, U256, u64)> for Reclaim {
     }
 }
 
+pub enum CollateralEvent {
+    Deposit(CollateralUpgradeable::Deposit),
+    Reclaimed(CollateralUpgradeable::Reclaimed),
+    Slashed(CollateralUpgradeable::Slashed),
+}
+
 // get the collateral contract instance
 pub async fn get_collateral(
     private_key: &str,
@@ -79,20 +85,7 @@ pub async fn get_collateral(
 
 pub async fn scan_events(
     from_block: u64,
-) -> Result<
-    (
-        u64,
-        HashMap<
-            u64,
-            (
-                Vec<CollateralUpgradeable::Deposit>,
-                Vec<CollateralUpgradeable::Reclaimed>,
-                Vec<CollateralUpgradeable::Slashed>,
-            ),
-        >,
-    ),
-    anyhow::Error,
-> {
+) -> Result<(u64, HashMap<u64, Vec<CollateralEvent>>), anyhow::Error> {
     let provider = ProviderBuilder::new().connect(RPC_URL).await?;
     let current_block = provider.get_block_number().await?.saturating_sub(1);
 
@@ -115,82 +108,64 @@ pub async fn scan_events(
 
     let logs = provider.get_logs(&filter).await?;
 
-    let mut result = HashMap::new();
-    let mut total_events = 0;
+    let mut result: HashMap<u64, Vec<CollateralEvent>> = HashMap::new();
+    // let mut total_events = 0;
 
     for log in logs {
+        if log.removed {
+            continue;
+        }
+
         let topics = log.inner.topics();
         let topic0 = topics.first();
         let block_number = log
             .block_number
             .ok_or(anyhow::anyhow!("Block number not available in event"))?;
 
-        if block_number < from_block || block_number > to_block {
-            info!(
-                "Skipping event at block {} because it is not in the range of {} to {}",
-                block_number, from_block, to_block
-            );
-            continue;
-        }
-
-        if !result.contains_key(&block_number) {
-            result.insert(block_number, (Vec::new(), Vec::new(), Vec::new()));
-        }
         let block_result = result.get_mut(&block_number);
 
-        match topic0 {
+        let event = match topic0 {
             Some(sig) if sig == &CollateralUpgradeable::Deposit::SIGNATURE_HASH => {
                 let deposit = CollateralUpgradeable::Deposit::decode_raw_log(
                     topics,
                     log.data().data.as_ref(),
                 )?;
-                match block_result {
-                    Some(block_result) => {
-                        block_result.0.push(deposit);
-                    }
-                    None => {
-                        result.insert(block_number, ([deposit].to_vec(), Vec::new(), Vec::new()));
-                    }
-                }
-                total_events += 1;
+                Some(CollateralEvent::Deposit(deposit))
             }
             Some(sig) if sig == &CollateralUpgradeable::Reclaimed::SIGNATURE_HASH => {
                 let reclaimed = CollateralUpgradeable::Reclaimed::decode_raw_log(
                     topics,
                     log.data().data.as_ref(),
                 )?;
-                match block_result {
-                    Some(block_result) => {
-                        block_result.1.push(reclaimed);
-                    }
-                    None => {
-                        result.insert(block_number, (Vec::new(), [reclaimed].to_vec(), Vec::new()));
-                    }
-                }
-                total_events += 1;
+                Some(CollateralEvent::Reclaimed(reclaimed))
             }
             Some(sig) if sig == &CollateralUpgradeable::Slashed::SIGNATURE_HASH => {
                 let slashed = CollateralUpgradeable::Slashed::decode_raw_log(
                     topics,
                     log.data().data.as_ref(),
                 )?;
-                match block_result {
-                    Some(block_result) => {
-                        block_result.2.push(slashed);
-                    }
-                    None => {
-                        result.insert(block_number, (Vec::new(), Vec::new(), [slashed].to_vec()));
-                    }
-                }
-                total_events += 1;
+                Some(CollateralEvent::Slashed(slashed))
             }
-            _ => {}
+            _ => None,
+        };
+
+        if let Some(event) = event {
+            match block_result {
+                Some(events) => {
+                    events.push(event);
+                }
+                None => {
+                    result.insert(block_number, vec![event]);
+                }
+            }
         }
     }
 
     info!(
         "Scanned blocks {} to {}, {} events are found",
-        from_block, to_block, total_events
+        from_block,
+        to_block,
+        result.values().map(|v| v.len()).sum::<usize>()
     );
     Ok((to_block, result))
 }

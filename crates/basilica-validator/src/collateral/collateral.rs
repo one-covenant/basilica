@@ -1,5 +1,6 @@
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
+use collateral_contract::CollateralEvent;
 use std::sync::Arc;
 use tracing::{error, info};
 
@@ -41,25 +42,31 @@ impl Collateral {
         let (to_block, events_map) = collateral_contract::scan_events(from_block).await?;
 
         let mut sorted_events_map = events_map.iter().collect::<Vec<_>>();
+
+        // sort the events by block number
         sorted_events_map.sort_by(|a, b| a.0.cmp(b.0));
+
         for (block_number, events_vec) in sorted_events_map.iter() {
-            for event in events_vec.0.iter() {
-                self.persistence.handle_deposit(&event).await?;
+            for event in events_vec.iter() {
+                match event {
+                    CollateralEvent::Deposit(deposit) => {
+                        self.persistence.handle_deposit(deposit).await?;
+                    }
+                    CollateralEvent::Reclaimed(reclaimed) => {
+                        self.persistence.handle_reclaimed(reclaimed).await?;
+                    }
+                    CollateralEvent::Slashed(slashed) => {
+                        self.persistence.handle_slashed(slashed).await?;
+                    }
+                }
             }
-
-            for event in events_vec.1.iter() {
-                self.persistence.handle_reclaimed(&event).await?;
-            }
-
-            for event in events_vec.2.iter() {
-                self.persistence.handle_slashed(&event).await?;
-            }
-
+            // update the last scanned block number after handling all events in the block
             self.persistence
                 .update_last_scanned_block_number(**block_number)
                 .await?;
         }
 
+        // update the last scanned block number after handling all blocks
         self.persistence
             .update_last_scanned_block_number(to_block)
             .await?;
