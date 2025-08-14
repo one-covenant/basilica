@@ -1,6 +1,5 @@
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
-use collateral_contract::{Deposit, Reclaimed, Slashed};
 use std::sync::Arc;
 use tracing::{error, info};
 

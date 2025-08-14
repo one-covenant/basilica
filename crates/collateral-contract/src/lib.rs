@@ -136,7 +136,7 @@ pub async fn scan_events(
         if !result.contains_key(&block_number) {
             result.insert(block_number, (Vec::new(), Vec::new(), Vec::new()));
         }
-        let mut block_result = result.get_mut(&block_number);
+        let block_result = result.get_mut(&block_number);
 
         match topic0 {
             Some(sig) if sig == &CollateralUpgradeable::Deposit::SIGNATURE_HASH => {

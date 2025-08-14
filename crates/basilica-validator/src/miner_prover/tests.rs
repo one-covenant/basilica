@@ -108,6 +108,7 @@ async fn test_dynamic_discovery_config() {
         cache_miner_info_ttl: Duration::from_secs(300),
         grpc_port_offset: Some(42000),
         binary_validation: crate::config::BinaryValidationConfig::default(),
+        collateral_event_scan_interval: Duration::from_secs(12),
     };
 
     // Verify configuration

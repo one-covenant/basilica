@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Workspace dependencies
+alloy-primitives = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 thiserror = { workspace = true }
