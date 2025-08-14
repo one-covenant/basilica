@@ -6,6 +6,7 @@ members = [
   "crates/basilica-miner",
   "crates/basilica-validator",
   "crates/basilica-billing",
+  "crates/basilica-payments",
   "crates/bittensor",
   "crates/basilica-api",
   "crates/integration-tests",

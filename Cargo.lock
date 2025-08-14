@@ -2200,6 +2200,7 @@ dependencies = [
  "blake3",
  "chrono",
  "crabtensor",
+ "data-encoding",
  "ed25519-dalek",
  "figment",
  "hex",
@@ -2327,6 +2328,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "basilica-payments"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "basilica-common",
+ "basilica-protocol",
+ "bittensor",
+ "clap",
+ "data-encoding",
+ "futures",
+ "hex",
+ "prost 0.12.6",
+ "prost-types",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sp-core",
+ "sqlx",
+ "subxt",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.10.2",
+ "tonic-health",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "basilica-protocol"
 version = "0.1.0"
 dependencies = [
@@ -2390,6 +2423,17 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "bigdecimal"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6773ddc0eafc0e509fb60e48dff7f450f8e674a0686ae8605e8d9901bd5eefa"
+dependencies = [
+ "num-bigint",
+ "num-integer",
+ "num-traits",
 ]
 
 [[package]]
@@ -2512,6 +2556,7 @@ name = "bittensor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "basilica-common",
  "chrono",
  "crabtensor",
@@ -2528,6 +2573,7 @@ dependencies = [
  "subxt-utils-fetchmetadata",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-stream",
  "tokio-test",
  "tracing",
 ]
@@ -14292,6 +14338,7 @@ checksum = "24ba59a9342a3d9bab6c56c118be528b27c9b60e490080e9711a04dccac83ef6"
 dependencies = [
  "ahash 0.8.12",
  "atoi",
+ "bigdecimal",
  "byteorder",
  "bytes",
  "chrono",
@@ -14321,6 +14368,7 @@ dependencies = [
  "smallvec",
  "sqlformat",
  "thiserror 1.0.69",
+ "time",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -14376,6 +14424,7 @@ checksum = "1ed31390216d20e538e447a7a9b959e06ed9fc51c37b514b46eb758016ecd418"
 dependencies = [
  "atoi",
  "base64 0.21.7",
+ "bigdecimal",
  "bitflags 2.9.1",
  "byteorder",
  "bytes",
@@ -14408,6 +14457,7 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror 1.0.69",
+ "time",
  "tracing",
  "uuid",
  "whoami",
@@ -14421,6 +14471,7 @@ checksum = "7c824eb80b894f926f89a0b9da0c7f435d27cdd35b8c655b114e58223918577e"
 dependencies = [
  "atoi",
  "base64 0.21.7",
+ "bigdecimal",
  "bitflags 2.9.1",
  "byteorder",
  "chrono",
@@ -14439,6 +14490,7 @@ dependencies = [
  "log",
  "md-5",
  "memchr",
+ "num-bigint",
  "once_cell",
  "rand 0.8.5",
  "rust_decimal",
@@ -14449,6 +14501,7 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror 1.0.69",
+ "time",
  "tracing",
  "uuid",
  "whoami",
@@ -14473,6 +14526,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "sqlx-core",
+ "time",
  "tracing",
  "url",
  "urlencoding",

@@ -16,6 +16,8 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio-stream = "0.1"
 
 # Bittensor integration
 crabtensor = { workspace = true }

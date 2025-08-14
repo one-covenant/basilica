@@ -44,6 +44,7 @@ argon2 = "0.5"
 ssh-key = { version = "0.6", features = ["ed25519", "rand_core", "std"] }
 zeroize = { version = "1.7", features = ["derive"] }
 base64 = "0.22"
+data-encoding = "2"
 sha2 = "0.10"
 regex = "1.10"
 once_cell = "1.19"
@@ -59,8 +60,9 @@ default = []
 crypto-extra = []
 # Database features
 sqlite = ["sqlx/sqlite"]
+postgres = ["sqlx"]
 
 [dependencies.sqlx]
 version = "0.7"
-features = ["runtime-tokio", "tls-rustls", "migrate", "uuid", "chrono"]
+features = ["runtime-tokio", "tls-rustls", "migrate", "uuid", "chrono", "postgres"]
 optional = true

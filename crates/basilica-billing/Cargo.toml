@@ -6,7 +6,7 @@ description = "Billing service for Basilica compute subnet"
 repository = "https://github.com/tplr-ai/basilica"
 
 [dependencies]
-basilica-common = { path = "../basilica-common" }
+basilica-common = { path = "../basilica-common", features = ["postgres"] }
 basilica-protocol = { path = "../basilica-protocol" }
 
 toml = "0.8"

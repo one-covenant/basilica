@@ -20,6 +20,7 @@
 
 pub mod config;
 pub mod crypto;
+pub mod distributed;
 pub mod error;
 pub mod executor_identity;
 pub mod identity;

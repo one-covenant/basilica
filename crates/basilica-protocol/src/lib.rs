@@ -112,6 +112,12 @@ pub mod basilca {
             include!("gen/basilica.billing.v1.rs");
         }
     }
+
+    pub mod payments {
+        pub mod v1 {
+            include!("gen/basilica.payments.v1.rs");
+        }
+    }
 }
 
 // Structured re-exports for better organization
@@ -181,6 +187,17 @@ pub mod billing {
     //! - Real-time telemetry ingestion and aggregation
     //! - Billing packages and rules engine
     pub use crate::basilca::billing::v1::*;
+}
+
+pub mod payments {
+    //! Payments service for deposit account management and TAO → USD credit conversion
+    //!
+    //! Provides payment processing functionality:
+    //! - Per-user deposit wallet generation
+    //! - Blockchain monitoring for TAO deposits
+    //! - Automatic credit conversion based on configured rates
+    //! - Integration with billing service for credit application
+    pub use crate::basilca::payments::v1::*;
 }
 
 // Re-export common types at crate root for convenience
