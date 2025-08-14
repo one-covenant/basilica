@@ -62,7 +62,6 @@ pub struct TelemetryResponse {
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
-
 /// List rentals query
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ListRentalsQuery {

@@ -112,7 +112,8 @@ pub async fn auth0_middleware(
                 Error::Internal {
                     message: "Authentication service temporarily unavailable".to_string(),
                 },
-            ).into_response());
+            )
+                .into_response());
         }
     };
 
@@ -126,7 +127,8 @@ pub async fn auth0_middleware(
                 Error::Authentication {
                     message: format!("Invalid authentication token: {}", e),
                 },
-            ).into_response());
+            )
+                .into_response());
         }
     };
 
@@ -138,7 +140,8 @@ pub async fn auth0_middleware(
             Error::Authentication {
                 message: "Token not authorized for this API".to_string(),
             },
-        ).into_response());
+        )
+            .into_response());
     }
 
     // Verify issuer matches Auth0 domain
@@ -149,7 +152,8 @@ pub async fn auth0_middleware(
             Error::Authentication {
                 message: "Token issued by unauthorized provider".to_string(),
             },
-        ).into_response());
+        )
+            .into_response());
     }
 
     debug!(
@@ -165,9 +169,20 @@ pub async fn auth0_middleware(
         exp: claims.exp,
         iat: claims.iat,
         scope: claims.scope.clone(),
-        email: claims.custom.get("email").and_then(|v| v.as_str()).map(String::from),
-        email_verified: claims.custom.get("email_verified").and_then(|v| v.as_bool()),
-        name: claims.custom.get("name").and_then(|v| v.as_str()).map(String::from),
+        email: claims
+            .custom
+            .get("email")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        email_verified: claims
+            .custom
+            .get("email_verified")
+            .and_then(|v| v.as_bool()),
+        name: claims
+            .custom
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         custom: claims.custom.clone(),
     };
 

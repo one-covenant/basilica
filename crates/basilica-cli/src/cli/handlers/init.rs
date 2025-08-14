@@ -14,13 +14,13 @@ pub async fn handle_init(config: &CliConfig, no_auth: bool) -> Result<()> {
 
     // Check if user is authenticated
     print_auth("Checking authentication status...");
-    
+
     let api_client = create_authenticated_client(config, no_auth).await?;
-    
+
     // Check if we have authentication
     if api_client.has_auth().await {
         print_success("Authentication is configured!");
-        
+
         // Try to validate by calling health endpoint
         match api_client.health_check().await {
             Ok(health) => {
@@ -49,4 +49,3 @@ pub async fn handle_init(config: &CliConfig, no_auth: bool) -> Result<()> {
 
     Ok(())
 }
-

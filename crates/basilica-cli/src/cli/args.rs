@@ -97,7 +97,8 @@ impl Args {
             Commands::Logout => handlers::auth::handle_logout(&config).await,
             Commands::TestAuth { api } => {
                 if api {
-                    handlers::test_auth::handle_test_api_auth(&config, config_path, self.no_auth).await
+                    handlers::test_auth::handle_test_api_auth(&config, config_path, self.no_auth)
+                        .await
                 } else {
                     handlers::test_auth::handle_test_auth(&config, config_path, self.no_auth).await
                 }
@@ -119,7 +120,9 @@ impl Args {
             Commands::Logs { target, options } => {
                 handlers::gpu_rental::handle_logs(target, options, &config, self.no_auth).await
             }
-            Commands::Down { targets } => handlers::gpu_rental::handle_down(targets, &config, self.no_auth).await,
+            Commands::Down { targets } => {
+                handlers::gpu_rental::handle_down(targets, &config, self.no_auth).await
+            }
             Commands::Exec { target, command } => {
                 handlers::gpu_rental::handle_exec(target, command, &config, self.no_auth).await
             }

@@ -54,9 +54,7 @@
 //! ```
 
 use crate::{
-    api::types::{
-        HealthCheckResponse, ListRentalsQuery, RentalStatusResponse,
-    },
+    api::types::{HealthCheckResponse, ListRentalsQuery, RentalStatusResponse},
     error::{Error, ErrorResponse, Result},
 };
 use basilica_validator::api::{
@@ -259,7 +257,6 @@ impl BasilicaClient {
     }
 
     // ===== Registration =====
-
 
     // ===== Private Helper Methods =====
 

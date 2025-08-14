@@ -13,11 +13,14 @@ use tracing::{debug, warn};
 /// 1. Attempts to use JWT tokens from TokenStore (unless bypass_auth is true)
 /// 2. Refreshes expired tokens if possible
 /// 3. Falls back to API key authentication if JWT is unavailable
-/// 
+///
 /// # Arguments
 /// * `config` - CLI configuration
 /// * `bypass_auth` - If true, creates client without any authentication (debug builds only)
-pub async fn create_authenticated_client(config: &CliConfig, bypass_auth: bool) -> Result<BasilicaClient> {
+pub async fn create_authenticated_client(
+    config: &CliConfig,
+    bypass_auth: bool,
+) -> Result<BasilicaClient> {
     let api_url = config
         .get("api.base_url")
         .unwrap_or_else(|_| "https://api.basilica.network".to_string());

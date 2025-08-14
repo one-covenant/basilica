@@ -279,7 +279,6 @@ pub fn validate_jwt_with_options(
     Ok(token_data.claims)
 }
 
-
 /// Verifies that the token audience matches the expected audience
 ///
 /// Auth0 tokens can have single audience (string) or multiple audiences (array).
@@ -537,7 +536,7 @@ mod tests {
     #[test]
     fn test_base64_url_decode() {
         use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-        
+
         // Test cases for base64url decoding
         let test_cases = vec![
             ("SGVsbG8", "Hello"),

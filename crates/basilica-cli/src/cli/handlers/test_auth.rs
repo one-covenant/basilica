@@ -60,7 +60,11 @@ fn mask_email(email: &str) -> String {
 }
 
 /// Test the authentication token by calling Auth0's /userinfo endpoint
-pub async fn handle_test_auth(config: &CliConfig, _config_path: impl AsRef<Path>, no_auth: bool) -> Result<()> {
+pub async fn handle_test_auth(
+    config: &CliConfig,
+    _config_path: impl AsRef<Path>,
+    no_auth: bool,
+) -> Result<()> {
     println!("Testing authentication token...\n");
 
     // Get the authenticated client

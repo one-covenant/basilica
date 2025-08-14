@@ -5,10 +5,10 @@
 
 use super::callback_server::CallbackServer;
 use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
+use crate::output::{print_info, print_success};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use console::{style, Term};
-use crate::output::{print_info, print_success};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope,
@@ -179,7 +179,7 @@ impl OAuthFlow {
         // Open browser to authorization URL
         print_info("Opening browser for sign in...");
         print_info("Browser didn't open? Use the URL below to sign in:");
-        
+
         // Use console's style for dimmed text instead of ANSI codes
         println!("{}", style(&auth_url).dim());
 
