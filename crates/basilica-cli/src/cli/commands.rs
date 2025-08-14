@@ -5,9 +5,6 @@ use std::path::PathBuf;
 /// Main CLI commands
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Initialize and configure Basilica CLI
-    Init,
-
     /// Manage CLI configuration
     Config {
         #[command(subcommand)]

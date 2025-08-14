@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
     long_about = "Unified command-line interface for Basilica GPU compute marketplace.
 
 QUICK START:
-  basilica init                     # Setup and registration  
+  basilica login                    # Login and authentication  
   basilica up                       # Interactive GPU rental
   basilica exec <uid> \"python train.py\"  # Run your code
   basilica down                     # Interactive termination
@@ -86,7 +86,6 @@ impl Args {
 
         match self.command {
             // Setup and configuration
-            Commands::Init => handlers::init::handle_init(&config, self.no_auth).await,
             Commands::Config { action } => {
                 handlers::config::handle_config(action, &config, config_path).await
             }

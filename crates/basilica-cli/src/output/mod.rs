@@ -33,11 +33,6 @@ pub fn print_link(label: &str, url: &str) {
     println!("{} {}: {}", style("→").cyan(), label, style(url).dim());
 }
 
-/// Print an initialization/startup message
-pub fn print_init(message: &str) {
-    println!("{} {}", style("🚀").yellow(), message);
-}
-
 /// Print a security/auth related message  
 pub fn print_auth(message: &str) {
     println!("{} {}", style("🔐").cyan(), message);

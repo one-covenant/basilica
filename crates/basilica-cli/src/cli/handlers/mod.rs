@@ -4,6 +4,5 @@ pub mod auth;
 pub mod config;
 pub mod external;
 pub mod gpu_rental;
-pub mod init;
 pub mod test_auth;
 pub mod wallet;
