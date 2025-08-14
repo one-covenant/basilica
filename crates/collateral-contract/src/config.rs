@@ -14,3 +14,5 @@ pub const LOCAL_RPC_URL: &str = "http://localhost:9944";
 pub const LOCAL_WS_URL: &str = "ws://localhost:9944";
 
 pub const PRIVATE_KEY_FILE: &str = "$HOME/.basilca/private_key";
+
+pub const MAX_BLOCKS_PER_SCAN: u64 = 1000;

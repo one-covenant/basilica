@@ -1805,7 +1805,7 @@ dependencies = [
  "blake3",
  "chrono",
  "clap",
- "collateral",
+ "collateral-contract",
  "cron",
  "deadpool",
  "figment",
@@ -1868,6 +1868,7 @@ dependencies = [
  "blake3",
  "chrono",
  "clap",
+ "collateral-contract",
  "fastrand",
  "figment",
  "futures",
@@ -2698,7 +2699,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "collateral"
+name = "collateral-contract"
 version = "0.1.0"
 dependencies = [
  "alloy",

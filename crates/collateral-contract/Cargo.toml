@@ -1,10 +1,10 @@
 [package]
-name = "collateral"
+name = "collateral-contract"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "collateral"
+name = "collateral_contract"
 path = "src/lib.rs"
 
 [dependencies]

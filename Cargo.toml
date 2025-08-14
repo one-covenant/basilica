@@ -8,7 +8,7 @@ members = [
     "crates/bittensor",
     "crates/basilica-api", 
     "crates/integration-tests",
-    "crates/collateral",
+    "crates/collateral-contract",
 ]
 resolver = "2"
 
