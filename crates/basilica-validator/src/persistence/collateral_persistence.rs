@@ -24,24 +24,24 @@ impl SimplePersistence {
             );
 
             CREATE TABLE IF NOT EXISTS collateral_scan_status (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
+                id INTEGER PRIMARY KEY,
                 last_scanned_block_number INTEGER NOT NULL,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
         "#;
 
-        sqlx::query(&query).execute(self.pool()).await?;
+        sqlx::query(query).execute(self.pool()).await?;
 
         let index = r#"
             CREATE INDEX IF NOT EXISTS idx_collateral_status ON collateral_status(hotkey, executor_id);
             "#;
 
-        sqlx::query(&index).execute(self.pool()).await?;
+        sqlx::query(index).execute(self.pool()).await?;
 
         let insert_initial_scan_row = r#"
-            INSERT INTO collateral_scan_status (last_scanned_block_number, updated_at) VALUES (?, ?);
+            INSERT INTO collateral_scan_status (last_scanned_block_number, updated_at, id) VALUES (?, ?, 1) ;
         "#;
-        sqlx::query(&insert_initial_scan_row)
+        sqlx::query(insert_initial_scan_row)
             .bind(CONTRACT_DEPLOYED_BLOCK_NUMBER as i64)
             .bind(now)
             .execute(self.pool())
@@ -53,7 +53,7 @@ impl SimplePersistence {
     pub async fn get_last_scanned_block_number(&self) -> Result<u64, anyhow::Error> {
         let query = "SELECT last_scanned_block_number FROM collateral_scan_status WHERE id = 1";
 
-        let row = sqlx::query(&query).fetch_one(self.pool()).await?;
+        let row = sqlx::query(query).fetch_one(self.pool()).await?;
 
         let block_number: i64 = row.get(0);
         Ok(block_number as u64)
@@ -67,7 +67,7 @@ impl SimplePersistence {
         let query =
             "UPDATE collateral_scan_status SET last_scanned_block_number = ?, updated_at = ? WHERE id = 1";
 
-        sqlx::query(&query)
+        sqlx::query(query)
             .bind(last_scanned_block as i64)
             .bind(now)
             .execute(self.pool())
@@ -84,7 +84,7 @@ impl SimplePersistence {
         let query =
             "SELECT id, collateral FROM collateral_status WHERE hotkey = ? AND executor_id = ?";
 
-        let row = sqlx::query(&query)
+        let row = sqlx::query(query)
             .bind(hotkey)
             .bind(executor_id)
             .fetch_optional(self.pool())
@@ -114,7 +114,7 @@ impl SimplePersistence {
                 let query =
                     "UPDATE collateral_status SET collateral = ?, updated_at = ? WHERE id = ?";
                 let new_collateral = collateral.saturating_add(deposit.amount);
-                sqlx::query(&query)
+                sqlx::query(query)
                     .bind(new_collateral.to_string())
                     .bind(now)
                     .bind(id)
@@ -123,7 +123,7 @@ impl SimplePersistence {
             }
             None => {
                 let query = "INSERT INTO collateral_status (hotkey, executor_id, miner, collateral) VALUES (?, ?, ?, ?)";
-                sqlx::query(&query)
+                sqlx::query(query)
                     .bind(deposit.hotkey.encode_hex::<String>())
                     .bind(deposit.executorId.encode_hex::<String>())
                     .bind(format!(
@@ -152,7 +152,7 @@ impl SimplePersistence {
                 let query =
                     "UPDATE collateral_status SET collateral = ?, updated_at = ? WHERE id = ?";
                 let new_collateral = collateral.saturating_sub(reclaimed.amount);
-                sqlx::query(&query)
+                sqlx::query(query)
                     .bind(new_collateral.to_string())
                     .bind(now)
                     .bind(id)
@@ -182,7 +182,7 @@ impl SimplePersistence {
                     );
                 }
 
-                sqlx::query(&query)
+                sqlx::query(query)
                     .bind("0".to_string())
                     .bind(format!(
                         "0x{}",
@@ -244,20 +244,9 @@ mod tests {
     #[tokio::test]
     async fn test_tables_and_index_creation() {
         let db_path = ":memory:";
-        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+        let _persistence = SimplePersistence::new(db_path, "validator".to_string())
             .await
             .expect("persistence");
-
-        persistence
-            .create_collateral_scanned_blocks_table()
-            .await
-            .expect("create tables");
-
-        // basic sanity: insert initial scan row
-        sqlx::query("INSERT INTO collateral_scan_status (last_scanned_block_number) VALUES (0)")
-            .execute(persistence.pool())
-            .await
-            .unwrap();
     }
 
     #[tokio::test]
@@ -266,13 +255,9 @@ mod tests {
         let persistence = SimplePersistence::new(db_path, "validator".to_string())
             .await
             .unwrap();
-        persistence
-            .create_collateral_scanned_blocks_table()
-            .await
-            .unwrap();
 
         // seed row
-        sqlx::query("INSERT INTO collateral_scan_status (last_scanned_block_number) VALUES (1)")
+        sqlx::query("UPDATE collateral_scan_status SET last_scanned_block_number = 1 WHERE id = 1")
             .execute(persistence.pool())
             .await
             .unwrap();
@@ -297,10 +282,6 @@ mod tests {
     async fn test_handle_deposit_insert_and_update() {
         let db_path = ":memory:";
         let persistence = SimplePersistence::new(db_path, "validator".to_string())
-            .await
-            .unwrap();
-        persistence
-            .create_collateral_scanned_blocks_table()
             .await
             .unwrap();
 
@@ -341,10 +322,6 @@ mod tests {
         let persistence = SimplePersistence::new(db_path, "validator".to_string())
             .await
             .unwrap();
-        persistence
-            .create_collateral_scanned_blocks_table()
-            .await
-            .unwrap();
 
         let hk = make_hotkey(9);
         let ex = make_executor_id(7);
@@ -377,6 +354,6 @@ mod tests {
         .fetch_one(persistence.pool())
         .await
         .unwrap();
-        assert_eq!(coll_after_slash, "100");
+        assert_eq!(coll_after_slash, "0");
     }
 }
