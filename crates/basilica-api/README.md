@@ -44,7 +44,7 @@ bind_address = "0.0.0.0:8000"
 network = "finney"
 netuid = 39
 
-# Note: Auth0 authentication is automatically configured
+# Note: Auth0 JWT authentication is required for protected endpoints
 ```
 
 ## API Endpoints
@@ -62,9 +62,9 @@ netuid = 39
 # List executors
 curl http://localhost:8000/api/v1/executors
 
-# Rent GPU (with Auth0 JWT token)
+# Rent GPU (requires Auth0 JWT token)
 curl -X POST http://localhost:8000/api/v1/rentals \
-  -H "Authorization: Bearer your-jwt-token" \
+  -H "Authorization: Bearer your-auth0-jwt-token" \
   -H "Content-Type: application/json" \
   -d '{
     "gpu_requirements": {"min_memory_gb": 40, "gpu_count": 1},

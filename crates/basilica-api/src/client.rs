@@ -5,18 +5,13 @@
 //!
 //! # Authentication
 //!
-//! The client supports dual authentication modes with JWT Bearer tokens as the preferred method:
+//! The client uses Auth0 JWT Bearer token authentication:
 //!
-//! ## JWT Bearer Token Authentication (Recommended)
-//! - Uses `Authorization: Bearer {token}` header
+//! ## Auth0 JWT Authentication
+//! - Uses `Authorization: Bearer {token}` header with Auth0-issued JWT tokens
 //! - Supports automatic token refresh on 401 responses
 //! - Thread-safe token management with async/await support
-//! - Enhanced security compared to API keys
-//!
-//! ## API Key Authentication (Deprecated)
-//! - Fallback authentication method for backward compatibility
-//! - Logs deprecation warnings when used
-//! - Only used when no Bearer token is available
+//! - Secure authentication via Auth0 identity provider
 //!
 //! # Usage Examples
 //!
@@ -25,30 +20,25 @@
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> basilica_api::error::Result<()> {
-//! // JWT authentication (preferred)
+//! // Auth0 JWT authentication
 //! let client = ClientBuilder::default()
 //!     .base_url("https://api.basilica.ai")
-//!     .with_bearer_token("your_jwt_token")
+//!     .with_bearer_token("your_auth0_jwt_token")
 //!     .build()?;
 //!
 //! // With custom token refresher
 //! // let refresher = Arc::new(MyTokenRefresh::new());
 //! // let client = ClientBuilder::default()
 //! //     .base_url("https://api.basilica.ai")
-//! //     .with_bearer_token("initial_token")
+//! //     .with_bearer_token("initial_auth0_token")
 //! //     .with_token_refresher(refresher)
 //! //     .build()?;
 //!
 //! // Runtime token management
-//! client.set_bearer_token("new_token").await;
+//! client.set_bearer_token("new_auth0_token").await;
 //! let current_token = client.get_bearer_token().await;
 //! client.clear_bearer_token().await;
 //!
-//! // JWT authentication is required
-//! let client = ClientBuilder::default()
-//!     .base_url("https://api.basilica.ai")
-//!     .with_bearer_token("your_jwt_token")
-//!     .build()?;
 //! # Ok(())
 //! # }
 //! ```
@@ -256,12 +246,10 @@ impl BasilicaClient {
         self.get("/health").await
     }
 
-    // ===== Registration =====
-
     // ===== Private Helper Methods =====
 
     /// Apply authentication to request if configured
-    /// Tries JWT Bearer token first, then falls back to API key
+    /// Uses Auth0 JWT Bearer token authentication
     async fn apply_auth(&self, request: RequestBuilder) -> RequestBuilder {
         let bearer_token = self.bearer_token.read().await;
         if let Some(token) = bearer_token.as_ref() {
@@ -431,7 +419,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Set the Bearer token for JWT authentication (preferred)
+    /// Set the Bearer token for Auth0 JWT authentication
     pub fn with_bearer_token(mut self, token: impl Into<String>) -> Self {
         self.bearer_token = Some(token.into());
         self

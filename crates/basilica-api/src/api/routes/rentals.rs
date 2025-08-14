@@ -23,13 +23,13 @@ use std::sync::LazyLock;
 use tracing::{debug, error, info};
 
 /// Regular expression for validating Docker image names according to Docker's naming conventions.
-/// 
+///
 /// Pattern breakdown:
 /// - `^[a-zA-Z0-9]` - Must start with alphanumeric character
 /// - `([a-zA-Z0-9._:-]*[a-zA-Z0-9])?` - Optional middle part with valid chars, ending alphanumeric
 /// - `(/[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?){0,2}` - 0-2 path segments (registry/namespace)
 /// - `(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})?` - Optional tag or SHA256 digest
-/// 
+///
 /// Valid examples: `nginx`, `ubuntu:22.04`, `registry.io/team/app:v1.2.3`, `image@sha256:abc...`
 static DOCKER_IMAGE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[a-zA-Z0-9]([a-zA-Z0-9._:-]*[a-zA-Z0-9])?(/[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?){0,2}(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})?$").unwrap()
