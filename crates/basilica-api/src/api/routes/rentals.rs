@@ -18,7 +18,22 @@ use basilica_validator::{
     RentalResponse,
 };
 use futures::stream::Stream;
+use regex::Regex;
+use std::sync::LazyLock;
 use tracing::{debug, error, info};
+
+/// Regular expression for validating Docker image names according to Docker's naming conventions.
+/// 
+/// Pattern breakdown:
+/// - `^[a-zA-Z0-9]` - Must start with alphanumeric character
+/// - `([a-zA-Z0-9._:-]*[a-zA-Z0-9])?` - Optional middle part with valid chars, ending alphanumeric
+/// - `(/[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?){0,2}` - 0-2 path segments (registry/namespace)
+/// - `(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})?` - Optional tag or SHA256 digest
+/// 
+/// Valid examples: `nginx`, `ubuntu:22.04`, `registry.io/team/app:v1.2.3`, `image@sha256:abc...`
+static DOCKER_IMAGE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[a-zA-Z0-9]([a-zA-Z0-9._:-]*[a-zA-Z0-9])?(/[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?){0,2}(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})?$").unwrap()
+});
 
 /// Get detailed rental status
 pub async fn get_rental_status(
@@ -219,14 +234,21 @@ pub async fn list_available_executors(
 }
 
 fn is_valid_container_image(image: &str) -> bool {
-    if image.trim().is_empty() || image.trim().len() < 3 || image.trim().len() > 1024 {
+    if image.is_empty() || image.len() < 3 || image.len() > 255 {
         return false;
     }
 
-    if image.contains("..") || image.contains('\0') {
+    // Check for path traversal
+    if image.contains("..") {
         return false;
     }
 
+    // Check for null bytes
+    if image.contains('\0') {
+        return false;
+    }
+
+    // Check for command injection characters
     if image.contains('\'')
         || image.contains('`')
         || image.contains(';')
@@ -236,23 +258,159 @@ fn is_valid_container_image(image: &str) -> bool {
         return false;
     }
 
-    let parts: Vec<&str> = image.split('/').collect();
-    if parts.len() > 3 {
-        return false;
+    DOCKER_IMAGE_REGEX.is_match(image)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_simple_images() {
+        assert!(is_valid_container_image("nginx"));
+        assert!(is_valid_container_image("ubuntu"));
+        assert!(is_valid_container_image("redis"));
+        assert!(is_valid_container_image("postgres"));
+        assert!(is_valid_container_image("node"));
+        assert!(is_valid_container_image("python"));
+        assert!(is_valid_container_image("alpine"));
     }
 
-    for ch in image.chars() {
-        if !ch.is_alphanumeric()
-            && ch != '.'
-            && ch != '-'
-            && ch != '_'
-            && ch != ':'
-            && ch != '/'
-            && ch != '@'
-        {
-            return false;
-        }
+    #[test]
+    fn test_valid_tagged_images() {
+        assert!(is_valid_container_image("nginx:latest"));
+        assert!(is_valid_container_image("ubuntu:22.04"));
+        assert!(is_valid_container_image("node:18-alpine"));
+        assert!(is_valid_container_image("postgres:15.2"));
+        assert!(is_valid_container_image("python:3.11-slim"));
+        assert!(is_valid_container_image("redis:7-alpine"));
+        assert!(is_valid_container_image("my-app:v1.2.3"));
     }
 
-    true
+    #[test]
+    fn test_valid_registry_paths() {
+        assert!(is_valid_container_image("docker.io/library/nginx"));
+        assert!(is_valid_container_image("docker.io/nginx"));
+        assert!(is_valid_container_image("gcr.io/project/image"));
+        assert!(is_valid_container_image("registry.example.com/team/app"));
+        assert!(is_valid_container_image("localhost:5000/myapp"));
+        assert!(is_valid_container_image(
+            "my-registry.com/namespace/app:latest"
+        ));
+        assert!(is_valid_container_image("quay.io/prometheus/prometheus"));
+    }
+
+    #[test]
+    fn test_valid_with_underscores_and_hyphens() {
+        assert!(is_valid_container_image("my_app"));
+        assert!(is_valid_container_image("my-app"));
+        assert!(is_valid_container_image("app_with_underscores"));
+        assert!(is_valid_container_image("app-with-hyphens"));
+        assert!(is_valid_container_image("registry.com/my_team/my-app"));
+    }
+
+    #[test]
+    fn test_valid_with_dots() {
+        assert!(is_valid_container_image("app.service"));
+        assert!(is_valid_container_image("my.registry.com/app"));
+        assert!(is_valid_container_image("service.v2"));
+        assert!(is_valid_container_image("app:1.2.3"));
+    }
+
+    #[test]
+    fn test_valid_digests() {
+        assert!(is_valid_container_image(
+            "nginx@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        ));
+        assert!(is_valid_container_image(
+            "ubuntu@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        ));
+        assert!(is_valid_container_image("registry.com/app@sha256:fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"));
+    }
+
+    #[test]
+    fn test_invalid_empty_or_too_short() {
+        assert!(!is_valid_container_image(""));
+        assert!(!is_valid_container_image("   "));
+        assert!(!is_valid_container_image("a"));
+        assert!(!is_valid_container_image("ab"));
+    }
+
+    #[test]
+    fn test_invalid_too_long() {
+        let long_name = "a".repeat(1025);
+        assert!(!is_valid_container_image(&long_name));
+    }
+
+    #[test]
+    fn test_invalid_path_traversal() {
+        assert!(!is_valid_container_image("../etc/passwd"));
+        assert!(!is_valid_container_image("app/../config"));
+        assert!(!is_valid_container_image(
+            "registry.com/../../../etc/passwd"
+        ));
+        assert!(!is_valid_container_image("app..evil"));
+    }
+
+    #[test]
+    fn test_invalid_null_bytes() {
+        assert!(!is_valid_container_image("app\0"));
+        assert!(!is_valid_container_image("nginx\0/bin/sh"));
+    }
+
+    #[test]
+    fn test_invalid_command_injection() {
+        assert!(!is_valid_container_image("nginx;rm -rf /"));
+        assert!(!is_valid_container_image("app&&cat /etc/passwd"));
+        assert!(!is_valid_container_image("image|/bin/sh"));
+        assert!(!is_valid_container_image("nginx'"));
+        assert!(!is_valid_container_image("app`whoami`"));
+        assert!(!is_valid_container_image("nginx;echo evil"));
+    }
+
+    #[test]
+    fn test_invalid_too_many_path_segments() {
+        assert!(!is_valid_container_image("a/b/c/d"));
+        assert!(!is_valid_container_image(
+            "registry.com/team/project/subproject"
+        ));
+    }
+
+    #[test]
+    fn test_invalid_special_characters() {
+        assert!(!is_valid_container_image("app with spaces"));
+        assert!(!is_valid_container_image("nginx\n"));
+        assert!(!is_valid_container_image("app\t"));
+        assert!(!is_valid_container_image("image#tag"));
+        assert!(!is_valid_container_image("app$variable"));
+        assert!(!is_valid_container_image("image%encoded"));
+        assert!(!is_valid_container_image("app*wildcard"));
+        assert!(!is_valid_container_image("image?query"));
+        assert!(!is_valid_container_image("app[bracket]"));
+        assert!(!is_valid_container_image("image{brace}"));
+        assert!(!is_valid_container_image("app\\backslash"));
+    }
+
+    #[test]
+    fn test_invalid_malformed_tags_and_digests() {
+        assert!(!is_valid_container_image("nginx:"));
+        assert!(!is_valid_container_image("nginx@"));
+        assert!(!is_valid_container_image("nginx@sha256:"));
+        assert!(!is_valid_container_image("nginx@sha256:invalid"));
+        assert!(!is_valid_container_image("nginx@sha256:abc123")); // too short
+    }
+
+    #[test]
+    fn test_edge_cases() {
+        // Valid edge cases
+        assert!(is_valid_container_image("a1b")); // minimum length
+        assert!(is_valid_container_image("9abc")); // starting with number
+
+        // Invalid edge cases
+        assert!(!is_valid_container_image("-app")); // starting with hyphen
+        assert!(!is_valid_container_image("app-")); // ending with hyphen
+        assert!(!is_valid_container_image(".app")); // starting with dot
+        assert!(!is_valid_container_image("app.")); // ending with dot
+        assert!(!is_valid_container_image("_app")); // starting with underscore
+    }
 }
