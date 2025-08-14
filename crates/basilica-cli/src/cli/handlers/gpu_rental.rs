@@ -177,7 +177,6 @@ pub async fn handle_up(
     // Display SSH credentials if available
     if let Some(ref ssh_creds) = response.ssh_credentials {
         print_link("SSH", ssh_creds);
-        print_info("Credentials cached for future use");
     } else {
         print_info("No SSH access configured for this container (port 22 not mapped)");
     }
