@@ -8,6 +8,7 @@ use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use console::{style, Term};
+use crate::output::{print_info, print_success};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope,
@@ -148,7 +149,7 @@ impl OAuthFlow {
         for (key, value) in &self.config.additional_params {
             auth_request = auth_request.add_extra_param(key, value);
         }
-        
+
         // Add audience parameter from basilica-common
         auth_request = auth_request.add_extra_param("audience", basilica_common::AUTH0_AUDIENCE);
 
@@ -176,39 +177,26 @@ impl OAuthFlow {
             .ok_or_else(|| AuthError::ConfigError("State not set for OAuth flow".to_string()))?;
 
         // Open browser to authorization URL
-        let term = Term::stdout();
-
-        term.write_line("Opening browser for sign in...")
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-        term.write_line("Browser didn't open? Use the URL below to sign in:")
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-
+        print_info("Opening browser for sign in...");
+        print_info("Browser didn't open? Use the URL below to sign in:");
+        
         // Use console's style for dimmed text instead of ANSI codes
-        term.write_line(&format!("{}", style(&auth_url).dim()))
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+        println!("{}", style(&auth_url).dim());
 
         webbrowser::open(&auth_url)
             .map_err(|e| AuthError::ConfigError(format!("Failed to open browser: {}", e)))?;
 
-        term.write_line("Waiting for authentication...")
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-
-        // Flush to ensure everything is written
-        term.flush()
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+        print_info("Waiting for authentication...");
 
         // Wait for callback with authorization code
         let callback_data = callback_server.start_and_wait(expected_state).await?;
 
-        // Clear the last 5 lines (including "Opening browser" and "Browser didn't open")
-        term.clear_last_lines(5)
+        // Clear the last lines (including "Opening browser" and "Browser didn't open")
+        let term = Term::stdout();
+        term.clear_last_lines(6)
             .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
 
-        term.write_line("✓ Authentication successful!")
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-
-        term.flush()
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+        print_success("Login successful!");
 
         // Extract the authorization code
         let code = callback_data.code.ok_or_else(|| {

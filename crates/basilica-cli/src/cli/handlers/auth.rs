@@ -3,6 +3,7 @@
 use crate::auth::{should_use_device_flow, AuthConfig, DeviceFlow, OAuthFlow, TokenStore};
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
+use crate::output::print_success;
 use std::path::Path;
 use tracing::{debug, error, info, warn};
 
@@ -124,7 +125,7 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
     // This would require storing the auth config and implementing token revocation
     // For now, we just clear local tokens
 
-    println!("Successfully logged out!");
+    print_success("Logout successful!");
     info!("All authentication tokens have been cleared");
 
     info!("Logout completed successfully");

@@ -4,7 +4,8 @@
 //! devices that lack a web browser or have limited input capabilities.
 
 use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
-use console::Term;
+use crate::output::{print_info, print_success};
+use console::{style, Term};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
@@ -101,51 +102,21 @@ impl DeviceFlow {
 
     /// Display user instructions for device authorization
     pub fn display_user_instructions(&self, response: &DeviceAuthResponse) -> AuthResult<()> {
-        let term = Term::stdout();
+        let formatted_code = response.user_code.clone();
 
-        term.write_line("")
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-
-        // Format user code with dashes for better readability (e.g., "ABCD1234" -> "ABCD-1234")
-        let formatted_code = if response.user_code.len() >= 4 {
-            let mid = response.user_code.len() / 2;
-            format!(
-                "{}-{}",
-                &response.user_code[..mid],
-                &response.user_code[mid..]
-            )
-        } else {
-            response.user_code.clone()
-        };
-
-        term.write_line(&format!(
-            "1. Visit: \x1B[90m{}\x1B[0m",
-            response.verification_uri
-        ))
-        .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?; // Grey URL
-        term.write_line(&format!("2. Enter code: \x1B[1m{}\x1B[0m", formatted_code))
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?; // Bold code for emphasis
+        println!("1. Visit: {}", style(&response.verification_uri).dim());
+        println!("2. Enter code: {}", style(&formatted_code).bold());
 
         if let Some(complete_uri) = &response.verification_uri_complete {
-            term.write_line(&format!(
-                "\n   Or visit this direct link: \x1B[90m{}\x1B[0m",
-                complete_uri
-            ))
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-            // Grey URL
+            println!(
+                "\n   Or visit this direct link: {}",
+                style(complete_uri).dim()
+            );
         }
 
-        term.write_line("")
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-        term.write_line(&format!(
-            "Waiting for authorization... (expires in {} seconds)",
-            response.expires_in
-        ))
-        .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-        term.write_line("Press Ctrl+C to cancel")
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-        term.write_line("")
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+        println!();
+        print_info("Waiting for authentication...");
+        print_info("Press Ctrl+C to cancel");
 
         Ok(())
     }
@@ -198,10 +169,10 @@ impl DeviceFlow {
                     {
                         if poll_response.error.as_deref() == Some("slow_down") {
                             current_interval = Duration::from_secs(current_interval.as_secs() + 5);
-                            println!(
+                            print_info(&format!(
                                 "Rate limited, slowing down polling interval to {} seconds",
                                 current_interval.as_secs()
-                            );
+                            ));
                         }
                     }
                     continue;
@@ -234,8 +205,7 @@ impl DeviceFlow {
         };
         term.clear_last_lines(lines_to_clear)
             .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-        term.write_line("✓ Authentication successful!")
-            .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
+        print_success("Login successful!");
 
         Ok(token_set)
     }

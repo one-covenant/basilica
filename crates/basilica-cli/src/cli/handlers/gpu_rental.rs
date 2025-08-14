@@ -6,7 +6,7 @@ use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
-use crate::output::{json_output, table_output};
+use crate::output::{json_output, print_error, print_info, print_link, print_success, table_output};
 use crate::ssh::SshClient;
 use basilica_api::api::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
@@ -157,14 +157,14 @@ pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig, n
     });
     cache.save().await?;
 
-    println!("✅ Successfully created rental: {}", response.rental_id);
+    print_success(&format!("Successfully created rental: {}", response.rental_id));
 
     // Display SSH credentials if available
     if let Some(ref ssh_creds) = response.ssh_credentials {
-        println!("🔗 SSH: {}", ssh_creds);
-        println!("💾 Credentials cached for future use");
+        print_link("SSH", ssh_creds);
+        print_info("Credentials cached for future use");
     } else {
-        println!("ℹ️  No SSH access configured for this container (port 22 not mapped)");
+        print_info("No SSH access configured for this container (port 22 not mapped)");
     }
 
     Ok(())
@@ -339,11 +339,11 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig, no_auth: bool
             .map_err(|e| CliError::internal(format!("Failed to stop rental: {e}")))
         {
             Ok(_) => {
-                println!("✅ Successfully stopped rental: {rental_id}");
+                print_success(&format!("Successfully stopped rental: {rental_id}"));
                 // Remove from cache
                 cache.remove_rental(rental_id);
             }
-            Err(e) => eprintln!("❌ Failed to stop rental {rental_id}: {e}"),
+            Err(e) => print_error(&format!("Failed to stop rental {rental_id}: {e}")),
         }
     }
 

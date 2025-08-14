@@ -3,27 +3,28 @@
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::Result;
+use crate::output::{print_auth, print_error, print_init, print_success};
 use tracing::debug;
 
 /// Handle the `init` command - setup and authentication check
 pub async fn handle_init(config: &CliConfig, no_auth: bool) -> Result<()> {
     debug!("Initializing Basilica CLI");
 
-    println!("🚀 Initializing Basilica CLI...");
+    print_init("Initializing Basilica CLI...");
 
     // Check if user is authenticated
-    println!("🔐 Checking authentication status...");
+    print_auth("Checking authentication status...");
     
     let api_client = create_authenticated_client(config, no_auth).await?;
     
     // Check if we have authentication
     if api_client.has_auth().await {
-        println!("✅ Authentication is configured!");
+        print_success("Authentication is configured!");
         
         // Try to validate by calling health endpoint
         match api_client.health_check().await {
             Ok(health) => {
-                println!("✅ Successfully connected to Basilica API");
+                print_success("Successfully connected to Basilica API");
                 println!("   Status: {}", health.status);
                 println!("   Version: {}", health.version);
             }
@@ -33,7 +34,7 @@ pub async fn handle_init(config: &CliConfig, no_auth: bool) -> Result<()> {
             }
         }
     } else {
-        println!("❌ Not authenticated!");
+        print_error("Not authenticated!");
         println!();
         println!("Please run 'basilica login' to authenticate with Auth0.");
         println!("This will allow you to access the Basilica API.");
