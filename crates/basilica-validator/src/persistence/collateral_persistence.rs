@@ -1,6 +1,7 @@
 use crate::persistence::SimplePersistence;
 use alloy_primitives::{Address, U256};
 use chrono::Utc;
+use collateral_contract::config::CONTRACT_DEPLOYED_BLOCK_NUMBER;
 use collateral_contract::{Deposit, Reclaimed, Slashed};
 use hex::ToHex;
 use sqlx::Row;
@@ -8,6 +9,7 @@ use tracing::warn;
 
 impl SimplePersistence {
     pub async fn create_collateral_scanned_blocks_table(&self) -> Result<(), anyhow::Error> {
+        let now = Utc::now().to_rfc3339();
         let query = r#"
             CREATE TABLE IF NOT EXISTS collateral_status (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +36,15 @@ impl SimplePersistence {
 
         sqlx::query(&index).execute(self.pool()).await?;
 
+        let insert_initial_scan_row = r#"
+            INSERT INTO collateral_scan_status (last_scanned_block_number, updated_at) VALUES (?, ?);
+        "#;
+        sqlx::query(&insert_initial_scan_row)
+            .bind(CONTRACT_DEPLOYED_BLOCK_NUMBER as i64)
+            .bind(now)
+            .execute(self.pool())
+            .await?;
+
         Ok(())
     }
 
@@ -50,10 +61,13 @@ impl SimplePersistence {
         &self,
         last_scanned_block: u64,
     ) -> Result<(), anyhow::Error> {
-        let query = "UPDATE collateral_scan_status SET last_scanned_block_number = ? ";
+        let now = Utc::now().to_rfc3339();
+        let query =
+            "UPDATE collateral_scan_status SET last_scanned_block_number = ?, updated_at = ? ";
 
         sqlx::query(&query)
             .bind(last_scanned_block as i64)
+            .bind(now)
             .execute(self.pool())
             .await?;
 
@@ -188,6 +202,7 @@ impl SimplePersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_primitives::FixedBytes;
 
     fn make_hotkey(byte: u8) -> [u8; 32] {
         [byte; 32]

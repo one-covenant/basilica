@@ -16,3 +16,4 @@ pub const LOCAL_WS_URL: &str = "ws://localhost:9944";
 pub const PRIVATE_KEY_FILE: &str = "$HOME/.basilca/private_key";
 
 pub const MAX_BLOCKS_PER_SCAN: u64 = 1000;
+pub const CONTRACT_DEPLOYED_BLOCK_NUMBER: u64 = 0;
