@@ -20,7 +20,6 @@ pub use token_store::TokenStore;
 pub use types::{AuthConfig, AuthError, AuthResult, TokenSet};
 
 /// Environment detection utilities for determining authentication flow
-
 /// Detect if running in Windows Subsystem for Linux (WSL)
 pub fn is_wsl_environment() -> bool {
     std::fs::read_to_string("/proc/version")

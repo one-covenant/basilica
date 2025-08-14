@@ -76,7 +76,3 @@ rate_limit = 100
 [storage]
 data_dir = "/opt/basilica/data"
 
-[security]
-enable_authentication = ${ENABLE_AUTH}
-api_key_header = "X-API-Key"
-allowed_api_keys = []

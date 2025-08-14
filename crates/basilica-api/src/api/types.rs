@@ -40,28 +40,6 @@ pub struct HealthCheckResponse {
     pub total_validators: usize,
 }
 
-/// Telemetry response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct TelemetryResponse {
-    /// Request count
-    pub request_count: u64,
-
-    /// Average response time (ms)
-    pub avg_response_time_ms: f64,
-
-    /// Success rate
-    pub success_rate: f64,
-
-    /// Active connections
-    pub active_connections: usize,
-
-    /// Cache hit rate
-    pub cache_hit_rate: f64,
-
-    /// Timestamp
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-}
-
 /// List rentals query
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ListRentalsQuery {

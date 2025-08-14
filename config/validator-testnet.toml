@@ -76,10 +76,6 @@ rate_limit = 100
 [storage]
 data_dir = "/opt/basilica/data"
 
-[security]
-enable_authentication = false
-api_key_header = "X-API-Key"
-allowed_api_keys = []
 
 # Discovery section is now only used as fallback when dynamic discovery fails
 [discovery]

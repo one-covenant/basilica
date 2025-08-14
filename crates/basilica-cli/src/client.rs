@@ -1,4 +1,10 @@
-//! Client creation and authentication management
+//! CLI-specific client creation and authentication management
+//!
+//! This module handles creating authenticated BasilicaClient instances specifically
+//! for CLI usage, including JWT token retrieval, refresh, and fallback authentication.
+//!
+//! This is distinct from the general HTTP client library in basilica-api/src/client.rs
+//! which provides the underlying HTTP client functionality.
 
 use crate::auth::{AuthConfig, OAuthFlow, TokenStore};
 use crate::config::CliConfig;

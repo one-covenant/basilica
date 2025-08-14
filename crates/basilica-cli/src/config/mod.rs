@@ -107,26 +107,18 @@ impl Default for WalletConfig {
 }
 
 /// Authentication configuration for OAuth flows
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthConfig {
     /// Auth0 configuration
     pub auth0: Auth0Config,
 }
 
 /// Auth0 specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Auth0Config {
     /// Advanced Auth0 configuration
     #[serde(default)]
     pub advanced: Auth0AdvancedConfig,
-}
-
-impl Default for Auth0Config {
-    fn default() -> Self {
-        Self {
-            advanced: Auth0AdvancedConfig::default(),
-        }
-    }
 }
 
 /// Advanced Auth0 configuration settings
@@ -192,13 +184,6 @@ impl AuthConfig {
                 "email".to_string(),
             ], // Default scopes
             additional_params: std::collections::HashMap::new(),
-        }
-    }
-
-    /// Create a default AuthConfig
-    pub fn default() -> Self {
-        Self {
-            auth0: Auth0Config::default(),
         }
     }
 }

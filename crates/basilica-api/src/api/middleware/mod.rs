@@ -1,13 +1,8 @@
 //! API middleware stack
 
-mod auth;
 mod auth0;
 mod rate_limit;
 
-pub use auth::{
-    auth_middleware, extract_bearer_token, get_user_claims, has_any_scope, has_scope,
-    optional_auth_middleware, validate_request, UserClaims,
-};
 pub use auth0::{auth0_middleware, get_auth0_claims, Auth0Claims};
 pub use rate_limit::RateLimitMiddleware;
 
@@ -23,7 +18,6 @@ use axum::{
 use tower_http::{
     cors::{Any, CorsLayer},
     timeout::TimeoutLayer,
-    trace::{DefaultMakeSpan, TraceLayer},
 };
 
 /// Apply middleware to a router
@@ -38,8 +32,6 @@ pub fn apply_middleware(router: Router<AppState>, state: AppState) -> Router<App
         .layer(TimeoutLayer::new(state.config.request_timeout()))
         // Add CORS
         .layer(cors)
-        // Add tracing
-        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
         // Add custom middleware layers
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

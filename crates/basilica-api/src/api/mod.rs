@@ -33,8 +33,6 @@ pub fn routes(state: AppState) -> Router<AppState> {
             "/executors/available",
             get(routes::rentals::list_available_executors),
         )
-        // Telemetry endpoint
-        .route("/telemetry", get(routes::telemetry::get_telemetry))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::auth0_middleware,
@@ -61,7 +59,6 @@ pub fn docs_routes() -> Router<AppState> {
     paths(
         // Health and monitoring
         routes::health::health_check,
-        routes::telemetry::get_telemetry,
     ),
     components(schemas(
         // Rental types
@@ -80,7 +77,6 @@ pub fn docs_routes() -> Router<AppState> {
 
         // Health types
         types::HealthCheckResponse,
-        types::TelemetryResponse,
 
         // Error response
         crate::error::ErrorResponse,

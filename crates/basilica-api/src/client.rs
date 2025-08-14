@@ -591,7 +591,7 @@ mod tests {
         #[allow(deprecated)]
         let client = ClientBuilder::default()
             .base_url("https://api.basilica.ai")
-            .api_key("test-key")
+            .with_bearer_token("test-key")
             .timeout(Duration::from_secs(60))
             .connect_timeout(Duration::from_secs(10))
             .pool_max_idle_per_host(100)
@@ -605,7 +605,7 @@ mod tests {
         new_token: String,
     }
 
-    #[async_trait]
+    #[async_trait::async_trait]
     impl TokenRefresh for MockTokenRefresh {
         async fn refresh_token(&self, _expired_token: &str) -> Result<String> {
             Ok(self.new_token.clone())

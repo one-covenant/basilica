@@ -10,7 +10,6 @@
 //! - **Rate Limiting**: Configurable rate limits with different tiers
 //! - **Caching**: Response caching with in-memory or Redis backends
 //! - **OpenAPI Documentation**: Auto-generated API documentation
-//! - **Monitoring**: Prometheus metrics and distributed tracing
 
 // Server modules (always available for backward compatibility)
 pub mod api;

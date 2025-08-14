@@ -65,11 +65,9 @@ fn extract_bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|header| header.to_str().ok())
         .and_then(|auth_header| {
-            if auth_header.starts_with("Bearer ") {
-                Some(auth_header[7..].to_string())
-            } else {
-                None
-            }
+            auth_header
+                .strip_prefix("Bearer ")
+                .map(|token| token.to_string())
         })
 }
 
