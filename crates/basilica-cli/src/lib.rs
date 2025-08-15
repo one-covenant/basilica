@@ -21,7 +21,7 @@ pub mod cli;
 pub mod client;
 pub mod config;
 pub mod error;
-pub mod interactive;
+// pub mod interactive; // Temporarily disabled - will re-enable with proper interactive selection
 pub mod output;
 pub mod ssh;
 pub mod wallet;

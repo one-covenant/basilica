@@ -16,9 +16,9 @@ use std::path::{Path, PathBuf};
 
 QUICK START:
   basilica login                    # Login and authentication  
-  basilica up                       # Interactive GPU rental
+  basilica up <spec>                # Start GPU rental with specification
   basilica exec <uid> \"python train.py\"  # Run your code
-  basilica down                     # Interactive termination
+  basilica down <uid>               # Terminate specific rental
 
 GPU RENTAL:
   basilica ls                       # List available GPUs with pricing

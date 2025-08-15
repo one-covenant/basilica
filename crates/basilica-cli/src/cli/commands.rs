@@ -56,7 +56,7 @@ pub enum Commands {
 
     /// Terminate instances
     Down {
-        /// Rental UID/HUID (optional for interactive mode)
+        /// Rental UID/HUID to terminate
         targets: Vec<String>,
     },
 

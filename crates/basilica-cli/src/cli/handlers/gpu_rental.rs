@@ -5,7 +5,6 @@ use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
-use crate::interactive::selector::InteractiveSelector;
 use crate::output::{
     json_output, print_error, print_info, print_link, print_success, table_output,
 };
@@ -352,19 +351,9 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig, no_auth: bool
     let api_client = create_authenticated_client(config, no_auth).await?;
 
     let rental_ids = if targets.is_empty() {
-        // Interactive mode - let user select from active rentals
-        let rentals_list = api_client
-            .list_rentals(None)
-            .await
-            .map_err(|e| CliError::internal(format!("Failed to list rentals: {e}")))?;
-
-        if rentals_list.rentals.is_empty() {
-            println!("No active rentals to terminate.");
-            return Ok(());
-        }
-
-        let selector = InteractiveSelector::new();
-        selector.select_rental_items_for_termination(&rentals_list.rentals[..])?
+        return Err(CliError::invalid_argument(
+            "No rental IDs specified. Please provide rental IDs to terminate."
+        ));
     } else {
         targets
     };
