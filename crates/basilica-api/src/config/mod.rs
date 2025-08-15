@@ -1,16 +1,12 @@
 //! Configuration module for the Basilica API gateway
 
-mod auth;
 mod cache;
 mod rate_limit;
 mod server;
-mod telemetry;
 
-pub use auth::AuthConfig;
 pub use cache::{CacheBackend, CacheConfig};
 pub use rate_limit::{RateLimitBackend, RateLimitConfig};
 pub use server::ServerConfig;
-pub use telemetry::TelemetryConfig;
 
 use basilica_common::config::{BittensorConfig, ConfigLoader};
 use basilica_common::ConfigurationError as ConfigError;
@@ -67,12 +63,6 @@ pub struct Config {
 
     /// Rate limiting configuration
     pub rate_limit: RateLimitConfig,
-
-    /// Authentication configuration
-    pub auth: AuthConfig,
-
-    /// Telemetry configuration
-    pub telemetry: TelemetryConfig,
 }
 
 impl Config {

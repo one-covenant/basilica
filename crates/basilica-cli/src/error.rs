@@ -41,8 +41,8 @@ pub enum CliError {
     #[error("Operation timed out")]
     Timeout,
 
-    #[error("Internal error: {message}")]
-    Internal { message: String },
+    #[error("Internal error: {0}")]
+    Internal(#[from] anyhow::Error),
 }
 
 /// Result type alias for CLI operations
@@ -100,8 +100,6 @@ impl CliError {
 
     /// Create a new internal error
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::Internal {
-            message: message.into(),
-        }
+        Self::Internal(anyhow::anyhow!(message.into()))
     }
 }

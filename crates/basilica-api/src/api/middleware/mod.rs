@@ -1,7 +1,9 @@
 //! API middleware stack
 
+mod auth0;
 mod rate_limit;
 
+pub use auth0::{auth0_middleware, get_auth0_claims, Auth0Claims};
 pub use rate_limit::RateLimitMiddleware;
 
 use crate::server::AppState;
@@ -16,7 +18,6 @@ use axum::{
 use tower_http::{
     cors::{Any, CorsLayer},
     timeout::TimeoutLayer,
-    trace::{DefaultMakeSpan, TraceLayer},
 };
 
 /// Apply middleware to a router
@@ -31,8 +32,6 @@ pub fn apply_middleware(router: Router<AppState>, state: AppState) -> Router<App
         .layer(TimeoutLayer::new(state.config.request_timeout()))
         // Add CORS
         .layer(cors)
-        // Add tracing
-        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
         // Add custom middleware layers
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

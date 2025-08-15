@@ -63,7 +63,10 @@ fn default_ssh_timeout() -> u64 {
 
 impl Default for SshConfig {
     fn default() -> Self {
-        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+        let strategy = choose_base_strategy()
+            .expect("Unable to determine base directories for SSH configuration");
+        let home_dir = strategy.home_dir();
+
         Self {
             key_path: home_dir.join(".ssh").join("basilica_rsa.pub"),
             connection_timeout: 30,
@@ -98,11 +101,36 @@ pub struct WalletConfig {
 
 impl Default for WalletConfig {
     fn default() -> Self {
-        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+        let strategy = choose_base_strategy()
+            .expect("Unable to determine base directories for wallet configuration");
+        let home_dir = strategy.home_dir();
+
         Self {
             default_wallet: "default".to_string(),
             base_wallet_path: home_dir.join(".bittensor").join("wallets"),
         }
+    }
+}
+
+/// Create auth configuration for OAuth flows with specific port
+/// This bridges the gap between constants and the auth module's requirements
+pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig {
+    // Use constants from basilica-common
+    let domain = basilica_common::AUTH0_DOMAIN;
+
+    crate::auth::types::AuthConfig {
+        client_id: basilica_common::AUTH0_CLIENT_ID.to_string(),
+        auth_endpoint: format!("https://{}/authorize", domain),
+        token_endpoint: format!("https://{}/oauth/token", domain),
+        device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),
+        revoke_endpoint: Some(format!("https://{}/oauth/revoke", domain)),
+        redirect_uri: format!("http://localhost:{}/auth/callback", port),
+        scopes: vec![
+            "openid".to_string(),
+            "profile".to_string(),
+            "email".to_string(),
+        ], // Default scopes
+        additional_params: std::collections::HashMap::new(),
     }
 }
 
@@ -132,6 +160,12 @@ impl CliConfig {
         let config_dir = Self::config_dir()?;
         let config_path = config_dir.join("config.toml");
         Self::load_from_path(&config_path).await
+    }
+
+    /// Load configuration with auth configuration from default locations
+    pub async fn load_with_auth() -> Result<Self> {
+        // Just load the default config, auth is now built-in
+        Self::load_default().await
     }
 
     /// Load configuration from specific path

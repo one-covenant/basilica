@@ -11,7 +11,10 @@ license = "MIT OR Apache-2.0"
 basilica-common = { path = "../basilica-common" }
 bittensor = { path = "../bittensor" }
 basilica-protocol = { path = "../basilica-protocol" }
-basilica-validator = { path = "../basilica-validator", features = ["client", "openapi"] }
+basilica-validator = { path = "../basilica-validator", features = [
+  "client",
+  "openapi",
+] }
 
 # Async runtime
 tokio = { workspace = true }
@@ -23,7 +26,7 @@ async-stream = "0.3"
 # Web framework
 axum = { workspace = true, features = ["ws"] }
 tower = { workspace = true }
-tower-http = { workspace = true, features = ["cors", "trace", "timeout"] }
+tower-http = { workspace = true, features = ["cors", "timeout", "trace"] }
 hyper = { version = "0.14", features = ["full"] }
 
 # HTTP client
@@ -38,11 +41,9 @@ toml = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
-# Logging and metrics
+# Logging
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-metrics = { workspace = true }
-metrics-exporter-prometheus = { workspace = true }
 
 # Configuration
 figment = { workspace = true }
@@ -50,6 +51,7 @@ figment = { workspace = true }
 # Authentication
 jsonwebtoken = "9.2"
 argon2 = "0.5"
+base64 = "0.21"
 
 # Rate limiting
 governor = "0.6"
@@ -81,6 +83,7 @@ url = "2.5"
 sha2 = "0.10"
 hex = "0.4"
 bs58 = "0.5"
+regex = "1.10"
 
 # Load balancing algorithms
 weighted-rs = "0.1"

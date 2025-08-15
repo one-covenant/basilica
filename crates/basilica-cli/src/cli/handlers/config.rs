@@ -3,7 +3,7 @@
 use crate::cli::commands::ConfigAction;
 use crate::config::CliConfig;
 use crate::error::Result;
-use crate::output::table_output;
+use crate::output::{print_success, table_output};
 use std::path::Path;
 use tracing::{debug, info};
 
@@ -45,7 +45,7 @@ async fn handle_config_set(
     config.save_to_path(config_path.as_ref()).await?;
 
     info!("Configuration updated: {} = {}", key, value);
-    println!("✅ Configuration updated: {key} = {value}");
+    print_success(&format!("Configuration updated: {key} = {value}"));
 
     Ok(())
 }
@@ -69,7 +69,7 @@ async fn handle_config_reset(config_path: impl AsRef<Path>) -> Result<()> {
     config.save_to_path(config_path.as_ref()).await?;
 
     info!("Configuration reset to defaults");
-    println!("✅ Configuration reset to defaults");
+    print_success("Configuration reset to defaults");
 
     Ok(())
 }

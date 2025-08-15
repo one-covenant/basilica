@@ -32,7 +32,11 @@ pub enum Error {
     #[error("Validator communication error: {message}")]
     ValidatorCommunication { message: String },
 
-    /// Authentication error
+    /// Missing authentication (no token provided)
+    #[error("Authentication required: {message}")]
+    MissingAuthentication { message: String },
+
+    /// Authentication error (expired/invalid token)
     #[error("Authentication error: {message}")]
     Authentication { message: String },
 
@@ -99,6 +103,7 @@ impl Error {
             Error::HttpClient(_) => "BASILICA_API_HTTP_CLIENT_ERROR",
             Error::ValidatorCommunication { .. } => "BASILICA_API_VALIDATOR_COMM_ERROR",
             Error::ConfigError(_) => "BASILICA_API_CONFIG_ERROR",
+            Error::MissingAuthentication { .. } => "BASILICA_API_AUTH_MISSING",
             Error::Authentication { .. } => "BASILICA_API_AUTH_ERROR",
             Error::Authorization { .. } => "BASILICA_API_AUTHZ_ERROR",
             Error::RateLimitExceeded => "BASILICA_API_RATE_LIMIT",
@@ -130,7 +135,8 @@ impl Error {
     pub fn is_client_error(&self) -> bool {
         matches!(
             self,
-            Error::Authentication { .. }
+            Error::MissingAuthentication { .. }
+                | Error::Authentication { .. }
                 | Error::Authorization { .. }
                 | Error::RateLimitExceeded
                 | Error::InvalidRequest { .. }
@@ -148,6 +154,7 @@ impl IntoResponse for Error {
             Error::HttpClient(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
             Error::ValidatorCommunication { .. } => (StatusCode::BAD_GATEWAY, self.to_string()),
             Error::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            Error::MissingAuthentication { .. } => (StatusCode::UNAUTHORIZED, self.to_string()),
             Error::Authentication { .. } => (StatusCode::UNAUTHORIZED, self.to_string()),
             Error::Authorization { .. } => (StatusCode::FORBIDDEN, self.to_string()),
             Error::RateLimitExceeded => (
@@ -227,6 +234,10 @@ mod tests {
 
     #[test]
     fn test_client_errors() {
+        assert!(Error::MissingAuthentication {
+            message: "test".to_string()
+        }
+        .is_client_error());
         assert!(Error::Authentication {
             message: "test".to_string()
         }

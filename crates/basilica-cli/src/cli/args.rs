@@ -2,6 +2,7 @@ use crate::cli::{commands::Commands, handlers};
 use crate::config::CliConfig;
 use crate::error::Result;
 use clap::Parser;
+use etcetera::{choose_base_strategy, BaseStrategy};
 use std::path::{Path, PathBuf};
 
 /// Basilica CLI - Unified GPU rental and network management
@@ -14,7 +15,7 @@ use std::path::{Path, PathBuf};
     long_about = "Unified command-line interface for Basilica GPU compute marketplace.
 
 QUICK START:
-  basilica init                     # Setup and registration  
+  basilica login                    # Login and authentication  
   basilica up                       # Interactive GPU rental
   basilica exec <uid> \"python train.py\"  # Run your code
   basilica down                     # Interactive termination
@@ -34,7 +35,12 @@ NETWORK COMPONENTS:
 
 CONFIGURATION:
   basilica config show              # Show configuration
-  basilica wallet                   # Show wallet info"
+  basilica wallet                   # Show wallet info
+
+AUTHENTICATION:
+  basilica login                    # Log in to Basilica
+  basilica login --device-code      # Log in using device flow
+  basilica logout                   # Log out of Basilica"
 )]
 pub struct Args {
     /// Configuration file path
@@ -49,6 +55,16 @@ pub struct Args {
     #[arg(long, global = true)]
     pub json: bool,
 
+    /// Bypass OAuth authentication (debug builds only, for testing)
+    #[cfg(debug_assertions)]
+    #[arg(long, global = true, hide = true)]
+    pub no_auth: bool,
+
+    /// Placeholder for release builds to maintain struct compatibility
+    #[cfg(not(debug_assertions))]
+    #[arg(skip)]
+    pub no_auth: bool,
+
     /// Subcommand to execute
     #[command(subcommand)]
     pub command: Commands,
@@ -58,7 +74,7 @@ impl Args {
     /// Execute the CLI command
     pub async fn run(self) -> Result<()> {
         // Initialize logging based on verbosity
-        let log_level = if self.verbose { "debug" } else { "info" };
+        let log_level = if self.verbose { "debug" } else { "warn" };
 
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new(log_level))
@@ -71,39 +87,52 @@ impl Args {
 
         match self.command {
             // Setup and configuration
-            Commands::Init => handlers::init::handle_init(&config).await,
             Commands::Config { action } => {
-                handlers::config::handle_config(action, &config, config_path).await
+                handlers::config::handle_config(action, &config, &config_path).await
             }
             Commands::Wallet { name } => handlers::wallet::handle_wallet(&config, name).await,
+            Commands::Login { device_code } => {
+                handlers::auth::handle_login(device_code, &config, &config_path).await
+            }
+            Commands::Logout => handlers::auth::handle_logout(&config).await,
+            Commands::TestAuth { api } => {
+                if api {
+                    handlers::test_auth::handle_test_api_auth(&config, &config_path, self.no_auth)
+                        .await
+                } else {
+                    handlers::test_auth::handle_test_auth(&config, &config_path, self.no_auth).await
+                }
+            }
 
             // GPU rental operations
             Commands::Ls { filters } => {
-                handlers::gpu_rental::handle_ls(filters, self.json, &config).await
+                handlers::gpu_rental::handle_ls(filters, self.json, &config, self.no_auth).await
             }
             Commands::Up { target, options } => {
-                handlers::gpu_rental::handle_up(target, options, &config).await
+                handlers::gpu_rental::handle_up(target, options, &config, self.no_auth).await
             }
             Commands::Ps { filters } => {
-                handlers::gpu_rental::handle_ps(filters, self.json, &config).await
+                handlers::gpu_rental::handle_ps(filters, self.json, &config, self.no_auth).await
             }
             Commands::Status { target } => {
-                handlers::gpu_rental::handle_status(target, self.json, &config).await
+                handlers::gpu_rental::handle_status(target, self.json, &config, self.no_auth).await
             }
             Commands::Logs { target, options } => {
-                handlers::gpu_rental::handle_logs(target, options, &config).await
+                handlers::gpu_rental::handle_logs(target, options, &config, self.no_auth).await
             }
-            Commands::Down { targets } => handlers::gpu_rental::handle_down(targets, &config).await,
+            Commands::Down { targets } => {
+                handlers::gpu_rental::handle_down(targets, &config, self.no_auth).await
+            }
             Commands::Exec { target, command } => {
-                handlers::gpu_rental::handle_exec(target, command, &config).await
+                handlers::gpu_rental::handle_exec(target, command, &config, self.no_auth).await
             }
             Commands::Ssh { target, options } => {
-                handlers::gpu_rental::handle_ssh(target, options, &config).await
+                handlers::gpu_rental::handle_ssh(target, options, &config, self.no_auth).await
             }
             Commands::Cp {
                 source,
                 destination,
-            } => handlers::gpu_rental::handle_cp(source, destination, &config).await,
+            } => handlers::gpu_rental::handle_cp(source, destination, &config, self.no_auth).await,
 
             // Network component delegation
             Commands::Validator { args } => handlers::external::handle_validator(args),
@@ -117,8 +146,8 @@ impl Args {
 fn expand_tilde(path: &Path) -> PathBuf {
     if let Some(path_str) = path.to_str() {
         if let Some(stripped) = path_str.strip_prefix("~/") {
-            if let Some(home_dir) = dirs::home_dir() {
-                return home_dir.join(stripped);
+            if let Ok(strategy) = choose_base_strategy() {
+                return strategy.home_dir().join(stripped);
             }
         }
     }

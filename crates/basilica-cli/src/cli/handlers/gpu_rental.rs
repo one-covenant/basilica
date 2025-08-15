@@ -2,29 +2,32 @@
 
 use crate::cache::{parse_ssh_credentials, CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
+use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::interactive::selector::InteractiveSelector;
-use crate::output::{json_output, table_output};
+use crate::output::{
+    json_output, print_error, print_info, print_link, print_success, table_output,
+};
 use crate::ssh::SshClient;
 use basilica_api::api::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
 };
-use basilica_api::ClientBuilder;
 use basilica_validator::api::rental_routes::StartRentalRequest;
-use basilica_validator::api::types::ListAvailableExecutorsQuery;
+use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
 use basilica_validator::rental::types::RentalState;
 use std::path::PathBuf;
 use tabled::{settings::Style, Table, Tabled};
 use tracing::{debug, info};
 
 /// Handle the `ls` command - list available executors for rental
-pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> Result<()> {
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+pub async fn handle_ls(
+    filters: ListFilters,
+    json: bool,
+    config: &CliConfig,
+    no_auth: bool,
+) -> Result<()> {
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     // Build query from filters
     let query = ListAvailableExecutorsQuery {
@@ -114,12 +117,13 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
 }
 
 /// Handle the `up` command - provision GPU instances
-pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig) -> Result<()> {
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+pub async fn handle_up(
+    target: String,
+    options: UpOptions,
+    config: &CliConfig,
+    no_auth: bool,
+) -> Result<()> {
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     // Build rental request
     let ssh_public_key = load_ssh_public_key(&options.ssh_key, config)?;
@@ -165,27 +169,30 @@ pub async fn handle_up(target: String, options: UpOptions, config: &CliConfig) -
     });
     cache.save().await?;
 
-    println!("✅ Successfully created rental: {}", response.rental_id);
+    print_success(&format!(
+        "Successfully created rental: {}",
+        response.rental_id
+    ));
 
     // Display SSH credentials if available
     if let Some(ref ssh_creds) = response.ssh_credentials {
-        println!("🔗 SSH: {}", ssh_creds);
-        println!("💾 Credentials cached for future use");
+        print_link("SSH", ssh_creds);
     } else {
-        println!("ℹ️  No SSH access configured for this container (port 22 not mapped)");
+        print_info("No SSH access configured for this container (port 22 not mapped)");
     }
 
     Ok(())
 }
 
 /// Handle the `ps` command - list active rentals
-pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Result<()> {
+pub async fn handle_ps(
+    filters: PsFilters,
+    json: bool,
+    config: &CliConfig,
+    no_auth: bool,
+) -> Result<()> {
     debug!("Listing active rentals with filters: {:?}", filters);
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     // Build query from filters - default to "active" if no status specified
     let query = Some(ListRentalsQuery {
@@ -210,18 +217,31 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
 }
 
 /// Handle the `status` command - check rental status
-pub async fn handle_status(target: String, json: bool, config: &CliConfig) -> Result<()> {
+pub async fn handle_status(
+    target: String,
+    json: bool,
+    config: &CliConfig,
+    no_auth: bool,
+) -> Result<()> {
     debug!("Checking status for rental: {}", target);
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     let status = api_client
         .get_rental_status(&target)
         .await
         .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
+
+    // Check if rental is stopped and clean up cache
+    if matches!(
+        status.status,
+        RentalStatus::Terminated | RentalStatus::Failed
+    ) {
+        let mut cache = RentalCache::load().await.unwrap_or_default();
+        if cache.remove_rental(&target).is_some() {
+            cache.save().await?;
+            debug!("Removed stopped rental {} from cache", target);
+        }
+    }
 
     if json {
         json_output(&status)?;
@@ -233,15 +253,16 @@ pub async fn handle_status(target: String, json: bool, config: &CliConfig) -> Re
 }
 
 /// Handle the `logs` command - view rental logs
-pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfig) -> Result<()> {
+pub async fn handle_logs(
+    target: String,
+    options: LogsOptions,
+    config: &CliConfig,
+    no_auth: bool,
+) -> Result<()> {
     debug!("Viewing logs for rental: {}", target);
 
     // Create API client
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     // Get log stream from API
     let response = api_client
@@ -326,12 +347,8 @@ pub async fn handle_logs(target: String, options: LogsOptions, config: &CliConfi
 }
 
 /// Handle the `down` command - terminate rentals
-pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()> {
-    let api_client = ClientBuilder::default()
-        .base_url(&config.api.base_url)
-        .api_key(config.api.api_key.clone().unwrap_or_default())
-        .build()
-        .map_err(|e| CliError::internal(format!("Failed to create API client: {e}")))?;
+pub async fn handle_down(targets: Vec<String>, config: &CliConfig, no_auth: bool) -> Result<()> {
+    let api_client = create_authenticated_client(config, no_auth).await?;
 
     let rental_ids = if targets.is_empty() {
         // Interactive mode - let user select from active rentals
@@ -363,11 +380,11 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()>
             .map_err(|e| CliError::internal(format!("Failed to stop rental: {e}")))
         {
             Ok(_) => {
-                println!("✅ Successfully stopped rental: {rental_id}");
+                print_success(&format!("Successfully stopped rental: {rental_id}"));
                 // Remove from cache
                 cache.remove_rental(rental_id);
             }
-            Err(e) => eprintln!("❌ Failed to stop rental {rental_id}: {e}"),
+            Err(e) => print_error(&format!("Failed to stop rental {rental_id}: {e}")),
         }
     }
 
@@ -378,26 +395,37 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig) -> Result<()>
 }
 
 /// Handle the `exec` command - execute commands via SSH
-pub async fn handle_exec(target: String, command: String, config: &CliConfig) -> Result<()> {
+pub async fn handle_exec(
+    target: String,
+    command: String,
+    config: &CliConfig,
+    no_auth: bool,
+) -> Result<()> {
     debug!("Executing command on rental: {}", target);
 
+    // Create API client to verify rental status
+    let api_client = create_authenticated_client(config, no_auth).await?;
+
     // Load rental cache and get SSH credentials
-    let cache = RentalCache::load().await?;
+    let mut cache = RentalCache::load().await?;
     let cached_rental = cache.get_rental(&target)
         .ok_or_else(|| CliError::not_found(format!(
             "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
             target
         )))?;
 
-    // Check if SSH credentials are available
-    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+    // Clone SSH credentials before status check to avoid borrowing issues
+    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
         CliError::not_supported(
             "This rental does not have SSH access. Container was created without SSH port mapping.",
         )
     })?;
 
+    // Verify rental is still active before proceeding
+    verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
+
     // Parse SSH credentials
-    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
     let ssh_access = SshAccess {
         host,
         port,
@@ -414,26 +442,33 @@ pub async fn handle_ssh(
     target: String,
     options: crate::cli::commands::SshOptions,
     config: &CliConfig,
+    no_auth: bool,
 ) -> Result<()> {
     debug!("Opening SSH connection to rental: {}", target);
 
+    // Create API client to verify rental status
+    let api_client = create_authenticated_client(config, no_auth).await?;
+
     // Load rental cache and get SSH credentials
-    let cache = RentalCache::load().await?;
+    let mut cache = RentalCache::load().await?;
     let cached_rental = cache.get_rental(&target)
         .ok_or_else(|| CliError::not_found(format!(
             "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
             target
         )))?;
 
-    // Check if SSH credentials are available
-    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+    // Clone SSH credentials before status check to avoid borrowing issues
+    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
         CliError::not_supported(
             "This rental does not have SSH access. Container was created without SSH port mapping.",
         )
     })?;
 
+    // Verify rental is still active before proceeding
+    verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
+
     // Parse SSH credentials
-    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
     let ssh_access = SshAccess {
         host,
         port,
@@ -457,29 +492,40 @@ pub async fn handle_ssh(
 }
 
 /// Handle the `cp` command - copy files via SSH
-pub async fn handle_cp(source: String, destination: String, config: &CliConfig) -> Result<()> {
+pub async fn handle_cp(
+    source: String,
+    destination: String,
+    config: &CliConfig,
+    no_auth: bool,
+) -> Result<()> {
     debug!("Copying files from {} to {}", source, destination);
 
     // Parse source and destination to determine which is remote
     let (rental_id, is_upload, local_path, remote_path) = parse_copy_paths(&source, &destination)?;
 
+    // Create API client to verify rental status
+    let api_client = create_authenticated_client(config, no_auth).await?;
+
     // Load rental cache and get SSH credentials
-    let cache = RentalCache::load().await?;
+    let mut cache = RentalCache::load().await?;
     let cached_rental = cache.get_rental(&rental_id)
         .ok_or_else(|| CliError::not_found(format!(
             "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
             rental_id
         )))?;
 
-    // Check if SSH credentials are available
-    let ssh_credentials = cached_rental.ssh_credentials.as_ref().ok_or_else(|| {
+    // Clone SSH credentials before status check to avoid borrowing issues
+    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
         CliError::not_supported(
             "This rental does not have SSH access. Container was created without SSH port mapping.",
         )
     })?;
 
+    // Verify rental is still active before proceeding
+    verify_rental_status_and_cleanup_cache(&rental_id, &api_client, &mut cache).await?;
+
     // Parse SSH credentials
-    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+    let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
     let ssh_access = SshAccess {
         host,
         port,
@@ -501,6 +547,32 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
 }
 
 // Helper functions
+
+/// Verify rental is still active and clean up cache if not
+async fn verify_rental_status_and_cleanup_cache(
+    rental_id: &str,
+    api_client: &basilica_api::client::BasilicaClient,
+    cache: &mut RentalCache,
+) -> Result<()> {
+    let status = api_client
+        .get_rental_status(rental_id)
+        .await
+        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
+
+    if matches!(
+        status.status,
+        RentalStatus::Terminated | RentalStatus::Failed
+    ) {
+        cache.remove_rental(rental_id);
+        cache.save().await?;
+        return Err(CliError::internal(format!(
+            "Rental {} is no longer active (status: {:?}). Removed from cache.",
+            rental_id, status.status
+        )));
+    }
+
+    Ok(())
+}
 
 fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result<String> {
     let path = key_path.as_ref().unwrap_or(&config.ssh.key_path);

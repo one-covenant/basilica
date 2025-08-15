@@ -1,5 +1,6 @@
 //! API module for the Basilica API Gateway
 
+pub mod auth;
 pub mod middleware;
 pub mod routes;
 pub mod types;
@@ -14,13 +15,10 @@ use utoipa_swagger_ui::SwaggerUi;
 
 /// Create all API routes
 pub fn routes(state: AppState) -> Router<AppState> {
-    let router = Router::new()
-        // Registration endpoints
-        .route("/register", post(routes::registration::register_user))
-        .route(
-            "/register/wallet/:user_id",
-            get(routes::registration::get_credit_wallet),
-        )
+    // Protected routes with Auth0 authentication
+    let protected_routes = Router::new()
+        // Health endpoint
+        .route("/health", get(routes::health::health_check))
         // Validator-compatible rental endpoints
         .route("/rental/list", get(routes::rentals::list_rentals_validator))
         .route("/rental/start", post(routes::rentals::start_rental))
@@ -35,12 +33,17 @@ pub fn routes(state: AppState) -> Router<AppState> {
             "/executors/available",
             get(routes::rentals::list_available_executors),
         )
-        // Health and telemetry (keep existing)
-        .route("/health", get(routes::health::health_check))
-        .route("/telemetry", get(routes::telemetry::get_telemetry))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::auth0_middleware,
+        ));
+
+    // Build the router with all protected routes
+    let router = Router::new()
+        .merge(protected_routes)
         .with_state(state.clone());
 
-    // Apply middleware
+    // Apply general middleware
     middleware::apply_middleware(router, state)
 }
 
@@ -54,20 +57,10 @@ pub fn docs_routes() -> Router<AppState> {
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        // Registration endpoints
-        routes::registration::register_user,
-        routes::registration::get_credit_wallet,
-
         // Health and monitoring
         routes::health::health_check,
-        routes::telemetry::get_telemetry,
     ),
     components(schemas(
-        // Registration types
-        types::RegisterRequest,
-        types::RegisterResponse,
-        types::CreditWalletResponse,
-
         // Rental types
         types::RentalStatusResponse,
         types::LogStreamQuery,
@@ -84,13 +77,11 @@ pub fn docs_routes() -> Router<AppState> {
 
         // Health types
         types::HealthCheckResponse,
-        types::TelemetryResponse,
 
         // Error response
         crate::error::ErrorResponse,
     )),
     tags(
-        (name = "registration", description = "User registration and wallet management"),
         (name = "rentals", description = "GPU rental management"),
         (name = "health", description = "Health and monitoring"),
     ),

@@ -23,6 +23,8 @@ pub struct ContainerClient {
     pub(crate) strict_host_key_checking: bool,
     /// Path to known hosts file
     pub(crate) known_hosts_file: Option<PathBuf>,
+    /// SSH log level to control verbosity (ERROR, QUIET, FATAL, INFO, VERBOSE, DEBUG)
+    pub(crate) ssh_log_level: Option<String>,
 }
 
 impl ContainerClient {
@@ -51,6 +53,7 @@ impl ContainerClient {
             ssh_private_key_path,
             strict_host_key_checking: false,
             known_hosts_file: None,
+            ssh_log_level: Some("ERROR".to_string()),
         })
     }
 
@@ -60,13 +63,20 @@ impl ContainerClient {
         ssh_private_key_path: Option<PathBuf>,
         strict_host_key_checking: bool,
         known_hosts_file: Option<PathBuf>,
+        ssh_log_level: Option<String>,
     ) -> Result<Self> {
         Ok(Self {
             ssh_connection,
             ssh_private_key_path,
             strict_host_key_checking,
             known_hosts_file,
+            ssh_log_level,
         })
+    }
+
+    /// Set SSH log level for runtime configuration
+    pub fn set_ssh_log_level(&mut self, log_level: Option<String>) {
+        self.ssh_log_level = log_level;
     }
 
     /// Execute a command over SSH
@@ -89,6 +99,11 @@ impl ContainerClient {
 
         ssh_cmd.arg("-o").arg("ConnectTimeout=10");
         ssh_cmd.arg("-o").arg("BatchMode=yes");
+
+        // Add SSH log level if specified to control verbosity
+        if let Some(ref log_level) = self.ssh_log_level {
+            ssh_cmd.arg("-o").arg(format!("LogLevel={}", log_level));
+        }
 
         // Add SSH private key if provided
         if let Some(ref key_path) = self.ssh_private_key_path {
@@ -525,6 +540,11 @@ impl ContainerClient {
         }
 
         ssh_cmd.arg("-o").arg("BatchMode=yes");
+
+        // Add SSH log level if specified to control verbosity
+        if let Some(ref log_level) = self.ssh_log_level {
+            ssh_cmd.arg("-o").arg(format!("LogLevel={}", log_level));
+        }
 
         if let Some(ref key_path) = self.ssh_private_key_path {
             ssh_cmd.arg("-i").arg(key_path);

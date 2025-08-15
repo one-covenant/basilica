@@ -27,6 +27,7 @@ jobs:
       validator: ${{ steps.changes.outputs.validator }}
       miner: ${{ steps.changes.outputs.miner }}
       basilica-api: ${{ steps.changes.outputs.basilica-api }}
+      basilica-cli: ${{ steps.changes.outputs.basilica-cli }}
       workspace: ${{ steps.changes.outputs.workspace }}
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +62,12 @@ jobs:
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/basilica-api/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            basilica-cli:
+              - 'crates/basilica-cli/**'
+              - 'crates/basilica-common/**'
+              - 'crates/basilica-protocol/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             workspace:
@@ -148,6 +155,8 @@ jobs:
           cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
           # Run clippy on basilica-api
           cargo clippy -p basilica-api --all-targets --all-features -- -D warnings
+          # Run clippy on basilica-cli
+          cargo clippy -p basilica-cli --all-targets --all-features -- -D warnings
 
   # Build and test executor
   build-executor:
@@ -248,7 +257,7 @@ jobs:
       - name: Test validator crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo nextest run -p basilica-validator --lib
+          cargo nextest run -p basilica-validator --all-features
       - name: Test validator CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
@@ -367,7 +376,7 @@ jobs:
       - name: Test basilica-api crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo nextest run -p basilica-api --lib
+          cargo nextest run -p basilica-api --all-features
       - name: Test basilica-api CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
@@ -382,6 +391,48 @@ jobs:
           chmod +x scripts/basilica-api/build.sh
           BITTENSOR_NETWORK=finney ./scripts/basilica-api/build.sh --no-extract
 
+  # Build and test basilica-cli
+  build-cli:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.basilica-cli == 'true' || needs.changes.outputs.workspace == 'true'
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Check basilica-cli builds
+        run: |
+          cargo check -p basilica-cli
+      - name: Test basilica-cli crate (unit tests only)
+        run: |
+          cargo nextest run -p basilica-cli --all-features
+      - name: Test basilica-cli CLI functionality
+        run: |
+          cargo build -p basilica-cli
+          ./target/debug/basilica --help
+
   # Final status check
   ci-success:
     runs-on: ubuntu-latest
@@ -392,6 +443,7 @@ jobs:
       - build-validator
       - build-miner
       - build-api
+      - build-cli
     if: always()
     steps:
       - name: Check if all jobs succeeded
@@ -401,7 +453,8 @@ jobs:
                 ("${{ needs.build-executor.result }}" == "success" || "${{ needs.build-executor.result }}" == "skipped") && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
-                ("${{ needs.build-api.result }}" == "success" || "${{ needs.build-api.result }}" == "skipped") ]]; then
+                ("${{ needs.build-api.result }}" == "success" || "${{ needs.build-api.result }}" == "skipped") && \
+                ("${{ needs.build-cli.result }}" == "success" || "${{ needs.build-cli.result }}" == "skipped") ]]; then
             echo "All CI checks passed!"
             exit 0
           else

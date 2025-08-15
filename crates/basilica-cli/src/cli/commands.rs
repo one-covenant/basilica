@@ -5,9 +5,6 @@ use std::path::PathBuf;
 /// Main CLI commands
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Initialize and configure Basilica CLI
-    Init,
-
     /// Manage CLI configuration
     Config {
         #[command(subcommand)]
@@ -112,6 +109,23 @@ pub enum Commands {
         /// Arguments to pass to basilica-executor
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
+    },
+
+    /// Log in to Basilica
+    Login {
+        /// Use device authorization flow (for WSL, SSH, containers)
+        #[arg(long)]
+        device_code: bool,
+    },
+
+    /// Log out of Basilica
+    Logout,
+
+    /// Test authentication token
+    TestAuth {
+        /// Test against Basilica API instead of Auth0
+        #[arg(long)]
+        api: bool,
     },
 }
 
