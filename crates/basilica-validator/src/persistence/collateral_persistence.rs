@@ -32,12 +32,7 @@ impl SimplePersistence {
 
         sqlx::query(query).execute(self.pool()).await?;
 
-        let index = r#"
-            CREATE INDEX IF NOT EXISTS idx_collateral_status ON collateral_status(hotkey, executor_id);
-            "#;
-
-        sqlx::query(index).execute(self.pool()).await?;
-
+        // Insert the contract deployed block number as the initial scanned block number, no need to scan from the block 0
         let insert_initial_scan_row = r#"
             INSERT INTO collateral_scan_status (last_scanned_block_number, updated_at, id) VALUES (?, ?, 1) ;
         "#;
