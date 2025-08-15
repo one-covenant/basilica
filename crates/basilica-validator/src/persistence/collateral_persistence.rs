@@ -36,11 +36,16 @@ impl SimplePersistence {
         let insert_initial_scan_row = r#"
             INSERT INTO collateral_scan_status (last_scanned_block_number, updated_at, id) VALUES (?, ?, 1) ;
         "#;
-        sqlx::query(insert_initial_scan_row)
+        let result = sqlx::query(insert_initial_scan_row)
             .bind(CONTRACT_DEPLOYED_BLOCK_NUMBER as i64)
             .bind(now)
             .execute(self.pool())
-            .await?;
+            .await;
+
+        // Ignore the error if the row already exists
+        if let Err(e) = result {
+            warn!("Error inserting initial scan row: {}", e);
+        }
 
         Ok(())
     }
