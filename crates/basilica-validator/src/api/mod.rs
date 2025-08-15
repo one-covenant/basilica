@@ -132,16 +132,12 @@ impl ApiHandler {
     /// Follows Open/Closed Principle - easy to extend with new routes
     fn create_router(&self) -> Router {
         Router::new()
-            .route("/rental/list", get(rental_routes::list_rentals))
-            .route("/rental/start", post(rental_routes::start_rental))
-            .route("/rental/status/:id", get(rental_routes::get_rental_status))
-            .route("/rental/logs/:id", get(rental_routes::stream_rental_logs))
-            .route("/rental/stop/:id", post(rental_routes::stop_rental))
-            // Available executors route
-            .route(
-                "/executors/available",
-                get(routes::list_available_executors),
-            )
+            .route("/rentals", get(rental_routes::list_rentals))
+            .route("/rentals", post(rental_routes::start_rental))
+            .route("/rentals/:id", get(rental_routes::get_rental_status))
+            .route("/rentals/:id", delete(rental_routes::stop_rental))
+            .route("/rentals/:id/logs", get(rental_routes::stream_rental_logs))
+            .route("/executors", get(routes::list_available_executors))
             // Existing miner routes
             .route("/miners", get(routes::list_miners))
             .route("/miners/register", post(routes::register_miner))

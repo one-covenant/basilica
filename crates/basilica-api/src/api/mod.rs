@@ -7,7 +7,7 @@ pub mod types;
 
 use crate::server::AppState;
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use utoipa::OpenApi;
@@ -19,20 +19,12 @@ pub fn routes(state: AppState) -> Router<AppState> {
     let protected_routes = Router::new()
         // Health endpoint
         .route("/health", get(routes::health::health_check))
-        // Validator-compatible rental endpoints
-        .route("/rental/list", get(routes::rentals::list_rentals_validator))
-        .route("/rental/start", post(routes::rentals::start_rental))
-        .route(
-            "/rental/status/:id",
-            get(routes::rentals::get_rental_status),
-        )
-        .route("/rental/logs/:id", get(routes::rentals::stream_rental_logs))
-        .route("/rental/stop/:id", post(routes::rentals::stop_rental))
-        // Available executors endpoint
-        .route(
-            "/executors/available",
-            get(routes::rentals::list_available_executors),
-        )
+        .route("/rentals", get(routes::rentals::list_rentals_validator))
+        .route("/rentals", post(routes::rentals::start_rental))
+        .route("/rentals/:id", get(routes::rentals::get_rental_status))
+        .route("/rentals/:id", delete(routes::rentals::stop_rental))
+        .route("/rentals/:id/logs", get(routes::rentals::stream_rental_logs))
+        .route("/executors", get(routes::rentals::list_available_executors))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::auth0_middleware,

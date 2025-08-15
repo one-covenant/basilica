@@ -6,7 +6,7 @@ use anyhow::Result;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{sse::Event, Sse},
+    response::{sse::Event, IntoResponse, Sse},
     Json,
 };
 use futures::stream::Stream;
@@ -372,7 +372,7 @@ pub async fn get_rental_status(
 pub async fn stop_rental(
     State(state): State<ApiState>,
     Path(rental_id): Path<String>,
-) -> Result<Json<crate::api::types::StopRentalResponse>, StatusCode> {
+) -> Result<axum::response::Response, StatusCode> {
     info!("Stopping rental {}", rental_id);
 
     let rental_manager = state
@@ -388,10 +388,7 @@ pub async fn stop_rental(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    Ok(Json(crate::api::types::StopRentalResponse {
-        success: true,
-        message: format!("Rental {rental_id} stopped successfully"),
-    }))
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 /// Stream rental logs

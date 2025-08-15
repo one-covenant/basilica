@@ -31,6 +31,7 @@ pub async fn handle_ls(
 
     // Build query from filters
     let query = ListAvailableExecutorsQuery {
+        available: Some(true), // Filter for available executors only
         min_gpu_memory: filters.memory_min,
         gpu_type: filters.gpu_type,
         min_gpu_count: filters.gpu_min,

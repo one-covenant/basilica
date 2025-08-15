@@ -117,19 +117,19 @@ impl BasilicaClient {
 
     /// Get rental status
     pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusResponse> {
-        let path = format!("/rental/status/{rental_id}");
+        let path = format!("/rentals/{rental_id}");
         self.get(&path).await
     }
 
     /// Start a new rental
     pub async fn start_rental(&self, request: StartRentalRequest) -> Result<RentalResponse> {
-        self.post("/rental/start", &request).await
+        self.post("/rentals", &request).await
     }
 
     /// Stop a rental
     pub async fn stop_rental(&self, rental_id: &str) -> Result<()> {
-        let path = format!("/rental/stop/{rental_id}");
-        let response: Response = self.post_empty(&path).await?;
+        let path = format!("/rentals/{rental_id}");
+        let response: Response = self.delete_empty(&path).await?;
 
         if response.status() == StatusCode::NO_CONTENT {
             Ok(())
@@ -147,7 +147,7 @@ impl BasilicaClient {
         follow: bool,
         tail: Option<u32>,
     ) -> Result<reqwest::Response> {
-        let url = format!("{}/rental/logs/{}", self.base_url, rental_id);
+        let url = format!("{}/rentals/{}/logs", self.base_url, rental_id);
         let mut request = self.http_client.get(&url);
 
         let mut params: Vec<(&str, String)> = vec![];
@@ -184,7 +184,7 @@ impl BasilicaClient {
         &self,
         query: Option<ListRentalsQuery>,
     ) -> Result<ListRentalsResponse> {
-        let url = format!("{}/rental/list", self.base_url);
+        let url = format!("{}/rentals", self.base_url);
         let mut request = self.http_client.get(&url);
 
         if let Some(q) = &query {
@@ -214,7 +214,7 @@ impl BasilicaClient {
         &self,
         query: Option<ListAvailableExecutorsQuery>,
     ) -> Result<ListAvailableExecutorsResponse> {
-        let url = format!("{}/executors/available", self.base_url);
+        let url = format!("{}/executors", self.base_url);
         let mut request = self.http_client.get(&url);
 
         if let Some(q) = &query {
@@ -349,17 +349,18 @@ impl BasilicaClient {
         }
     }
 
-    /// Generic POST request without body with automatic retry on 401
-    async fn post_empty(&self, path: &str) -> Result<Response> {
+
+    /// Generic DELETE request without body with automatic retry on 401
+    async fn delete_empty(&self, path: &str) -> Result<Response> {
         let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.post(&url);
+        let request = self.http_client.delete(&url);
         let request = self.apply_auth(request).await;
 
         let response = request.send().await.map_err(Error::HttpClient)?;
 
         // Handle 401 with token refresh
         if response.status() == StatusCode::UNAUTHORIZED {
-            let retry_request = self.http_client.post(&url);
+            let retry_request = self.http_client.delete(&url);
             self.handle_unauthorized(retry_request).await
         } else {
             Ok(response)

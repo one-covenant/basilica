@@ -43,7 +43,7 @@ impl ValidatorClient {
 
     /// List rentals with optional state filter
     pub async fn list_rentals(&self, state: Option<RentalState>) -> Result<ListRentalsResponse> {
-        let url = format!("{}/rental/list", self.base_url);
+        let url = format!("{}/rentals", self.base_url);
 
         let mut req = self.http_client.get(&url);
         if let Some(state_filter) = state {
@@ -76,7 +76,7 @@ impl ValidatorClient {
         &self,
         request: crate::api::rental_routes::StartRentalRequest,
     ) -> Result<crate::rental::RentalResponse> {
-        let url = format!("{}/rental/start", self.base_url);
+        let url = format!("{}/rentals", self.base_url);
 
         let response = self
             .http_client
@@ -100,7 +100,7 @@ impl ValidatorClient {
 
     /// Get rental status
     pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusResponse> {
-        let url = format!("{}/rental/status/{}", self.base_url, rental_id);
+        let url = format!("{}/rentals/{}", self.base_url, rental_id);
 
         let response = self
             .http_client
@@ -125,17 +125,23 @@ impl ValidatorClient {
     pub async fn terminate_rental(
         &self,
         rental_id: &str,
-        request: TerminateRentalRequest,
+        _request: TerminateRentalRequest, // Maintained for API compatibility
     ) -> Result<TerminateRentalResponse> {
-        let url = format!("{}/rental/stop/{}", self.base_url, rental_id);
+        let url = format!("{}/rentals/{}", self.base_url, rental_id);
 
         let response = self
             .http_client
-            .post(&url) // Changed from DELETE to POST to match the new API
-            .json(&request)
+            .delete(&url)
             .send()
             .await
             .context("Failed to send termination request")?;
+
+        if response.status() == reqwest::StatusCode::NO_CONTENT {
+            return Ok(TerminateRentalResponse {
+                success: true,
+                message: "Rental terminated successfully".to_string(),
+            });
+        }
 
         if !response.status().is_success() {
             let status = response.status();
@@ -155,7 +161,7 @@ impl ValidatorClient {
         rental_id: &str,
         query: LogQuery,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Event>> + Send>>> {
-        let url = format!("{}/rental/logs/{}", self.base_url, rental_id);
+        let url = format!("{}/rentals/{}/logs", self.base_url, rental_id);
 
         let response = self
             .http_client
@@ -203,7 +209,7 @@ impl ValidatorClient {
         &self,
         query: Option<ListAvailableExecutorsQuery>,
     ) -> Result<ListAvailableExecutorsResponse> {
-        let url = format!("{}/executors/available", self.base_url);
+        let url = format!("{}/executors", self.base_url);
 
         let mut req = self.http_client.get(&url);
 

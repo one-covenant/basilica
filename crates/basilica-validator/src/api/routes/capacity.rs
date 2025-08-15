@@ -4,6 +4,7 @@ use crate::api::types::*;
 use crate::api::ApiState;
 use axum::{
     extract::{Query, State},
+    http::Uri,
     Json,
 };
 use tracing::{error, info};
@@ -11,11 +12,19 @@ use tracing::{error, info};
 /// List available executors for rental
 pub async fn list_available_executors(
     State(state): State<ApiState>,
-    Query(query): Query<ListAvailableExecutorsQuery>,
+    Query(mut query): Query<ListAvailableExecutorsQuery>,
+    uri: Uri,
 ) -> Result<Json<ListAvailableExecutorsResponse>, ApiError> {
-    info!("Listing available executors with filters: {:?}", query);
+    // Default to available=true for /executors endpoint
+    if query.available.is_none() && uri.path() == "/executors" {
+        query.available = Some(true);
+    }
+
+    info!("Listing executors with filters: {:?}", query);
 
     // Get available executors from the database
+    // Note: The persistence layer currently treats all queries as "available=true"
+    // The 'available' parameter is handled by our endpoint logic above
     match state
         .persistence
         .get_available_executors(

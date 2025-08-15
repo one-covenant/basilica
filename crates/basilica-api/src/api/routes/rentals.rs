@@ -7,6 +7,7 @@ use crate::{
 };
 use axum::{
     extract::{Path, Query, State},
+    http::Uri,
     response::{sse::Event, IntoResponse, Response, Sse},
     Json,
 };
@@ -221,9 +222,15 @@ fn is_valid_ssh_public_key(key: &str) -> bool {
 /// List available executors for rentals
 pub async fn list_available_executors(
     State(state): State<AppState>,
-    Query(query): Query<ListAvailableExecutorsQuery>,
+    Query(mut query): Query<ListAvailableExecutorsQuery>,
+    uri: Uri,
 ) -> Result<Json<ListAvailableExecutorsResponse>> {
-    info!("Listing available executors with filters: {:?}", query);
+    // Default to available=true for /executors endpoint
+    if query.available.is_none() && uri.path() == "/executors" {
+        query.available = Some(true);
+    }
+
+    info!("Listing executors with filters: {:?}", query);
 
     let response = state
         .validator_client

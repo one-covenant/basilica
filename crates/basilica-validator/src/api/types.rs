@@ -133,6 +133,9 @@ pub struct AvailabilityInfo {
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ListAvailableExecutorsQuery {
+    /// Filter for available executors only (default: true for /executors endpoint)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_memory: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
