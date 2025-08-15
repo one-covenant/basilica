@@ -186,22 +186,3 @@ pub enum AuthError {
     #[error("Serialization error: {0}")]
     SerdeError(#[from] serde_json::Error),
 }
-
-/// OAuth grant types supported
-#[derive(Debug, Clone, Copy)]
-pub enum GrantType {
-    /// Authorization code flow with PKCE
-    AuthorizationCodeWithPkce,
-    /// Device authorization grant
-    DeviceCode,
-    /// Refresh token grant
-    RefreshToken,
-}
-
-impl GrantType {
-    /// Convert to OAuth grant_type parameter value
-    /// TODO: Convert enum to OAuth parameter string
-    pub fn as_str(&self) -> &'static str {
-        todo!("Convert grant type enum to OAuth parameter string")
-    }
-}

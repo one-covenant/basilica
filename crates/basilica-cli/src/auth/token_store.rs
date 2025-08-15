@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use uuid::Uuid;
 
 const SERVICE_NAME: &str = "basilica-cli";
 const ACCOUNT_NAME: &str = "oauth-tokens";
@@ -177,8 +176,8 @@ impl TokenStore {
         let tokens_json = serde_json::to_string(tokens)
             .map_err(|e| AuthError::StorageError(format!("Failed to serialize tokens: {}", e)))?;
 
-        // Generate a unique key for this service
-        let storage_key = format!("{}-{}", service_name, Uuid::new_v4());
+        // Use a deterministic key based on the OAuth provider
+        let storage_key = "auth0-tokens".to_string();
 
         // Store the tokens in keychain with the generated key
         let service_entry = Entry::new(SERVICE_NAME, &storage_key).map_err(|e| {
