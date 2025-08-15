@@ -4,6 +4,7 @@ use crate::config::{CliCache, CliConfig};
 use crate::error::Result;
 use crate::wallet;
 use dialoguer::Password;
+use etcetera::{choose_base_strategy, BaseStrategy};
 use std::path::Path;
 use tracing::debug;
 
@@ -22,9 +23,10 @@ pub async fn handle_wallet(config: &CliConfig, wallet_name: Option<String>) -> R
     println!("   Wallet name: {wallet_to_use}");
 
     // Format path for display - show tilde if it's in home directory
-    let display_path = if let Some(home) = dirs::home_dir() {
-        if config.wallet.base_wallet_path.starts_with(&home) {
-            let relative = config.wallet.base_wallet_path.strip_prefix(&home).unwrap();
+    let display_path = if let Ok(strategy) = choose_base_strategy() {
+        let home = strategy.home_dir();
+        if config.wallet.base_wallet_path.starts_with(home) {
+            let relative = config.wallet.base_wallet_path.strip_prefix(home).unwrap();
             format!("~/{}", relative.display())
         } else {
             config.wallet.base_wallet_path.display().to_string()
@@ -100,11 +102,7 @@ pub async fn handle_wallet(config: &CliConfig, wallet_name: Option<String>) -> R
         println!("Balance:");
         println!("   TAO: Checking...");
         println!("   (Use the hotwallet address above to check balance on Bittensor explorer)");
-    } else {
-        println!("Not registered yet.");
-        println!("   Run 'basilica init' to register and create a hotwallet.");
     }
-
     Ok(())
 }
 

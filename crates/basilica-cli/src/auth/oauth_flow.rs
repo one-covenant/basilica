@@ -258,19 +258,7 @@ impl OAuthFlow {
             .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
             .unwrap_or_else(|| self.config.scopes.clone());
 
-        let token_set = TokenSet {
-            access_token,
-            refresh_token,
-            token_type,
-            expires_at: expires_in.map(|secs| {
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    + secs
-            }),
-            scopes,
-        };
+        let token_set = TokenSet::new(access_token, refresh_token, token_type, expires_in, scopes);
 
         info!("Token exchange completed successfully");
         Ok(token_set)
@@ -315,19 +303,13 @@ impl OAuthFlow {
             .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
             .unwrap_or_else(|| self.config.scopes.clone());
 
-        let token_set = TokenSet {
+        let token_set = TokenSet::new(
             access_token,
-            refresh_token: new_refresh_token,
+            new_refresh_token,
             token_type,
-            expires_at: expires_in.map(|secs| {
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    + secs
-            }),
+            expires_in,
             scopes,
-        };
+        );
 
         info!("Token refresh completed successfully");
         Ok(token_set)
@@ -379,19 +361,7 @@ impl OAuthFlow {
             .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
             .unwrap_or_else(|| config.scopes.clone());
 
-        let token_set = TokenSet {
-            access_token,
-            refresh_token,
-            token_type,
-            expires_at: expires_in.map(|secs| {
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    + secs
-            }),
-            scopes,
-        };
+        let token_set = TokenSet::new(access_token, refresh_token, token_type, expires_in, scopes);
 
         info!("Token exchange completed successfully (static)");
         Ok(token_set)

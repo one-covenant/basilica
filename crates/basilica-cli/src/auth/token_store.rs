@@ -40,12 +40,12 @@ impl TokenStore {
                 AuthError::StorageError("Could not determine config directory".to_string())
             })?;
 
-        let config_dir = project_dirs.config_dir();
-        fs::create_dir_all(config_dir).map_err(|e| {
+        let data_dir = project_dirs.data_dir();
+        fs::create_dir_all(data_dir).map_err(|e| {
             AuthError::StorageError(format!("Failed to create config directory: {}", e))
         })?;
 
-        let metadata_path = config_dir.join("token_metadata.json");
+        let metadata_path = data_dir.join("token_metadata.json");
 
         // Try to use system keychain
         let (keyring_entry, use_system_keychain) = match Entry::new(SERVICE_NAME, ACCOUNT_NAME) {
@@ -54,7 +54,7 @@ impl TokenStore {
         };
 
         Ok(Self {
-            storage_path: Some(config_dir.to_path_buf()),
+            storage_path: Some(data_dir.to_path_buf()),
             use_system_keychain,
             keyring_entry,
             metadata_path,

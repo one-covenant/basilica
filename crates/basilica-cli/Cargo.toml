@@ -45,7 +45,6 @@ tabled = "0.15"
 shell-escape = "0.1"
 
 # File operations
-dirs = "5.0"
 shellexpand = "3.1"
 etcetera = "0.8"
 
@@ -53,12 +52,11 @@ etcetera = "0.8"
 oauth2 = "4.4"
 openidconnect = "3.4"
 axum = { workspace = true }
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.4", features = ["cors"] }
-rand = "0.8"
+tower = { workspace = true, features = ["util"] }
+tower-http = { workspace = true, features = ["cors"] }
+rand = { workspace = true }
 base64 = "0.21"
 sha2 = "0.10"
-ring = "0.17"
 keyring = "2.0"
 directories = "5.0"
 webbrowser = "0.8"

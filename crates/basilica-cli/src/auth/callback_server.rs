@@ -132,7 +132,7 @@ impl CallbackServer {
     }
 
     /// Generate success HTML page to display to user
-    fn generate_success_page(&self) -> String {
+    pub fn generate_success_page() -> String {
         r#"
 <!DOCTYPE html>
 <html lang="en">
@@ -204,7 +204,7 @@ impl CallbackServer {
     }
 
     /// Generate error HTML page to display to user
-    fn generate_error_page(&self, error: &str) -> String {
+    pub fn generate_error_page(error: &str) -> String {
         format!(
             r#"
 <!DOCTYPE html>
@@ -285,9 +285,9 @@ impl CallbackServer {
 </html>
         "#,
             error
+                .replace('&', "&amp;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;")
-                .replace('&', "&amp;")
                 .replace('\"', "&quot;")
         )
     }
@@ -308,7 +308,7 @@ async fn handle_callback(
     let response_html = if let Some(error) = &params.error {
         // Generate error page
         let error_msg = params.error_description.as_deref().unwrap_or(error);
-        CallbackServer::new(8080, Duration::from_secs(300)).generate_error_page(error_msg)
+        CallbackServer::generate_error_page(error_msg)
     } else if params.code.is_some() {
         // Validate state parameter
         let expected_state = {
@@ -322,21 +322,19 @@ async fn handle_callback(
                     "State mismatch: expected {}, got {}",
                     expected_state, received_state
                 );
-                CallbackServer::new(8080, Duration::from_secs(300)).generate_error_page(&error_msg)
+                CallbackServer::generate_error_page(&error_msg)
             } else {
                 // Send the callback data through the channel
                 if let Ok(state_guard) = state.lock() {
                     let _ = state_guard.sender.send(callback_data);
                 }
-                CallbackServer::new(8080, Duration::from_secs(300)).generate_success_page()
+                CallbackServer::generate_success_page()
             }
         } else {
-            CallbackServer::new(8080, Duration::from_secs(300))
-                .generate_error_page("Missing state parameter")
+            CallbackServer::generate_error_page("Missing state parameter")
         }
     } else {
-        CallbackServer::new(8080, Duration::from_secs(300))
-            .generate_error_page("Missing authorization code")
+        CallbackServer::generate_error_page("Missing authorization code")
     };
 
     (

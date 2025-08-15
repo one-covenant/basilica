@@ -68,7 +68,7 @@ fn extract_bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
             let mut parts = auth_header.splitn(2, char::is_whitespace);
             let scheme = parts.next()?.trim();
             let token = parts.next()?.trim();
-            
+
             if scheme.eq_ignore_ascii_case("bearer") && !token.is_empty() {
                 Some(token.to_string())
             } else {
@@ -129,7 +129,7 @@ pub async fn auth0_middleware(
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Error::Authentication {
-                    message: format!("Invalid authentication token: {}", e),
+                    message: "Invalid authentication token".to_string(),
                 },
             )
                 .into_response());

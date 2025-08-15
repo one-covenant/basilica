@@ -63,8 +63,9 @@ fn default_ssh_timeout() -> u64 {
 
 impl Default for SshConfig {
     fn default() -> Self {
-        let home_dir =
-            dirs::home_dir().expect("Unable to determine home directory for SSH configuration");
+        let strategy = choose_base_strategy()
+            .expect("Unable to determine base directories for SSH configuration");
+        let home_dir = strategy.home_dir();
 
         Self {
             key_path: home_dir.join(".ssh").join("basilica_rsa.pub"),
@@ -100,8 +101,9 @@ pub struct WalletConfig {
 
 impl Default for WalletConfig {
     fn default() -> Self {
-        let home_dir =
-            dirs::home_dir().expect("Unable to determine home directory for wallet configuration");
+        let strategy = choose_base_strategy()
+            .expect("Unable to determine base directories for wallet configuration");
+        let home_dir = strategy.home_dir();
 
         Self {
             default_wallet: "default".to_string(),

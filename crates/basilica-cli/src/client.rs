@@ -8,7 +8,6 @@
 
 use crate::auth::{AuthConfig, OAuthFlow, TokenStore};
 use crate::config::CliConfig;
-use crate::error::CliError;
 use anyhow::Result;
 use basilica_api::client::{BasilicaClient, ClientBuilder};
 use tracing::{debug, warn};
@@ -51,7 +50,7 @@ pub async fn create_authenticated_client(
         }
     }
 
-    builder.build().map_err(|e| CliError::from(e).into())
+    builder.build().map_err(Into::into)
 }
 
 /// Gets a valid JWT token, refreshing if necessary

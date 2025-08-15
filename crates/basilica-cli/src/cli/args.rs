@@ -2,6 +2,7 @@ use crate::cli::{commands::Commands, handlers};
 use crate::config::CliConfig;
 use crate::error::Result;
 use clap::Parser;
+use etcetera::{choose_base_strategy, BaseStrategy};
 use std::path::{Path, PathBuf};
 
 /// Basilica CLI - Unified GPU rental and network management
@@ -87,19 +88,19 @@ impl Args {
         match self.command {
             // Setup and configuration
             Commands::Config { action } => {
-                handlers::config::handle_config(action, &config, config_path).await
+                handlers::config::handle_config(action, &config, &config_path).await
             }
             Commands::Wallet { name } => handlers::wallet::handle_wallet(&config, name).await,
             Commands::Login { device_code } => {
-                handlers::auth::handle_login(device_code, &config, config_path).await
+                handlers::auth::handle_login(device_code, &config, &config_path).await
             }
             Commands::Logout => handlers::auth::handle_logout(&config).await,
             Commands::TestAuth { api } => {
                 if api {
-                    handlers::test_auth::handle_test_api_auth(&config, config_path, self.no_auth)
+                    handlers::test_auth::handle_test_api_auth(&config, &config_path, self.no_auth)
                         .await
                 } else {
-                    handlers::test_auth::handle_test_auth(&config, config_path, self.no_auth).await
+                    handlers::test_auth::handle_test_auth(&config, &config_path, self.no_auth).await
                 }
             }
 
@@ -145,8 +146,8 @@ impl Args {
 fn expand_tilde(path: &Path) -> PathBuf {
     if let Some(path_str) = path.to_str() {
         if let Some(stripped) = path_str.strip_prefix("~/") {
-            if let Some(home_dir) = dirs::home_dir() {
-                return home_dir.join(stripped);
+            if let Ok(strategy) = choose_base_strategy() {
+                return strategy.home_dir().join(stripped);
             }
         }
     }

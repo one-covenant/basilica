@@ -8,6 +8,21 @@ use tracing::debug;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
+/// Helper to make extension handling testable across platforms
+fn resolve_binary_name_with_ext(binary_name: &str) -> String {
+    if cfg!(windows) {
+        match std::path::Path::new(binary_name)
+            .extension()
+            .and_then(|s| s.to_str())
+        {
+            Some(ext) if ext.eq_ignore_ascii_case("exe") => binary_name.to_string(),
+            _ => format!("{binary_name}.exe"),
+        }
+    } else {
+        binary_name.to_string()
+    }
+}
+
 /// Handle validator delegation
 pub fn handle_validator(args: Vec<String>) -> Result<()> {
     debug!("Delegating to basilica-validator with args: {:?}", args);
@@ -29,11 +44,7 @@ pub fn handle_executor(args: Vec<String>) -> Result<()> {
 /// Delegate execution to another binary
 fn delegate_to_binary(binary_name: &str, args: Vec<String>) -> Result<()> {
     // Handle platform-specific executable extension
-    let binary_name_with_ext = if cfg!(windows) && !binary_name.ends_with(".exe") {
-        format!("{}.exe", binary_name)
-    } else {
-        binary_name.to_string()
-    };
+    let binary_name_with_ext = resolve_binary_name_with_ext(binary_name);
 
     // First check if the binary exists in the same directory as the current executable
     let binary_path = if let Ok(current_exe) = std::env::current_exe() {
@@ -130,15 +141,24 @@ mod tests {
 
     #[test]
     fn test_binary_name_with_extension() {
-        // Test Windows executable extension handling
+        // Test executable extension handling
         if cfg!(windows) {
             assert_eq!(
-                format!("{}.exe", "basilica-validator"),
-                if "basilica-validator".ends_with(".exe") {
-                    "basilica-validator".to_string()
-                } else {
-                    format!("{}.exe", "basilica-validator")
-                }
+                resolve_binary_name_with_ext("basilica-validator"),
+                "basilica-validator.exe"
+            );
+            assert_eq!(
+                resolve_binary_name_with_ext("basilica-validator.exe"),
+                "basilica-validator.exe"
+            );
+            assert_eq!(
+                resolve_binary_name_with_ext("BASILICA-VALIDATOR.EXE"),
+                "BASILICA-VALIDATOR.EXE"
+            );
+        } else {
+            assert_eq!(
+                resolve_binary_name_with_ext("basilica-validator"),
+                "basilica-validator"
             );
         }
     }

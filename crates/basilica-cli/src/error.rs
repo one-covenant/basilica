@@ -41,8 +41,8 @@ pub enum CliError {
     #[error("Operation timed out")]
     Timeout,
 
-    #[error("Internal error: {message}")]
-    Internal { message: String },
+    #[error("Internal error: {0}")]
+    Internal(#[from] anyhow::Error),
 }
 
 /// Result type alias for CLI operations
@@ -100,24 +100,6 @@ impl CliError {
 
     /// Create a new internal error
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::Internal {
-            message: message.into(),
-        }
-    }
-}
-
-impl From<anyhow::Error> for CliError {
-    fn from(err: anyhow::Error) -> Self {
-        Self::Internal {
-            message: err.to_string(),
-        }
-    }
-}
-
-impl From<basilica_api::Error> for CliError {
-    fn from(err: basilica_api::Error) -> Self {
-        Self::Internal {
-            message: format!("API error: {}", err),
-        }
+        Self::Internal(anyhow::anyhow!(message.into()))
     }
 }

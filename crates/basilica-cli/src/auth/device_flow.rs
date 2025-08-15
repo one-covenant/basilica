@@ -262,21 +262,15 @@ impl DeviceFlow {
                 })
                 .unwrap_or_else(|| self.config.scopes.clone());
 
-            let token_set = TokenSet {
+            let token_set = TokenSet::new(
                 access_token,
-                refresh_token: poll_response.refresh_token,
-                token_type: poll_response
+                poll_response.refresh_token,
+                poll_response
                     .token_type
                     .unwrap_or_else(|| "Bearer".to_string()),
-                expires_at: poll_response.expires_in.map(|expires_in| {
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        + expires_in
-                }),
+                poll_response.expires_in,
                 scopes,
-            };
+            );
 
             Ok(Some(token_set))
         } else {

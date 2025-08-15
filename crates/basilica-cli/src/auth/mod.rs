@@ -48,15 +48,3 @@ pub fn is_container_runtime() -> bool {
 pub fn should_use_device_flow() -> bool {
     is_wsl_environment() || is_ssh_session() || is_container_runtime()
 }
-
-/// Initialize the auth module with default configuration
-/// TODO: Implement initialization logic
-pub fn init() -> AuthResult<()> {
-    todo!("Initialize auth module with default configuration")
-}
-
-/// Clean up any resources used by the auth module
-/// TODO: Implement cleanup logic
-pub fn cleanup() -> AuthResult<()> {
-    todo!("Clean up auth module resources")
-}
