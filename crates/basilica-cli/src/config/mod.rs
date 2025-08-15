@@ -40,7 +40,7 @@ pub struct ApiConfig {
 impl Default for ApiConfig {
     fn default() -> Self {
         Self {
-            base_url: "https://api.basilica.network".to_string(),
+            base_url: "https://api.basilica.ai".to_string(),
             network: "mainnet".to_string(),
             api_key: None,
         }

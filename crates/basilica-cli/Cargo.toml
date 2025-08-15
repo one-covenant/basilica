@@ -50,7 +50,6 @@ etcetera = "0.8"
 
 # OAuth dependencies
 oauth2 = "4.4"
-openidconnect = "3.4"
 axum = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 tower-http = { workspace = true, features = ["cors"] }

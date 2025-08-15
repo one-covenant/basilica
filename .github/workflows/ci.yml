@@ -66,6 +66,7 @@ jobs:
               - 'Cargo.lock'
             basilica-cli:
               - 'crates/basilica-cli/**'
+              - 'crates/basilica-api/**'
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'Cargo.toml'

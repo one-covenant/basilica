@@ -34,11 +34,13 @@ pub struct Jwk {
     pub other: HashMap<String, Value>,
 }
 
+const DEFAULT_JWKS_TTL: Duration = Duration::from_secs(600); // 10 minutes default
+
 /// Global JWKS cache with TTL support
 static JWKS_CACHE: Lazy<Cache<String, Arc<JwkSet>>> = Lazy::new(|| {
     Cache::builder()
-        .time_to_live(Duration::from_secs(3600)) // 1 hour default
-        .max_capacity(100) // Reasonable limit for different domains
+        .time_to_live(DEFAULT_JWKS_TTL) // 10 minutes default
+        .max_capacity(10) // Reasonable limit for different domains
         .build()
 });
 
@@ -66,43 +68,12 @@ pub struct Claims {
 /// Fetches the JSON Web Key Set (JWKS) from Auth0 domain
 ///
 /// This function retrieves the public keys used to verify JWT signatures
-/// from the Auth0 JWKS endpoint.
-///
-/// # Arguments
-/// * `auth0_domain` - The Auth0 domain (e.g., "your-tenant.auth0.com")
-///
-/// # Returns
-/// * `Result<JwkSet>` - The JWKS on success, error on failure
-///
-/// # Example
-/// ```rust,no_run
-/// # use basilica_api::api::auth::jwt_validator::fetch_jwks;
-/// # async fn example() -> anyhow::Result<()> {
-/// let jwks = fetch_jwks("your-tenant.auth0.com").await?;
-/// # Ok(())
-/// # }
-/// ```
+/// from the Auth0 JWKS endpoint, with automatic caching using the default TTL.
 #[instrument(level = "debug")]
 pub async fn fetch_jwks(auth0_domain: &str) -> Result<JwkSet> {
-    fetch_jwks_with_ttl(auth0_domain, Duration::from_secs(3600)).await
-}
-
-/// Fetches the JSON Web Key Set (JWKS) from Auth0 domain with configurable TTL
-///
-/// This function retrieves the public keys used to verify JWT signatures
-/// from the Auth0 JWKS endpoint, with caching support.
-///
-/// # Arguments
-/// * `auth0_domain` - The Auth0 domain (e.g., "your-tenant.auth0.com")
-/// * `cache_ttl` - Time-to-live for the cached JWKS
-///
-/// # Returns
-/// * `Result<JwkSet>` - The JWKS on success, error on failure
-#[instrument(level = "debug")]
-pub async fn fetch_jwks_with_ttl(auth0_domain: &str, cache_ttl: Duration) -> Result<JwkSet> {
     let jwks_url = format!("https://{}/.well-known/jwks.json", auth0_domain);
 
-    debug!("Fetching JWKS from: {} (TTL: {:?})", jwks_url, cache_ttl);
+    debug!("Fetching JWKS from: {}", jwks_url);
 
     // Check cache first
     if let Some(cached_jwks) = JWKS_CACHE.get(&jwks_url).await {
@@ -150,7 +121,7 @@ pub async fn fetch_jwks_with_ttl(auth0_domain: &str, cache_ttl: Duration) -> Res
 
     debug!("Successfully fetched JWKS with {} keys", jwks.keys.len());
 
-    // Cache the result
+    // Cache the result using the default TTL configured in the cache
     let cached_jwks = Arc::new(jwks.clone());
     JWKS_CACHE.insert(jwks_url, cached_jwks).await;
 
@@ -163,24 +134,6 @@ pub async fn fetch_jwks_with_ttl(auth0_domain: &str, cache_ttl: Duration) -> Res
 /// - Signature using keys from JWKS
 /// - Token expiration
 /// - Basic format validation
-///
-/// # Arguments
-/// * `token` - The JWT token to validate
-/// * `jwks` - The JSON Web Key Set containing public keys
-///
-/// # Returns
-/// * `Result<Claims>` - Decoded claims on success, error on failure
-///
-/// # Example
-/// ```rust,no_run
-/// # use basilica_api::api::auth::jwt_validator::{validate_jwt, fetch_jwks};
-/// # async fn example() -> anyhow::Result<()> {
-/// let jwks = fetch_jwks("your-tenant.auth0.com").await?;
-/// let claims = validate_jwt("eyJ0eXAi...", &jwks)?;
-/// println!("User: {}", claims.sub);
-/// # Ok(())
-/// # }
-/// ```
 #[instrument(level = "debug", skip(token, jwks))]
 pub fn validate_jwt(token: &str, jwks: &JwkSet) -> Result<Claims> {
     validate_jwt_with_options(token, jwks, None, None)
@@ -189,15 +142,6 @@ pub fn validate_jwt(token: &str, jwks: &JwkSet) -> Result<Claims> {
 /// Validates a JWT token using the provided JWKS with additional options
 ///
 /// This function decodes and validates a JWT token with configurable validation options.
-///
-/// # Arguments
-/// * `token` - The JWT token to validate
-/// * `jwks` - The JSON Web Key Set containing public keys
-/// * `expected_audience` - Optional expected audience for validation
-/// * `clock_skew` - Optional allowed clock skew for time-based claims
-///
-/// # Returns
-/// * `Result<Claims>` - Decoded claims on success, error on failure
 #[instrument(level = "debug", skip(token, jwks))]
 pub fn validate_jwt_with_options(
     token: &str,
@@ -283,30 +227,6 @@ pub fn validate_jwt_with_options(
 ///
 /// Auth0 tokens can have single audience (string) or multiple audiences (array).
 /// This function handles both cases.
-///
-/// # Arguments
-/// * `claims` - The decoded JWT claims
-/// * `expected` - The expected audience value
-///
-/// # Returns
-/// * `Result<()>` - Success if audience matches, error otherwise
-///
-/// # Example
-/// ```rust,no_run
-/// # use basilica_api::api::auth::jwt_validator::{Claims, verify_audience};
-/// # use std::collections::HashMap;
-/// let claims = Claims {
-///     sub: "user123".to_string(),
-///     aud: serde_json::Value::String("api.basilica.ai".to_string()),
-///     iss: "https://basilica.auth0.com/".to_string(),
-///     exp: 1234567890,
-///     iat: 1234567800,
-///     scope: None,
-///     custom: HashMap::new(),
-/// };
-/// verify_audience(&claims, "api.basilica.ai")?;
-/// # Ok::<(), anyhow::Error>(())
-/// ```
 #[instrument(level = "debug")]
 pub fn verify_audience(claims: &Claims, expected: &str) -> Result<()> {
     debug!("Verifying audience: expected={}", expected);
@@ -359,30 +279,6 @@ pub fn verify_audience(claims: &Claims, expected: &str) -> Result<()> {
 /// Verifies that the token issuer matches the expected issuer
 ///
 /// This ensures the token was issued by the expected Auth0 tenant.
-///
-/// # Arguments
-/// * `claims` - The decoded JWT claims
-/// * `expected` - The expected issuer value (e.g., "https://your-tenant.auth0.com/")
-///
-/// # Returns
-/// * `Result<()>` - Success if issuer matches, error otherwise
-///
-/// # Example
-/// ```rust,no_run
-/// # use basilica_api::api::auth::jwt_validator::{Claims, verify_issuer};
-/// # use std::collections::HashMap;
-/// let claims = Claims {
-///     sub: "user123".to_string(),
-///     aud: serde_json::Value::String("api.basilica.ai".to_string()),
-///     iss: "https://basilica.auth0.com/".to_string(),
-///     exp: 1234567890,
-///     iat: 1234567800,
-///     scope: None,
-///     custom: HashMap::new(),
-/// };
-/// verify_issuer(&claims, "https://basilica.auth0.com/")?;
-/// # Ok::<(), anyhow::Error>(())
-/// ```
 #[instrument(level = "debug")]
 pub fn verify_issuer(claims: &Claims, expected: &str) -> Result<()> {
     debug!("Verifying issuer: expected={}", expected);
@@ -404,16 +300,6 @@ pub fn verify_issuer(claims: &Claims, expected: &str) -> Result<()> {
 ///
 /// This function combines JWKS fetching and JWT validation in one call,
 /// using the provided Auth0 configuration.
-///
-/// # Arguments
-/// * `token` - The JWT token to validate
-/// * `auth0_domain` - The Auth0 domain
-/// * `expected_audience` - The expected audience
-/// * `expected_issuer` - The expected issuer
-/// * `clock_skew` - Optional clock skew tolerance
-///
-/// # Returns
-/// * `Result<Claims>` - Validated claims on success
 #[instrument(level = "debug", skip(token))]
 pub async fn validate_auth0_jwt(
     token: &str,

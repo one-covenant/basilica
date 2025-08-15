@@ -25,9 +25,7 @@ pub async fn create_authenticated_client(
     config: &CliConfig,
     bypass_auth: bool,
 ) -> Result<BasilicaClient> {
-    let api_url = config
-        .get("api.base_url")
-        .unwrap_or_else(|_| "https://api.basilica.network".to_string());
+    let api_url = config.api.base_url.clone();
 
     let mut builder = ClientBuilder::default().base_url(api_url);
 
