@@ -151,29 +151,19 @@ pub async fn handle_test_api_auth(
     // Create authenticated client
     let client = create_authenticated_client(config, no_auth).await?;
 
-    // Try to call the health endpoint (which should work even without full auth)
+    // Try to call the health endpoint
     match client.health_check().await {
         Ok(health) => {
             println!("Successfully connected to Basilica API");
             println!("  Status: {}", health.status);
             println!("  Version: {}", health.version);
             println!("  Timestamp: {}", health.timestamp);
-
-            // Check if we have authentication
-            if client.has_auth().await {
-                println!("\nAuthentication token is configured");
-
-                // Try to make an authenticated request (when your API supports it)
-                // For now, we just confirm the token is set
-                println!("  Token is ready for authenticated requests");
-            } else {
-                println!("\nNo authentication token configured");
-                println!("  Run 'basilica login' to authenticate");
-            }
         }
         Err(e) => {
             println!("Failed to connect to Basilica API");
             println!("  Error: {}", e);
+            println!("  Note: Health endpoint requires full authentication");
+            println!("  Run 'basilica login' to authenticate if you haven't already");
             return Err(CliError::internal(format!("API connection failed: {}", e)));
         }
     }
