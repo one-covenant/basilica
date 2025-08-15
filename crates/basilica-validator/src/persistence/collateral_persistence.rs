@@ -122,7 +122,7 @@ impl SimplePersistence {
                     .await?;
             }
             None => {
-                let query = "INSERT INTO collateral_status (hotkey, executor_id, miner, collateral) VALUES (?, ?, ?, ?)";
+                let query = "INSERT INTO collateral_status (hotkey, executor_id, miner, collateral, updated_at) VALUES (?, ?, ?, ?, ?)";
                 sqlx::query(query)
                     .bind(deposit.hotkey.encode_hex::<String>())
                     .bind(deposit.executorId.encode_hex::<String>())
@@ -131,6 +131,7 @@ impl SimplePersistence {
                         deposit.miner.as_slice().encode_hex::<String>()
                     ))
                     .bind(deposit.amount.to_string())
+                    .bind(Utc::now().to_rfc3339())
                     .execute(self.pool())
                     .await?;
             }
@@ -355,5 +356,354 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(coll_after_slash, "0");
+    }
+
+    #[tokio::test]
+    async fn test_get_collateral_status_id_found() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let hk = make_hotkey(5);
+        let ex = make_executor_id(6);
+        let d = ev_deposit(hk, ex, 999);
+        persistence.handle_deposit(&d).await.unwrap();
+
+        let result = persistence
+            .get_collateral_status_id(
+                &d.hotkey.encode_hex::<String>(),
+                &d.executorId.encode_hex::<String>(),
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_some());
+        let (id, collateral) = result.unwrap();
+        assert!(id > 0);
+        assert_eq!(collateral, U256::from(999));
+    }
+
+    #[tokio::test]
+    async fn test_get_collateral_status_id_not_found() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let result = persistence
+            .get_collateral_status_id("nonexistent_hotkey", "nonexistent_executor")
+            .await
+            .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_reclaimed_not_found() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let hk = make_hotkey(10);
+        let ex = make_executor_id(11);
+        let r = ev_reclaimed(hk, ex, 50);
+
+        let result = persistence.handle_reclaimed(&r).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Collateral status not found"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_slashed_not_found() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let hk = make_hotkey(12);
+        let ex = make_executor_id(13);
+        let s = ev_slashed(hk, ex, 100);
+
+        let result = persistence.handle_slashed(&s).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Collateral status not found"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_slashed_with_url_data() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let hk = make_hotkey(14);
+        let ex = make_executor_id(15);
+
+        // Setup initial deposit
+        let d = ev_deposit(hk, ex, 500);
+        persistence.handle_deposit(&d).await.unwrap();
+
+        // Create slashed event with URL data
+        let mut s = ev_slashed(hk, ex, 500);
+        s.url = "https://example.com/proof".to_string();
+        s.urlContentMd5Checksum = FixedBytes::from_slice(&[
+            0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56,
+            0x78, 0x90,
+        ]);
+
+        persistence.handle_slashed(&s).await.unwrap();
+
+        // Verify URL and checksum were stored
+        let (url, checksum): (String, String) = sqlx::query_as(
+            "SELECT url, url_content_md5_checksum FROM collateral_status WHERE hotkey = ? AND executor_id = ?",
+        )
+        .bind(d.hotkey.encode_hex::<String>())
+        .bind(d.executorId.encode_hex::<String>())
+        .fetch_one(persistence.pool())
+        .await
+        .unwrap();
+
+        assert_eq!(url, "https://example.com/proof");
+        assert_eq!(checksum, "abcdef1234567890abcdef1234567890");
+    }
+
+    #[tokio::test]
+    async fn test_update_last_scanned_block_number_large_values() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let large_block = u64::MAX - 1000;
+        persistence
+            .update_last_scanned_block_number(large_block)
+            .await
+            .unwrap();
+
+        let retrieved = persistence.get_last_scanned_block_number().await.unwrap();
+        assert_eq!(retrieved, large_block);
+    }
+
+    #[tokio::test]
+    async fn test_handle_deposit_multiple_miners_same_executor() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let ex = make_executor_id(20);
+        let hk1 = make_hotkey(21);
+        let hk2 = make_hotkey(22);
+
+        // Same executor ID, different hotkeys
+        let d1 = ev_deposit(hk1, ex, 100);
+        let d2 = ev_deposit(hk2, ex, 200);
+
+        persistence.handle_deposit(&d1).await.unwrap();
+        persistence.handle_deposit(&d2).await.unwrap();
+
+        // Verify both entries exist separately
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM collateral_status WHERE executor_id = ?")
+                .bind(ex.encode_hex::<String>())
+                .fetch_one(persistence.pool())
+                .await
+                .unwrap();
+
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_handle_deposit_overflow_protection() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let hk = make_hotkey(25);
+        let ex = make_executor_id(26);
+
+        // Create a deposit with a very large amount
+        let mut d1 = ev_deposit(hk, ex, 0);
+        d1.amount = U256::MAX - U256::from(1000u64);
+        persistence.handle_deposit(&d1).await.unwrap();
+
+        // Add another deposit that would overflow if not using saturating_add
+        let mut d2 = ev_deposit(hk, ex, 0);
+        d2.amount = U256::from(2000u64);
+        persistence.handle_deposit(&d2).await.unwrap();
+
+        // Verify the result is U256::MAX (saturating add)
+        let result = persistence
+            .get_collateral_status_id(
+                &d1.hotkey.encode_hex::<String>(),
+                &d1.executorId.encode_hex::<String>(),
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_some());
+        let (_, collateral) = result.unwrap();
+        assert_eq!(collateral, U256::MAX);
+    }
+
+    #[tokio::test]
+    async fn test_handle_reclaimed_underflow_protection() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let hk = make_hotkey(27);
+        let ex = make_executor_id(28);
+
+        // Setup with small deposit
+        let d = ev_deposit(hk, ex, 100);
+        persistence.handle_deposit(&d).await.unwrap();
+
+        // Try to reclaim more than available (should use saturating_sub)
+        let r = ev_reclaimed(hk, ex, 200);
+        persistence.handle_reclaimed(&r).await.unwrap();
+
+        // Verify the result is 0 (saturating sub)
+        let result = persistence
+            .get_collateral_status_id(
+                &d.hotkey.encode_hex::<String>(),
+                &d.executorId.encode_hex::<String>(),
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_some());
+        let (_, collateral) = result.unwrap();
+        assert_eq!(collateral, U256::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_table_unique_constraint() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let hk = make_hotkey(30);
+        let ex = make_executor_id(31);
+
+        // First deposit should succeed
+        let d1 = ev_deposit(hk, ex, 100);
+        persistence.handle_deposit(&d1).await.unwrap();
+
+        // Second deposit with same hotkey and executor should update, not duplicate
+        let d2 = ev_deposit(hk, ex, 50);
+        persistence.handle_deposit(&d2).await.unwrap();
+
+        // Verify only one row exists
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM collateral_status WHERE hotkey = ? AND executor_id = ?",
+        )
+        .bind(hk.encode_hex::<String>())
+        .bind(ex.encode_hex::<String>())
+        .fetch_one(persistence.pool())
+        .await
+        .unwrap();
+
+        assert_eq!(count, 1);
+
+        // Verify the collateral was updated to 150
+        let collateral: String = sqlx::query_scalar(
+            "SELECT collateral FROM collateral_status WHERE hotkey = ? AND executor_id = ?",
+        )
+        .bind(hk.encode_hex::<String>())
+        .bind(ex.encode_hex::<String>())
+        .fetch_one(persistence.pool())
+        .await
+        .unwrap();
+
+        assert_eq!(collateral, "150");
+    }
+
+    #[tokio::test]
+    async fn test_scan_status_table_initialization() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        // Verify the scan status table has the initial row
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM collateral_scan_status")
+            .fetch_one(persistence.pool())
+            .await
+            .unwrap();
+
+        assert_eq!(count, 1);
+
+        // Verify the initial block number is set to CONTRACT_DEPLOYED_BLOCK_NUMBER
+        let initial_block: i64 = sqlx::query_scalar(
+            "SELECT last_scanned_block_number FROM collateral_scan_status WHERE id = 1",
+        )
+        .fetch_one(persistence.pool())
+        .await
+        .unwrap();
+
+        assert_eq!(initial_block as u64, CONTRACT_DEPLOYED_BLOCK_NUMBER);
+    }
+
+    #[tokio::test]
+    async fn test_timestamp_fields_updated() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "validator".to_string())
+            .await
+            .unwrap();
+
+        let hk = make_hotkey(35);
+        let ex = make_executor_id(36);
+
+        // Create deposit and verify updated_at is set
+        let d = ev_deposit(hk, ex, 100);
+        persistence.handle_deposit(&d).await.unwrap();
+
+        let updated_at: String = sqlx::query_scalar(
+            "SELECT updated_at FROM collateral_status WHERE hotkey = ? AND executor_id = ?",
+        )
+        .bind(hk.encode_hex::<String>())
+        .bind(ex.encode_hex::<String>())
+        .fetch_one(persistence.pool())
+        .await
+        .unwrap();
+
+        // Verify it's a valid RFC3339 timestamp
+        assert!(chrono::DateTime::parse_from_rfc3339(&updated_at).is_ok());
+
+        // Update scan block number and verify timestamp
+        let old_timestamp: String =
+            sqlx::query_scalar("SELECT updated_at FROM collateral_scan_status WHERE id = 1")
+                .fetch_one(persistence.pool())
+                .await
+                .unwrap();
+
+        // Sleep briefly to ensure timestamp difference
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        persistence
+            .update_last_scanned_block_number(12345)
+            .await
+            .unwrap();
+
+        let new_timestamp: String =
+            sqlx::query_scalar("SELECT updated_at FROM collateral_scan_status WHERE id = 1")
+                .fetch_one(persistence.pool())
+                .await
+                .unwrap();
+
+        assert_ne!(old_timestamp, new_timestamp);
+        assert!(chrono::DateTime::parse_from_rfc3339(&new_timestamp).is_ok());
     }
 }

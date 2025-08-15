@@ -106,7 +106,6 @@ pub async fn scan_events(
     let logs = provider.get_logs(&filter).await?;
 
     let mut result: HashMap<u64, Vec<CollateralEvent>> = HashMap::new();
-    // let mut total_events = 0;
 
     for log in logs {
         if log.removed {
