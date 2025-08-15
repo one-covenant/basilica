@@ -603,6 +603,7 @@ jobs:
           export DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
           export PAYMENTS_DATABASE_URL="$DATABASE_URL"
           export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
+          export SUBXT_WS="ws://localhost:9944"
           cargo build -p basilica-payments
           ./target/debug/basilica-payments --help
           ./target/debug/basilica-payments --gen-config

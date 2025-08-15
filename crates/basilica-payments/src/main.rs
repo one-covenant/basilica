@@ -12,22 +12,70 @@ use basilica_common::crypto::Aead;
 
 use anyhow::{Context, Result};
 use basilica_protocol::payments::payments_service_server::PaymentsServiceServer;
+use clap::Parser;
 use sqlx::postgres::PgPoolOptions;
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::signal;
 use tonic::transport::Server;
 use tracing::{info, warn};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+#[command(name = "basilica-payments")]
+#[command(
+    about = "Basilica Payments Service - Blockchain payment processing and treasury management"
+)]
+struct Args {
+    #[arg(short, long, help = "Path to configuration file")]
+    config: Option<PathBuf>,
+
+    #[arg(long, help = "Generate sample configuration file")]
+    gen_config: bool,
+
+    #[arg(long, help = "Dry run mode (validate config without starting)")]
+    dry_run: bool,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+    let args = Args::parse();
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "basilica_payments=info,basilica_protocol=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
         .init();
 
-    info!("Starting basilica-payments service");
+    if args.gen_config {
+        let config = Config::default();
+        let toml = toml::to_string_pretty(&config)?;
+        println!("{}", toml);
+        return Ok(());
+    }
 
-    let cfg = Config::from_env().context("Failed to load configuration from environment")?;
+    let cfg = Config::load(args.config).context("Failed to load configuration")?;
+
+    if args.dry_run {
+        info!("Configuration loaded successfully (dry-run mode)");
+        info!("gRPC bind address: {}", cfg.grpc_bind);
+        info!("Substrate websocket: {}", cfg.subxt_ws);
+        info!("Billing gRPC endpoint: {}", cfg.billing_grpc);
+        let db_display = match cfg.database_url.rsplit_once('@') {
+            Some((_, rest)) => rest,
+            None => &cfg.database_url,
+        };
+        info!("Database URL: {}", db_display);
+        info!("Configuration validated successfully (dry-run mode)");
+        return Ok(());
+    }
+
+    info!("Starting basilica-payments service");
+    info!("gRPC bind address: {}", cfg.grpc_bind);
+    info!("Substrate websocket: {}", cfg.subxt_ws);
+    info!("Billing gRPC endpoint: {}", cfg.billing_grpc);
 
     let db_display = match cfg.database_url.rsplit_once('@') {
         Some((_, rest)) => rest,
@@ -104,11 +152,31 @@ async fn main() -> Result<()> {
         r = monitor.run() => {
             r.context("Blockchain monitor failed")?;
         },
-        _ = signal::ctrl_c() => {
+        _ = shutdown_signal() => {
             warn!("Received shutdown signal");
         }
     }
 
     info!("Basilica payments service shutting down gracefully");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }

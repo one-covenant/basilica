@@ -1,7 +1,12 @@
 use anyhow::{anyhow, Result};
-use std::env;
+use figment::{
+    providers::{Env, Format, Serialized, Toml},
+    Figment,
+};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub database_url: String,
     pub subxt_ws: String,
@@ -15,33 +20,48 @@ pub struct Config {
     pub price_request_timeout: u64,
 }
 
-impl Config {
-    pub fn from_env() -> Result<Self> {
-        Ok(Self {
-            database_url: req("DATABASE_URL")?,
-            subxt_ws: req("SUBXT_WS")?,
-            billing_grpc: req("BILLING_GRPC")?,
-            grpc_bind: env::var("PAYMENTS_GRPC_BIND").unwrap_or_else(|_| "0.0.0.0:50061".into()),
-            ss58_prefix: env::var("SS58_PREFIX")
-                .unwrap_or_else(|_| "42".into())
-                .parse()?,
-            tao_decimals: env::var("TAO_DECIMALS")
-                .unwrap_or_else(|_| "9".into())
-                .parse()?,
-            aead_key_hex: req("PAYMENTS_AEAD_KEY_HEX")?,
-            price_update_interval: env::var("PRICE_UPDATE_INTERVAL")
-                .unwrap_or_else(|_| "60".into())
-                .parse()?,
-            price_max_age: env::var("PRICE_MAX_AGE")
-                .unwrap_or_else(|_| "300".into())
-                .parse()?,
-            price_request_timeout: env::var("PRICE_REQUEST_TIMEOUT")
-                .unwrap_or_else(|_| "10".into())
-                .parse()?,
-        })
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            database_url: "postgres://payments@localhost:5432/basilica_payments".to_string(),
+            subxt_ws: "ws://localhost:9944".to_string(),
+            billing_grpc: "http://localhost:50051".to_string(),
+            grpc_bind: "0.0.0.0:50061".to_string(),
+            ss58_prefix: 42,
+            tao_decimals: 9,
+            aead_key_hex: "0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            price_update_interval: 60,
+            price_max_age: 300,
+            price_request_timeout: 10,
+        }
     }
 }
 
-fn req(k: &str) -> Result<String> {
-    env::var(k).map_err(|_| anyhow!("missing env {k}"))
+impl Config {
+    pub fn load(path_override: Option<PathBuf>) -> Result<Self> {
+        let default_config = Config::default();
+        let mut figment = Figment::from(Serialized::defaults(default_config));
+
+        if let Some(path) = path_override {
+            if path.exists() {
+                figment = figment.merge(Toml::file(&path));
+            }
+        } else {
+            let default_path = PathBuf::from("payments.toml");
+            if default_path.exists() {
+                figment = figment.merge(Toml::file(default_path));
+            }
+        }
+
+        figment = figment.merge(Env::prefixed("PAYMENTS_").split("_"));
+
+        figment
+            .extract()
+            .map_err(|e| anyhow!("Configuration error: {}", e))
+    }
+
+    pub fn from_env() -> Result<Self> {
+        Self::load(None)
+    }
 }
