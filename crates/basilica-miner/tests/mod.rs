@@ -6,7 +6,7 @@ mod tests {
     use alloy_provider::ProviderBuilder;
     use alloy_sol_types::SolEvent;
     use basilica_miner::config::MinerConfig;
-    use collateral::CollateralUpgradeable::{self, CollateralUpgradeableInstance};
+    use collateral_contract::CollateralUpgradeable::{self, CollateralUpgradeableInstance};
     use rand::Rng;
 
     const TESTNET_URL: &str = "https://test.finney.opentensor.ai";
