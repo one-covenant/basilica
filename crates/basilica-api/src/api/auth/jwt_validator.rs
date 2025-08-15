@@ -311,11 +311,6 @@ pub fn validate_jwt_with_options(
 pub fn verify_audience(claims: &Claims, expected: &str) -> Result<()> {
     debug!("Verifying audience: expected={}", expected);
 
-    // TODO: Implement audience verification
-    // - Handle single audience (string)
-    // - Handle multiple audiences (array)
-    // - Return appropriate error if not found
-
     match &claims.aud {
         serde_json::Value::String(aud) => {
             if aud == expected {
@@ -391,11 +386,6 @@ pub fn verify_audience(claims: &Claims, expected: &str) -> Result<()> {
 #[instrument(level = "debug")]
 pub fn verify_issuer(claims: &Claims, expected: &str) -> Result<()> {
     debug!("Verifying issuer: expected={}", expected);
-
-    // TODO: Implement issuer verification
-    // - Compare claims.iss with expected value
-    // - Consider trailing slash normalization
-    // - Return appropriate error if mismatch
 
     if claims.iss == expected {
         debug!("Issuer verification successful");
