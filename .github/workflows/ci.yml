@@ -449,6 +449,26 @@ jobs:
           tool: nextest
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
+      - name: Wait for Postgres (billing)
+        run: |
+          : "${BILLING_DB_PASSWORD:=billing_dev_password}"
+          postgres_ready=false
+          for i in {1..30}; do
+            if PGPASSWORD="$BILLING_DB_PASSWORD" pg_isready -h localhost -p 5432 -U billing >/dev/null 2>&1; then
+              echo "Postgres is ready"
+              postgres_ready=true
+              break
+            fi
+            echo "Waiting for Postgres ($i/30)..."
+            sleep 2
+          done
+
+          if [ "$postgres_ready" = false ]; then
+            echo "ERROR: Postgres failed to become ready after 60 seconds"
+            exit 1
+          fi
+
+          PGPASSWORD="$BILLING_DB_PASSWORD" psql -h localhost -p 5432 -U billing -d postgres -c "SELECT 1;"
       - name: Check billing builds
         run: |
           cargo check -p basilica-billing
@@ -534,6 +554,26 @@ jobs:
           tool: nextest
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
+      - name: Wait for Postgres (payments)
+        run: |
+          : "${PAYMENTS_DB_PASSWORD:=payments_dev_password}"
+          postgres_ready=false
+          for i in {1..30}; do
+            if PGPASSWORD="$PAYMENTS_DB_PASSWORD" pg_isready -h localhost -p 5432 -U payments >/dev/null 2>&1; then
+              echo "Postgres is ready"
+              postgres_ready=true
+              break
+            fi
+            echo "Waiting for Postgres ($i/30)..."
+            sleep 2
+          done
+
+          if [ "$postgres_ready" = false ]; then
+            echo "ERROR: Postgres failed to become ready after 60 seconds"
+            exit 1
+          fi
+
+          PGPASSWORD="$PAYMENTS_DB_PASSWORD" psql -h localhost -p 5432 -U payments -d postgres -c "SELECT 1;"
       - name: Check payments builds
         run: |
           cargo check -p basilica-payments

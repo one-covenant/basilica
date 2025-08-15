@@ -163,7 +163,7 @@ impl PriceOracle {
             loop {
                 ticker.tick().await;
 
-                if let Err(e) = oracle.get_tao_usd_price().await {
+                if let Err(e) = oracle.refresh_price().await {
                     error!("Background price update failed: {}", e);
                 }
             }

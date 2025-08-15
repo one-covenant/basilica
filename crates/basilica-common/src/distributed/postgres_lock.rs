@@ -169,16 +169,16 @@ impl AdvisoryLock {
                 .await?;
 
             // pg_advisory_lock blocks until acquired or lock_timeout elapses
-            let res = sqlx::query_scalar::<_, ()>("SELECT pg_advisory_lock($1)")
+            let res = sqlx::query("SELECT pg_advisory_lock($1)")
                 .bind(key.value())
-                .fetch_one(&mut *tx)
+                .execute(&mut *tx)
                 .await;
 
             match res {
-                Ok(()) => {
+                Ok(_) => {
                     tx.commit().await?; // commit to end SET LOCAL; lock persists (session-level)
                 }
-                Err(sqlx::Error::Database(e)) if e.message().contains("lock timeout") => {
+                Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("55P03") => {
                     // Rollback to end SET LOCAL and return timeout
                     let _ = tx.rollback().await;
                     return Err(LockError::Timeout(timeout_secs));
@@ -205,6 +205,7 @@ impl AdvisoryLock {
                 WHERE locktype = 'advisory'
                   AND classid = $1
                   AND objid = $2
+                  AND granted
             )",
         )
         .bind(hi)
@@ -227,6 +228,7 @@ impl AdvisoryLock {
              WHERE locktype = 'advisory'
                AND classid = $1
                AND objid = $2
+               AND granted
              LIMIT 1",
         )
         .bind(hi)
@@ -295,7 +297,7 @@ impl LeaderElection {
     {
         loop {
             match self.lock_manager.try_acquire(self.key).await {
-                Ok(_guard) => {
+                Ok(guard) => {
                     info!("Became leader for {}", self.key);
 
                     // Run the leader function
@@ -303,7 +305,10 @@ impl LeaderElection {
                         warn!("Leader function error: {}", e);
                     }
 
-                    // Guard is dropped here, releasing the lock
+                    // Explicitly release the advisory lock before dropping the guard.
+                    if let Err(e) = guard.release().await {
+                        warn!("Failed to release advisory lock {}: {}", self.key, e);
+                    }
                     info!("Lost leadership for {}", self.key);
                 }
                 Err(LockError::AlreadyHeld) => {
