@@ -135,11 +135,6 @@ impl ApiRequestTimer {
 pub mod endpoints {
     pub const HEALTH: &str = "/health";
     pub const METRICS: &str = "/metrics";
-    pub const CAPACITY: &str = "/api/v1/capacity";
-    pub const LOGS: &str = "/api/v1/logs";
-    pub const RENTALS: &str = "/api/v1/rentals";
-    pub const VALIDATION: &str = "/api/v1/validation";
-    pub const STATS: &str = "/api/v1/stats";
 }
 
 /// HTTP method constants

@@ -6,4 +6,6 @@
 pub mod jwt_validator;
 
 // Re-export commonly used types and functions
-pub use jwt_validator::{fetch_jwks, validate_jwt, verify_audience, verify_issuer, Claims};
+pub use jwt_validator::{
+    fetch_jwks, validate_jwt_with_options, verify_audience, verify_issuer, Claims,
+};

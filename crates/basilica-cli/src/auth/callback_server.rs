@@ -305,15 +305,41 @@ async fn handle_callback(
         error_description: params.error_description.clone(),
     };
 
+    // If we need to notify the waiting task (errors), fill this and send after building HTML.
+    let mut data_to_send: Option<CallbackData> = None;
+
     let response_html = if let Some(error) = &params.error {
         // Generate error page
         let error_msg = params.error_description.as_deref().unwrap_or(error);
+        // Notify waiter with an error (no code)
+        data_to_send = Some(CallbackData {
+            code: None,
+            state: params.state.clone(),
+            error: Some(error.to_string()),
+            error_description: Some(error_msg.to_string()),
+        });
         CallbackServer::generate_error_page(error_msg)
     } else if params.code.is_some() {
         // Validate state parameter
-        let expected_state = {
-            let state_guard = state.lock().unwrap();
-            state_guard.expected_state.clone()
+        let expected_state = match state.lock() {
+            Ok(g) => g.expected_state.clone(),
+            Err(_) => {
+                let error_data = CallbackData {
+                    code: None,
+                    state: params.state.clone(),
+                    error: Some("internal_error".to_string()),
+                    error_description: Some("Internal state unavailable".to_string()),
+                };
+                // Try to send error even if mutex is poisoned - there might be other senders
+                if let Ok(state_guard) = state.lock() {
+                    let _ = state_guard.sender.send(error_data);
+                }
+                return (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                    Html(CallbackServer::generate_error_page("Internal error")),
+                );
+            }
         };
 
         if let Some(received_state) = &params.state {
@@ -322,6 +348,12 @@ async fn handle_callback(
                     "State mismatch: expected {}, got {}",
                     expected_state, received_state
                 );
+                data_to_send = Some(CallbackData {
+                    code: None,
+                    state: params.state.clone(),
+                    error: Some("state_mismatch".to_string()),
+                    error_description: Some(error_msg.clone()),
+                });
                 CallbackServer::generate_error_page(&error_msg)
             } else {
                 // Send the callback data through the channel
@@ -331,11 +363,29 @@ async fn handle_callback(
                 CallbackServer::generate_success_page()
             }
         } else {
+            data_to_send = Some(CallbackData {
+                code: None,
+                state: None,
+                error: Some("missing_state".to_string()),
+                error_description: Some("Missing state parameter".to_string()),
+            });
             CallbackServer::generate_error_page("Missing state parameter")
         }
     } else {
+        data_to_send = Some(CallbackData {
+            code: None,
+            state: params.state.clone(),
+            error: Some("missing_code".to_string()),
+            error_description: Some("Missing authorization code".to_string()),
+        });
         CallbackServer::generate_error_page("Missing authorization code")
     };
+
+    if let Some(to_send) = data_to_send {
+        if let Ok(state_guard) = state.lock() {
+            let _ = state_guard.sender.send(to_send);
+        }
+    }
 
     (
         StatusCode::OK,

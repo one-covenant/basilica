@@ -42,16 +42,13 @@ impl ValidatorClient {
     }
 
     /// List rentals with optional state filter
-    pub async fn list_rentals(&self, state: Option<RentalState>) -> Result<ListRentalsResponse> {
+    pub async fn list_rentals(&self, filter: Option<RentalState>) -> Result<ListRentalsResponse> {
         let url = format!("{}/rentals", self.base_url);
 
         let mut req = self.http_client.get(&url);
-        if let Some(state_filter) = state {
+        if let Some(state_filter) = filter {
             // Serialize the enum value as lowercase string for the query parameter
-            let state_str = serde_json::to_string(&state_filter)
-                .unwrap_or_else(|_| "active".to_string())
-                .trim_matches('"')
-                .to_string();
+            let state_str = state_filter.to_string();
             req = req.query(&[("state", state_str)]);
         }
 
@@ -126,7 +123,7 @@ impl ValidatorClient {
         &self,
         rental_id: &str,
         _request: TerminateRentalRequest, // Maintained for API compatibility
-    ) -> Result<TerminateRentalResponse> {
+    ) -> Result<()> {
         let url = format!("{}/rentals/{}", self.base_url, rental_id);
 
         let response = self
@@ -137,22 +134,12 @@ impl ValidatorClient {
             .context("Failed to send termination request")?;
 
         if response.status() == reqwest::StatusCode::NO_CONTENT {
-            return Ok(TerminateRentalResponse {
-                success: true,
-                message: "Rental terminated successfully".to_string(),
-            });
-        }
-
-        if !response.status().is_success() {
+            Ok(())
+        } else {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Failed to terminate rental: {} - {}", status, error_body);
+            anyhow::bail!("Failed to terminate rental: {} - {}", status, error_body)
         }
-
-        response
-            .json()
-            .await
-            .context("Failed to parse termination response")
     }
 
     /// Stream rental logs

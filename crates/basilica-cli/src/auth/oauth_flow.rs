@@ -208,12 +208,12 @@ impl OAuthFlow {
         term.clear_last_lines(6)
             .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
 
-        print_success("Login successful!");
-
         // Extract the authorization code
         let code = callback_data.code.ok_or_else(|| {
             AuthError::CallbackServerError("No authorization code received".to_string())
         })?;
+
+        print_success("Login successful!");
 
         // Exchange authorization code for tokens
         let token_set = self.exchange_code_for_token(&code).await?;

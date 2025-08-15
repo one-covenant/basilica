@@ -15,6 +15,7 @@ use basilica_api::api::types::{
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
 use basilica_validator::rental::types::RentalState;
+use reqwest::StatusCode;
 use std::path::PathBuf;
 use tabled::{settings::Style, Table, Tabled};
 use tracing::{debug, info};
@@ -285,7 +286,7 @@ pub async fn handle_logs(
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
 
-        if status == 404 {
+        if status == StatusCode::NOT_FOUND {
             return Err(CliError::not_found(format!("Rental {} not found", target)));
         } else {
             return Err(CliError::internal(format!(
@@ -352,7 +353,7 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig, no_auth: bool
 
     let rental_ids = if targets.is_empty() {
         return Err(CliError::invalid_argument(
-            "No rental IDs specified. Please provide rental IDs to terminate."
+            "No rental IDs specified. Please provide rental IDs to terminate.",
         ));
     } else {
         targets

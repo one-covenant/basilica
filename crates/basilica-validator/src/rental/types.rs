@@ -89,18 +89,12 @@ pub struct ContainerInfo {
 
 /// Rental state
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum RentalState {
-    #[serde(rename = "provisioning")]
     Provisioning,
-    #[serde(rename = "active")]
     Active,
-    #[serde(rename = "stopping")]
     Stopping,
-    #[serde(rename = "stopped")]
     Stopped,
-    #[serde(rename = "failed")]
     Failed,
 }
 

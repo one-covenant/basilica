@@ -545,7 +545,7 @@ async fn test_api_health(config: &crate::config::ValidatorConfig) -> Result<u64>
 
     // Use the configured server host and port
     let api_url = format!(
-        "http://{}:{}/api/v1/health",
+        "http://{}:{}/health",
         config.server.host, config.server.port
     );
     let response = client

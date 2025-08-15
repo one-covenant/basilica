@@ -128,17 +128,6 @@ pub async fn fetch_jwks(auth0_domain: &str) -> Result<JwkSet> {
     Ok(jwks)
 }
 
-/// Validates a JWT token using the provided JWKS
-///
-/// This function decodes and validates a JWT token, verifying:
-/// - Signature using keys from JWKS
-/// - Token expiration
-/// - Basic format validation
-#[instrument(level = "debug", skip(token, jwks))]
-pub fn validate_jwt(token: &str, jwks: &JwkSet) -> Result<Claims> {
-    validate_jwt_with_options(token, jwks, None, None)
-}
-
 /// Validates a JWT token using the provided JWKS with additional options
 ///
 /// This function decodes and validates a JWT token with configurable validation options.
@@ -190,20 +179,13 @@ pub fn validate_jwt_with_options(
     // Step 4: Set up validation parameters
     let mut validation = Validation::new(Algorithm::RS256);
 
-    // Set audience validation if provided
-    if let Some(aud) = expected_audience {
-        validation.set_audience(&[aud]);
-    } else {
-        validation.validate_aud = false;
-    }
+    // disable validation here, we do this validation ourself.
+    validation.validate_aud = false;
 
     // Set clock skew tolerance
     if let Some(skew) = clock_skew {
         validation.leeway = skew.as_secs();
     }
-
-    // We'll validate issuer separately for more flexibility
-    // Note: jsonwebtoken doesn't have validate_iss field, issuer is validated through set_issuer
 
     debug!(
         "JWT validation configured: aud={}, leeway={}",
@@ -296,38 +278,11 @@ pub fn verify_issuer(claims: &Claims, expected: &str) -> Result<()> {
     }
 }
 
-/// Convenience function to validate JWT with Auth0 configuration
-///
-/// This function combines JWKS fetching and JWT validation in one call,
-/// using the provided Auth0 configuration.
-#[instrument(level = "debug", skip(token))]
-pub async fn validate_auth0_jwt(
-    token: &str,
-    auth0_domain: &str,
-    expected_audience: &str,
-    expected_issuer: &str,
-    clock_skew: Option<Duration>,
-) -> Result<Claims> {
-    // Fetch JWKS
-    let jwks = fetch_jwks(auth0_domain).await?;
-
-    // Validate JWT with options
-    let claims = validate_jwt_with_options(token, &jwks, Some(expected_audience), clock_skew)?;
-
-    // Verify issuer
-    verify_issuer(&claims, expected_issuer)?;
-
-    // Verify audience (additional check since we also set it in validation options)
-    verify_audience(&claims, expected_audience)?;
-
-    Ok(claims)
-}
-
 /// Clears the JWKS cache
 ///
 /// This function can be used to force refresh of cached JWKS,
 /// useful for testing or when keys have been rotated.
-pub async fn clear_jwks_cache() {
+pub fn clear_jwks_cache() {
     JWKS_CACHE.invalidate_all();
     debug!("JWKS cache cleared");
 }
@@ -335,7 +290,7 @@ pub async fn clear_jwks_cache() {
 /// Gets cache statistics for monitoring
 ///
 /// Returns the number of cached entries.
-pub async fn get_cache_stats() -> u64 {
+pub fn get_cache_stats() -> u64 {
     JWKS_CACHE.entry_count()
 }
 

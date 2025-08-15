@@ -77,14 +77,6 @@ pub struct TerminateRentalRequest {
     pub reason: Option<String>,
 }
 
-/// Response for rental termination
-#[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
-pub struct TerminateRentalResponse {
-    pub success: bool,
-    pub message: String,
-}
-
 /// Rental status information
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -318,14 +310,6 @@ pub struct RentalListItem {
 pub struct ListRentalsResponse {
     pub rentals: Vec<RentalListItem>,
     pub total_count: usize,
-}
-
-/// Response for stopping a rental (empty body with status)
-#[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
-pub struct StopRentalResponse {
-    pub success: bool,
-    pub message: String,
 }
 
 /// API error type

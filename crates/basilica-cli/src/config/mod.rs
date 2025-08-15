@@ -84,7 +84,7 @@ pub struct ImageConfig {
 impl Default for ImageConfig {
     fn default() -> Self {
         Self {
-            name: "basilica/default:latest".to_string(),
+            name: "ubuntu:22.04".to_string(),
         }
     }
 }

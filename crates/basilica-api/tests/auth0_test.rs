@@ -70,10 +70,10 @@ async fn test_auth0_jwks_cache_functionality() {
     // This focuses on testing our cache management business logic
 
     // Clear any existing cache
-    clear_jwks_cache().await;
+    clear_jwks_cache();
 
     // Test cache statistics
-    let initial_count = basilica_api::api::auth::jwt_validator::get_cache_stats().await;
+    let initial_count = basilica_api::api::auth::jwt_validator::get_cache_stats();
     assert_eq!(initial_count, 0, "Cache should be empty initially");
 
     // Test JWKS structure validation

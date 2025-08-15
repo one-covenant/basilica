@@ -5,8 +5,8 @@
 
 # API Configuration
 [api]
-# Base URL for the Basilica API (including /api/v1 prefix)
-base_url = "http://localhost:8000/"
+# Base URL for the Basilica API
+base_url = "http://localhost:8000"
 
 # Network selection: "mainnet" or "testnet"
 network = "mainnet"

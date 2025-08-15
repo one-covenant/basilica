@@ -118,10 +118,9 @@ impl RentalCache {
 }
 
 /// Parse SSH credentials string into components
-/// Always returns 'root' as the username regardless of what's in the credentials
 pub fn parse_ssh_credentials(credentials: &str) -> Result<(String, u16, String)> {
+    debug!("Parsing SSH credentials: {}", credentials);
     // Expected format: "ssh user@host -p port" or "user@host:port" or "host:port"
-    // We always use 'root' as the username, ignoring any username in the credentials
 
     // Try to parse "ssh user@host -p port" format
     if credentials.starts_with("ssh ") {
@@ -132,14 +131,13 @@ pub fn parse_ssh_credentials(credentials: &str) -> Result<(String, u16, String)>
                 .parse::<u16>()
                 .map_err(|_| CliError::invalid_argument("Invalid port in SSH credentials"))?;
 
-            // Extract just the host, ignore the user
-            let host = if let Some((_user, host)) = user_host.split_once('@') {
-                host.to_string()
+            let (user, host) = if let Some((user, host)) = user_host.split_once('@') {
+                (user.to_string(), host.to_string())
             } else {
-                user_host.to_string()
+                ("root".to_string(), user_host.to_string())
             };
 
-            return Ok((host, port, "root".to_string()));
+            return Ok((host, port, user));
         }
     }
 
@@ -149,22 +147,21 @@ pub fn parse_ssh_credentials(credentials: &str) -> Result<(String, u16, String)>
             .parse::<u16>()
             .map_err(|_| CliError::invalid_argument("Invalid port in SSH credentials"))?;
 
-        // Extract just the host, ignore any user
-        let host = if let Some((_user, host)) = left_part.split_once('@') {
-            host.to_string()
+        let (user, host) = if let Some((user, host)) = left_part.split_once('@') {
+            (user.to_string(), host.to_string())
         } else {
-            left_part.to_string()
+            ("root".to_string(), left_part.to_string())
         };
 
-        return Ok((host, port, "root".to_string()));
+        return Ok((host, port, user));
     }
 
     // Try to parse "user@host" or just "host" format (default port 22)
-    let host = if let Some((_user, host)) = credentials.split_once('@') {
-        host.to_string()
+    let (user, host) = if let Some((user, host)) = credentials.split_once('@') {
+        (user.to_string(), host.to_string())
     } else {
-        credentials.to_string()
+        ("root".to_string(), credentials.to_string())
     };
 
-    Ok((host, 22, "root".to_string()))
+    Ok((host, 22, user))
 }

@@ -8,7 +8,6 @@ pub use basilica_validator::api::types::{
     AvailabilityInfo, AvailableExecutor, CpuSpec, ExecutorDetails, GpuRequirements, GpuSpec,
     ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, RentCapacityRequest,
     RentCapacityResponse, RentalStatus, RentalStatusResponse, SshAccess, TerminateRentalRequest,
-    TerminateRentalResponse,
 };
 
 // Re-export rental-specific types from validator

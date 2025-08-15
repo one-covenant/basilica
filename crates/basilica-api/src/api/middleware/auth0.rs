@@ -15,7 +15,9 @@ use std::collections::HashMap;
 use tracing::{debug, warn};
 
 use crate::{
-    api::auth::jwt_validator::{fetch_jwks, validate_jwt, verify_audience, verify_issuer},
+    api::auth::jwt_validator::{
+        fetch_jwks, validate_jwt_with_options, verify_audience, verify_issuer,
+    },
     error::Error,
     server::AppState,
 };
@@ -122,7 +124,7 @@ pub async fn auth0_middleware(
     };
 
     // Validate JWT token
-    let claims = match validate_jwt(&token, &jwks) {
+    let claims = match validate_jwt_with_options(&token, &jwks, Some(AUTH0_AUDIENCE), None) {
         Ok(claims) => claims,
         Err(e) => {
             warn!("Auth0 middleware: JWT validation failed: {}", e);
