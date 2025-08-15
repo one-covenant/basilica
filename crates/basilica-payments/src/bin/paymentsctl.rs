@@ -60,11 +60,14 @@ async fn main() -> Result<()> {
                 .get_deposit_account(GetDepositAccountRequest { user_id })
                 .await?
                 .into_inner();
-            println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                "user_id": r.user_id,
-                "address_ss58": r.address_ss58,
-                "exists": r.exists
-            }))?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "user_id": r.user_id,
+                    "address_ss58": r.address_ss58,
+                    "exists": r.exists
+                }))?
+            );
         }
         Cmd::ListDeposits {
             user_id,
@@ -80,29 +83,33 @@ async fn main() -> Result<()> {
                 })
                 .await?
                 .into_inner();
-            
-            let items: Vec<_> = r.items.iter().map(|d| serde_json::json!({
-                "tx_hash": d.tx_hash,
-                "block_number": d.block_number,
-                "event_index": d.event_index,
-                "from_address": d.from_address,
-                "to_address": d.to_address,
-                "amount_plancks": d.amount_plancks,
-                "status": d.status,
-                "observed_at": d.observed_at,
-                "credited_at": d.credited_at,
-                "credited_credit_id": d.credited_credit_id
-            })).collect();
-            
+
+            let items: Vec<_> = r
+                .items
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "tx_hash": d.tx_hash,
+                        "block_number": d.block_number,
+                        "event_index": d.event_index,
+                        "from_address": d.from_address,
+                        "to_address": d.to_address,
+                        "amount_plancks": d.amount_plancks,
+                        "status": d.status,
+                        "observed_at": d.observed_at,
+                        "credited_at": d.credited_at,
+                        "credited_credit_id": d.credited_credit_id
+                    })
+                })
+                .collect();
+
             println!("{}", serde_json::to_string_pretty(&items)?);
         }
         Cmd::Health => {
-            use tonic_health::pb::{health_client::HealthClient, HealthCheckRequest};
             use tonic::transport::Channel;
-            
-            let channel = Channel::from_shared(cli.grpc.clone())?
-                .connect()
-                .await?;
+            use tonic_health::pb::{health_client::HealthClient, HealthCheckRequest};
+
+            let channel = Channel::from_shared(cli.grpc.clone())?.connect().await?;
             let mut hc = HealthClient::new(channel);
             let _ = hc.check(HealthCheckRequest { service: "".into() }).await?;
             println!("SERVING");
