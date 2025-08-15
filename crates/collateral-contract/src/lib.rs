@@ -1,17 +1,14 @@
 use std::collections::HashMap;
 
-use alloy_primitives::{Address, FixedBytes, U256};
-
-use alloy_provider::{Provider, ProviderBuilder};
-use alloy_sol_types::{SolEvent, sol};
-
 use alloy::rpc::types::Filter;
-use alloy::signers::Signer;
-use alloy::signers::local::PrivateKeySigner;
+use alloy::signers::{local::PrivateKeySigner, Signer};
+use alloy_primitives::{Address, FixedBytes, U256};
+use alloy_provider::{Provider, ProviderBuilder};
+use alloy_sol_types::{sol, SolEvent};
 pub mod config;
 pub mod proxy;
-pub use CollateralUpgradeable::{Deposit, Reclaimed, Slashed};
 use tracing::info;
+pub use CollateralUpgradeable::{Deposit, Reclaimed, Slashed};
 
 #[cfg(test)]
 mod tests;

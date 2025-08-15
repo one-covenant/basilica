@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, address};
+use alloy_primitives::{address, Address};
 // Deployed Collateral contract address in product environment, will be updated after deployment
 pub const COLLATERAL_ADDRESS: Address = address!("0x0000000000000000000000000000000000000000");
 pub const PROXY_ADDRESS: Address = address!("0x0000000000000000000000000000000000000001");

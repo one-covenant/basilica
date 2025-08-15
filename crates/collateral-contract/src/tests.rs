@@ -3,8 +3,7 @@
 use super::*;
 use alloy::hex::FromHex;
 use alloy_primitives::Bytes;
-use alloy_sol_types::SolCall;
-use alloy_sol_types::sol;
+use alloy_sol_types::{sol, SolCall};
 use bittensor::api::api::{self as bittensorapi};
 use proxy::Proxy;
 use subxt::{OnlineClient, PolkadotConfig};
