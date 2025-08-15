@@ -191,8 +191,7 @@ impl RentalManager {
             executor_id: request.executor_id.clone(),
             container_id: container_info.container_id.clone(),
             ssh_session_id: ssh_session.session_id.clone(),
-            ssh_credentials: ssh_credentials.clone(),
-            executor_ssh_credentials: ssh_session.access_credentials.clone(), // Store executor credentials for validator operations
+            ssh_credentials: ssh_session.access_credentials.clone(), // Store validator's SSH credentials for operations
             state: RentalState::Active,
             created_at: chrono::Utc::now(),
             container_spec: request.container_spec.clone(),
@@ -228,9 +227,9 @@ impl RentalManager {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
-        // Get container status using executor SSH credentials
+        // Get container status using validator SSH credentials
         let container_client = ContainerClient::new(
-            rental_info.executor_ssh_credentials.clone(),
+            rental_info.ssh_credentials.clone(),
             self.ssh_key_manager
                 .as_ref()
                 .and_then(|km| km.get_persistent_key())
@@ -266,9 +265,9 @@ impl RentalManager {
         // Stop health monitoring
         self.health_monitor.stop_monitoring(rental_id).await?;
 
-        // Stop container using executor SSH credentials
+        // Stop container using validator SSH credentials
         let container_client = ContainerClient::new(
-            rental_info.executor_ssh_credentials.clone(),
+            rental_info.ssh_credentials.clone(),
             self.ssh_key_manager
                 .as_ref()
                 .and_then(|km| km.get_persistent_key())
@@ -312,7 +311,7 @@ impl RentalManager {
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
         let container_client = ContainerClient::new(
-            rental_info.executor_ssh_credentials.clone(),
+            rental_info.ssh_credentials.clone(),
             self.ssh_key_manager
                 .as_ref()
                 .and_then(|km| km.get_persistent_key())

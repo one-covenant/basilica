@@ -118,8 +118,7 @@ pub struct RentalInfo {
     pub executor_id: String,
     pub container_id: String,
     pub ssh_session_id: String,
-    pub ssh_credentials: Option<String>, // End-user SSH access to container (if port 22 is mapped)
-    pub executor_ssh_credentials: String, // Validator SSH access to executor
+    pub ssh_credentials: String, // Validator SSH access to executor
     pub state: RentalState,
     pub created_at: DateTime<Utc>,
     pub container_spec: ContainerSpec,

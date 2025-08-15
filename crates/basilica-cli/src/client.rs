@@ -17,7 +17,6 @@ use tracing::{debug, warn};
 /// This function:
 /// 1. Attempts to use JWT tokens from TokenStore (unless bypass_auth is true)
 /// 2. Refreshes expired tokens if possible
-/// 3. Falls back to API key authentication if JWT is unavailable
 ///
 /// # Arguments
 /// * `config` - CLI configuration

@@ -156,8 +156,7 @@ impl SimplePersistence {
                 executor_id TEXT NOT NULL,
                 container_id TEXT NOT NULL,
                 ssh_session_id TEXT NOT NULL,
-                ssh_credentials TEXT,
-                executor_ssh_credentials TEXT,
+                ssh_credentials TEXT NOT NULL,
                 state TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 container_spec TEXT NOT NULL,
@@ -350,80 +349,6 @@ impl SimplePersistence {
         )
         .execute(&self.pool)
         .await?;
-
-        // Migration: Handle ssh_credentials nullability and add executor_ssh_credentials
-        // Check if we need to migrate the rentals table
-        let needs_migration: bool = sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*) > 0
-            FROM pragma_table_info('rentals')
-            WHERE name = 'ssh_credentials' AND "notnull" = 1
-            "#,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .unwrap_or(false);
-
-        if needs_migration {
-            info!("Migrating rentals table to make ssh_credentials nullable");
-
-            // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
-            sqlx::query(
-                r#"
-                -- Create new table with updated schema
-                CREATE TABLE rentals_new (
-                    id TEXT PRIMARY KEY,
-                    validator_hotkey TEXT NOT NULL,
-                    executor_id TEXT NOT NULL,
-                    container_id TEXT NOT NULL,
-                    ssh_session_id TEXT NOT NULL,
-                    ssh_credentials TEXT,  -- Now nullable
-                    executor_ssh_credentials TEXT,
-                    state TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    container_spec TEXT NOT NULL,
-                    miner_id TEXT NOT NULL DEFAULT '',
-                    customer_public_key TEXT,
-                    docker_image TEXT,
-                    env_vars TEXT,
-                    gpu_requirements TEXT,
-                    ssh_access_info TEXT,
-                    cost_per_hour REAL,
-                    status TEXT,
-                    updated_at TEXT,
-                    started_at TEXT,
-                    terminated_at TEXT,
-                    termination_reason TEXT,
-                    total_cost REAL
-                );
-                
-                -- Copy data from old table, using ssh_credentials for executor_ssh_credentials if missing
-                INSERT INTO rentals_new 
-                SELECT 
-                    id, validator_hotkey, executor_id, container_id, ssh_session_id,
-                    ssh_credentials, 
-                    COALESCE(ssh_credentials, ''),  -- Use ssh_credentials as executor_ssh_credentials for old records
-                    state, created_at, container_spec, miner_id,
-                    customer_public_key, docker_image, env_vars, gpu_requirements,
-                    ssh_access_info, cost_per_hour, status, updated_at,
-                    started_at, terminated_at, termination_reason, total_cost
-                FROM rentals;
-                
-                -- Drop old table and rename new one
-                DROP TABLE rentals;
-                ALTER TABLE rentals_new RENAME TO rentals;
-                "#,
-            )
-            .execute(&self.pool)
-            .await?;
-
-            info!("Successfully migrated rentals table");
-        } else {
-            // Just try to add executor_ssh_credentials column if it doesn't exist
-            let _ = sqlx::query("ALTER TABLE rentals ADD COLUMN executor_ssh_credentials TEXT")
-                .execute(&self.pool)
-                .await; // Ignore error if column already exists
-        }
 
         // Create indexes
         sqlx::query(
@@ -1634,14 +1559,13 @@ impl ValidatorPersistence for SimplePersistence {
         sqlx::query(
             "INSERT INTO rentals (
                 id, validator_hotkey, executor_id, container_id, ssh_session_id,
-                ssh_credentials, executor_ssh_credentials, state, created_at, container_spec, miner_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ssh_credentials, state, created_at, container_spec, miner_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 state = excluded.state,
                 container_id = excluded.container_id,
                 ssh_session_id = excluded.ssh_session_id,
                 ssh_credentials = excluded.ssh_credentials,
-                executor_ssh_credentials = excluded.executor_ssh_credentials,
                 miner_id = excluded.miner_id",
         )
         .bind(&rental.rental_id)
@@ -1650,7 +1574,6 @@ impl ValidatorPersistence for SimplePersistence {
         .bind(&rental.container_id)
         .bind(&rental.ssh_session_id)
         .bind(&rental.ssh_credentials)
-        .bind(&rental.executor_ssh_credentials)
         .bind(match &rental.state {
             RentalState::Provisioning => "provisioning",
             RentalState::Active => "active",
@@ -1681,9 +1604,7 @@ impl ValidatorPersistence for SimplePersistence {
 
             let state = Self::parse_rental_state(&state_str, &rental_id);
 
-            // Handle backward compatibility - old records may not have executor_ssh_credentials
-            let executor_ssh_creds: Option<String> = row.try_get("executor_ssh_credentials").ok();
-            let ssh_creds: Option<String> = row.get("ssh_credentials");
+            let ssh_creds: String = row.get("ssh_credentials");
 
             Ok(Some(RentalInfo {
                 rental_id,
@@ -1691,9 +1612,7 @@ impl ValidatorPersistence for SimplePersistence {
                 executor_id: row.get("executor_id"),
                 container_id: row.get("container_id"),
                 ssh_session_id: row.get("ssh_session_id"),
-                ssh_credentials: ssh_creds.clone(),
-                executor_ssh_credentials: executor_ssh_creds
-                    .unwrap_or_else(|| ssh_creds.unwrap_or_default()),
+                ssh_credentials: ssh_creds,
                 state,
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
                 container_spec: serde_json::from_str(&container_spec_str)?,
@@ -1725,9 +1644,7 @@ impl ValidatorPersistence for SimplePersistence {
 
             let state = Self::parse_rental_state(&state_str, &rental_id);
 
-            // Handle backward compatibility - old records may not have executor_ssh_credentials
-            let executor_ssh_creds: Option<String> = row.try_get("executor_ssh_credentials").ok();
-            let ssh_creds: Option<String> = row.get("ssh_credentials");
+            let ssh_creds: String = row.get("ssh_credentials");
 
             rentals.push(RentalInfo {
                 rental_id,
@@ -1735,9 +1652,7 @@ impl ValidatorPersistence for SimplePersistence {
                 executor_id: row.get("executor_id"),
                 container_id: row.get("container_id"),
                 ssh_session_id: row.get("ssh_session_id"),
-                ssh_credentials: ssh_creds.clone(),
-                executor_ssh_credentials: executor_ssh_creds
-                    .unwrap_or_else(|| ssh_creds.unwrap_or_default()),
+                ssh_credentials: ssh_creds,
                 state,
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
                 container_spec: serde_json::from_str(&container_spec_str)?,
