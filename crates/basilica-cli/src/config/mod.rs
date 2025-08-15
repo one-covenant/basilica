@@ -123,6 +123,7 @@ pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig
         auth_endpoint: format!("https://{}/authorize", domain),
         token_endpoint: format!("https://{}/oauth/token", domain),
         device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),
+        revoke_endpoint: Some(format!("https://{}/oauth/revoke", domain)),
         redirect_uri: format!("http://localhost:{}/auth/callback", port),
         scopes: vec![
             "openid".to_string(),

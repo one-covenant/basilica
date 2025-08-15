@@ -15,6 +15,8 @@ use oauth2::{
     TokenResponse, TokenUrl,
 };
 use rand::Rng;
+use reqwest;
+use serde_json;
 use sha2::{Digest, Sha256};
 use tracing::{debug, info};
 use webbrowser;
@@ -323,5 +325,62 @@ impl OAuthFlow {
 
         info!("Token refresh completed successfully");
         Ok(token_set)
+    }
+
+    /// Revoke a token with the OAuth provider
+    /// Prioritizes revoking refresh token if available, otherwise revokes access token
+    pub async fn revoke_token(&self, token_set: &TokenSet) -> AuthResult<()> {
+        debug!("Starting token revocation");
+
+        let revoke_endpoint =
+            self.config.revoke_endpoint.as_ref().ok_or_else(|| {
+                AuthError::ConfigError("Revoke endpoint not configured".to_string())
+            })?;
+
+        // Prioritize refresh token for revocation as it revokes the entire grant
+        let token_to_revoke = token_set
+            .refresh_token
+            .as_ref()
+            .unwrap_or(&token_set.access_token);
+
+        debug!("Revoking token at endpoint: {}", revoke_endpoint);
+
+        // Create HTTP client
+        let client = reqwest::Client::new();
+
+        // Prepare revocation request
+        let revoke_request = serde_json::json!({
+            "client_id": self.config.client_id,
+            "token": token_to_revoke
+        });
+
+        // Send revocation request
+        let response = client
+            .post(revoke_endpoint)
+            .header("Content-Type", "application/json")
+            .json(&revoke_request)
+            .send()
+            .await
+            .map_err(|e| {
+                AuthError::NetworkError(format!("Token revocation request failed: {}", e))
+            })?;
+
+        // According to RFC 7009, successful revocation returns 200 OK
+        // Invalid tokens return 200 OK as well (already revoked is considered success)
+        if response.status().is_success() {
+            info!("Token revocation completed successfully");
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            Err(AuthError::NetworkError(format!(
+                "Token revocation failed with status {}: {}",
+                status, error_text
+            )))
+        }
     }
 }

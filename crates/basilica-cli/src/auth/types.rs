@@ -20,6 +20,8 @@ pub struct AuthConfig {
     pub token_endpoint: String,
     /// OAuth device authorization endpoint URL (for device flow)
     pub device_auth_endpoint: Option<String>,
+    /// OAuth token revocation endpoint URL
+    pub revoke_endpoint: Option<String>,
     /// Redirect URI for OAuth callback
     pub redirect_uri: String,
     /// OAuth scopes to request

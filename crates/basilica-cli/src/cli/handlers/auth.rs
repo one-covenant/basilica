@@ -98,10 +98,11 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
     let token_store = TokenStore::new()
         .map_err(|e| CliError::internal(format!("Failed to initialize token store: {}", e)))?;
 
-    // Check if user is currently logged in
-    match token_store.get_tokens(SERVICE_NAME).await {
-        Ok(Some(_tokens)) => {
-            info!("Found existing tokens, proceeding with logout");
+    // Check if user is currently logged in and get tokens for revocation
+    let tokens = match token_store.get_tokens(SERVICE_NAME).await {
+        Ok(Some(tokens)) => {
+            info!("Found existing tokens, proceeding with logout and revocation");
+            Some(tokens)
         }
         Ok(None) => {
             println!("You are not currently logged in.");
@@ -110,6 +111,26 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
         Err(e) => {
             warn!("Failed to check login status: {}", e);
             // Continue with logout anyway to ensure cleanup
+            None
+        }
+    };
+
+    // Attempt to revoke tokens with Auth0 before deleting locally
+    if let Some(ref token_set) = tokens {
+        info!("Attempting to revoke tokens with Auth0...");
+
+        // Create auth config (port doesn't matter for revocation)
+        let auth_config = crate::config::create_auth_config_with_port(0);
+        let oauth_flow = OAuthFlow::new(auth_config);
+
+        match oauth_flow.revoke_token(token_set).await {
+            Ok(()) => {
+                info!("Successfully revoked tokens with Auth0");
+            }
+            Err(e) => {
+                warn!("Failed to revoke tokens with Auth0: {}", e);
+                info!("Continuing with local token cleanup...");
+            }
         }
     }
 
@@ -121,10 +142,6 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
             e
         )));
     }
-
-    // TODO: Revoke tokens with auth server if supported
-    // This would require storing the auth config and implementing token revocation
-    // For now, we just clear local tokens
 
     print_success("Logout successful!");
     info!("All authentication tokens have been cleared");
