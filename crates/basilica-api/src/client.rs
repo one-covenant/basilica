@@ -261,32 +261,55 @@ impl BasilicaClient {
 
     /// Handle 401 responses by attempting token refresh
     async fn handle_unauthorized(&self, original_request: RequestBuilder) -> Result<Response> {
-        // Only attempt refresh if we have a token refresher and a token to refresh
-        if let (Some(refresher), Some(expired_token)) =
-            (&self.token_refresher, &*self.bearer_token.read().await)
-        {
-            match refresher.refresh_token(expired_token).await {
-                Ok(new_token) => {
-                    // Update the stored token
-                    *self.bearer_token.write().await = Some(new_token.clone());
+        let current_token = self.bearer_token.read().await.clone();
 
-                    // Retry the request with new token
-                    let retry_request =
-                        original_request.header("Authorization", format!("Bearer {}", new_token));
+        // Only attempt refresh if we have ALL of:
+        // 1. A token refresher configured
+        // 2. A current token to refresh
+        // 3. The current token is not empty
+        if let (Some(refresher), Some(expired_token)) = (&self.token_refresher, &current_token) {
+            if !expired_token.is_empty() {
+                match refresher.refresh_token(expired_token).await {
+                    Ok(new_token) => {
+                        tracing::debug!("Successfully refreshed token");
+                        // Update the stored token
+                        *self.bearer_token.write().await = Some(new_token.clone());
 
-                    retry_request.send().await.map_err(Error::HttpClient)
+                        // Retry the request with new token
+                        let retry_request = original_request
+                            .header("Authorization", format!("Bearer {}", new_token));
+
+                        retry_request.send().await.map_err(Error::HttpClient)
+                    }
+                    Err(refresh_error) => {
+                        tracing::error!("Token refresh failed: {}", refresh_error);
+                        // Clear token if refresh failed due to invalid token
+                        *self.bearer_token.write().await = None;
+                        Err(Error::Authentication {
+                            message: "Token expired and refresh failed".to_string(),
+                        })
+                    }
                 }
-                Err(refresh_error) => {
-                    tracing::error!("Token refresh failed: {}", refresh_error);
-                    Err(Error::Authentication {
-                        message: "Token expired and refresh failed".to_string(),
-                    })
-                }
+            } else {
+                // Empty token - no point in trying to refresh
+                tracing::debug!("No token to refresh (empty token)");
+                Err(Error::MissingAuthentication {
+                    message: "No authentication token provided".to_string(),
+                })
             }
         } else {
-            Err(Error::Authentication {
-                message: "Authentication failed".to_string(),
-            })
+            // No token refresher or no token
+            if current_token.is_none() {
+                tracing::debug!("No token to refresh (no token configured)");
+                Err(Error::MissingAuthentication {
+                    message: "No authentication token provided".to_string(),
+                })
+            } else {
+                tracing::debug!("No token refresher configured");
+                Err(Error::Authentication {
+                    message: "Token expired and no refresh capability configured".to_string(),
+                })
+            }
         }
     }
 
@@ -360,9 +383,17 @@ impl BasilicaClient {
         // Try to parse error response
         if let Ok(error_response) = serde_json::from_str::<ErrorResponse>(&error_text) {
             match status {
-                StatusCode::UNAUTHORIZED => Err(Error::Authentication {
-                    message: error_response.error.message,
-                }),
+                StatusCode::UNAUTHORIZED => {
+                    // Distinguish between missing auth and expired/invalid auth based on error code
+                    match error_response.error.code.as_str() {
+                        "BASILICA_API_AUTH_MISSING" => Err(Error::MissingAuthentication {
+                            message: error_response.error.message,
+                        }),
+                        _ => Err(Error::Authentication {
+                            message: error_response.error.message,
+                        }),
+                    }
+                }
                 StatusCode::FORBIDDEN => Err(Error::Authorization {
                     message: error_response.error.message,
                 }),
@@ -547,7 +578,7 @@ mod tests {
             .and(path("/health"))
             .respond_with(ResponseTemplate::new(401).set_body_json(json!({
                 "error": {
-                    "code": "UNAUTHORIZED",
+                    "code": "BASILICA_API_AUTH_MISSING",
                     "message": "Authentication required",
                     "timestamp": "2024-01-01T00:00:00Z",
                     "retryable": false,
@@ -560,12 +591,10 @@ mod tests {
         let result = client.health_check().await;
 
         assert!(result.is_err());
-        match result.unwrap_err() {
-            Error::Authentication { message } => {
-                assert_eq!(message, "Authentication required");
-            }
-            _ => panic!("Expected authentication error"),
-        }
+        assert!(matches!(
+            result.unwrap_err(),
+            Error::MissingAuthentication { .. }
+        ));
     }
 
     #[test]
