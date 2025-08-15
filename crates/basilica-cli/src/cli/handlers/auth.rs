@@ -1,6 +1,6 @@
 //! Authentication command handlers
 
-use crate::auth::{should_use_device_flow, AuthConfig, DeviceFlow, OAuthFlow, TokenStore};
+use crate::auth::{should_use_device_flow, CallbackServer, DeviceFlow, OAuthFlow, TokenStore};
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::output::print_success;
@@ -10,13 +10,6 @@ use tracing::{debug, error, info, warn};
 /// Service name for token storage
 const SERVICE_NAME: &str = "basilica-cli";
 
-/// Load authentication configuration
-fn load_auth_config() -> AuthConfig {
-    // Use the static configuration
-    use crate::config::AuthConfig as ConfigAuthConfig;
-    ConfigAuthConfig::to_auth_config()
-}
-
 /// Handle login command
 pub async fn handle_login(
     device_code: bool,
@@ -25,15 +18,23 @@ pub async fn handle_login(
 ) -> Result<()> {
     debug!("Starting login process, device_code: {}", device_code);
 
-    // Load authentication configuration
-    let auth_config = load_auth_config();
+    // Determine which flow to use
+    let use_device_flow = device_code || should_use_device_flow();
+
+    // Create authentication configuration with available port
+    let auth_config = if use_device_flow {
+        // Device flow doesn't need a callback server, so port doesn't matter
+        crate::config::create_auth_config_with_port(0)
+    } else {
+        // Find available port for OAuth callback server
+        let port = CallbackServer::find_available_port()
+            .map_err(|e| CliError::internal(format!("Failed to find available port: {}", e)))?;
+        crate::config::create_auth_config_with_port(port)
+    };
 
     // Initialize token store
     let token_store = TokenStore::new()
         .map_err(|e| CliError::internal(format!("Failed to initialize token store: {}", e)))?;
-
-    // Determine which flow to use
-    let use_device_flow = device_code || should_use_device_flow();
 
     let token_set = if use_device_flow {
         info!("Starting device authorization flow");

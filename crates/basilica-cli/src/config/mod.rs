@@ -112,85 +112,24 @@ impl Default for WalletConfig {
     }
 }
 
-/// Authentication configuration for OAuth flows
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AuthConfig {
-    /// Auth0 configuration
-    pub auth0: Auth0Config,
-}
+/// Create auth configuration for OAuth flows with specific port
+/// This bridges the gap between constants and the auth module's requirements
+pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig {
+    // Use constants from basilica-common
+    let domain = basilica_common::AUTH0_DOMAIN;
 
-/// Auth0 specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct Auth0Config {
-    /// Advanced Auth0 configuration
-    #[serde(default)]
-    pub advanced: Auth0AdvancedConfig,
-}
-
-/// Advanced Auth0 configuration settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Auth0AdvancedConfig {
-    /// Token refresh margin in seconds - refresh tokens this many seconds before expiry
-    #[serde(default = "default_token_refresh_margin")]
-    pub token_refresh_margin_seconds: u64,
-
-    /// Maximum number of retry attempts for Auth0 API calls
-    #[serde(default = "default_max_retry_attempts")]
-    pub max_retry_attempts: u32,
-
-    /// Timeout for OAuth callback handling in seconds
-    #[serde(default = "default_callback_timeout")]
-    pub callback_timeout_seconds: u64,
-
-    /// Allowed clock skew in seconds for JWT validation
-    #[serde(default = "default_allowed_clock_skew")]
-    pub allowed_clock_skew_seconds: u64,
-}
-
-impl Default for Auth0AdvancedConfig {
-    fn default() -> Self {
-        Self {
-            token_refresh_margin_seconds: default_token_refresh_margin(),
-            max_retry_attempts: default_max_retry_attempts(),
-            callback_timeout_seconds: default_callback_timeout(),
-            allowed_clock_skew_seconds: default_allowed_clock_skew(),
-        }
-    }
-}
-
-fn default_token_refresh_margin() -> u64 {
-    300
-}
-fn default_max_retry_attempts() -> u32 {
-    3
-}
-fn default_callback_timeout() -> u64 {
-    30
-}
-fn default_allowed_clock_skew() -> u64 {
-    60
-}
-
-impl AuthConfig {
-    /// Convert config AuthConfig to auth module's AuthConfig
-    /// This bridges the gap between the configuration structure and the auth module's requirements
-    pub fn to_auth_config() -> crate::auth::types::AuthConfig {
-        // Use constants from basilica-common
-        let domain = basilica_common::AUTH0_DOMAIN;
-
-        crate::auth::types::AuthConfig {
-            client_id: basilica_common::AUTH0_CLIENT_ID.to_string(),
-            auth_endpoint: format!("https://{}/authorize", domain),
-            token_endpoint: format!("https://{}/oauth/token", domain),
-            device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),
-            redirect_uri: "http://localhost:8080/auth/callback".to_string(), // Default redirect URI
-            scopes: vec![
-                "openid".to_string(),
-                "profile".to_string(),
-                "email".to_string(),
-            ], // Default scopes
-            additional_params: std::collections::HashMap::new(),
-        }
+    crate::auth::types::AuthConfig {
+        client_id: basilica_common::AUTH0_CLIENT_ID.to_string(),
+        auth_endpoint: format!("https://{}/authorize", domain),
+        token_endpoint: format!("https://{}/oauth/token", domain),
+        device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),
+        redirect_uri: format!("http://localhost:{}/auth/callback", port),
+        scopes: vec![
+            "openid".to_string(),
+            "profile".to_string(),
+            "email".to_string(),
+        ], // Default scopes
+        additional_params: std::collections::HashMap::new(),
     }
 }
 
@@ -296,10 +235,6 @@ impl CliConfig {
             "wallet.base_wallet_path" | "base-wallet-path" => {
                 Ok(self.wallet.base_wallet_path.to_string_lossy().to_string())
             }
-            "auth.auth0.domain" | "auth0-domain" => Ok(basilica_common::AUTH0_DOMAIN.to_string()),
-            "auth.auth0.client_id" | "auth0-client-id" => {
-                Ok(basilica_common::AUTH0_CLIENT_ID.to_string())
-            }
             _ => Err(CliError::invalid_argument(format!(
                 "Unknown configuration key: {key}"
             ))),
@@ -376,16 +311,6 @@ impl CliConfig {
             self.wallet.base_wallet_path.to_string_lossy().to_string(),
         );
 
-        // Add auth configuration (from constants)
-        map.insert(
-            "auth.auth0.domain".to_string(),
-            basilica_common::AUTH0_DOMAIN.to_string(),
-        );
-        map.insert(
-            "auth.auth0.client_id".to_string(),
-            basilica_common::AUTH0_CLIENT_ID.to_string(),
-        );
-
         map
     }
 
@@ -415,11 +340,6 @@ impl CliConfig {
     pub fn rental_cache_path() -> Result<PathBuf> {
         let data_dir = Self::data_dir()?;
         Ok(data_dir.join("rentals").join("cache.json"))
-    }
-
-    /// Get the auth configuration
-    pub fn get_auth_config() -> AuthConfig {
-        AuthConfig::default()
     }
 }
 

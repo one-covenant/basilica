@@ -19,6 +19,16 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, info};
 use webbrowser;
 
+/// Extract port number from a redirect URI
+/// Returns an error if the URI doesn't contain a valid port
+fn extract_port_from_redirect_uri(redirect_uri: &str) -> AuthResult<u16> {
+    let url = url::Url::parse(redirect_uri)
+        .map_err(|e| AuthError::ConfigError(format!("Invalid redirect URI: {}", e)))?;
+
+    url.port()
+        .ok_or_else(|| AuthError::ConfigError("Redirect URI must contain a port".to_string()))
+}
+
 /// OAuth flow implementation with PKCE support
 pub struct OAuthFlow {
     config: AuthConfig,
@@ -163,12 +173,12 @@ impl OAuthFlow {
     pub async fn start_flow(&mut self) -> AuthResult<TokenSet> {
         info!("Starting OAuth flow");
 
+        // Extract port from the redirect URI (it should already be set correctly)
+        let port = extract_port_from_redirect_uri(&self.config.redirect_uri)?;
+        let callback_server = CallbackServer::new(port, std::time::Duration::from_secs(300));
+
         // Build authorization URL (this also generates PKCE and state)
         let auth_url = self.build_auth_url()?;
-
-        // Start callback server
-        let port = CallbackServer::find_available_port()?;
-        let callback_server = CallbackServer::new(port, std::time::Duration::from_secs(300));
 
         // Get the expected state for CSRF verification
         let expected_state = self
@@ -312,58 +322,6 @@ impl OAuthFlow {
         );
 
         info!("Token refresh completed successfully");
-        Ok(token_set)
-    }
-
-    /// Public API: Exchange authorization code for tokens (static method)
-    pub async fn exchange_code_for_tokens(
-        config: &AuthConfig,
-        code: &str,
-        code_verifier: &str,
-    ) -> AuthResult<TokenSet> {
-        debug!("Exchanging authorization code for tokens (static)");
-
-        // Create OAuth2 client
-        let client =
-            BasicClient::new(
-                ClientId::new(config.client_id.clone()),
-                None, // No client secret for PKCE flow
-                AuthUrl::new(config.auth_endpoint.clone())
-                    .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
-                Some(TokenUrl::new(config.token_endpoint.clone()).map_err(|e| {
-                    AuthError::ConfigError(format!("Invalid token endpoint: {}", e))
-                })?),
-            )
-            .set_redirect_uri(
-                RedirectUrl::new(config.redirect_uri.clone())
-                    .map_err(|e| AuthError::ConfigError(format!("Invalid redirect URI: {}", e)))?,
-            );
-
-        // Exchange code for token
-        let token_response = client
-            .exchange_code(AuthorizationCode::new(code.to_string()))
-            .set_pkce_verifier(PkceCodeVerifier::new(code_verifier.to_string()))
-            .request_async(async_http_client)
-            .await
-            .map_err(|e| AuthError::NetworkError(format!("Token exchange failed: {}", e)))?;
-
-        // Extract token information
-        let access_token = token_response.access_token().secret().to_string();
-        let refresh_token = token_response
-            .refresh_token()
-            .map(|rt| rt.secret().to_string());
-        let token_type = "Bearer".to_string();
-        let expires_in = token_response
-            .expires_in()
-            .map(|duration| duration.as_secs());
-        let scopes = token_response
-            .scopes()
-            .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
-            .unwrap_or_else(|| config.scopes.clone());
-
-        let token_set = TokenSet::new(access_token, refresh_token, token_type, expires_in, scopes);
-
-        info!("Token exchange completed successfully (static)");
         Ok(token_set)
     }
 }

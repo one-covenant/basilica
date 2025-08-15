@@ -6,7 +6,7 @@
 //! This is distinct from the general HTTP client library in basilica-api/src/client.rs
 //! which provides the underlying HTTP client functionality.
 
-use crate::auth::{AuthConfig, OAuthFlow, TokenStore};
+use crate::auth::{OAuthFlow, TokenStore};
 use crate::config::CliConfig;
 use anyhow::Result;
 use basilica_api::client::{BasilicaClient, ClientBuilder};
@@ -54,7 +54,7 @@ pub async fn create_authenticated_client(
 }
 
 /// Gets a valid JWT token, refreshing if necessary
-async fn get_valid_jwt_token(config: &CliConfig) -> Result<String> {
+async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
     let token_store = TokenStore::new()?;
 
     // Try to get stored tokens
@@ -68,8 +68,8 @@ async fn get_valid_jwt_token(config: &CliConfig) -> Result<String> {
     if tokens.needs_refresh() {
         debug!("Token needs refresh");
 
-        // Get auth config for refresh
-        let auth_config = load_auth_config_for_refresh(config).await?;
+        // Get auth config for refresh (port doesn't matter for server-to-server refresh)
+        let auth_config = crate::config::create_auth_config_with_port(0);
 
         // Try to refresh
         if let Some(refresh_token) = &tokens.refresh_token {
@@ -98,13 +98,6 @@ async fn get_valid_jwt_token(config: &CliConfig) -> Result<String> {
     }
 
     Ok(tokens.access_token)
-}
-
-/// Loads auth configuration for token refresh
-async fn load_auth_config_for_refresh(_config: &CliConfig) -> Result<AuthConfig> {
-    // Use the static configuration
-    use crate::config::AuthConfig as ConfigAuthConfig;
-    Ok(ConfigAuthConfig::to_auth_config())
 }
 
 /// Checks if the user is authenticated (has valid tokens)
