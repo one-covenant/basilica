@@ -43,6 +43,9 @@ pub enum CliError {
 
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
+
+    #[error("Configuration not initialized: {message}")]
+    ConfigNotInitialized { message: String },
 }
 
 /// Result type alias for CLI operations
@@ -101,5 +104,12 @@ impl CliError {
     /// Create a new internal error
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(anyhow::anyhow!(message.into()))
+    }
+
+    /// Create a new config not initialized error
+    pub fn config_not_initialized(message: impl Into<String>) -> Self {
+        Self::ConfigNotInitialized {
+            message: message.into(),
+        }
     }
 }

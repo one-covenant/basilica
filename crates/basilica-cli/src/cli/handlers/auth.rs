@@ -18,6 +18,9 @@ pub async fn handle_login(
 ) -> Result<()> {
     debug!("Starting login process, device_code: {}", device_code);
 
+    // Ensure config file exists (create with defaults if missing)
+    CliConfig::ensure_config_exists().await?;
+
     // Determine which flow to use
     let use_device_flow = device_code || should_use_device_flow();
 

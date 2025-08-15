@@ -342,6 +342,30 @@ impl CliConfig {
         let data_dir = Self::data_dir()?;
         Ok(data_dir.join("rentals").join("cache.json"))
     }
+
+    /// Get default config file path
+    pub fn default_config_path() -> Result<PathBuf> {
+        let config_dir = Self::config_dir()?;
+        Ok(config_dir.join("config.toml"))
+    }
+
+    /// Check if config file exists at default location
+    pub fn config_exists() -> Result<bool> {
+        let path = Self::default_config_path()?;
+        Ok(path.exists())
+    }
+
+    /// Ensure config file exists at default location, creating it if necessary
+    pub async fn ensure_config_exists() -> Result<()> {
+        let path = Self::default_config_path()?;
+        if !path.exists() {
+            info!("Creating configuration file at {}", path.display());
+            let config = Self::default();
+            config.save_to_path(&path).await?;
+            info!("Configuration file created successfully");
+        }
+        Ok(())
+    }
 }
 
 impl CliCache {

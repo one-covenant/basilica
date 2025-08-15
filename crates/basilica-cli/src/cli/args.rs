@@ -1,6 +1,6 @@
 use crate::cli::{commands::Commands, handlers};
 use crate::config::CliConfig;
-use crate::error::Result;
+use crate::error::{CliError, Result};
 use clap::Parser;
 use etcetera::{choose_base_strategy, BaseStrategy};
 use std::path::{Path, PathBuf};
@@ -44,8 +44,8 @@ AUTHENTICATION:
 )]
 pub struct Args {
     /// Configuration file path
-    #[arg(short, long, global = true, default_value = "~/.basilica/config.toml")]
-    pub config: PathBuf,
+    #[arg(short, long, global = true)]
+    pub config: Option<PathBuf>,
 
     /// Enable verbose output
     #[arg(short, long, global = true)]
@@ -81,8 +81,32 @@ impl Args {
             .with_target(false)
             .init();
 
-        // Expand tilde in config path and load config once
-        let config_path = expand_tilde(&self.config);
+        // Check if config exists for commands that require it
+        match self.command {
+            Commands::Login { .. } => {
+                // Login command doesn't require existing config
+            }
+            _ => {
+                // Check if config exists for other commands
+                if let Err(_) = CliConfig::config_exists() {
+                    return Err(CliError::config_not_initialized(
+                        "Unable to determine config directory"
+                    ));
+                }
+                if !CliConfig::config_exists()? {
+                    return Err(CliError::config_not_initialized(
+                        "Configuration not found. Please run 'basilica login' to initialize."
+                    ));
+                }
+            }
+        }
+
+        // Determine config path and load config once
+        let config_path = if let Some(path) = &self.config {
+            expand_tilde(path)
+        } else {
+            CliConfig::default_config_path()?
+        };
         let config = CliConfig::load_from_path(&config_path).await?;
 
         match self.command {
