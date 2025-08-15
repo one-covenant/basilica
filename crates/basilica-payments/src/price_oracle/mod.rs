@@ -11,6 +11,10 @@ use tracing::{error, info, warn};
 const COINGECKO_API_URL: &str =
     "https://api.coingecko.com/api/v3/simple/price?ids=bittensor&vs_currencies=usd";
 
+// Test URL that will immediately fail without network I/O
+#[cfg(test)]
+const TEST_INVALID_URL: &str = "http://invalid-domain-that-does-not-exist.test/api";
+
 /// Configuration for the price oracle
 #[derive(Clone, Debug)]
 pub struct PriceOracleConfig {
@@ -68,6 +72,8 @@ pub struct PriceOracle {
     client: Client,
     config: PriceOracleConfig,
     cached_price: Arc<RwLock<Option<CachedPrice>>>,
+    #[cfg(test)]
+    api_url: String,
 }
 
 impl PriceOracle {
@@ -82,6 +88,24 @@ impl PriceOracle {
             client,
             config,
             cached_price: Arc::new(RwLock::new(None)),
+            #[cfg(test)]
+            api_url: COINGECKO_API_URL.to_string(),
+        }
+    }
+
+    /// Create a price oracle with custom API URL for testing
+    #[cfg(test)]
+    pub fn new_with_url(config: PriceOracleConfig, api_url: String) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(config.request_timeout))
+            .build()
+            .expect("Failed to create HTTP client");
+
+        Self {
+            client,
+            config,
+            cached_price: Arc::new(RwLock::new(None)),
+            api_url,
         }
     }
 
@@ -123,9 +147,14 @@ impl PriceOracle {
 
     /// Fetch price from CoinGecko API
     async fn fetch_price_from_api(&self) -> Result<BigDecimal> {
+        #[cfg(test)]
+        let url = &self.api_url;
+        #[cfg(not(test))]
+        let url = COINGECKO_API_URL;
+
         let response = self
             .client
-            .get(COINGECKO_API_URL)
+            .get(url)
             .send()
             .await
             .map_err(|e| anyhow!("Failed to fetch from CoinGecko: {}", e))?;
@@ -206,15 +235,20 @@ mod tests {
     #[tokio::test]
     async fn test_no_cache_no_api_fails() {
         let config = PriceOracleConfig {
-            request_timeout: 1, // Very short timeout to force failure
+            request_timeout: 1, // Very short timeout
             ..PriceOracleConfig::default()
         };
 
-        let oracle = PriceOracle::new(config);
+        // Use invalid URL to ensure immediate failure without network I/O
+        let oracle = PriceOracle::new_with_url(config, TEST_INVALID_URL.to_string());
 
         // Should fail when API fails and no cache exists
         let price = oracle.get_tao_usd_price().await;
         assert!(price.is_err());
+
+        // Verify the error message contains expected content
+        let error_msg = price.unwrap_err().to_string();
+        assert!(error_msg.contains("No price available"));
     }
 
     #[test]
