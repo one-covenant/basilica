@@ -1,17 +1,19 @@
+use std::collections::HashMap;
+
+use alloy::rpc::types::Filter;
+use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy_primitives::{Address, FixedBytes, U256};
-use alloy_provider::ProviderBuilder;
-use alloy_sol_types::sol;
-
-use alloy::signers::Signer;
-use alloy::signers::local::PrivateKeySigner;
-
+use alloy_provider::{Provider, ProviderBuilder};
+use alloy_sol_types::{sol, SolEvent};
 pub mod config;
 pub mod proxy;
+use tracing::info;
+pub use CollateralUpgradeable::{Deposit, Reclaimed, Slashed};
 
 #[cfg(test)]
 mod tests;
 
-use config::{CHAIN_ID, PROXY_ADDRESS, RPC_URL};
+use config::{CHAIN_ID, MAX_BLOCKS_PER_SCAN, PROXY_ADDRESS, RPC_URL};
 
 sol!(
     #[allow(missing_docs)]
@@ -52,6 +54,12 @@ impl From<(FixedBytes<32>, FixedBytes<16>, Address, U256, u64)> for Reclaim {
     }
 }
 
+pub enum CollateralEvent {
+    Deposit(CollateralUpgradeable::Deposit),
+    Reclaimed(CollateralUpgradeable::Reclaimed),
+    Slashed(CollateralUpgradeable::Slashed),
+}
+
 // get the collateral contract instance
 pub async fn get_collateral(
     private_key: &str,
@@ -70,6 +78,92 @@ pub async fn get_collateral(
     let proxied = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
 
     Ok(proxied)
+}
+
+pub async fn scan_events(
+    from_block: u64,
+) -> Result<(u64, HashMap<u64, Vec<CollateralEvent>>), anyhow::Error> {
+    let provider = ProviderBuilder::new().connect(RPC_URL).await?;
+    let current_block = provider.get_block_number().await?.saturating_sub(1);
+
+    if from_block > current_block {
+        return Err(anyhow::anyhow!(
+            "from_block must be less than current_block"
+        ));
+    }
+
+    let mut to_block = from_block + MAX_BLOCKS_PER_SCAN;
+
+    if to_block > current_block {
+        to_block = current_block;
+    }
+
+    let filter = Filter::new()
+        .address(PROXY_ADDRESS)
+        .from_block(from_block)
+        .to_block(to_block);
+
+    let logs = provider.get_logs(&filter).await?;
+
+    let mut result: HashMap<u64, Vec<CollateralEvent>> = HashMap::new();
+
+    for log in logs {
+        if log.removed {
+            continue;
+        }
+
+        let topics = log.inner.topics();
+        let topic0 = topics.first();
+        let block_number = log
+            .block_number
+            .ok_or(anyhow::anyhow!("Block number not available in event"))?;
+
+        let block_result = result.get_mut(&block_number);
+
+        let event = match topic0 {
+            Some(sig) if sig == &CollateralUpgradeable::Deposit::SIGNATURE_HASH => {
+                let deposit = CollateralUpgradeable::Deposit::decode_raw_log(
+                    topics,
+                    log.data().data.as_ref(),
+                )?;
+                Some(CollateralEvent::Deposit(deposit))
+            }
+            Some(sig) if sig == &CollateralUpgradeable::Reclaimed::SIGNATURE_HASH => {
+                let reclaimed = CollateralUpgradeable::Reclaimed::decode_raw_log(
+                    topics,
+                    log.data().data.as_ref(),
+                )?;
+                Some(CollateralEvent::Reclaimed(reclaimed))
+            }
+            Some(sig) if sig == &CollateralUpgradeable::Slashed::SIGNATURE_HASH => {
+                let slashed = CollateralUpgradeable::Slashed::decode_raw_log(
+                    topics,
+                    log.data().data.as_ref(),
+                )?;
+                Some(CollateralEvent::Slashed(slashed))
+            }
+            _ => None,
+        };
+
+        if let Some(event) = event {
+            match block_result {
+                Some(events) => {
+                    events.push(event);
+                }
+                None => {
+                    result.insert(block_number, vec![event]);
+                }
+            }
+        }
+    }
+
+    info!(
+        "Scanned blocks {} to {}, {} events are found",
+        from_block,
+        to_block,
+        result.values().map(|v| v.len()).sum::<usize>()
+    );
+    Ok((to_block, result))
 }
 
 // transactions

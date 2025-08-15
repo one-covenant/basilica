@@ -365,6 +365,8 @@ impl SimplePersistence {
             info!("Added miner_id column to rentals table");
         }
 
+        self.create_collateral_scanned_blocks_table().await?;
+
         Ok(())
     }
 

@@ -40,7 +40,7 @@ alloy = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
 alloy-sol-types = { workspace = true }
-collateral = { path = "../collateral" }
+collateral-contract = { path = "../collateral-contract" }
 hex = "0.4"
 # Storage functionality (if needed in future)
 # memmap2 = { workspace = true }
