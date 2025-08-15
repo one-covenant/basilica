@@ -1,6 +1,6 @@
 //! GPU rental command handlers
 
-use crate::cache::{parse_ssh_credentials, CachedRental, RentalCache};
+use crate::cache::{CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
@@ -8,7 +8,7 @@ use crate::error::{CliError, Result};
 use crate::output::{
     json_output, print_error, print_info, print_link, print_success, table_output,
 };
-use crate::ssh::SshClient;
+use crate::ssh::{parse_ssh_credentials, SshClient};
 use basilica_api::api::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
 };

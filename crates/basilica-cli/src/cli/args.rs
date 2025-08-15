@@ -86,16 +86,19 @@ impl Args {
             Commands::Login { .. } => {
                 // Login command doesn't require existing config
             }
+            Commands::Logout => {
+                // Logout command doesn't require existing config
+            }
             _ => {
                 // Check if config exists for other commands
-                if let Err(_) = CliConfig::config_exists() {
+                if CliConfig::config_exists().is_err() {
                     return Err(CliError::config_not_initialized(
-                        "Unable to determine config directory"
+                        "Unable to determine config directory",
                     ));
                 }
                 if !CliConfig::config_exists()? {
                     return Err(CliError::config_not_initialized(
-                        "Configuration not found. Please run 'basilica login' to initialize."
+                        "Configuration not found. Please run 'basilica login' to initialize.",
                     ));
                 }
             }

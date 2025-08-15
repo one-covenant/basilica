@@ -6,6 +6,20 @@ use std::path::Path;
 
 /// Load a Bittensor wallet from the specified base path
 pub fn load_wallet(base_wallet_path: &Path, wallet_name: &str) -> Result<Wallet> {
+    // Validate wallet name to prevent path traversal
+    if wallet_name.contains('/') || wallet_name.contains('\\') {
+        return Err(crate::error::CliError::invalid_argument(
+            "Wallet name cannot contain path separators".to_string(),
+        ));
+    }
+    // Check if wallet exists before creating Wallet object
+    if !wallet_exists(base_wallet_path, wallet_name) {
+        return Err(crate::error::CliError::not_found(format!(
+            "Wallet '{}' not found",
+            wallet_name
+        )));
+    }
+
     let wallet = Wallet::new(
         Some(wallet_name.to_string()),
         None, // Use default hotkey name

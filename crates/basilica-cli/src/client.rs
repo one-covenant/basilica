@@ -39,7 +39,7 @@ pub async fn create_authenticated_client(
                 .with_bearer_token(jwt_token)
                 .with_token_refresher(refresher);
         } else {
-            warn!("No authentication configured - please run 'basilica login' to authenticate");
+            anyhow::bail!("Login details not found - please run 'basilica login'");
         }
     } else {
         #[cfg(debug_assertions)]

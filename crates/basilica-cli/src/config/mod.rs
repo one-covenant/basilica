@@ -28,21 +28,12 @@ pub struct CliConfig {
 pub struct ApiConfig {
     /// Base URL for the Basilica API
     pub base_url: String,
-
-    /// Network (mainnet/testnet)
-    pub network: String,
-
-    /// Optional API key for authentication
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
 }
 
 impl Default for ApiConfig {
     fn default() -> Self {
         Self {
             base_url: "https://api.basilica.ai".to_string(),
-            network: "mainnet".to_string(),
-            api_key: None,
         }
     }
 }
@@ -52,6 +43,8 @@ impl Default for ApiConfig {
 pub struct SshConfig {
     /// Default SSH public key path
     pub key_path: PathBuf,
+    /// SSH private key path
+    pub private_key_path: PathBuf,
     /// SSH connection timeout in seconds (default: 30)
     #[serde(default = "default_ssh_timeout")]
     pub connection_timeout: u64,
@@ -63,12 +56,9 @@ fn default_ssh_timeout() -> u64 {
 
 impl Default for SshConfig {
     fn default() -> Self {
-        let strategy = choose_base_strategy()
-            .expect("Unable to determine base directories for SSH configuration");
-        let home_dir = strategy.home_dir();
-
         Self {
-            key_path: home_dir.join(".ssh").join("basilica_rsa.pub"),
+            key_path: PathBuf::from("~/.ssh/basilica_rsa.pub"),
+            private_key_path: PathBuf::from("~/.ssh/basilica_rsa"),
             connection_timeout: 30,
         }
     }
@@ -84,7 +74,7 @@ pub struct ImageConfig {
 impl Default for ImageConfig {
     fn default() -> Self {
         Self {
-            name: "ubuntu:22.04".to_string(),
+            name: "nvidia/cuda:12.2.0-runtime-ubuntu22.04".to_string(),
         }
     }
 }
@@ -101,13 +91,9 @@ pub struct WalletConfig {
 
 impl Default for WalletConfig {
     fn default() -> Self {
-        let strategy = choose_base_strategy()
-            .expect("Unable to determine base directories for wallet configuration");
-        let home_dir = strategy.home_dir();
-
         Self {
             default_wallet: "default".to_string(),
-            base_wallet_path: home_dir.join(".bittensor").join("wallets"),
+            base_wallet_path: PathBuf::from("~/.bittensor/wallets"),
         }
     }
 }
@@ -155,6 +141,40 @@ pub struct RegistrationCache {
 }
 
 impl CliConfig {
+    /// Compress paths by replacing home directory with tilde for serialization
+    fn compress_paths(&self) -> Self {
+        let home_dir = if let Ok(strategy) = choose_base_strategy() {
+            strategy.home_dir().to_path_buf()
+        } else {
+            return self.clone(); // If we can't get home dir, return as-is
+        };
+
+        let mut config = self.clone();
+
+        // Compress SSH paths
+        config.ssh.key_path = Self::compress_path(&config.ssh.key_path, &home_dir);
+        config.ssh.private_key_path = Self::compress_path(&config.ssh.private_key_path, &home_dir);
+
+        // Compress wallet path
+        config.wallet.base_wallet_path =
+            Self::compress_path(&config.wallet.base_wallet_path, &home_dir);
+
+        config
+    }
+
+    /// Helper function to compress a single path
+    fn compress_path(path: &Path, home_dir: &std::path::PathBuf) -> PathBuf {
+        if let Ok(relative_path) = path.strip_prefix(home_dir) {
+            // Path is under home directory, replace with tilde
+            let mut tilde_path = std::path::PathBuf::from("~");
+            tilde_path.push(relative_path);
+            tilde_path
+        } else {
+            // Path is not under home directory, keep as-is
+            path.to_path_buf()
+        }
+    }
+
     /// Load configuration from default location
     pub async fn load_default() -> Result<Self> {
         let config_dir = Self::config_dir()?;
@@ -197,6 +217,10 @@ impl CliConfig {
             let expanded = shellexpand::tilde(path_str);
             config.ssh.key_path = PathBuf::from(expanded.as_ref());
         }
+        if let Some(path_str) = config.ssh.private_key_path.to_str() {
+            let expanded = shellexpand::tilde(path_str);
+            config.ssh.private_key_path = PathBuf::from(expanded.as_ref());
+        }
 
         debug!("Successfully loaded configuration");
         Ok(config)
@@ -213,7 +237,10 @@ impl CliConfig {
                 .map_err(CliError::Io)?;
         }
 
-        let content = toml::to_string_pretty(self)
+        // Compress paths to use tilde notation before serialization
+        let compressed_config = self.compress_paths();
+
+        let content = toml::to_string_pretty(&compressed_config)
             .map_err(|e| CliError::internal(format!("Failed to serialize config: {e}")))?;
 
         tokio::fs::write(path, content)
@@ -228,8 +255,10 @@ impl CliConfig {
     pub fn get(&self, key: &str) -> Result<String> {
         match key {
             "api.base_url" | "api-url" => Ok(self.api.base_url.clone()),
-            "api.network" | "network" => Ok(self.api.network.clone()),
             "ssh.key_path" | "ssh-key" => Ok(self.ssh.key_path.to_string_lossy().to_string()),
+            "ssh.private_key_path" | "ssh-private-key" => {
+                Ok(self.ssh.private_key_path.to_string_lossy().to_string())
+            }
             "ssh.connection_timeout" | "ssh-timeout" => Ok(self.ssh.connection_timeout.to_string()),
             "image.name" | "default-image" => Ok(self.image.name.clone()),
             "wallet.default_wallet" | "default-wallet" => Ok(self.wallet.default_wallet.clone()),
@@ -248,16 +277,11 @@ impl CliConfig {
             "api.base_url" | "api-url" => {
                 self.api.base_url = value.to_string();
             }
-            "api.network" | "network" => {
-                if !["mainnet", "testnet"].contains(&value) {
-                    return Err(CliError::invalid_argument(
-                        "Network must be 'mainnet' or 'testnet'",
-                    ));
-                }
-                self.api.network = value.to_string();
-            }
             "ssh.key_path" | "ssh-key" => {
                 self.ssh.key_path = PathBuf::from(value);
+            }
+            "ssh.private_key_path" | "ssh-private-key" => {
+                self.ssh.private_key_path = PathBuf::from(value);
             }
             "ssh.connection_timeout" | "ssh-timeout" => {
                 let timeout: u64 = value.parse().map_err(|_| {
@@ -293,7 +317,6 @@ impl CliConfig {
         let mut map = HashMap::new();
 
         map.insert("api.base_url".to_string(), self.api.base_url.clone());
-        map.insert("api.network".to_string(), self.api.network.clone());
         map.insert(
             "ssh.key_path".to_string(),
             self.ssh.key_path.to_string_lossy().to_string(),

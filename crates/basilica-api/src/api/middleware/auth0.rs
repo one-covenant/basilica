@@ -124,7 +124,7 @@ pub async fn auth0_middleware(
     };
 
     // Validate JWT token
-    let claims = match validate_jwt_with_options(&token, &jwks, Some(AUTH0_AUDIENCE), None) {
+    let claims = match validate_jwt_with_options(&token, &jwks, None) {
         Ok(claims) => claims,
         Err(e) => {
             warn!("Auth0 middleware: JWT validation failed: {}", e);

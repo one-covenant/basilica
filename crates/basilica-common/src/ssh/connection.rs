@@ -163,6 +163,7 @@ impl StandardSshClient {
             .arg("-o")
             .arg("UserKnownHostsFile=/dev/null")
             .arg("-o")
+            .arg("BatchMode=yes")
             .arg(format!(
                 "ConnectTimeout={}",
                 self.config.connection_timeout.as_secs()

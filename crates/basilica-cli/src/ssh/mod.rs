@@ -7,7 +7,7 @@ use basilica_common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, SshFileTransferManager,
     StandardSshClient,
 };
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, info};
 
@@ -29,9 +29,9 @@ impl SshClient {
 
         let ssh_config = SshConnectionConfig {
             connection_timeout,
-            execution_timeout: Duration::from_secs(300),
+            execution_timeout: Duration::from_secs(3600),
             retry_attempts: 3,
-            max_transfer_size: 100 * 1024 * 1024, // 100MB
+            max_transfer_size: 1000 * 1024 * 1024, // 1000MB
             cleanup_remote_files: false,
         };
 
@@ -46,17 +46,8 @@ impl SshClient {
         &self,
         ssh_access: &SshAccess,
     ) -> Result<SshConnectionDetails> {
-        // Use the configured SSH key path
-        let private_key_path = self.config.key_path.clone();
-
-        // The key_path in config is for the public key, derive private key path
-        let private_key_path = if private_key_path.to_string_lossy().ends_with(".pub") {
-            // Remove .pub extension to get private key path
-            let path_str = private_key_path.to_string_lossy();
-            PathBuf::from(path_str.trim_end_matches(".pub"))
-        } else {
-            private_key_path
-        };
+        // Use the configured private key path
+        let private_key_path = self.config.private_key_path.clone();
 
         if !private_key_path.exists() {
             return Err(CliError::invalid_argument(format!(
@@ -101,38 +92,6 @@ impl SshClient {
         Err(CliError::not_supported(
             "SSH access details must be provided separately - use execute_command with SshAccess",
         ))
-    }
-
-    /// Stream logs from a container via SSH
-    pub async fn stream_logs(
-        &self,
-        ssh_access: &SshAccess,
-        container_id: &str,
-        follow: bool,
-        tail: Option<u32>,
-    ) -> Result<()> {
-        let details = self.ssh_access_to_connection_details(ssh_access)?;
-
-        // Build docker logs command
-        let mut docker_cmd = String::from("docker logs");
-        if follow {
-            docker_cmd.push_str(" -f");
-        }
-        if let Some(lines) = tail {
-            docker_cmd.push_str(&format!(" --tail {}", lines));
-        }
-        docker_cmd.push_str(&format!(" {}", container_id));
-
-        debug!("Streaming logs with command: {}", docker_cmd);
-
-        let output = self
-            .client
-            .execute_command(&details, &docker_cmd, true)
-            .await
-            .map_err(|e| CliError::ssh(format!("Log streaming failed: {}", e)))?;
-
-        println!("{}", output);
-        Ok(())
     }
 
     /// Open interactive SSH session
@@ -342,4 +301,53 @@ impl SshClient {
         info!("Download completed successfully");
         Ok(())
     }
+}
+
+/// Parse SSH credentials string into components
+pub fn parse_ssh_credentials(credentials: &str) -> Result<(String, u16, String)> {
+    debug!("Parsing SSH credentials: {}", credentials);
+    // Expected format: "ssh user@host -p port" or "user@host:port" or "host:port"
+
+    // Try to parse "ssh user@host -p port" format
+    if credentials.starts_with("ssh ") {
+        let parts: Vec<&str> = credentials.split_whitespace().collect();
+        if parts.len() >= 4 && parts[2] == "-p" {
+            let user_host = parts[1];
+            let port = parts[3]
+                .parse::<u16>()
+                .map_err(|_| CliError::invalid_argument("Invalid port in SSH credentials"))?;
+
+            let (user, host) = if let Some((user, host)) = user_host.split_once('@') {
+                (user.to_string(), host.to_string())
+            } else {
+                ("root".to_string(), user_host.to_string())
+            };
+
+            return Ok((host, port, user));
+        }
+    }
+
+    // Try to parse "user@host:port" or "host:port" format
+    if let Some((left_part, port_str)) = credentials.rsplit_once(':') {
+        let port = port_str
+            .parse::<u16>()
+            .map_err(|_| CliError::invalid_argument("Invalid port in SSH credentials"))?;
+
+        let (user, host) = if let Some((user, host)) = left_part.split_once('@') {
+            (user.to_string(), host.to_string())
+        } else {
+            ("root".to_string(), left_part.to_string())
+        };
+
+        return Ok((host, port, user));
+    }
+
+    // Try to parse "user@host" or just "host" format (default port 22)
+    let (user, host) = if let Some((user, host)) = credentials.split_once('@') {
+        (user.to_string(), host.to_string())
+    } else {
+        ("root".to_string(), credentials.to_string())
+    };
+
+    Ok((host, 22, user))
 }

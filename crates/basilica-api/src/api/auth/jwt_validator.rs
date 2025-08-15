@@ -135,7 +135,6 @@ pub async fn fetch_jwks(auth0_domain: &str) -> Result<JwkSet> {
 pub fn validate_jwt_with_options(
     token: &str,
     jwks: &JwkSet,
-    expected_audience: Option<&str>,
     clock_skew: Option<Duration>,
 ) -> Result<Claims> {
     debug!("Validating JWT token with options");
