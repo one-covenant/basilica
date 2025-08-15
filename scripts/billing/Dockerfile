@@ -17,6 +17,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/basilica-billing ./crates/basilica-billing
 COPY crates/basilica-common ./crates/basilica-common
 COPY crates/basilica-protocol ./crates/basilica-protocol
+COPY crates/basilica-payments ./crates/basilica-payments
+COPY crates/bittensor ./crates/bittensor
 
 # Remove problematic workspace members from Cargo.toml
 RUN sed -i '/crates\/basilica-executor/d' Cargo.toml && \
@@ -24,7 +26,6 @@ RUN sed -i '/crates\/basilica-executor/d' Cargo.toml && \
     sed -i '/crates\/basilica-validator/d' Cargo.toml && \
     sed -i '/crates\/basilica-api/d' Cargo.toml && \
     sed -i '/crates\/collateral/d' Cargo.toml && \
-    sed -i '/crates\/bittensor/d' Cargo.toml && \
     sed -i '/crates\/integration-tests/d' Cargo.toml
 
 # Build the billing service
