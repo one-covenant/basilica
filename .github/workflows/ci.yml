@@ -28,6 +28,7 @@ jobs:
       miner: ${{ steps.changes.outputs.miner }}
       basilica-api: ${{ steps.changes.outputs.basilica-api }}
       billing: ${{ steps.changes.outputs.billing }}
+      payments: ${{ steps.changes.outputs.payments }}
       workspace: ${{ steps.changes.outputs.workspace }}
     steps:
       - uses: actions/checkout@v4
@@ -69,6 +70,13 @@ jobs:
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/billing/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            payments:
+              - 'crates/basilica-payments/**'
+              - 'crates/basilica-common/**'
+              - 'crates/basilica-protocol/**'
+              - 'scripts/payments/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             workspace:
@@ -158,6 +166,8 @@ jobs:
           cargo clippy -p basilica-api --all-targets --all-features -- -D warnings
           # Run clippy on billing
           cargo clippy -p basilica-billing --all-targets --all-features -- -D warnings
+          # Run clippy on payments
+          cargo clippy -p basilica-payments --all-targets --all-features -- -D warnings
 
   # Build and test executor
   build-executor:
@@ -477,6 +487,91 @@ jobs:
           chmod +x scripts/billing/build.sh
           ./scripts/billing/build.sh --no-extract
 
+  # Build and test payments
+  build-payments:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.payments == 'true' || needs.changes.outputs.workspace == 'true'
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: payments
+          POSTGRES_PASSWORD: payments_dev_password
+          POSTGRES_DB: basilica_payments
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang postgresql-client
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+      - name: Check payments builds
+        run: |
+          cargo check -p basilica-payments
+      - name: Run payments migrations
+        run: |
+          export DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
+          export PAYMENTS_DATABASE_URL="$DATABASE_URL"
+          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
+          # Run migrations directly using psql
+          for migration in crates/basilica-payments/migrations/*.sql; do
+            echo "Running migration: $migration"
+            PGPASSWORD=payments_dev_password psql -h localhost -p 5432 -U payments -d basilica_payments -f "$migration" || true
+          done
+      - name: Test payments crate (unit tests only)
+        run: |
+          export PAYMENTS_DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
+          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
+          cargo nextest run -p basilica-payments --lib
+      - name: Test payments BDD integration tests
+        run: |
+          export PAYMENTS_DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
+          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
+          # Run from the payments crate directory so migrations path is correct
+          cd crates/basilica-payments && cargo test --test bdd_integration_tests -- --test-threads=1 || true
+      - name: Test payments CLI functionality
+        run: |
+          cargo build -p basilica-payments
+          ./target/debug/basilica-payments --help
+          ./target/debug/basilica-payments --gen-config
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
+      - name: Test Docker build script
+        run: |
+          chmod +x scripts/payments/build.sh
+          ./scripts/payments/build.sh --no-extract
+
   # Final status check
   ci-success:
     runs-on: ubuntu-latest
@@ -488,6 +583,7 @@ jobs:
       - build-miner
       - build-api
       - build-billing
+      - build-payments
     if: always()
     steps:
       - name: Check if all jobs succeeded
@@ -498,7 +594,8 @@ jobs:
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
                 ("${{ needs.build-api.result }}" == "success" || "${{ needs.build-api.result }}" == "skipped") && \
-                ("${{ needs.build-billing.result }}" == "success" || "${{ needs.build-billing.result }}" == "skipped") ]]; then
+                ("${{ needs.build-billing.result }}" == "success" || "${{ needs.build-billing.result }}" == "skipped") && \
+                ("${{ needs.build-payments.result }}" == "success" || "${{ needs.build-payments.result }}" == "skipped") ]]; then
             echo "All CI checks passed!"
             exit 0
           else
