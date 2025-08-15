@@ -179,7 +179,7 @@ impl Server {
             .layer(cors);
 
         let app = Router::new()
-            .nest("/api/v1", api::routes(state.clone()))
+            .merge(api::routes(state.clone()))
             .merge(api::docs_routes())
             .layer(middleware)
             .with_state(state);
