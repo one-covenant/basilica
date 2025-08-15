@@ -47,6 +47,7 @@ url = "2.5"
 prost-types = { workspace = true }
 async-stream = "0.3"
 eventsource-stream = "0.2"
+regex = "1.10"
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }

@@ -349,7 +349,6 @@ impl BasilicaClient {
         }
     }
 
-
     /// Generic DELETE request without body with automatic retry on 401
     async fn delete_empty(&self, path: &str) -> Result<Response> {
         let url = format!("{}{}", self.base_url, path);

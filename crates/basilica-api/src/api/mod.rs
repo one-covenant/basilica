@@ -23,7 +23,10 @@ pub fn routes(state: AppState) -> Router<AppState> {
         .route("/rentals", post(routes::rentals::start_rental))
         .route("/rentals/:id", get(routes::rentals::get_rental_status))
         .route("/rentals/:id", delete(routes::rentals::stop_rental))
-        .route("/rentals/:id/logs", get(routes::rentals::stream_rental_logs))
+        .route(
+            "/rentals/:id/logs",
+            get(routes::rentals::stream_rental_logs),
+        )
         .route("/executors", get(routes::rentals::list_available_executors))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

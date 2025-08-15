@@ -10,26 +10,13 @@ use crate::rental::{RentalInfo, RentalState};
 
 /// Extract GPU memory size in GB from GPU name string
 fn extract_gpu_memory_gb(gpu_name: &str) -> u32 {
-    // Check for explicit memory mentions first
-    if gpu_name.contains("80GB") {
-        80
-    } else if gpu_name.contains("48GB") {
-        48
-    } else if gpu_name.contains("40GB") {
-        40
-    } else if gpu_name.contains("32GB") {
-        32
-    } else if gpu_name.contains("24GB") {
-        24
-    } else if gpu_name.contains("16GB") {
-        16
-    // Then check for specific GPU models with known memory
-    } else if gpu_name.contains("H100") {
-        80 // H100 is known to be 80GB
-    } else if gpu_name.contains("A100") {
-        40 // A100 commonly 40GB (could be 80GB variant)
+    use regex::Regex;
+
+    let re = Regex::new(r"(\d+)GB").unwrap();
+    if let Some(captures) = re.captures(gpu_name) {
+        captures[1].parse().unwrap_or(0)
     } else {
-        0 // Unknown memory
+        0
     }
 }
 
@@ -616,9 +603,7 @@ impl SimplePersistence {
             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
             WHERE r.id IS NULL
                 AND (me.status IS NULL OR me.status != 'offline')
-            GROUP BY me.executor_id, me.miner_id, me.gpu_specs, me.cpu_specs, 
-                     me.location, me.status, me.gpu_count, 
-                     m.verification_score, m.uptime_percentage",
+            GROUP BY me.executor_id",
         );
 
         // Add GPU count filter if specified (use HAVING since we're grouping)
@@ -1298,18 +1283,10 @@ impl SimplePersistence {
         &self,
         miner_id: &str,
     ) -> Result<Vec<ExecutorData>, anyhow::Error> {
-        // Get executor data with GPU information from gpu_uuid_assignments
         let rows = sqlx::query(
-            "SELECT 
-                me.executor_id, 
-                me.gpu_specs, 
-                me.cpu_specs, 
-                me.location,
-                GROUP_CONCAT(gua.gpu_name) as gpu_names
-             FROM miner_executors me
-             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
-             WHERE me.miner_id = ?
-             GROUP BY me.executor_id, me.gpu_specs, me.cpu_specs, me.location",
+            "SELECT executor_id, gpu_specs, cpu_specs, location
+             FROM miner_executors
+             WHERE miner_id = ?",
         )
         .bind(miner_id)
         .fetch_all(&self.pool)
@@ -1317,62 +1294,11 @@ impl SimplePersistence {
 
         let mut executors = Vec::new();
         for row in rows {
-            let gpu_specs_json: String = row.get("gpu_specs");
-            let cpu_specs_json: String = row.get("cpu_specs");
+            let gpu_specs_str: String = row.get("gpu_specs");
+            let cpu_specs_str: String = row.get("cpu_specs");
 
-            // Get GPU data from gpu_uuid_assignments join
-            let gpu_names: Option<String> = row.get("gpu_names");
-
-            // Parse GPU specs - first try from gpu_uuid_assignments data, then fall back to JSON
-            let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
-
-            if let Some(names) = gpu_names {
-                if !names.is_empty() {
-                    // Parse GPU names from GROUP_CONCAT result
-                    for gpu_name in names.split(',') {
-                        // Extract memory from GPU name
-                        let memory_gb = extract_gpu_memory_gb(gpu_name);
-
-                        gpu_specs.push(crate::api::types::GpuSpec {
-                            name: gpu_name.to_string(),
-                            memory_gb,
-                            compute_capability: "8.0".to_string(),
-                        });
-                    }
-                }
-            }
-
-            // If no GPU data from joins, try parsing the JSON
-            if gpu_specs.is_empty() && !gpu_specs_json.is_empty() && gpu_specs_json != "{}" {
-                match serde_json::from_str(&gpu_specs_json) {
-                    Ok(specs) => gpu_specs = specs,
-                    Err(e) => {
-                        tracing::debug!("Failed to parse GPU specs JSON: {}", e);
-                    }
-                }
-            }
-
-            // Parse CPU specs if JSON is available
-            let cpu_specs: crate::api::types::CpuSpec =
-                if !cpu_specs_json.is_empty() && cpu_specs_json != "{}" {
-                    match serde_json::from_str(&cpu_specs_json) {
-                        Ok(specs) => specs,
-                        Err(e) => {
-                            tracing::debug!("Failed to parse CPU specs JSON: {}", e);
-                            crate::api::types::CpuSpec {
-                                cores: 0,
-                                model: "Unknown".to_string(),
-                                memory_gb: 0,
-                            }
-                        }
-                    }
-                } else {
-                    crate::api::types::CpuSpec {
-                        cores: 0,
-                        model: "Unknown".to_string(),
-                        memory_gb: 0,
-                    }
-                };
+            let gpu_specs: Vec<crate::api::types::GpuSpec> = serde_json::from_str(&gpu_specs_str)?;
+            let cpu_specs: crate::api::types::CpuSpec = serde_json::from_str(&cpu_specs_str)?;
 
             executors.push(ExecutorData {
                 executor_id: row.get("executor_id"),
