@@ -257,7 +257,7 @@ jobs:
       - name: Test validator crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo nextest run -p basilica-validator --lib
+          cargo nextest run -p basilica-validator --all-features
       - name: Test validator CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
@@ -376,7 +376,7 @@ jobs:
       - name: Test basilica-api crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo nextest run -p basilica-api --lib
+          cargo nextest run -p basilica-api --all-features
       - name: Test basilica-api CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
@@ -427,7 +427,7 @@ jobs:
           cargo check -p basilica-cli
       - name: Test basilica-cli crate (unit tests only)
         run: |
-          cargo nextest run -p basilica-cli --lib
+          cargo nextest run -p basilica-cli --all-features
       - name: Test basilica-cli CLI functionality
         run: |
           cargo build -p basilica-cli
