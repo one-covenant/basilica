@@ -24,7 +24,16 @@ prost-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
-sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "uuid", "time", "json", "bigdecimal", "migrate"] }
+sqlx = { version = "0.7", features = [
+  "runtime-tokio",
+  "tls-rustls",
+  "postgres",
+  "uuid",
+  "time",
+  "json",
+  "bigdecimal",
+  "migrate",
+] }
 uuid = { workspace = true }
 time = "0.3"
 thiserror = { workspace = true }

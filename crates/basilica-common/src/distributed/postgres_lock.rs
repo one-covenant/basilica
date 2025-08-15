@@ -1,4 +1,4 @@
-use sqlx::{pool::PoolConnection, PgPool, Postgres};
+use sqlx::{pool::PoolConnection, Acquire, PgPool, Postgres};
 use std::fmt;
 use thiserror::Error;
 use tracing::{debug, info, warn};
@@ -160,45 +160,55 @@ impl AdvisoryLock {
         timeout_secs: u64,
     ) -> Result<AdvisoryLockGuard, LockError> {
         let mut conn = self.pool.acquire().await?;
-
-        // Use PostgreSQL's lock_timeout to implement timeout behavior
-        sqlx::query("SET LOCAL lock_timeout = $1")
-            .bind(format!("{}s", timeout_secs))
-            .execute(&mut *conn)
-            .await?;
-
-        let acquired: bool = match sqlx::query_scalar::<_, ()>("SELECT pg_advisory_lock($1)")
-            .bind(key.value())
-            .fetch_one(&mut *conn)
-            .await
         {
-            Ok(_) => true,
-            Err(sqlx::Error::Database(e)) if e.message().contains("lock timeout") => {
-                return Err(LockError::Timeout(timeout_secs));
-            }
-            Err(e) => return Err(e.into()),
-        };
+            // Temporary transaction so SET LOCAL doesn't leak into the pooled connection
+            let mut tx = conn.begin().await?;
+            sqlx::query("SET LOCAL lock_timeout = $1")
+                .bind(format!("{}s", timeout_secs))
+                .execute(&mut *tx)
+                .await?;
 
-        if acquired {
-            info!("Acquired advisory lock {} after waiting", key);
-            Ok(AdvisoryLockGuard { conn, key })
-        } else {
-            Err(LockError::AlreadyHeld)
+            // pg_advisory_lock blocks until acquired or lock_timeout elapses
+            let res = sqlx::query_scalar::<_, ()>("SELECT pg_advisory_lock($1)")
+                .bind(key.value())
+                .fetch_one(&mut *tx)
+                .await;
+
+            match res {
+                Ok(()) => {
+                    tx.commit().await?; // commit to end SET LOCAL; lock persists (session-level)
+                }
+                Err(sqlx::Error::Database(e)) if e.message().contains("lock timeout") => {
+                    // Rollback to end SET LOCAL and return timeout
+                    let _ = tx.rollback().await;
+                    return Err(LockError::Timeout(timeout_secs));
+                }
+                Err(e) => {
+                    let _ = tx.rollback().await;
+                    return Err(e.into());
+                }
+            }
         }
+        info!("Acquired advisory lock {} after waiting", key);
+        Ok(AdvisoryLockGuard { conn, key })
     }
 
     /// Check if a lock is currently held (by any connection)
     ///
     /// This is useful for monitoring and debugging.
     pub async fn is_locked(&self, key: LockKey) -> Result<bool, LockError> {
+        let hi: i32 = (key.value() >> 32) as i32;
+        let lo: i32 = (key.value() & 0xFFFF_FFFF) as i32;
         let locked: bool = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(
                 SELECT 1 FROM pg_locks
                 WHERE locktype = 'advisory'
-                AND objid = $1
+                  AND classid = $1
+                  AND objid = $2
             )",
         )
-        .bind(key.value())
+        .bind(hi)
+        .bind(lo)
         .fetch_one(&self.pool)
         .await?;
 
@@ -210,13 +220,17 @@ impl AdvisoryLock {
     /// Returns the process ID of the PostgreSQL backend holding the lock,
     /// or None if the lock is not held.
     pub async fn lock_holder(&self, key: LockKey) -> Result<Option<i32>, LockError> {
+        let hi: i32 = (key.value() >> 32) as i32;
+        let lo: i32 = (key.value() & 0xFFFF_FFFF) as i32;
         let pid: Option<i32> = sqlx::query_scalar::<_, i32>(
             "SELECT pid FROM pg_locks
              WHERE locktype = 'advisory'
-             AND objid = $1
+               AND classid = $1
+               AND objid = $2
              LIMIT 1",
         )
-        .bind(key.value())
+        .bind(hi)
+        .bind(lo)
         .fetch_optional(&self.pool)
         .await?;
 

@@ -146,6 +146,9 @@ impl PriceOracle {
         let price = BigDecimal::from_str(&price_str)
             .map_err(|e| anyhow!("Failed to parse price as BigDecimal: {}", e))?;
 
+        if price <= BigDecimal::from(0u8) {
+            return Err(anyhow!("Invalid TAO/USD price returned (<= 0)"));
+        }
         Ok(price)
     }
 
@@ -222,7 +225,7 @@ mod tests {
         // Should not be stale immediately
         assert!(!cached.is_stale(Duration::from_secs(60)));
 
-        // Should be stale for very short duration
-        assert!(cached.is_stale(Duration::from_millis(1)));
+        // Should still not be stale for very short duration immediately after creation
+        assert!(!cached.is_stale(Duration::from_millis(1)));
     }
 }

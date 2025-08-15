@@ -116,8 +116,8 @@ impl<T: Treasury + Send + Sync> PaymentsService for PaymentsServer<T> {
                 amount_plancks: r.amount_plancks,
                 credited_credit_id: r.billing_credit_id,
                 status: r.status,
-                observed_at: r.observed_at_rfc3339,
-                finalized_at: "".into(),
+                observed_at: r.observed_at_rfc3339.clone(),
+                finalized_at: r.observed_at_rfc3339,
                 credited_at: r.credited_at_rfc3339,
             })
             .collect();

@@ -6,6 +6,7 @@
 use crate::crypto::{decrypt_aes_gcm, encrypt_aes_gcm, AES_KEY_SIZE};
 use anyhow::{anyhow, Result};
 use data_encoding::BASE64;
+use zeroize::Zeroizing;
 
 /// AEAD wrapper for AES-256-GCM encryption
 ///
@@ -22,7 +23,7 @@ use data_encoding::BASE64;
 /// let decrypted = aead.decrypt(&encrypted)?;
 /// ```
 pub struct Aead {
-    key: Vec<u8>,
+    key: Zeroizing<Vec<u8>>,
 }
 
 impl Aead {
@@ -43,7 +44,9 @@ impl Aead {
                 AES_KEY_SIZE * 2
             ));
         }
-        Ok(Self { key: key_bytes })
+        Ok(Self {
+            key: Zeroizing::new(key_bytes),
+        })
     }
 
     /// Create Aead instance from raw key bytes
@@ -58,7 +61,9 @@ impl Aead {
         if key_bytes.len() != AES_KEY_SIZE {
             return Err(anyhow!("AEAD key must be {} bytes", AES_KEY_SIZE));
         }
-        Ok(Self { key: key_bytes })
+        Ok(Self {
+            key: Zeroizing::new(key_bytes),
+        })
     }
 
     /// Encrypt plaintext and return a base64 formatted string

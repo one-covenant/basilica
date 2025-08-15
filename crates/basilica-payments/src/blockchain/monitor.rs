@@ -49,22 +49,28 @@ impl BlockchainEventHandler for PaymentsEventHandler {
 
         let txid = format!("b{}#e{}#{}", block_number, event_index, to);
 
-        let mut tx = self.repos.begin().await?;
-
-        self.repos
-            .insert_finalized_tx(
-                &mut tx,
-                block_number as i64,
-                event_index as i32,
-                to,
-                from,
-                amount,
-            )
-            .await?;
-
-        self.repos.enqueue_tx(&mut tx, to, amount, &txid).await?;
-
-        tx.commit().await?;
+        if let Err(e) = async {
+            let mut tx = self.repos.begin().await?;
+            self.repos
+                .insert_finalized_tx(
+                    &mut tx,
+                    block_number as i64,
+                    event_index as i32,
+                    to,
+                    from,
+                    amount,
+                )
+                .await?;
+            self.repos.enqueue_tx(&mut tx, to, amount, &txid).await?;
+            tx.commit().await?;
+            Ok::<(), anyhow::Error>(())
+        }
+        .await
+        {
+            // Don't tear down the monitor on a single failed write; log and move on.
+            tracing::error!(%txid, %to, %from, %amount, block_number, event_index, err=%e, "failed to persist observed deposit");
+            return Ok(());
+        }
 
         info!(
             "Recorded deposit: {} -> {} amount: {} (txid: {})",

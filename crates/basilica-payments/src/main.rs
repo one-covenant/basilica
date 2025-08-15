@@ -29,7 +29,11 @@ async fn main() -> Result<()> {
 
     let cfg = Config::from_env().context("Failed to load configuration from environment")?;
 
-    info!("Connecting to database: {}", cfg.database_url);
+    let db_display = match cfg.database_url.rsplit_once('@') {
+        Some((_, rest)) => rest,
+        None => &cfg.database_url,
+    };
+    info!("Connecting to database: {}", db_display);
     let pool = PgPoolOptions::new()
         .max_connections(16)
         .connect(&cfg.database_url)

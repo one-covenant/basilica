@@ -60,9 +60,9 @@ default = []
 crypto-extra = []
 # Database features
 sqlite = ["sqlx/sqlite"]
-postgres = ["sqlx"]
+postgres = ["sqlx/postgres"]
 
 [dependencies.sqlx]
 version = "0.7"
-features = ["runtime-tokio", "tls-rustls", "migrate", "uuid", "chrono", "postgres"]
+features = ["runtime-tokio", "tls-rustls", "migrate", "uuid", "chrono"]
 optional = true
