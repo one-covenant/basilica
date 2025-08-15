@@ -8,7 +8,7 @@ variable "payments_image" {
 
 variable "aws_region" {
   type    = string
-  default = "us-east-1"
+  default = "us-east-2"
 }
 
 variable "project_name" {

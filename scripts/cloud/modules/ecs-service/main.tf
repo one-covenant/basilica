@@ -103,7 +103,7 @@ resource "aws_iam_role_policy" "ecs_exec" {
 
 # Service Discovery Service
 resource "aws_service_discovery_service" "main" {
-  name = var.service_name
+  name = "${var.service_name}-v2"
 
   dns_config {
     namespace_id = var.service_discovery_namespace_id

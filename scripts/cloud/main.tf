@@ -11,7 +11,7 @@ locals {
   env_config = {
     dev = {
       vpc_cidr                   = "10.0.0.0/16"
-      availability_zones         = ["us-east-1a", "us-east-1b"]
+      availability_zones         = ["us-east-2a", "us-east-2b"]
       db_instance_class          = "db.t3.micro"
       db_allocated_storage       = 20
       enable_deletion_protection = false
@@ -26,7 +26,7 @@ locals {
     }
     prod = {
       vpc_cidr                   = "10.1.0.0/16"
-      availability_zones         = ["us-east-1a", "us-east-1b", "us-east-1c"]
+      availability_zones         = ["us-east-2a", "us-east-2b", "us-east-2c"]
       db_instance_class          = "db.t3.small"
       db_allocated_storage       = 100
       enable_deletion_protection = true
@@ -51,6 +51,7 @@ data "aws_caller_identity" "current" {}
 resource "random_password" "db_password" {
   length  = 32
   special = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
 # Generate random AEAD key for payments encryption (32 bytes = 256 bits)
@@ -60,7 +61,7 @@ resource "random_bytes" "payments_aead_key" {
 
 # Secrets Manager secret for payments AEAD encryption key
 resource "aws_secretsmanager_secret" "payments_aead_key" {
-  name                    = "${local.name_prefix}-payments-aead-key"
+  name                    = "${local.name_prefix}-payments-aead-key-v2"
   description             = "AEAD encryption key for payments service"
   recovery_window_in_days = 7
 
@@ -91,7 +92,7 @@ module "rds" {
 
   name_prefix        = local.name_prefix
   vpc_id             = module.networking.vpc_id
-  subnet_ids         = module.networking.private_subnet_ids
+  subnet_ids         = module.networking.database_subnet_ids
   security_group_ids = [module.networking.rds_security_group_id]
 
   db_instance_class          = local.workspace_config.db_instance_class

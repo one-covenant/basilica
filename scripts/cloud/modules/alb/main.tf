@@ -1,7 +1,7 @@
 data "aws_region" "current" {}
 
 resource "aws_lb" "main" {
-  name               = "${var.name_prefix}-alb"
+  name               = "${var.name_prefix}-alb-v2"
   internal           = false
   load_balancer_type = "application"
   security_groups    = var.security_group_ids

@@ -66,7 +66,7 @@ resource "aws_eip" "nat" {
   domain = "vpc"
 
   tags = merge(var.tags, {
-    Name = "${var.name_prefix}-nat-eip"
+    Name = "${var.name_prefix}-nat-eip-v2"
   })
 
   depends_on = [aws_internet_gateway.main]
@@ -274,12 +274,3 @@ resource "aws_security_group" "rds" {
   }
 }
 
-# Database subnet group
-resource "aws_db_subnet_group" "main" {
-  name       = "${var.name_prefix}-db-subnet-group"
-  subnet_ids = aws_subnet.database[*].id
-
-  tags = merge(var.tags, {
-    Name = "${var.name_prefix}-db-subnet-group"
-  })
-}

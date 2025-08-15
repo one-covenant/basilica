@@ -1,3 +1,4 @@
+
 # DB Subnet Group
 resource "aws_db_subnet_group" "main" {
   name       = "${var.name_prefix}-db-subnet-group"
@@ -126,7 +127,7 @@ resource "aws_db_instance" "main" {
 
 # Secrets Manager secret for database credentials
 resource "aws_secretsmanager_secret" "db_credentials" {
-  name                    = "${var.name_prefix}-db-credentials"
+  name                    = "${var.name_prefix}-db-credentials-v2"
   description             = "Database credentials for ${var.name_prefix}"
   recovery_window_in_days = 7
 
