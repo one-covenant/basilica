@@ -112,4 +112,85 @@ impl CliError {
             message: message.into(),
         }
     }
+
+    /// Add a helpful suggestion to any error
+    pub fn with_suggestion(self, suggestion: impl Into<String>) -> Self {
+        let suggestion = suggestion.into();
+        match self {
+            Self::Internal(err) => {
+                Self::Internal(anyhow::anyhow!("{}\n💡 Suggestion: {}", err, suggestion))
+            }
+            _ => Self::Internal(anyhow::anyhow!("{}\n💡 Suggestion: {}", self, suggestion)),
+        }
+    }
+
+    /// Add contextual information to any error
+    pub fn with_context(self, context: impl Into<String>) -> Self {
+        let context = context.into();
+        match self {
+            Self::Internal(err) => Self::Internal(anyhow::anyhow!("{}\nContext: {}", err, context)),
+            _ => Self::Internal(anyhow::anyhow!("{}\nContext: {}", self, context)),
+        }
+    }
+}
+
+/// Helper functions for common error patterns with suggestions
+impl CliError {
+    /// Create rental not found error with helpful suggestion
+    pub fn rental_not_found(rental_id: impl Into<String>) -> Self {
+        Self::not_found(format!("Rental '{}' not found", rental_id.into()))
+            .with_suggestion("Run 'basilica ps' to see active rentals")
+    }
+
+    /// Create SSH connection error with helpful suggestion
+    pub fn ssh_connection_failed(host: impl Into<String>, port: u32) -> Self {
+        Self::ssh(format!("Failed to connect to {}:{}", host.into(), port))
+            .with_suggestion("Check if the rental is still active and SSH port is exposed")
+    }
+
+    /// Create authentication expired error with helpful suggestion
+    pub fn auth_expired() -> Self {
+        Self::auth("Authentication token has expired")
+            .with_suggestion("Run 'basilica login' to refresh your credentials")
+    }
+
+    /// Create API request failed error with helpful suggestion
+    pub fn api_request_failed(operation: impl Into<String>, error: impl Into<String>) -> Self {
+        Self::internal(format!(
+            "API request failed for {}: {}",
+            operation.into(),
+            error.into()
+        ))
+        .with_suggestion("Check your internet connection and try again")
+    }
+
+    /// Create config validation error with helpful suggestion
+    pub fn config_invalid(
+        key: impl Into<String>,
+        value: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::invalid_argument(format!(
+            "Invalid config value for '{}': '{}' - {}",
+            key.into(),
+            value.into(),
+            reason.into()
+        ))
+        .with_suggestion("Use 'basilica config show' to see current configuration")
+    }
+
+    /// Create SSH key not found error with helpful suggestion
+    pub fn ssh_key_not_found(path: impl Into<String>) -> Self {
+        Self::invalid_argument(format!("SSH key not found at: {}", path.into()))
+            .with_suggestion("Generate SSH keys with 'ssh-keygen -t rsa -f ~/.ssh/basilica_rsa' or update the path in config")
+    }
+
+    /// Create executor not available error with helpful suggestion
+    pub fn executor_not_available(executor_id: impl Into<String>) -> Self {
+        Self::not_found(format!(
+            "Executor '{}' is not available",
+            executor_id.into()
+        ))
+        .with_suggestion("Run 'basilica ls' to see available executors")
+    }
 }

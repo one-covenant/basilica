@@ -12,11 +12,11 @@ base_url = "http://localhost:8000"
 [ssh]
 # Path to your SSH public key for instance access
 # This key will be added to provisioned instances
-key_path = "~/.ssh/basilica_rsa.pub"
+key_path = "~/.ssh/basilica.pub"
 
 # Path to your SSH private key for instance access
 # This key will be used to connect to provisioned instances
-private_key_path = "~/.ssh/basilica_rsa"
+private_key_path = "~/.ssh/basilica"
 
 # Docker Image Configuration
 [image]

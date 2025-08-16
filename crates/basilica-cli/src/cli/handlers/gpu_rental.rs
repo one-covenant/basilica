@@ -8,6 +8,9 @@ use crate::error::{CliError, Result};
 use crate::output::{
     json_output, print_error, print_info, print_link, print_success, table_output,
 };
+use crate::progress::{
+    complete_spinner_and_clear, complete_spinner_error, create_progress_bar, create_spinner,
+};
 use crate::ssh::{parse_ssh_credentials, SshClient};
 use basilica_api::api::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
@@ -18,7 +21,7 @@ use basilica_validator::rental::types::RentalState;
 use reqwest::StatusCode;
 use std::path::PathBuf;
 use tabled::{settings::Style, Table, Tabled};
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Handle the `ls` command - list available executors for rental
 pub async fn handle_ls(
@@ -37,12 +40,17 @@ pub async fn handle_ls(
         min_gpu_count: filters.gpu_min,
     };
 
-    info!("Fetching available executors...");
+    let spinner = create_spinner("Fetching available executors...");
 
     let response = api_client
         .list_available_executors(Some(query))
         .await
-        .map_err(|e| CliError::internal(format!("Failed to list available executors: {e}")))?;
+        .map_err(|e| {
+            complete_spinner_error(spinner.clone(), "Failed to fetch executors");
+            CliError::api_request_failed("list available executors", e.to_string())
+        })?;
+
+    complete_spinner_and_clear(spinner);
 
     if json {
         json_output(&response)?;
@@ -126,14 +134,24 @@ pub async fn handle_up(
 ) -> Result<()> {
     let api_client = create_authenticated_client(config, no_auth).await?;
 
+    let spinner = create_spinner("Preparing rental request...");
+
     // Build rental request
-    let ssh_public_key = load_ssh_public_key(&options.ssh_key, config)?;
+    spinner.set_message("Validating SSH key...");
+    let ssh_public_key = load_ssh_public_key(&options.ssh_key, config).inspect_err(|_e| {
+        complete_spinner_error(spinner.clone(), "SSH key validation failed");
+    })?;
+
     let container_image = options.image.unwrap_or_else(|| config.image.name.clone());
 
-    let env_vars = parse_env_vars(&options.env)?;
+    let env_vars = parse_env_vars(&options.env).inspect_err(|_e| {
+        complete_spinner_error(spinner.clone(), "Environment variable parsing failed");
+    })?;
 
     // Parse port mappings if provided
-    let port_mappings = parse_port_mappings(&options.ports)?;
+    let port_mappings = parse_port_mappings(&options.ports).inspect_err(|_e| {
+        complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
+    })?;
 
     let request = StartRentalRequest {
         executor_id: target.clone(), // Optional - None means system will select
@@ -152,11 +170,14 @@ pub async fn handle_up(
         volumes: vec![],
     };
 
-    let response = api_client
-        .start_rental(request)
-        .await
-        .map_err(|e| CliError::internal(format!("Failed to start rental: {e}")))?;
+    spinner.set_message("Creating rental...");
+    let response = api_client.start_rental(request).await.map_err(|e| {
+        complete_spinner_error(spinner.clone(), "Failed to create rental");
+        CliError::api_request_failed("start rental", e.to_string())
+            .with_suggestion("Ensure the executor is available and try again")
+    })?;
 
+    spinner.set_message("Caching rental information...");
     // Cache the rental information
     let mut cache = RentalCache::load().await.unwrap_or_default();
     cache.add_rental(CachedRental {
@@ -169,6 +190,8 @@ pub async fn handle_up(
         cached_at: chrono::Utc::now(),
     });
     cache.save().await?;
+
+    complete_spinner_and_clear(spinner);
 
     print_success(&format!(
         "Successfully created rental: {}",
@@ -192,8 +215,9 @@ pub async fn handle_ps(
     config: &CliConfig,
     no_auth: bool,
 ) -> Result<()> {
-    debug!("Listing active rentals with filters: {:?}", filters);
     let api_client = create_authenticated_client(config, no_auth).await?;
+
+    let spinner = create_spinner("Loading active rentals...");
 
     // Build query from filters - default to "active" if no status specified
     let query = Some(ListRentalsQuery {
@@ -202,10 +226,12 @@ pub async fn handle_ps(
         min_gpu_count: filters.min_gpu_count,
     });
 
-    let rentals_list = api_client
-        .list_rentals(query)
-        .await
-        .map_err(|e| CliError::internal(format!("Failed to list rentals: {e}")))?;
+    let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
+        complete_spinner_error(spinner.clone(), "Failed to load rentals");
+        CliError::api_request_failed("list rentals", e.to_string())
+    })?;
+
+    complete_spinner_and_clear(spinner);
 
     if json {
         json_output(&rentals_list)?;
@@ -224,13 +250,16 @@ pub async fn handle_status(
     config: &CliConfig,
     no_auth: bool,
 ) -> Result<()> {
-    debug!("Checking status for rental: {}", target);
     let api_client = create_authenticated_client(config, no_auth).await?;
 
-    let status = api_client
-        .get_rental_status(&target)
-        .await
-        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
+    let spinner = create_spinner("Checking rental status...");
+
+    let status = api_client.get_rental_status(&target).await.map_err(|e| {
+        complete_spinner_error(spinner.clone(), "Failed to get status");
+        CliError::api_request_failed("get rental status", e.to_string())
+    })?;
+
+    complete_spinner_and_clear(spinner);
 
     // Check if rental is stopped and clean up cache
     if matches!(
@@ -240,7 +269,6 @@ pub async fn handle_status(
         let mut cache = RentalCache::load().await.unwrap_or_default();
         if cache.remove_rental(&target).is_some() {
             cache.save().await?;
-            debug!("Removed stopped rental {} from cache", target);
         }
     }
 
@@ -260,16 +288,19 @@ pub async fn handle_logs(
     config: &CliConfig,
     no_auth: bool,
 ) -> Result<()> {
-    debug!("Viewing logs for rental: {}", target);
-
     // Create API client
     let api_client = create_authenticated_client(config, no_auth).await?;
+
+    let spinner = create_spinner("Connecting to log stream...");
 
     // Get log stream from API
     let response = api_client
         .get_rental_logs(&target, options.follow, options.tail)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to get logs: {e}")))?;
+        .map_err(|e| {
+            complete_spinner_error(spinner.clone(), "Failed to connect to logs");
+            CliError::api_request_failed("get rental logs", e.to_string())
+        })?;
 
     // Check content type
     let content_type = response
@@ -286,13 +317,15 @@ pub async fn handle_logs(
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
 
+        complete_spinner_error(spinner, "Failed to get logs");
+
         if status == StatusCode::NOT_FOUND {
-            return Err(CliError::not_found(format!("Rental {} not found", target)));
+            return Err(CliError::rental_not_found(target));
         } else {
-            return Err(CliError::internal(format!(
-                "Failed to get logs (status {}): {}",
-                status, body
-            )));
+            return Err(CliError::api_request_failed(
+                "get logs",
+                format!("status {}: {}", status, body),
+            ));
         }
     }
 
@@ -307,6 +340,8 @@ pub async fn handle_logs(
         stream: String,
         message: String,
     }
+
+    complete_spinner_and_clear(spinner);
 
     let stream = response.bytes_stream().eventsource();
 
@@ -352,9 +387,8 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig, no_auth: bool
     let api_client = create_authenticated_client(config, no_auth).await?;
 
     let rental_ids = if targets.is_empty() {
-        return Err(CliError::invalid_argument(
-            "No rental IDs specified. Please provide rental IDs to terminate.",
-        ));
+        return Err(CliError::invalid_argument("No rental IDs specified")
+            .with_suggestion("Provide rental IDs: 'basilica down <rental-id> [...]'"));
     } else {
         targets
     };
@@ -362,21 +396,48 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig, no_auth: bool
     // Load rental cache
     let mut cache = RentalCache::load().await.unwrap_or_default();
 
-    for rental_id in &rental_ids {
-        info!("Stopping rental: {}", rental_id);
+    if rental_ids.len() == 1 {
+        // Single rental - use spinner
+        let spinner = create_spinner(&format!("Terminating rental: {}", rental_ids[0]));
 
         match api_client
-            .stop_rental(rental_id)
+            .stop_rental(&rental_ids[0])
             .await
-            .map_err(|e| CliError::internal(format!("Failed to stop rental: {e}")))
+            .map_err(|e| CliError::api_request_failed("stop rental", e.to_string()))
         {
             Ok(_) => {
-                print_success(&format!("Successfully stopped rental: {rental_id}"));
-                // Remove from cache
-                cache.remove_rental(rental_id);
+                complete_spinner_and_clear(spinner);
+                print_success(&format!("Successfully stopped rental: {}", rental_ids[0]));
+                cache.remove_rental(&rental_ids[0]);
             }
-            Err(e) => print_error(&format!("Failed to stop rental {rental_id}: {e}")),
+            Err(e) => {
+                complete_spinner_error(spinner, "Failed to terminate rental");
+                print_error(&format!("Failed to stop rental {}: {e}", rental_ids[0]));
+            }
         }
+    } else {
+        // Multiple rentals - use progress bar
+        let pb = create_progress_bar(rental_ids.len() as u64, "Terminating rentals");
+
+        for rental_id in &rental_ids {
+            pb.set_message(format!("Stopping {}", rental_id));
+
+            match api_client
+                .stop_rental(rental_id)
+                .await
+                .map_err(|e| CliError::api_request_failed("stop rental", e.to_string()))
+            {
+                Ok(_) => {
+                    print_success(&format!("Successfully stopped rental: {rental_id}"));
+                    cache.remove_rental(rental_id);
+                }
+                Err(e) => print_error(&format!("Failed to stop rental {rental_id}: {e}")),
+            }
+
+            pb.inc(1);
+        }
+
+        pb.finish_with_message("✓ All rental termination requests completed");
     }
 
     // Save updated cache
@@ -399,11 +460,10 @@ pub async fn handle_exec(
 
     // Load rental cache and get SSH credentials
     let mut cache = RentalCache::load().await?;
-    let cached_rental = cache.get_rental(&target)
-        .ok_or_else(|| CliError::not_found(format!(
-            "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
-            target
-        )))?;
+    let cached_rental = cache.get_rental(&target).ok_or_else(|| {
+        CliError::rental_not_found(&target)
+            .with_context("SSH credentials are only available for rentals created in this session")
+    })?;
 
     // Clone SSH credentials before status check to avoid borrowing issues
     let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
@@ -442,11 +502,10 @@ pub async fn handle_ssh(
 
     // Load rental cache and get SSH credentials
     let mut cache = RentalCache::load().await?;
-    let cached_rental = cache.get_rental(&target)
-        .ok_or_else(|| CliError::not_found(format!(
-            "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
-            target
-        )))?;
+    let cached_rental = cache.get_rental(&target).ok_or_else(|| {
+        CliError::rental_not_found(&target)
+            .with_context("SSH credentials are only available for rentals created in this session")
+    })?;
 
     // Clone SSH credentials before status check to avoid borrowing issues
     let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
@@ -548,7 +607,7 @@ async fn verify_rental_status_and_cleanup_cache(
     let status = api_client
         .get_rental_status(rental_id)
         .await
-        .map_err(|e| CliError::internal(format!("Failed to get rental status: {e}")))?;
+        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
 
     if matches!(
         status.status,
@@ -556,10 +615,11 @@ async fn verify_rental_status_and_cleanup_cache(
     ) {
         cache.remove_rental(rental_id);
         cache.save().await?;
-        return Err(CliError::internal(format!(
-            "Rental {} is no longer active (status: {:?}). Removed from cache.",
+        return Err(CliError::not_found(format!(
+            "Rental {} is no longer active (status: {:?})",
             rental_id, status.status
-        )));
+        ))
+        .with_suggestion("Run 'basilica ps' to see currently active rentals"));
     }
 
     Ok(())
@@ -569,7 +629,7 @@ fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result
     let path = key_path.as_ref().unwrap_or(&config.ssh.key_path);
 
     std::fs::read_to_string(path)
-        .map_err(|e| CliError::invalid_argument(format!("Failed to read SSH key: {e}")))
+        .map_err(|_| CliError::ssh_key_not_found(path.display().to_string()))
 }
 
 fn parse_env_vars(env_vars: &[String]) -> Result<std::collections::HashMap<String, String>> {

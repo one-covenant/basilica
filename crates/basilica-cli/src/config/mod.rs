@@ -316,11 +316,36 @@ impl CliConfig {
     pub fn to_map(&self) -> HashMap<String, String> {
         let mut map = HashMap::new();
 
+        // Get home directory for path compression
+        let home_dir = if let Ok(strategy) = choose_base_strategy() {
+            Some(strategy.home_dir().to_path_buf())
+        } else {
+            None
+        };
+
         map.insert("api.base_url".to_string(), self.api.base_url.clone());
+
+        // Compress SSH key paths
+        let ssh_key_path = if let Some(ref home) = home_dir {
+            Self::compress_path(&self.ssh.key_path, home)
+        } else {
+            self.ssh.key_path.clone()
+        };
         map.insert(
             "ssh.key_path".to_string(),
-            self.ssh.key_path.to_string_lossy().to_string(),
+            ssh_key_path.to_string_lossy().to_string(),
         );
+
+        let ssh_private_key_path = if let Some(ref home) = home_dir {
+            Self::compress_path(&self.ssh.private_key_path, home)
+        } else {
+            self.ssh.private_key_path.clone()
+        };
+        map.insert(
+            "ssh.private_key_path".to_string(),
+            ssh_private_key_path.to_string_lossy().to_string(),
+        );
+
         map.insert(
             "ssh.connection_timeout".to_string(),
             self.ssh.connection_timeout.to_string(),
@@ -330,9 +355,16 @@ impl CliConfig {
             "wallet.default_wallet".to_string(),
             self.wallet.default_wallet.clone(),
         );
+
+        // Compress wallet base path
+        let wallet_base_path = if let Some(ref home) = home_dir {
+            Self::compress_path(&self.wallet.base_wallet_path, home)
+        } else {
+            self.wallet.base_wallet_path.clone()
+        };
         map.insert(
             "wallet.base_wallet_path".to_string(),
-            self.wallet.base_wallet_path.to_string_lossy().to_string(),
+            wallet_base_path.to_string_lossy().to_string(),
         );
 
         map

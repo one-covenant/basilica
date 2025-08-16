@@ -5,7 +5,7 @@
 
 use super::callback_server::CallbackServer;
 use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
-use crate::output::{print_info, print_success};
+use crate::output::print_info;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use console::{style, Term};
@@ -212,8 +212,6 @@ impl OAuthFlow {
         let code = callback_data.code.ok_or_else(|| {
             AuthError::CallbackServerError("No authorization code received".to_string())
         })?;
-
-        print_success("Login successful!");
 
         // Exchange authorization code for tokens
         let token_set = self.exchange_code_for_token(&code).await?;

@@ -83,11 +83,8 @@ impl Args {
 
         // Check if config exists for commands that require it
         match self.command {
-            Commands::Login { .. } => {
-                // Login command doesn't require existing config
-            }
-            Commands::Logout => {
-                // Logout command doesn't require existing config
+            Commands::Login { .. } | Commands::Logout => {
+                // Login/Logout command doesn't require existing config
             }
             _ => {
                 // Check if config exists for other commands
@@ -98,7 +95,7 @@ impl Args {
                 }
                 if !CliConfig::config_exists()? {
                     return Err(CliError::config_not_initialized(
-                        "Configuration not found. Please run 'basilica login' to initialize.",
+                        "Please run 'basilica login' to initialize.",
                     ));
                 }
             }

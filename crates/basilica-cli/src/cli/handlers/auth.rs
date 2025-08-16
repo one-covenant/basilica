@@ -4,8 +4,9 @@ use crate::auth::{should_use_device_flow, CallbackServer, DeviceFlow, OAuthFlow,
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::output::print_success;
+use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use std::path::Path;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, warn};
 
 /// Service name for token storage
 const SERVICE_NAME: &str = "basilica-cli";
@@ -40,62 +41,53 @@ pub async fn handle_login(
         .map_err(|e| CliError::internal(format!("Failed to initialize token store: {}", e)))?;
 
     let token_set = if use_device_flow {
-        info!("Starting device authorization flow");
+        println!("Starting device authorization flow...\n");
 
+        let spinner = create_spinner("Requesting device code...");
         let device_flow = DeviceFlow::new(auth_config);
 
         match device_flow.start_flow().await {
-            Ok(tokens) => tokens,
+            Ok(tokens) => {
+                complete_spinner_and_clear(spinner);
+                tokens
+            }
             Err(e) => {
-                error!("Device flow authentication failed: {}", e);
-                return Err(CliError::internal(format!("Authentication failed: {}", e)));
+                complete_spinner_error(spinner, "Authentication failed");
+                return Err(CliError::auth(format!("Authentication failed: {}", e))
+                    .with_suggestion(
+                        "Try 'basilica login' without --device-code for browser flow",
+                    ));
             }
         }
     } else {
-        info!("Starting browser-based OAuth flow");
-
         let mut oauth_flow = OAuthFlow::new(auth_config);
 
         match oauth_flow.start_flow().await {
             Ok(tokens) => tokens,
             Err(e) => {
-                error!("OAuth flow authentication failed: {}", e);
-                return Err(CliError::internal(format!("Authentication failed: {}", e)));
+                return Err(CliError::auth(format!("Authentication failed: {}", e))
+                    .with_suggestion("Try 'basilica login --device-code' for device flow"));
             }
         }
     };
 
+    let spinner = create_spinner("Storing authentication tokens...");
+
     // Store the tokens securely
     if let Err(e) = token_store.store_tokens(SERVICE_NAME, &token_set).await {
-        error!("Failed to store authentication tokens: {}", e);
+        complete_spinner_error(spinner, "Failed to store tokens");
         return Err(CliError::internal(format!("Failed to store tokens: {}", e)));
     }
 
-    // Log token expiration information
-    if let Some(expires_at) = token_set.expires_at {
-        let duration = std::time::Duration::from_secs(
-            expires_at.saturating_sub(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-            ),
-        );
-        info!(
-            "Token expires in approximately {} minutes",
-            duration.as_secs() / 60
-        );
-    }
+    complete_spinner_and_clear(spinner);
 
-    info!("Login completed successfully");
+    print_success("Login successful!");
     Ok(())
 }
 
 /// Handle logout command
 pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
-    debug!("Starting logout process");
-
-    info!("Logging out...");
+    let spinner = create_spinner("Checking authentication status...");
 
     // Initialize token store
     let token_store = TokenStore::new()
@@ -104,15 +96,17 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
     // Check if user is currently logged in and get tokens for revocation
     let tokens = match token_store.get_tokens(SERVICE_NAME).await {
         Ok(Some(tokens)) => {
-            info!("Found existing tokens, proceeding with logout and revocation");
+            complete_spinner_and_clear(spinner);
             Some(tokens)
         }
         Ok(None) => {
+            complete_spinner_and_clear(spinner);
             println!("You are not currently logged in.");
             return Ok(());
         }
         Err(e) => {
             warn!("Failed to check login status: {}", e);
+            complete_spinner_error(spinner, "Failed to check status");
             // Continue with logout anyway to ensure cleanup
             None
         }
@@ -120,7 +114,7 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
 
     // Attempt to revoke tokens with Auth0 before deleting locally
     if let Some(ref token_set) = tokens {
-        info!("Attempting to revoke tokens with Auth0...");
+        let spinner = create_spinner("Revoking authentication tokens...");
 
         // Create auth config (port doesn't matter for revocation)
         let auth_config = crate::config::create_auth_config_with_port(0);
@@ -128,27 +122,27 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
 
         match oauth_flow.revoke_token(token_set).await {
             Ok(()) => {
-                info!("Successfully revoked tokens with Auth0");
+                complete_spinner_and_clear(spinner);
             }
             Err(e) => {
                 warn!("Failed to revoke tokens with Auth0: {}", e);
-                info!("Continuing with local token cleanup...");
+                complete_spinner_error(spinner, "Token revocation failed, continuing cleanup");
             }
         }
     }
 
+    let spinner = create_spinner("Clearing local authentication data...");
+
     // Delete stored authentication tokens
     if let Err(e) = token_store.delete_tokens(SERVICE_NAME).await {
-        error!("Failed to delete stored tokens: {}", e);
+        complete_spinner_error(spinner, "Failed to clear tokens");
         return Err(CliError::internal(format!(
             "Failed to clear authentication data: {}",
             e
         )));
     }
 
+    complete_spinner_and_clear(spinner);
     print_success("Logout successful!");
-    info!("All authentication tokens have been cleared");
-
-    info!("Logout completed successfully");
     Ok(())
 }
