@@ -389,7 +389,7 @@ jobs:
           df -h
       - name: Test Docker build script
         run: |
-          chmod +x scripts/basilica-api/build.sh
+          chmod +x scripts/api/build.sh
           BITTENSOR_NETWORK=finney ./scripts/basilica-api/build.sh --no-extract
 
   # Build and test basilica-cli
