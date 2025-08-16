@@ -1,8 +1,9 @@
+use super::HandlerUtils;
 use crate::cli::handlers::rental::create_rental_manager;
+use crate::collateral::collateral_scan::Collateral;
 use crate::config::ValidatorConfig;
 use crate::miner_prover::miner_client::{BittensorServiceSigner, MinerClient, MinerClientConfig};
 
-use super::HandlerUtils;
 use anyhow::Result;
 use bittensor::Service as BittensorService;
 use reqwest::Client;
@@ -11,9 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use sysinfo::{Pid, System};
 use tokio::signal;
-use tracing::debug;
-use tracing::error;
-use tracing::info;
+use tracing::{debug, error, info};
 
 pub async fn handle_start(config_path: PathBuf, local_test: bool) -> Result<()> {
     HandlerUtils::print_info("Starting Basilica Validator...");
@@ -471,6 +470,14 @@ async fn start_validator_services(
         None
     };
 
+    let mut collateral_scan = Collateral::new(config.verification.clone(), persistence_arc.clone());
+
+    let collateral_scan_handle = tokio::spawn(async move {
+        if let Err(e) = collateral_scan.start().await {
+            error!("Collateral scan task failed: {}", e);
+        }
+    });
+
     HandlerUtils::print_success("Validator started successfully - all services running");
 
     signal::ctrl_c().await?;
@@ -489,6 +496,8 @@ async fn start_validator_services(
         handle.abort();
     }
     api_handler_handle.abort();
+
+    collateral_scan_handle.abort();
 
     // SQLite connections will be closed automatically when dropped
     HandlerUtils::print_success("Validator shutdown complete");

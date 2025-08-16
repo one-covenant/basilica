@@ -110,6 +110,9 @@ pub struct VerificationConfig {
     /// Binary validation configuration
     #[serde(default)]
     pub binary_validation: BinaryValidationConfig,
+    /// Collateral event scan interval
+    #[serde(default = "default_collateral_event_scan_interval")]
+    pub collateral_event_scan_interval: Duration,
 }
 
 fn default_use_dynamic_discovery() -> bool {
@@ -126,6 +129,10 @@ fn default_fallback_to_static() -> bool {
 
 fn default_cache_miner_info_ttl() -> Duration {
     Duration::from_secs(300) // 5 minutes
+}
+
+fn default_collateral_event_scan_interval() -> Duration {
+    Duration::from_secs(12) // one block time
 }
 
 /// Configuration for binary validation using validator-binary and executor-binary
@@ -421,6 +428,7 @@ impl Default for ValidatorConfig {
                 cache_miner_info_ttl: default_cache_miner_info_ttl(),
                 grpc_port_offset: None,
                 binary_validation: BinaryValidationConfig::default(),
+                collateral_event_scan_interval: default_collateral_event_scan_interval(),
             },
             automatic_verification: AutomaticVerificationConfig::default(),
             storage: StorageConfig {

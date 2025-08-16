@@ -6,6 +6,7 @@
 pub mod api;
 pub mod bittensor_core;
 pub mod cli;
+pub mod collateral;
 pub mod config;
 pub mod gpu;
 pub mod journal;

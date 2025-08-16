@@ -5,7 +5,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
 
@@ -95,21 +95,6 @@ impl CleanupTask {
             info!("Cleaned up {} old emission metrics", metrics_count);
         }
 
-        // Get and log current statistics
-        match self.gpu_repo.get_profile_statistics().await {
-            Ok(stats) => {
-                info!(
-                    "Database stats after cleanup: {} profiles, {} H100s, {} H200s",
-                    stats.total_profiles,
-                    stats.gpu_model_distribution.get("H100").unwrap_or(&0),
-                    stats.gpu_model_distribution.get("H200").unwrap_or(&0)
-                );
-            }
-            Err(e) => {
-                warn!("Failed to get profile statistics: {}", e);
-            }
-        }
-
         info!("Database cleanup completed");
         Ok(())
     }
@@ -154,7 +139,7 @@ mod tests {
         // Manually insert old profile
         let query = r#"
             INSERT INTO miner_gpu_profiles (
-                miner_uid, gpu_counts_json, 
+                miner_uid, gpu_counts_json,
                 total_score, verification_count, last_updated, last_successful_validation, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         "#;
@@ -197,10 +182,19 @@ mod tests {
         let cleanup_task = CleanupTask::new(config, repo.clone());
         cleanup_task.run_cleanup().await.unwrap();
 
-        // Verify only recent profile remains
-        let all_profiles = repo.get_all_gpu_profiles().await.unwrap();
-        assert_eq!(all_profiles.len(), 1);
-        assert_eq!(all_profiles[0].miner_uid, recent_profile.miner_uid);
+        // Verify only recent profile remains in the database
+        let remaining_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM miner_gpu_profiles")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+        assert_eq!(remaining_count, 1);
+
+        // Verify it's the recent profile that remains
+        let remaining_uid: i64 = sqlx::query_scalar("SELECT miner_uid FROM miner_gpu_profiles")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+        assert_eq!(remaining_uid, recent_profile.miner_uid.as_u16() as i64);
     }
 
     #[tokio::test]

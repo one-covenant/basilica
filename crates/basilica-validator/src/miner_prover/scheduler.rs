@@ -52,11 +52,11 @@ impl VerificationScheduler {
     ) -> Result<()> {
         let mut interval = interval(self.config.verification_interval);
         let mut discovery_interval = tokio::time::interval(Duration::from_secs(300)); // 5-minute discovery cycle
-        let mut cleanup_interval = tokio::time::interval(Duration::from_secs(3600)); // 1-hour cleanup cycle
+        let mut cleanup_interval = tokio::time::interval(Duration::from_secs(900)); // 15-minute cleanup cycle
 
         info!("Starting enhanced verification scheduler with automatic SSH session management");
         info!(
-            "Verification interval: {}s, Discovery interval: 300s, Cleanup interval: 3600s",
+            "Verification interval: {}s, Discovery interval: 300s, Cleanup interval: 900s (15 min)",
             self.config.verification_interval.as_secs()
         );
 
@@ -74,9 +74,10 @@ impl VerificationScheduler {
                     }
                 }
                 _ = cleanup_interval.tick() => {
-                    // Clean up executors that have failed for more than 2 epochs
-                    if let Err(e) = verification.cleanup_failed_executors_after_epoch(2).await {
-                        error!("Failed executor cleanup failed: {}", e);
+                    info!("Running scheduled executor cleanup for failed executors");
+                    match verification.cleanup_failed_executors_after_failures(2).await {
+                        Ok(()) => info!("Executor cleanup completed successfully"),
+                        Err(e) => error!("Failed executor cleanup failed: {}", e),
                     }
                 }
             }
@@ -505,7 +506,10 @@ impl VerificationScheduler {
                         result.overall_score
                     );
 
-                    if let Err(e) = verification.cleanup_failed_executors_after_epoch(2).await {
+                    if let Err(e) = verification
+                        .cleanup_failed_executors_after_failures(2)
+                        .await
+                    {
                         warn!("Failed to cleanup executors after batch: {}", e);
                     }
                 }

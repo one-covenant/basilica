@@ -224,21 +224,24 @@ impl WeightSetter {
             self.config.netuid
         );
 
-        // 1. Get current metagraph
+        // 1. Clean up stale executors before new epoch
+        self.gpu_profile_repo.cleanup_stale_executors().await?;
+
+        // 2. Get current metagraph
         let metagraph = self.get_metagraph().await?;
         debug!(
             "Retrieved metagraph with {} neurons",
             metagraph.hotkeys.len()
         );
 
-        // 2. Get last weight set timestamp for epoch filtering
+        // 3. Get last weight set timestamp for epoch filtering
         let last_weight_timestamp = self.get_last_weight_set_timestamp().await?;
         info!(
             "Fetching miners by GPU category from scoring engine, cutoff at {GPU_CATEGORY_CUTOFF_HOURS} hours, epoch: {:?}",
             last_weight_timestamp
         );
 
-        // 3. Get miners by GPU category from the scoring engine with axon validation and epoch filtering
+        // 4. Get miners by GPU category from the scoring engine with axon validation and epoch filtering
         let miners_by_category = self
             .gpu_scoring_engine
             .get_miners_by_gpu_category_since_epoch(
@@ -258,7 +261,7 @@ impl WeightSetter {
             miners_by_category.keys().collect::<Vec<_>>()
         );
 
-        // 3. Calculate weight distribution using the allocation engine
+        // 5. Calculate weight distribution using the allocation engine
         let weight_distribution = self
             .weight_allocation_engine
             .calculate_weight_distribution(miners_by_category)?;
@@ -273,7 +276,7 @@ impl WeightSetter {
             weight_distribution.category_allocations.len()
         );
 
-        // 4. Log category allocations for transparency
+        // 6. Log category allocations for transparency
         for (category, allocation) in &weight_distribution.category_allocations {
             info!(
                 gpu_category = %category,
@@ -284,7 +287,7 @@ impl WeightSetter {
             );
         }
 
-        // 5. Log burn allocation if present
+        // 7. Log burn allocation if present
         if let Some(burn_alloc) = &weight_distribution.burn_allocation {
             info!(
                 miner_uid = burn_alloc.uid,
@@ -294,10 +297,10 @@ impl WeightSetter {
             );
         }
 
-        // 6. Convert to normalized weights for chain submission including burn allocation
+        // 8. Convert to normalized weights for chain submission including burn allocation
         let normalized_weights = self.build_normalized_weights(&weight_distribution)?;
 
-        // 7. Get version key and submit weights
+        // 9. Get version key and submit weights
         let version_key = self.get_version_key().await?;
 
         info!(
@@ -1095,24 +1098,29 @@ impl WeightSetter {
         let cutoff_time = chrono::Utc::now() - chrono::Duration::hours(hours as i64);
 
         // Query verification logs for executors belonging to this miner
-        // Only match executor_ids that belong to this specific miner
-        // New format: "miner{uid}__{original_executor_id}" prevents cross-miner matches
+        // We verify:
+        //  1) executor is online,
+        //  2) has recent verification,
+        //  3) has GPU assignments
         let query = r#"
             SELECT vl.*, me.miner_id, me.status
             FROM verification_logs vl
-            JOIN miner_executors me ON vl.executor_id = me.executor_id
+            INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
             WHERE me.miner_id = ?
                 AND vl.timestamp >= ?
                 AND me.status IN ('online', 'verified')
+                AND EXISTS (
+                    SELECT 1 FROM gpu_uuid_assignments ga
+                    WHERE ga.executor_id = vl.executor_id
+                    AND ga.miner_id = me.miner_id
+                )
             ORDER BY vl.timestamp DESC
         "#;
 
         let miner_id = format!("miner_{}", miner_uid.as_u16());
-        let executor_id_pattern = format!("miner{}__%", miner_uid.as_u16());
         let rows = sqlx::query(query)
             .bind(&miner_id)
             .bind(cutoff_time.to_rfc3339())
-            .bind(&executor_id_pattern)
             .fetch_all(self.persistence.pool())
             .await
             .map_err(|e| anyhow::anyhow!("Failed to query verification logs: {}", e))?;
@@ -1121,18 +1129,12 @@ impl WeightSetter {
         for row in rows {
             let executor_id_str: String = row.get("executor_id");
 
-            // Extract the original executor ID from format: "miner{uid}__{original_executor_id}"
-            let executor_id = if let Some(separator_pos) = executor_id_str.find("__") {
-                let uuid_part = &executor_id_str[separator_pos + 2..];
-                uuid_part.parse::<ExecutorId>().map_err(|e| {
-                    anyhow::anyhow!("Failed to parse executor ID from '{}': {}", uuid_part, e)
-                })?
-            } else {
-                return Err(anyhow::anyhow!(
-                    "Invalid executor ID format: '{}'. Expected format: 'miner{{uid}}__{{uuid}}'",
-                    executor_id_str
-                ));
-            };
+            // Extract the UUID part from executor_id format: "miner{uid}__{uuid}"
+            let executor_id = executor_id_str
+                .split("__")
+                .nth(1)
+                .ok_or_else(|| anyhow::anyhow!("Invalid executor_id format: {}", executor_id_str))?
+                .parse::<ExecutorId>()?;
 
             let log = VerificationLog {
                 id: Uuid::parse_str(&row.get::<String, _>("id"))

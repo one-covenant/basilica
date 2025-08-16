@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Workspace dependencies
+alloy-primitives = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 thiserror = { workspace = true }
@@ -53,6 +54,7 @@ regex = "1.10"
 basilica-common = { path = "../basilica-common" }
 basilica-protocol = { path = "../basilica-protocol" }
 bittensor = { path = "../bittensor" }
+collateral-contract = { path = "../collateral-contract" }
 
 # Validator-specific dependencies
 # Bittensor integration (placeholder - adjust when available)
