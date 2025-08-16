@@ -77,12 +77,12 @@ build_service() {
     fi
 
     log "Building API..."
-    if [[ ! -f "scripts/basilica-api/build.sh" ]]; then
-        log "ERROR: Build script scripts/basilica-api/build.sh not found"
+    if [[ ! -f "scripts/api/build.sh" ]]; then
+        log "ERROR: Build script scripts/api/build.sh not found"
         exit 1
     fi
 
-    ./scripts/basilica-api/build.sh
+    ./scripts/api/build.sh
 
     if [[ ! -f "./basilica-api" ]]; then
         log "ERROR: Binary ./basilica-api not found after build"

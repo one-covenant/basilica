@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     build-essential \
     protobuf-compiler \
+    python3-dev \
+    libpython3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install rustfmt (required by crabtensor build)

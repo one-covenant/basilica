@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
 
 env:
@@ -61,7 +61,7 @@ jobs:
               - 'crates/basilica-api/**'
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
-              - 'scripts/basilica-api/**'
+              - 'scripts/api/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             basilica-cli:
@@ -69,6 +69,7 @@ jobs:
               - 'crates/basilica-api/**'
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
+              - 'scripts/cli/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             workspace:
@@ -390,7 +391,7 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/api/build.sh
-          BITTENSOR_NETWORK=finney ./scripts/basilica-api/build.sh --no-extract
+          BITTENSOR_NETWORK=finney ./scripts/api/build.sh --no-extract
 
   # Build and test basilica-cli
   build-cli:
@@ -433,6 +434,12 @@ jobs:
         run: |
           cargo build -p basilica-cli
           ./target/debug/basilica --help
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+      - name: Test Docker build script
+        run: |
+          chmod +x scripts/cli/build.sh
+          BITTENSOR_NETWORK=finney ./scripts/cli/build.sh --no-extract
 
   # Final status check
   ci-success:
