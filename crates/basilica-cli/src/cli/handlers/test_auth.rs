@@ -71,7 +71,7 @@ pub async fn handle_test_auth(
     let client = create_authenticated_client(config, no_auth).await?;
 
     // Use Auth0 domain from constants
-    let userinfo_url = format!("https://{}/userinfo", basilica_common::AUTH0_DOMAIN);
+    let userinfo_url = format!("https://{}/userinfo", basilica_common::auth0_domain());
 
     debug!("Calling Auth0 userinfo endpoint: {}", userinfo_url);
 

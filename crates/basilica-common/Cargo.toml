@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Core shared types, errors, traits, and cryptographic utilities for Basilca "
 rust-version = "1.70"
+build = "build.rs"
 
 [dependencies]
 # Use workspace dependencies
@@ -52,6 +53,9 @@ once_cell = "1.19"
 tokio = { workspace = true }
 serde_json = { workspace = true }
 tempfile = "3.8"
+
+[build-dependencies]
+dotenvy = "0.15"
 
 [features]
 default = []

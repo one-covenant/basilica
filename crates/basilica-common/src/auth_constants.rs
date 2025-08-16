@@ -1,16 +1,45 @@
 //! Auth0 configuration constants for Basilica authentication
 //!
-//! These constants are pre-compiled into the binary to avoid the need for
-//! external configuration files.
+//! These constants can be overridden at compile-time via environment variables
+//! or at runtime via environment variables. The priority order is:
+//! 1. Runtime environment variable (highest)
+//! 2. Compile-time environment variable
+//! 3. Default hardcoded value (lowest)
 
-/// Auth0 domain for Basilica authentication
-pub const AUTH0_DOMAIN: &str = "dev-tjmaan0xhd7k6nek.us.auth0.com";
+use once_cell::sync::Lazy;
+use std::env;
 
-/// Auth0 client ID for the Basilica CLI application
-pub const AUTH0_CLIENT_ID: &str = "fZwc5GzY8CZ9BJYuEQT2WjJ9aqktaSsY";
+// Include the generated compile-time constants
+include!(concat!(env!("OUT_DIR"), "/build_constants.rs"));
 
-/// Auth0 audience for the Basilica API
-pub const AUTH0_AUDIENCE: &str = "https://api.basilica.ai";
+/// Get Auth0 domain, checking runtime env var first, then falling back to compile-time constant
+pub fn auth0_domain() -> &'static str {
+    static RUNTIME_VALUE: Lazy<Option<String>> =
+        Lazy::new(|| env::var("BASILICA_AUTH0_DOMAIN").ok());
 
-/// Auth0 issuer URL
-pub const AUTH0_ISSUER: &str = "https://dev-tjmaan0xhd7k6nek.us.auth0.com/";
+    RUNTIME_VALUE.as_deref().unwrap_or(AUTH0_DOMAIN)
+}
+
+/// Get Auth0 client ID, checking runtime env var first, then falling back to compile-time constant
+pub fn auth0_client_id() -> &'static str {
+    static RUNTIME_VALUE: Lazy<Option<String>> =
+        Lazy::new(|| env::var("BASILICA_AUTH0_CLIENT_ID").ok());
+
+    RUNTIME_VALUE.as_deref().unwrap_or(AUTH0_CLIENT_ID)
+}
+
+/// Get Auth0 audience, checking runtime env var first, then falling back to compile-time constant
+pub fn auth0_audience() -> &'static str {
+    static RUNTIME_VALUE: Lazy<Option<String>> =
+        Lazy::new(|| env::var("BASILICA_AUTH0_AUDIENCE").ok());
+
+    RUNTIME_VALUE.as_deref().unwrap_or(AUTH0_AUDIENCE)
+}
+
+/// Get Auth0 issuer URL, checking runtime env var first, then falling back to compile-time constant
+pub fn auth0_issuer() -> &'static str {
+    static RUNTIME_VALUE: Lazy<Option<String>> =
+        Lazy::new(|| env::var("BASILICA_AUTH0_ISSUER").ok());
+
+    RUNTIME_VALUE.as_deref().unwrap_or(AUTH0_ISSUER)
+}

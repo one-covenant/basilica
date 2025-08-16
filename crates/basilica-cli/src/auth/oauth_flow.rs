@@ -163,7 +163,7 @@ impl OAuthFlow {
         }
 
         // Add audience parameter from basilica-common
-        auth_request = auth_request.add_extra_param("audience", basilica_common::AUTH0_AUDIENCE);
+        auth_request = auth_request.add_extra_param("audience", basilica_common::auth0_audience());
 
         let (auth_url, _csrf_token) = auth_request.url();
         let url_string = auth_url.to_string();

@@ -102,10 +102,10 @@ impl Default for WalletConfig {
 /// This bridges the gap between constants and the auth module's requirements
 pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig {
     // Use constants from basilica-common
-    let domain = basilica_common::AUTH0_DOMAIN;
+    let domain = basilica_common::auth0_domain();
 
     crate::auth::types::AuthConfig {
-        client_id: basilica_common::AUTH0_CLIENT_ID.to_string(),
+        client_id: basilica_common::auth0_client_id().to_string(),
         auth_endpoint: format!("https://{}/authorize", domain),
         token_endpoint: format!("https://{}/oauth/token", domain),
         device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),

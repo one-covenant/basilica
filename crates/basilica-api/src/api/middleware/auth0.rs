@@ -9,7 +9,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use basilica_common::{AUTH0_AUDIENCE, AUTH0_DOMAIN, AUTH0_ISSUER};
+use basilica_common::{auth0_audience, auth0_domain, auth0_issuer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, warn};
@@ -109,7 +109,7 @@ pub async fn auth0_middleware(
     };
 
     // Fetch JWKS from Auth0 (with caching)
-    let jwks = match fetch_jwks(AUTH0_DOMAIN).await {
+    let jwks = match fetch_jwks(auth0_domain()).await {
         Ok(jwks) => jwks,
         Err(e) => {
             warn!("Auth0 middleware: Failed to fetch JWKS: {}", e);
@@ -139,7 +139,7 @@ pub async fn auth0_middleware(
     };
 
     // Verify audience matches our API identifier
-    if let Err(e) = verify_audience(&claims, AUTH0_AUDIENCE) {
+    if let Err(e) = verify_audience(&claims, auth0_audience()) {
         warn!("Auth0 middleware: Audience verification failed: {}", e);
         return Err((
             StatusCode::UNAUTHORIZED,
@@ -151,7 +151,7 @@ pub async fn auth0_middleware(
     }
 
     // Verify issuer matches Auth0 domain
-    if let Err(e) = verify_issuer(&claims, AUTH0_ISSUER) {
+    if let Err(e) = verify_issuer(&claims, auth0_issuer()) {
         warn!("Auth0 middleware: Issuer verification failed: {}", e);
         return Err((
             StatusCode::UNAUTHORIZED,
@@ -250,7 +250,7 @@ mod tests {
         let claims = Auth0Claims {
             sub: "test_user".to_string(),
             aud: serde_json::Value::String("basilica-api".to_string()),
-            iss: AUTH0_ISSUER.to_string(),
+            iss: auth0_issuer().to_string(),
             exp: 9999999999,
             iat: 1234567890,
             scope: Some("read:profile write:profile admin".to_string()),

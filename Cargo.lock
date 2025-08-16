@@ -1900,6 +1900,7 @@ dependencies = [
  "blake3",
  "chrono",
  "crabtensor",
+ "dotenvy",
  "ed25519-dalek",
  "figment",
  "hex",

@@ -70,7 +70,7 @@ impl DeviceFlow {
         let request_body = DeviceAuthRequest {
             client_id: self.config.client_id.clone(),
             scope,
-            audience: Some(basilica_common::AUTH0_AUDIENCE.to_string()),
+            audience: Some(basilica_common::auth0_audience().to_string()),
         };
 
         let client = reqwest::Client::new();
