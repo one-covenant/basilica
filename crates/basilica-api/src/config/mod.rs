@@ -8,7 +8,7 @@ pub use cache::{CacheBackend, CacheConfig};
 pub use rate_limit::{RateLimitBackend, RateLimitConfig};
 pub use server::ServerConfig;
 
-use basilica_common::config::{BittensorConfig, ConfigLoader};
+use basilica_common::config::BittensorConfig;
 use basilica_common::ConfigurationError as ConfigError;
 use figment::{
     providers::{Env, Format, Serialized, Toml},
@@ -89,11 +89,43 @@ pub struct Config {
 
 impl Config {
     /// Load configuration from file and environment
-    pub fn load(config_path: Option<&Path>) -> Result<Self, ConfigError> {
-        match config_path {
-            Some(path) => <Config as ConfigLoader<Config>>::load_from_file(path),
-            None => <Config as ConfigLoader<Config>>::load(None),
+    pub fn load(path_override: Option<PathBuf>) -> Result<Self, ConfigError> {
+        let default_config = Config::default();
+        let mut figment = Figment::from(Serialized::defaults(default_config));
+
+        if let Some(path) = path_override {
+            if path.exists() {
+                figment = figment.merge(Toml::file(&path));
+            }
+        } else {
+            let default_path = PathBuf::from("basilica-api.toml");
+            if default_path.exists() {
+                figment = figment.merge(Toml::file(default_path));
+            }
         }
+
+        figment = figment.merge(Env::prefixed("BASILICA_API_").split("_"));
+
+        figment.extract().map_err(|e| ConfigError::ParseError {
+            details: e.to_string(),
+        })
+    }
+
+    /// Load configuration from specific file
+    pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
+        Self::load(Some(path.to_path_buf()))
+    }
+
+    /// Apply environment variable overrides
+    pub fn apply_env_overrides(config: &mut Config, prefix: &str) -> Result<(), ConfigError> {
+        let figment = Figment::from(Serialized::defaults(config.clone()))
+            .merge(Env::prefixed(prefix).split("_"));
+
+        *config = figment.extract().map_err(|e| ConfigError::ParseError {
+            details: e.to_string(),
+        })?;
+
+        Ok(())
     }
 
     /// Generate example configuration file
@@ -139,44 +171,6 @@ impl Config {
             hotkey_name: "default".to_string(),
             weight_interval_secs: 300, // 5 minutes default
         }
-    }
-}
-
-impl ConfigLoader<Config> for Config {
-    fn load(path: Option<PathBuf>) -> Result<Config, ConfigError> {
-        let figment = match path {
-            Some(p) => Figment::from(Serialized::defaults(Config::default()))
-                .merge(Toml::file(p))
-                .merge(Env::prefixed("BASILICA_API_").split("__")),
-            None => Figment::from(Serialized::defaults(Config::default()))
-                .merge(Toml::file("basilica-api.toml"))
-                .merge(Env::prefixed("BASILICA_API_").split("__")),
-        };
-
-        figment.extract().map_err(|e| ConfigError::ParseError {
-            details: e.to_string(),
-        })
-    }
-
-    fn load_from_file(path: &Path) -> Result<Config, ConfigError> {
-        let figment = Figment::from(Serialized::defaults(Config::default()))
-            .merge(Toml::file(path))
-            .merge(Env::prefixed("BASILICA_API_").split("__"));
-
-        figment.extract().map_err(|e| ConfigError::ParseError {
-            details: e.to_string(),
-        })
-    }
-
-    fn apply_env_overrides(config: &mut Config, prefix: &str) -> Result<(), ConfigError> {
-        let figment = Figment::from(Serialized::defaults(config.clone()))
-            .merge(Env::prefixed(prefix).split("__"));
-
-        *config = figment.extract().map_err(|e| ConfigError::ParseError {
-            details: e.to_string(),
-        })?;
-
-        Ok(())
     }
 }
 
