@@ -21,10 +21,25 @@ pub async fn scope_validation_middleware(req: Request, next: Next) -> Result<Res
     let required_scope = match get_required_scope(&req) {
         Some(scope) => scope,
         None => {
-            // No specific scope required for this route
-            return Ok(next.run(req).await);
+            // Route not explicitly configured - deny access for security
+            warn!(
+                "Access denied for unconfigured route: {} {}",
+                req.method(),
+                req.uri().path()
+            );
+            return Err(StatusCode::FORBIDDEN);
         }
     };
+
+    // If empty scope, just require authentication (already validated by auth0 middleware)
+    if required_scope.is_empty() {
+        debug!(
+            "Route {} {} requires authentication only (no specific scope)",
+            req.method(),
+            req.uri().path()
+        );
+        return Ok(next.run(req).await);
+    }
 
     // Get the user's claims from the request extensions
     let claims = match get_auth0_claims(&req) {
@@ -61,7 +76,9 @@ pub async fn scope_validation_middleware(req: Request, next: Next) -> Result<Res
 
 /// Get the required scope for a given route
 ///
-/// Maps HTTP method and path combinations to their required OAuth scopes
+/// Maps HTTP method and path combinations to their required OAuth scopes.
+/// Returns Some(scope) for configured routes, or None for unconfigured routes
+/// which will be rejected by the middleware.
 fn get_required_scope(req: &Request) -> Option<String> {
     let path = req.uri().path();
     let method = req.method();
@@ -81,10 +98,11 @@ fn get_required_scope(req: &Request) -> Option<String> {
         // Executor endpoints
         (&Method::GET, "/executors") => Some("executors:list".to_string()),
 
-        // Health check doesn't require specific scopes beyond authentication
-        (&Method::GET, "/health") => None,
+        // Health check requires authentication but no specific scope
+        // We use an empty string to indicate "authenticated but no specific scope required"
+        (&Method::GET, "/health") => Some(String::new()),
 
-        // Default: no specific scope required
+        // Disable access to routes that are not explicitly configured to avoid unintentional access
         _ => None,
     }
 }
@@ -140,10 +158,45 @@ mod tests {
             .unwrap();
         assert_eq!(get_required_scope(&req), Some("executors:list".to_string()));
 
-        // Test health endpoint (no specific scope required)
+        // Test health endpoint (requires authentication but no specific scope)
         let req = Request::builder()
             .method(Method::GET)
             .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(get_required_scope(&req), Some(String::new()));
+    }
+
+    #[test]
+    fn test_unknown_routes_rejected() {
+        // Test unknown path
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/unknown")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(get_required_scope(&req), None);
+
+        // Test unknown method on known path
+        let req = Request::builder()
+            .method(Method::PATCH)
+            .uri("/rentals")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(get_required_scope(&req), None);
+
+        // Test completely random path
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/api/v1/nonexistent")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(get_required_scope(&req), None);
+
+        // Test PUT on rental (not configured)
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri("/rentals/123")
             .body(Body::empty())
             .unwrap();
         assert_eq!(get_required_scope(&req), None);

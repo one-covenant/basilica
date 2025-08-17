@@ -207,7 +207,6 @@ pub fn get_auth0_claims(req: &Request) -> Option<&Auth0Claims> {
 }
 
 /// Check if a user has a specific scope (supports wildcards)
-#[allow(dead_code)]
 pub fn has_scope(claims: &Auth0Claims, required_scope: &str) -> bool {
     if let Some(scope) = &claims.scope {
         scope.split_whitespace().any(|s| {
