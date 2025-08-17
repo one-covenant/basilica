@@ -603,7 +603,7 @@ impl SimplePersistence {
                 GROUP_CONCAT(gua.gpu_name) as gpu_names
             FROM miner_executors me
             JOIN miners m ON me.miner_id = m.id
-            LEFT JOIN rentals r ON me.executor_id = r.executor_id 
+            LEFT JOIN rentals r ON me.executor_id GLOB ('*__' || r.executor_id)
                 AND r.state IN ('Active', 'Provisioning', 'active', 'provisioning')
             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
             WHERE r.id IS NULL
