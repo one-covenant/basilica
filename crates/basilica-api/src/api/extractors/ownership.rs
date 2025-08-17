@@ -42,7 +42,14 @@ impl FromRequestParts<AppState> for OwnedRental {
         let user_id = claims.sub.clone();
 
         // Check ownership in the database
-        if !check_rental_ownership(&state.db, &rental_id, &user_id).await {
+        let owns_rental = check_rental_ownership(&state.db, &rental_id, &user_id)
+            .await
+            .map_err(|e| {
+                warn!("Database error checking rental ownership: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+        if !owns_rental {
             warn!(
                 "User {} attempted to access rental {} which they don't own",
                 user_id, rental_id
@@ -61,26 +68,22 @@ impl FromRequestParts<AppState> for OwnedRental {
 }
 
 /// Check if a user owns a specific rental
-async fn check_rental_ownership(db: &PgPool, rental_id: &str, user_id: &str) -> bool {
-    let result: Result<(i64,), sqlx::Error> = sqlx::query_as(
+async fn check_rental_ownership(
+    db: &PgPool,
+    rental_id: &str,
+    user_id: &str,
+) -> Result<bool, sqlx::Error> {
+    let exists: bool = sqlx::query_scalar(
         r#"
-        SELECT COUNT(*)
-        FROM user_rentals
-        WHERE rental_id = $1 AND user_id = $2
+        SELECT EXISTS(SELECT 1 FROM user_rentals WHERE rental_id = $1 AND user_id = $2)
         "#,
     )
     .bind(rental_id)
     .bind(user_id)
     .fetch_one(db)
-    .await;
+    .await?;
 
-    match result {
-        Ok((count,)) => count > 0,
-        Err(e) => {
-            warn!("Database error checking rental ownership: {}", e);
-            false
-        }
-    }
+    Ok(exists)
 }
 
 /// Helper function to extract Auth0 claims from request parts
@@ -173,7 +176,9 @@ mod tests {
         let user_id = "user-456";
 
         // Initially, user should not own the rental
-        assert!(!check_rental_ownership(&db, rental_id, user_id).await);
+        assert!(!check_rental_ownership(&db, rental_id, user_id)
+            .await
+            .expect("Failed to check ownership"));
 
         // Store ownership
         store_rental_ownership(&db, rental_id, user_id)
@@ -181,7 +186,9 @@ mod tests {
             .expect("Failed to store ownership");
 
         // Now user should own the rental
-        assert!(check_rental_ownership(&db, rental_id, user_id).await);
+        assert!(check_rental_ownership(&db, rental_id, user_id)
+            .await
+            .expect("Failed to check ownership"));
 
         // Get user's rentals
         let rentals = get_user_rental_ids(&db, user_id)
@@ -195,6 +202,8 @@ mod tests {
             .expect("Failed to delete ownership");
 
         // User should no longer own the rental
-        assert!(!check_rental_ownership(&db, rental_id, user_id).await);
+        assert!(!check_rental_ownership(&db, rental_id, user_id)
+            .await
+            .expect("Failed to check ownership"));
     }
 }
