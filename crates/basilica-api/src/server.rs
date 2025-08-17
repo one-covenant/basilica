@@ -126,13 +126,10 @@ impl Server {
 
         // Initialize database connection
         info!("Initializing database connection");
-        // Environment variable overrides config file
-        let database_url =
-            std::env::var("DATABASE_URL").unwrap_or_else(|_| config.database.url.clone());
 
         let db = PgPoolOptions::new()
             .max_connections(config.database.max_connections)
-            .connect(&database_url)
+            .connect(&config.database.url)
             .await
             .map_err(|e| Error::Internal {
                 message: format!("Failed to connect to database: {}", e),
