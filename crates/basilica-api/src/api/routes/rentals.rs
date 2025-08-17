@@ -250,9 +250,11 @@ pub async fn list_rentals_validator(
         .filter(|rental| user_rental_ids.contains(&rental.rental_id))
         .collect();
 
+    let filtered_count = filtered_rentals.len();
+
     let user_rentals = basilica_validator::api::types::ListRentalsResponse {
         rentals: filtered_rentals,
-        total_count: all_rentals.total_count, // Keep original total count for now
+        total_count: filtered_count,
     };
 
     info!(

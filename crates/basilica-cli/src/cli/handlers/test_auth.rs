@@ -121,8 +121,7 @@ fn decode_jwt_scopes(token: &str) -> Option<Vec<String>> {
                         }
                     }
 
-                    debug!("No 'scope' or 'permissions' field found in JWT payload");
-                    debug!("JWT payload: {:?}", json);
+                    debug!("No 'scope' or 'permissions' field found in JWT");
                     None
                 }
                 Err(e) => {
@@ -139,16 +138,36 @@ fn decode_jwt_scopes(token: &str) -> Option<Vec<String>> {
             match URL_SAFE_NO_PAD.decode(payload_str.as_bytes()) {
                 Ok(decoded_bytes) => match serde_json::from_slice::<Value>(&decoded_bytes) {
                     Ok(json) => {
+                        // Check 'scope' field
                         if let Some(scope_value) = json.get("scope") {
                             if let Some(scope_str) = scope_value.as_str() {
                                 let scopes: Vec<String> = scope_str
                                     .split_whitespace()
                                     .map(|s| s.to_string())
                                     .collect();
-                                debug!("Decoded scopes from JWT (fallback): {:?}", scopes);
+                                debug!(
+                                    "Decoded scopes from JWT 'scope' field (fallback): {:?}",
+                                    scopes
+                                );
                                 return Some(scopes);
                             }
                         }
+
+                        // Also check 'permissions' field
+                        if let Some(permissions) = json.get("permissions") {
+                            if let Some(perms_array) = permissions.as_array() {
+                                let scopes: Vec<String> = perms_array
+                                    .iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect();
+                                if !scopes.is_empty() {
+                                    debug!("Decoded scopes from JWT 'permissions' field (fallback): {:?}", scopes);
+                                    return Some(scopes);
+                                }
+                            }
+                        }
+
+                        debug!("No 'scope' or 'permissions' field found in JWT (fallback)");
                         None
                     }
                     Err(_) => None,

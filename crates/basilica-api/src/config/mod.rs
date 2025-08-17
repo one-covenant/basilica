@@ -15,7 +15,7 @@ use figment::{
     Figment,
 };
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Bittensor integration configuration
@@ -109,23 +109,6 @@ impl Config {
         figment.extract().map_err(|e| ConfigError::ParseError {
             details: e.to_string(),
         })
-    }
-
-    /// Load configuration from specific file
-    pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
-        Self::load(Some(path.to_path_buf()))
-    }
-
-    /// Apply environment variable overrides
-    pub fn apply_env_overrides(config: &mut Config, prefix: &str) -> Result<(), ConfigError> {
-        let figment = Figment::from(Serialized::defaults(config.clone()))
-            .merge(Env::prefixed(prefix).split("_"));
-
-        *config = figment.extract().map_err(|e| ConfigError::ParseError {
-            details: e.to_string(),
-        })?;
-
-        Ok(())
     }
 
     /// Generate example configuration file
