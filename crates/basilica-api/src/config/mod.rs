@@ -49,6 +49,25 @@ impl Default for BittensorIntegrationConfig {
     }
 }
 
+/// Database configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseConfig {
+    /// Database URL (e.g., "sqlite:basilica-api.db" or "postgres://user:pass@host/db")
+    pub url: String,
+
+    /// Maximum number of connections in the pool
+    pub max_connections: u32,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            url: "postgres://basilica:dev@localhost:5432/basilica".to_string(),
+            max_connections: 5,
+        }
+    }
+}
+
 /// Main configuration structure for the Basilica API
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
@@ -63,6 +82,9 @@ pub struct Config {
 
     /// Rate limiting configuration
     pub rate_limit: RateLimitConfig,
+
+    /// Database configuration
+    pub database: DatabaseConfig,
 }
 
 impl Config {

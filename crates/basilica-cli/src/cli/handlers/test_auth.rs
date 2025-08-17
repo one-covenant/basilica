@@ -3,7 +3,12 @@
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
+use base64::{
+    engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
+    Engine,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::Path;
 use tracing::{debug, info};
 
@@ -56,6 +61,104 @@ fn mask_email(email: &str) -> String {
     } else {
         // If it's not a valid email format, mask it entirely
         "***".to_string()
+    }
+}
+
+/// Decode JWT payload to extract scopes
+fn decode_jwt_scopes(token: &str) -> Option<Vec<String>> {
+    // JWT has three parts separated by dots: header.payload.signature
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        debug!("Invalid JWT format - expected 3 parts, got {}", parts.len());
+        return None;
+    }
+
+    // Decode the payload (second part)
+    let payload_str = parts[1];
+
+    // Add padding if necessary for base64 decoding
+    let padded = match payload_str.len() % 4 {
+        2 => format!("{}==", payload_str),
+        3 => format!("{}=", payload_str),
+        _ => payload_str.to_string(),
+    };
+
+    // Decode base64 (use URL_SAFE since we added padding)
+    match URL_SAFE.decode(padded.as_bytes()) {
+        Ok(decoded_bytes) => {
+            // Parse JSON
+            match serde_json::from_slice::<Value>(&decoded_bytes) {
+                Ok(json) => {
+                    debug!(
+                        "JWT payload fields: {:?}",
+                        json.as_object().map(|o| o.keys().collect::<Vec<_>>())
+                    );
+
+                    // Extract scope field (try both 'scope' and 'permissions')
+                    if let Some(scope_value) = json.get("scope") {
+                        if let Some(scope_str) = scope_value.as_str() {
+                            // Split scopes by space (OAuth2 standard)
+                            let scopes: Vec<String> = scope_str
+                                .split_whitespace()
+                                .map(|s| s.to_string())
+                                .collect();
+                            debug!("Decoded scopes from JWT 'scope' field: {:?}", scopes);
+                            return Some(scopes);
+                        }
+                    }
+
+                    // Also check 'permissions' field (Auth0 sometimes uses this)
+                    if let Some(permissions) = json.get("permissions") {
+                        if let Some(perms_array) = permissions.as_array() {
+                            let scopes: Vec<String> = perms_array
+                                .iter()
+                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                .collect();
+                            if !scopes.is_empty() {
+                                debug!("Decoded scopes from JWT 'permissions' field: {:?}", scopes);
+                                return Some(scopes);
+                            }
+                        }
+                    }
+
+                    debug!("No 'scope' or 'permissions' field found in JWT payload");
+                    debug!("JWT payload: {:?}", json);
+                    None
+                }
+                Err(e) => {
+                    debug!("Failed to parse JWT payload as JSON: {}", e);
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            debug!("Failed to decode JWT payload from base64: {}", e);
+            debug!("Attempting fallback decoding without padding...");
+
+            // Fallback: try without padding using URL_SAFE_NO_PAD
+            match URL_SAFE_NO_PAD.decode(payload_str.as_bytes()) {
+                Ok(decoded_bytes) => match serde_json::from_slice::<Value>(&decoded_bytes) {
+                    Ok(json) => {
+                        if let Some(scope_value) = json.get("scope") {
+                            if let Some(scope_str) = scope_value.as_str() {
+                                let scopes: Vec<String> = scope_str
+                                    .split_whitespace()
+                                    .map(|s| s.to_string())
+                                    .collect();
+                                debug!("Decoded scopes from JWT (fallback): {:?}", scopes);
+                                return Some(scopes);
+                            }
+                        }
+                        None
+                    }
+                    Err(_) => None,
+                },
+                Err(e2) => {
+                    debug!("Fallback decoding also failed: {}", e2);
+                    None
+                }
+            }
+        }
     }
 }
 
@@ -115,6 +218,25 @@ pub async fn handle_test_auth(
 
         if let Some(updated) = &user_info.updated_at {
             println!("  Last Updated: {}", updated);
+        }
+
+        // Display OAuth scopes from the JWT token
+        println!("\nToken Scopes:");
+        println!("─────────────");
+        match decode_jwt_scopes(&token) {
+            Some(scopes) => {
+                if scopes.is_empty() {
+                    println!("  No scopes found in token");
+                } else {
+                    for scope in &scopes {
+                        println!("  • {}", scope);
+                    }
+                }
+            }
+            None => {
+                println!("  Unable to decode scopes from token");
+                println!("  (This may indicate an issue with the token format)");
+            }
         }
 
         println!("\nAuthentication is working correctly!");

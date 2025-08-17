@@ -7,6 +7,7 @@ use crate::{
 };
 use axum::Router;
 use basilica_validator::ValidatorClient;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::sync::Arc;
 use tokio::signal;
 use tower::ServiceBuilder;
@@ -43,6 +44,9 @@ pub struct AppState {
 
     /// HTTP client for validator requests
     pub http_client: reqwest::Client,
+
+    /// Database pool for user rental tracking
+    pub db: PgPool,
 }
 
 impl Server {
@@ -120,6 +124,29 @@ impl Server {
             .build()
             .map_err(Error::HttpClient)?;
 
+        // Initialize database connection
+        info!("Initializing database connection");
+        // Environment variable overrides config file
+        let database_url =
+            std::env::var("DATABASE_URL").unwrap_or_else(|_| config.database.url.clone());
+
+        let db = PgPoolOptions::new()
+            .max_connections(config.database.max_connections)
+            .connect(&database_url)
+            .await
+            .map_err(|e| Error::Internal {
+                message: format!("Failed to connect to database: {}", e),
+            })?;
+
+        // Run migrations
+        info!("Running database migrations");
+        sqlx::migrate!("./migrations")
+            .run(&db)
+            .await
+            .map_err(|e| Error::Internal {
+                message: format!("Failed to run migrations: {}", e),
+            })?;
+
         // Create application state
         let state = AppState {
             config: config.clone(),
@@ -128,6 +155,7 @@ impl Server {
             validator_uid,
             validator_hotkey: config.bittensor.validator_hotkey.clone(),
             http_client: http_client.clone(),
+            db,
         };
 
         // Start optional health check task using HTTP client

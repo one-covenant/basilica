@@ -1,12 +1,18 @@
 //! Rental management route handlers
 
 use crate::{
-    api::types::{ListRentalsQuery, LogStreamQuery, RentalStatusResponse, TerminateRentalRequest},
+    api::{
+        extractors::ownership::{
+            delete_rental_ownership, get_user_rental_ids, store_rental_ownership, OwnedRental,
+        },
+        middleware::Auth0Claims,
+        types::{ListRentalsQuery, LogStreamQuery, RentalStatusResponse, TerminateRentalRequest},
+    },
     error::Result,
     server::AppState,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Query, State},
     http::Uri,
     response::{sse::Event, IntoResponse, Response, Sse},
     Json,
@@ -36,15 +42,15 @@ static DOCKER_IMAGE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[a-zA-Z0-9]([a-zA-Z0-9._:-]*[a-zA-Z0-9])?(/[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?){0,2}(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})?$").unwrap()
 });
 
-/// Get detailed rental status
+/// Get detailed rental status (with ownership validation)
 pub async fn get_rental_status(
     State(state): State<AppState>,
-    Path(rental_id): Path<String>,
+    owned_rental: OwnedRental,
 ) -> Result<Json<RentalStatusResponse>> {
-    debug!("Getting status for rental: {}", rental_id);
+    debug!("Getting status for rental: {}", owned_rental.rental_id);
 
     let client = &state.validator_client;
-    let response = client.get_rental_status(&rental_id).await?;
+    let response = client.get_rental_status(&owned_rental.rental_id).await?;
 
     Ok(Json(response))
 }
@@ -54,9 +60,13 @@ pub async fn get_rental_status(
 /// Start a new rental (validator-compatible endpoint)
 pub async fn start_rental(
     State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Auth0Claims>,
     Json(request): Json<StartRentalRequest>,
 ) -> Result<Json<RentalResponse>> {
     info!("Starting rental with executor: {:?}", request.executor_id);
+
+    // Get user ID from auth claims (already extracted via Extension)
+    let user_id = &claims.sub;
 
     // Validate SSH public key
     if !is_valid_ssh_public_key(&request.ssh_public_key) {
@@ -93,15 +103,31 @@ pub async fn start_rental(
         .start_rental(validator_request)
         .await?;
 
+    // Store ownership record in database
+    if let Err(e) = store_rental_ownership(&state.db, &validator_response.rental_id, user_id).await
+    {
+        error!("Failed to store rental ownership: {}", e);
+        // Note: We don't fail the request if ownership storage fails
+        // The rental is already created, we just won't be able to track ownership
+    }
+
+    info!(
+        "User {} started rental {}",
+        user_id, validator_response.rental_id
+    );
+
     Ok(Json(validator_response))
 }
 
-/// Stop a rental
+/// Stop a rental (with ownership validation)
 pub async fn stop_rental(
     State(state): State<AppState>,
-    Path(rental_id): Path<String>,
+    owned_rental: OwnedRental,
 ) -> Result<Response> {
-    info!("Stopping rental {}", rental_id);
+    info!(
+        "User {} stopping rental {}",
+        owned_rental.user_id, owned_rental.rental_id
+    );
 
     // Use terminate_rental API from validator
     let request = TerminateRentalRequest {
@@ -110,19 +136,28 @@ pub async fn stop_rental(
 
     state
         .validator_client
-        .terminate_rental(&rental_id, request)
+        .terminate_rental(&owned_rental.rental_id, request)
         .await?;
+
+    // Delete ownership record from database
+    if let Err(e) = delete_rental_ownership(&state.db, &owned_rental.rental_id).await {
+        error!("Failed to delete rental ownership record: {}", e);
+        // Note: We don't fail the request if ownership deletion fails
+    }
 
     Ok(axum::http::StatusCode::NO_CONTENT.into_response())
 }
 
-/// Stream rental logs
+/// Stream rental logs (with ownership validation)
 pub async fn stream_rental_logs(
     State(state): State<AppState>,
-    Path(rental_id): Path<String>,
+    owned_rental: OwnedRental,
     Query(query): Query<LogStreamQuery>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, std::io::Error>>>> {
-    info!("Streaming logs for rental {}", rental_id);
+    info!(
+        "User {} streaming logs for rental {}",
+        owned_rental.user_id, owned_rental.rental_id
+    );
 
     let follow = query.follow.unwrap_or(false);
     let tail_lines = query.tail;
@@ -136,7 +171,7 @@ pub async fn stream_rental_logs(
     // Get SSE stream from validator
     let validator_stream = state
         .validator_client
-        .stream_rental_logs(&rental_id, log_query)
+        .stream_rental_logs(&owned_rental.rental_id, log_query)
         .await
         .map_err(|e| {
             error!("Failed to get log stream from validator: {}", e);
@@ -181,14 +216,26 @@ pub async fn stream_rental_logs(
 }
 
 /// List rentals with state filter (validator-compatible)
+/// Only returns rentals owned by the authenticated user
 pub async fn list_rentals_validator(
     State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Auth0Claims>,
     Query(query): Query<ListRentalsQuery>,
 ) -> Result<Json<ListRentalsResponse>> {
     info!("Listing rentals with state filter: {:?}", query.status);
 
-    // Use the validator client to list rentals
-    let rental_items = state
+    // Get user ID from auth claims (already extracted via Extension)
+    let user_id = &claims.sub;
+
+    // Get user's rental IDs from database
+    let user_rental_ids = get_user_rental_ids(&state.db, user_id).await.map_err(|e| {
+        crate::error::Error::Internal {
+            message: format!("Failed to get user rentals: {}", e),
+        }
+    })?;
+
+    // Get all rentals from validator
+    let all_rentals = state
         .validator_client
         .list_rentals(query.status)
         .await
@@ -196,7 +243,25 @@ pub async fn list_rentals_validator(
             message: format!("Failed to list rentals: {e}"),
         })?;
 
-    Ok(Json(rental_items))
+    // Filter to only include user's rentals
+    let filtered_rentals: Vec<_> = all_rentals
+        .rentals
+        .into_iter()
+        .filter(|rental| user_rental_ids.contains(&rental.rental_id))
+        .collect();
+
+    let user_rentals = basilica_validator::api::types::ListRentalsResponse {
+        rentals: filtered_rentals,
+        total_count: all_rentals.total_count, // Keep original total count for now
+    };
+
+    info!(
+        "User {} has {} rentals",
+        user_id,
+        user_rentals.rentals.len()
+    );
+
+    Ok(Json(user_rentals))
 }
 
 // Validation helpers

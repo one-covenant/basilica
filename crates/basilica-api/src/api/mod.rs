@@ -1,6 +1,7 @@
 //! API module for the Basilica API Gateway
 
 pub mod auth;
+pub mod extractors;
 pub mod middleware;
 pub mod routes;
 pub mod types;
@@ -15,7 +16,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 /// Create all API routes
 pub fn routes(state: AppState) -> Router<AppState> {
-    // Protected routes with Auth0 authentication
+    // Protected routes with Auth0 authentication and scope validation
     let protected_routes = Router::new()
         // Health endpoint
         .route("/health", get(routes::health::health_check))
@@ -28,6 +29,11 @@ pub fn routes(state: AppState) -> Router<AppState> {
             get(routes::rentals::stream_rental_logs),
         )
         .route("/executors", get(routes::rentals::list_available_executors))
+        // Apply scope validation AFTER auth0 middleware
+        .layer(axum::middleware::from_fn(
+            middleware::scope_validation_middleware,
+        ))
+        // Apply auth0 authentication first
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::auth0_middleware,

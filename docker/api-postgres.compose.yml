@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  # PostgreSQL for production-like environment (optional)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: basilica
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: basilica
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basilica"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

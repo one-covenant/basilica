@@ -72,6 +72,9 @@ utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
 dashmap = "5.5"
 parking_lot = "0.12"
 
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "migrate"] }
+
 # Utilities
 uuid = { workspace = true }
 chrono = { workspace = true }

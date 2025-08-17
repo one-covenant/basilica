@@ -13,3 +13,10 @@ chain_endpoint = "wss://test.finney.opentensor.ai:443"
 # REQUIRED: Specify the validator hotkey (SS58 address) to connect to
 validator_hotkey = "5FxJav..."  # Replace with actual validator hotkey
 discovery_interval = 30
+
+[database]
+# Database URL - PostgreSQL for both development and production
+# Example: "postgres://user:password@localhost:5432/basilica"
+# For local development with docker-compose: "postgres://basilica:dev@localhost:5432/basilica"
+url = "postgres://basilica:dev@localhost:5432/basilica"
+max_connections = 5
