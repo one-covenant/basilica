@@ -28,7 +28,7 @@ services:
     environment:
       - RUST_LOG='basilica_api=debug'
       - RUST_BACKTRACE=1
-      - BASILICA_API_DATABASE_URL=postgres://api:api_dev_password@postgres:5432/basilica_api
+      - BASILICA_API_DATABASE__URL=postgres://api:api_dev_password@postgres:5432/basilica_api
     
     volumes:
       - ./dummy_wallet:/home/basilica/.bittensor:ro

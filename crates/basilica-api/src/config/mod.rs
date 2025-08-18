@@ -104,7 +104,7 @@ impl Config {
             }
         }
 
-        figment = figment.merge(Env::prefixed("BASILICA_API_").split("_"));
+        figment = figment.merge(Env::prefixed("BASILICA_API_").split("__"));
 
         figment.extract().map_err(|e| ConfigError::ParseError {
             details: e.to_string(),
