@@ -77,6 +77,22 @@ variable "health_check_path" {
   default     = "/health"
 }
 
+variable "health_check_type" {
+  description = "Type of health check: http or grpc"
+  type        = string
+  default     = "http"
+  validation {
+    condition     = contains(["http", "grpc"], var.health_check_type)
+    error_message = "Health check type must be either 'http' or 'grpc'."
+  }
+}
+
+variable "load_balancer_port" {
+  description = "Port for load balancer target (defaults to container_port for HTTP, grpc_port for gRPC)"
+  type        = number
+  default     = null
+}
+
 variable "min_capacity" {
   description = "Minimum number of tasks"
   type        = number
@@ -167,4 +183,24 @@ variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)
   default     = {}
+}
+
+variable "init_container" {
+  description = "Configuration for init container (optional)"
+  type = object({
+    enabled = bool
+    image   = optional(string, "postgres:15-alpine")
+    command = optional(list(string), [])
+    environment = optional(list(object({
+      name  = string
+      value = string
+    })), [])
+    secrets = optional(list(object({
+      name      = string
+      valueFrom = string
+    })), [])
+  })
+  default = {
+    enabled = false
+  }
 }

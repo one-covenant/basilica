@@ -114,3 +114,6 @@ temp/
 scripts/localnet/ssh-keys
 scripts/localnet/wallets
 scripts/localnet/keys
+
+terraform.tfstate
+*.tfstate

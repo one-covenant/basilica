@@ -1,7 +1,7 @@
 data "aws_region" "current" {}
 
 resource "aws_lb" "main" {
-  name               = "${var.name_prefix}-alb-v2"
+  name               = "${var.name_prefix}-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = var.security_group_ids
@@ -13,7 +13,7 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_lb_target_group" "billing" {
-  name        = "${var.name_prefix}-billing-tg"
+  name        = "${var.name_prefix}-billing-http-tg"
   port        = 8080
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
@@ -22,13 +22,13 @@ resource "aws_lb_target_group" "billing" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
+    unhealthy_threshold = 3
+    timeout             = 10
     interval            = 30
-    path                = "/health"
-    matcher             = "200"
     port                = "traffic-port"
     protocol            = "HTTP"
+    path                = "/health"
+    matcher             = "200"
   }
 
   deregistration_delay = 30
@@ -117,7 +117,7 @@ resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = var.certificate_arn
 
   default_action {
@@ -139,7 +139,7 @@ resource "aws_lb_listener_rule" "billing" {
 
   condition {
     path_pattern {
-      values = ["/billing/*", "/api/billing/*"]
+      values = ["/billing.*", "/api.billing.*", "/grpc.health.v1.Health/*"]
     }
   }
 }

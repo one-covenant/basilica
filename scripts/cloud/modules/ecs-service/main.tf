@@ -103,7 +103,7 @@ resource "aws_iam_role_policy" "ecs_exec" {
 
 # Service Discovery Service
 resource "aws_service_discovery_service" "main" {
-  name = "${var.service_name}-v2"
+  name = "${var.service_name}-v3"
 
   dns_config {
     namespace_id = var.service_discovery_namespace_id
@@ -135,61 +135,103 @@ resource "aws_ecs_task_definition" "main" {
   execution_role_arn       = aws_iam_role.task_execution.arn
   task_role_arn            = aws_iam_role.task.arn
 
-  container_definitions = jsonencode([
-    {
-      name  = var.service_name
-      image = var.container_image
-
-      portMappings = [
-        {
-          containerPort = var.container_port
-          protocol      = "tcp"
-          name          = "http"
-        },
-        {
-          containerPort = var.grpc_port
-          protocol      = "tcp"
-          name          = "grpc"
-        },
-        {
-          containerPort = var.metrics_port
-          protocol      = "tcp"
-          name          = "metrics"
-        }
-      ]
-
-      environment = [
-        for key, value in var.environment_variables : {
-          name  = key
-          value = value
-        }
-      ]
-
-      secrets = var.secrets
-
-      logConfiguration = var.enable_logging ? {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.main[0].name
-          awslogs-region        = data.aws_region.current.name
-          awslogs-stream-prefix = "ecs"
-        }
-      } : null
-
-      healthCheck = {
-        command = [
-          "CMD-SHELL",
-          "curl -f http://localhost:${var.container_port}${var.health_check_path} || exit 1"
-        ]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
+  container_definitions = jsonencode(concat(
+    # Optional init container
+    var.init_container.enabled ? [
+      {
+        name      = "db-init"
+        image     = var.init_container.image
+        essential = false
+        
+        command = length(var.init_container.command) > 0 ? var.init_container.command : null
+        
+        environment = var.init_container.environment
+        secrets     = var.init_container.secrets
+        
+        logConfiguration = var.enable_logging ? {
+          logDriver = "awslogs"
+          options = {
+            awslogs-group         = aws_cloudwatch_log_group.main[0].name
+            awslogs-region        = data.aws_region.current.name
+            awslogs-stream-prefix = "db-init"
+          }
+        } : null
       }
+    ] : [],
+    # Main service container
+    [
+      {
+        name  = var.service_name
+        image = var.container_image
+        
+        # Depend on init container if enabled
+        dependsOn = var.init_container.enabled ? [
+          {
+            containerName = "db-init"
+            condition     = "SUCCESS"
+          }
+        ] : null
 
-      essential = true
-    }
-  ])
+        portMappings = [
+          {
+            containerPort = var.container_port
+            protocol      = "tcp"
+            name          = "http"
+          },
+          {
+            containerPort = var.grpc_port
+            protocol      = "tcp"
+            name          = "grpc"
+          },
+          {
+            containerPort = var.metrics_port
+            protocol      = "tcp"
+            name          = "metrics"
+          }
+        ]
+
+        environment = [
+          for key, value in var.environment_variables : {
+            name  = key
+            value = value
+          }
+        ]
+
+        secrets = var.secrets
+
+        logConfiguration = var.enable_logging ? {
+          logDriver = "awslogs"
+          options = {
+            awslogs-group         = aws_cloudwatch_log_group.main[0].name
+            awslogs-region        = data.aws_region.current.name
+            awslogs-stream-prefix = "ecs"
+          }
+        } : null
+
+        healthCheck = var.health_check_type == "grpc" ? {
+          command = [
+            "CMD-SHELL",
+            "test -f /usr/local/bin/grpc_health_probe || (wget -q -O /usr/local/bin/grpc_health_probe https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/v0.4.24/grpc_health_probe-linux-amd64 && chmod +x /usr/local/bin/grpc_health_probe); /usr/local/bin/grpc_health_probe -addr=localhost:${var.grpc_port}"
+          ]
+          interval    = 30
+          timeout     = 10
+          retries     = 3
+          startPeriod = 90
+        } : {
+          command = [
+            "CMD-SHELL",
+            "wget --spider -q http://localhost:${var.container_port}${var.health_check_path} || exit 1"
+          ]
+          interval    = 30
+          timeout     = 5
+          retries     = 3
+          startPeriod = 60
+        }
+
+        essential = true
+      }
+    ]
+  ))
 
   tags = merge(var.tags, {
     Name = "${var.name_prefix}-${var.service_name}-task"
@@ -238,7 +280,7 @@ resource "aws_ecs_service" "main" {
   load_balancer {
     target_group_arn = var.alb_target_group_arn
     container_name   = var.service_name
-    container_port   = var.container_port
+    container_port   = var.load_balancer_port != null ? var.load_balancer_port : (var.health_check_type == "grpc" ? var.grpc_port : var.container_port)
   }
 
   service_registries {

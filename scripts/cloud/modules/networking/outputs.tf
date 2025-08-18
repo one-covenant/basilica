@@ -48,3 +48,23 @@ output "internet_gateway_id" {
   description = "Internet Gateway ID"
   value       = aws_internet_gateway.main.id
 }
+
+output "vpc_endpoints_security_group_id" {
+  description = "VPC endpoints security group ID"
+  value       = aws_security_group.vpc_endpoints.id
+}
+
+output "s3_vpc_endpoint_id" {
+  description = "S3 VPC endpoint ID"
+  value       = aws_vpc_endpoint.s3.id
+}
+
+output "ecr_dkr_vpc_endpoint_id" {
+  description = "ECR DKR VPC endpoint ID"
+  value       = aws_vpc_endpoint.ecr_dkr.id
+}
+
+output "ecr_api_vpc_endpoint_id" {
+  description = "ECR API VPC endpoint ID"
+  value       = aws_vpc_endpoint.ecr_api.id
+}

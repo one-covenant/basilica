@@ -199,33 +199,26 @@ resource "aws_security_group" "ecs_tasks" {
     from_port       = 50051
     to_port         = 50061
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-    description     = "gRPC from ALB"
+    cidr_blocks     = [var.vpc_cidr]
+    description     = "gRPC from VPC"
   }
 
   ingress {
-    from_port = 8080
-    to_port   = 8082
-    protocol  = "tcp"
-    self      = true
+    from_port   = 8080
+    to_port     = 8082
+    protocol    = "tcp"
+    self        = true
     description = "Inter-service HTTP communication"
   }
 
   ingress {
-    from_port = 50051
-    to_port   = 50061
-    protocol  = "tcp"
-    self      = true
+    from_port   = 50051
+    to_port     = 50061
+    protocol    = "tcp"
+    self        = true
     description = "Inter-service gRPC communication"
   }
 
-  ingress {
-    from_port = 9090
-    to_port   = 9092
-    protocol  = "tcp"
-    self      = true
-    description = "Metrics endpoints"
-  }
 
   egress {
     from_port   = 0
@@ -241,6 +234,7 @@ resource "aws_security_group" "ecs_tasks" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = [ingress]
   }
 }
 
@@ -273,4 +267,123 @@ resource "aws_security_group" "rds" {
     create_before_destroy = true
   }
 }
+
+# VPC Endpoints for AWS Services
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private.id, aws_route_table.database.id]
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-s3-endpoint"
+  })
+}
+
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.ecr.dkr"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-ecr-dkr-endpoint"
+  })
+}
+
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.ecr.api"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-ecr-api-endpoint"
+  })
+}
+
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.logs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-logs-endpoint"
+  })
+}
+
+resource "aws_vpc_endpoint" "secretsmanager" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.secretsmanager"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-secretsmanager-endpoint"
+  })
+}
+
+resource "aws_vpc_endpoint" "monitoring" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.monitoring"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-monitoring-endpoint"
+  })
+}
+
+# Security Group for VPC Endpoints
+resource "aws_security_group" "vpc_endpoints" {
+  name_prefix = "${var.name_prefix}-vpc-endpoints-"
+  vpc_id      = aws_vpc.main.id
+  description = "Security group for VPC endpoints"
+
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "HTTPS from ECS tasks"
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+    description = "HTTPS from VPC"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "All outbound traffic"
+  }
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-vpc-endpoints-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Data source for current region
+data "aws_region" "current" {}
 

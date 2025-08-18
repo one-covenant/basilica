@@ -18,22 +18,22 @@ variable "security_group_ids" {
   type        = list(string)
 }
 
-variable "db_instance_class" {
-  description = "RDS instance class"
-  type        = string
-  default     = "db.t3.micro"
+variable "min_acu_capacity" {
+  description = "Minimum Aurora Capacity Units (ACUs)"
+  type        = number
+  default     = 0.5
 }
 
-variable "db_allocated_storage" {
-  description = "Allocated storage in GB"
+variable "max_acu_capacity" {
+  description = "Maximum Aurora Capacity Units (ACUs)"
   type        = number
-  default     = 20
+  default     = 16
 }
 
-variable "db_max_allocated_storage" {
-  description = "Maximum allocated storage in GB"
+variable "cluster_instance_count" {
+  description = "Number of instances in the Aurora cluster"
   type        = number
-  default     = 100
+  default     = 1
 }
 
 variable "db_username" {
@@ -54,15 +54,15 @@ variable "db_port" {
 }
 
 variable "engine_version" {
-  description = "PostgreSQL engine version"
+  description = "Aurora PostgreSQL engine version"
   type        = string
-  default     = "15.7"
+  default     = "15.12"
 }
 
 variable "parameter_group_family" {
-  description = "Parameter group family"
+  description = "Aurora PostgreSQL parameter group family"
   type        = string
-  default     = "postgres15"
+  default     = "aurora-postgresql15"
 }
 
 variable "backup_retention_period" {
