@@ -153,6 +153,10 @@ impl OAuthFlow {
             .set_pkce_challenge(pkce_challenge);
 
         // Add scopes
+        debug!(
+            "Adding scopes to authorization request: {:?}",
+            self.config.scopes
+        );
         for scope in &self.config.scopes {
             auth_request = auth_request.add_scope(Scope::new(scope.clone()));
         }
@@ -163,10 +167,22 @@ impl OAuthFlow {
         }
 
         // Add audience parameter from basilica-common
-        auth_request = auth_request.add_extra_param("audience", basilica_common::auth0_audience());
+        let audience = basilica_common::auth0_audience();
+        debug!("Adding audience parameter: {}", audience);
+        auth_request = auth_request.add_extra_param("audience", audience);
 
         let (auth_url, _csrf_token) = auth_request.url();
         let url_string = auth_url.to_string();
+
+        // Log the complete authorization request being sent to Auth0
+        debug!("=== Complete OAuth Authorization Request to Auth0 ===");
+        debug!("Endpoint: {}", self.config.auth_endpoint);
+        debug!("Client ID: {}", self.config.client_id);
+        debug!("Redirect URI: {}", self.config.redirect_uri);
+        debug!("Requested Scopes: {:?}", self.config.scopes);
+        debug!("Audience: {}", basilica_common::auth0_audience());
+        debug!("Full Authorization URL: {}", url_string);
+        debug!("===================================================");
 
         Ok(url_string)
     }
@@ -268,9 +284,18 @@ impl OAuthFlow {
             .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
             .unwrap_or_else(|| self.config.scopes.clone());
 
-        let token_set = TokenSet::new(access_token, refresh_token, token_type, expires_in, scopes);
+        let token_set = TokenSet::new(
+            access_token,
+            refresh_token,
+            token_type,
+            expires_in,
+            scopes.clone(),
+        );
 
-        info!("Token exchange completed successfully");
+        info!(
+            "Token exchange completed successfully. Scopes in token: {:?}",
+            scopes
+        );
         Ok(token_set)
     }
 

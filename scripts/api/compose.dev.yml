@@ -1,48 +1,59 @@
 services:
+  # PostgreSQL for production-like environment
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: api
+      POSTGRES_PASSWORD: api_dev_password
+      POSTGRES_DB: basilica_api
+    ports:
+      - "5432:5432"
+    volumes:
+      - api_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U api -d basilica_api"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - basilica_network_dev
+
   basilica-api:
     build:
       context: ../..
-      dockerfile: scripts/basilica-api/Dockerfile
+      dockerfile: scripts/api/Dockerfile
     container_name: basilica-api-dev
     restart: unless-stopped
     
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG='basilica_api=debug'
       - RUST_BACKTRACE=1
+      - BASILICA_API_DATABASE__URL=postgres://api:api_dev_password@postgres:5432/basilica_api
     
     volumes:
-      - ../../config/basilica-api.toml:/app/basilica-api.toml:ro
-      - basilica-api-data-dev:/app/data
+      - ./dummy_wallet:/home/basilica/.bittensor:ro
+      - ../../config/api.toml:/app/api.toml:ro
       - ../../crates:/app/crates:ro
       - ../../Cargo.toml:/app/Cargo.toml:ro
       - ../../Cargo.lock:/app/Cargo.lock:ro
     
     ports:
       - "8000:8000"    # HTTP API
-      - "8080:8080"    # Metrics endpoint
     
     networks:
       - basilica_network_dev
-    
-    command: ["--config", "/app/basilica-api.toml"]
     
     depends_on:
-      - redis
-
-  redis:
-    image: redis:7-alpine
-    container_name: basilica-redis-dev
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    volumes:
-      - redis-data-dev:/data
-    networks:
-      - basilica_network_dev
+      postgres:
+        condition: service_healthy
+    
+    command: ["--config", "/app/api.toml"]
+    
 
 networks:
   basilica_network_dev:
     driver: bridge
 
 volumes:
-  basilica-api-data-dev:
-  redis-data-dev:
+  api_postgres_data:
+    driver: local

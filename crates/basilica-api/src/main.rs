@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     }
 
     // Load configuration
-    let config = Config::load(args.config.as_deref())?;
+    let config = Config::load(args.config)?;
     info!(
         "Configuration loaded, binding to {}",
         config.server.bind_address

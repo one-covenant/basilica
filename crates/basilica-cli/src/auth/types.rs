@@ -122,11 +122,6 @@ impl TokenSet {
             None => None, // No expiration time
         }
     }
-
-    /// Check if token has required scope
-    pub fn has_scope(&self, scope: &str) -> bool {
-        self.scopes.iter().any(|s| s == scope)
-    }
 }
 
 /// Authentication errors

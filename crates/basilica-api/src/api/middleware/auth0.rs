@@ -163,8 +163,8 @@ pub async fn auth0_middleware(
     }
 
     debug!(
-        "Auth0 middleware: Successfully validated token for user: {}",
-        claims.sub
+        "Auth0 middleware: Successfully validated token for user: {}. Scopes: {:?}",
+        claims.sub, claims.scope
     );
 
     // Convert to Auth0Claims for easier access in handlers
@@ -206,11 +206,23 @@ pub fn get_auth0_claims(req: &Request) -> Option<&Auth0Claims> {
     req.extensions().get::<Auth0Claims>()
 }
 
-/// Check if a user has a specific scope
-#[allow(dead_code)]
+/// Check if a user has a specific scope (supports wildcards)
 pub fn has_scope(claims: &Auth0Claims, required_scope: &str) -> bool {
     if let Some(scope) = &claims.scope {
-        scope.split_whitespace().any(|s| s == required_scope)
+        scope.split_whitespace().any(|s| {
+            // Exact match
+            if s == required_scope {
+                return true;
+            }
+
+            // Wildcard match (e.g., "rentals:*" matches "rentals:view", "rentals:create", etc.)
+            if s.ends_with(":*") {
+                let prefix = &s[..s.len() - 1]; // Remove the "*"
+                return required_scope.starts_with(prefix);
+            }
+
+            false
+        })
     } else {
         false
     }
@@ -271,5 +283,39 @@ mod tests {
             ..claims.clone()
         };
         assert!(!has_scope(&claims_no_scope, "read:profile"));
+    }
+
+    #[test]
+    fn test_has_scope_wildcard() {
+        // Test wildcard scope matching
+        let claims = Auth0Claims {
+            sub: "test_user".to_string(),
+            aud: serde_json::Value::String("basilica-api".to_string()),
+            iss: auth0_issuer().to_string(),
+            exp: 9999999999,
+            iat: 1234567890,
+            scope: Some("rentals:* executors:list".to_string()),
+            email: None,
+            email_verified: None,
+            name: None,
+            custom: HashMap::new(),
+        };
+
+        // Wildcard should match all rentals: scopes
+        assert!(has_scope(&claims, "rentals:list"));
+        assert!(has_scope(&claims, "rentals:create"));
+        assert!(has_scope(&claims, "rentals:view"));
+        assert!(has_scope(&claims, "rentals:stop"));
+        assert!(has_scope(&claims, "rentals:logs"));
+
+        // Should also match exact wildcard
+        assert!(has_scope(&claims, "rentals:*"));
+
+        // Should match other exact scopes
+        assert!(has_scope(&claims, "executors:list"));
+
+        // Should not match unrelated scopes
+        assert!(!has_scope(&claims, "users:list"));
+        assert!(!has_scope(&claims, "admin"));
     }
 }
