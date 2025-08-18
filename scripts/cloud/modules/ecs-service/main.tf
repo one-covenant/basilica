@@ -280,7 +280,17 @@ resource "aws_ecs_service" "main" {
   load_balancer {
     target_group_arn = var.alb_target_group_arn
     container_name   = var.service_name
-    container_port   = var.load_balancer_port != null ? var.load_balancer_port : (var.health_check_type == "grpc" ? var.grpc_port : var.container_port)
+    container_port   = var.load_balancer_port != null ? var.load_balancer_port : var.container_port
+  }
+
+  # Optional gRPC load balancer
+  dynamic "load_balancer" {
+    for_each = var.alb_grpc_target_group_arn != null ? [1] : []
+    content {
+      target_group_arn = var.alb_grpc_target_group_arn
+      container_name   = var.service_name
+      container_port   = var.grpc_port
+    }
   }
 
   service_registries {

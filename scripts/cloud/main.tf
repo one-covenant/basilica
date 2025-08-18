@@ -90,5 +90,53 @@ module "alb" {
   security_group_ids = [module.networking.alb_security_group_id]
   certificate_arn    = var.certificate_arn
 
+  # gRPC target groups
+  additional_target_groups = {
+    "bill-grpc" = {
+      port             = 50051
+      protocol         = "HTTP"
+      protocol_version = "GRPC"
+      health_check = {
+        healthy_threshold   = 2
+        unhealthy_threshold = 3
+        timeout             = 10
+        interval            = 30
+        protocol            = "HTTP"
+        path                = "/grpc.health.v1.Health/Check"
+        matcher             = "0,12"
+      }
+    }
+    "pay-grpc" = {
+      port             = 50061
+      protocol         = "HTTP"
+      protocol_version = "GRPC"
+      health_check = {
+        healthy_threshold   = 2
+        unhealthy_threshold = 3
+        timeout             = 10
+        interval            = 30
+        protocol            = "HTTP"
+        path                = "/grpc.health.v1.Health/Check"
+        matcher             = "0,12"
+      }
+    }
+  }
+
+  # gRPC listener rules
+  additional_listener_rules = {
+    "billing-grpc" = {
+      priority          = 150
+      target_group_key  = "bill-grpc"
+      listener_protocol = "HTTPS"
+      path_patterns     = ["/basilica.billing.v1.BillingService/*"]
+    }
+    "payments-grpc" = {
+      priority          = 250
+      target_group_key  = "pay-grpc"
+      listener_protocol = "HTTPS"
+      path_patterns     = ["/basilica.payments.v1.PaymentsService/*"]
+    }
+  }
+
   tags = local.common_tags
 }

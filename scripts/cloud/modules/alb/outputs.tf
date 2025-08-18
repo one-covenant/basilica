@@ -18,6 +18,10 @@ output "payments_target_group_arn" {
   value = aws_lb_target_group.payments.arn
 }
 
+output "additional_target_group_arns" {
+  value = { for k, v in aws_lb_target_group.additional : k => v.arn }
+}
+
 output "listener_arn" {
   value = var.certificate_arn != null ? aws_lb_listener.https[0].arn : aws_lb_listener.http.arn
 }

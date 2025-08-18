@@ -65,6 +65,12 @@ variable "alb_target_group_arn" {
   type        = string
 }
 
+variable "alb_grpc_target_group_arn" {
+  description = "ALB gRPC target group ARN (optional)"
+  type        = string
+  default     = null
+}
+
 variable "alb_listener_arn" {
   description = "ALB listener ARN (optional, for future use)"
   type        = string

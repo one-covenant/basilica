@@ -86,10 +86,11 @@ module "billing_service" {
   memory          = local.workspace_config.billing_memory
 
   # Load balancer configuration
-  alb_target_group_arn = module.alb.billing_target_group_arn
-  alb_listener_arn     = module.alb.listener_arn
-  health_check_path    = "/health"
-  health_check_type    = "http"
+  alb_target_group_arn      = module.alb.billing_target_group_arn
+  alb_grpc_target_group_arn = module.alb.additional_target_group_arns["bill-grpc"]
+  alb_listener_arn          = module.alb.listener_arn
+  health_check_path         = "/health"
+  health_check_type         = "http"
 
   # Scaling configuration
   min_capacity    = local.workspace_config.min_capacity
@@ -204,10 +205,11 @@ module "payments_service" {
   memory          = local.workspace_config.payments_memory
 
   # Load balancer configuration
-  alb_target_group_arn = module.alb.payments_target_group_arn
-  alb_listener_arn     = module.alb.listener_arn
-  health_check_path    = "/health"
-  health_check_type    = "http"
+  alb_target_group_arn      = module.alb.payments_target_group_arn
+  alb_grpc_target_group_arn = module.alb.additional_target_group_arns["pay-grpc"]
+  alb_listener_arn          = module.alb.listener_arn
+  health_check_path         = "/health"
+  health_check_type         = "http"
 
   # Scaling configuration
   min_capacity    = local.workspace_config.min_capacity
