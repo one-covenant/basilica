@@ -106,9 +106,36 @@ pub async fn start_rental(
     // Store ownership record in database
     if let Err(e) = store_rental_ownership(&state.db, &validator_response.rental_id, user_id).await
     {
-        error!("Failed to store rental ownership: {}", e);
-        // Note: We don't fail the request if ownership storage fails
-        // The rental is already created, we just won't be able to track ownership
+        error!(
+            "Failed to store rental ownership for rental {}: {}. Rolling back rental creation.",
+            validator_response.rental_id, e
+        );
+
+        // Rollback: terminate the rental on the validator since we can't track ownership
+        let rollback_request = TerminateRentalRequest {
+            reason: Some("Failed to store ownership record - automatic rollback".to_string()),
+        };
+
+        if let Err(rollback_err) = state
+            .validator_client
+            .terminate_rental(&validator_response.rental_id, rollback_request)
+            .await
+        {
+            error!(
+                "CRITICAL: Failed to rollback rental {} after ownership storage failure: {}. Manual cleanup required.",
+                validator_response.rental_id, rollback_err
+            );
+        } else {
+            info!(
+                "Successfully rolled back rental {} after ownership storage failure",
+                validator_response.rental_id
+            );
+        }
+
+        // Return error to the user
+        return Err(crate::error::Error::Internal {
+            message: "Failed to create rental: unable to store ownership record".into(),
+        });
     }
 
     info!(
