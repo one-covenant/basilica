@@ -41,8 +41,6 @@ pub async fn handle_login(
         .map_err(|e| CliError::internal(format!("Failed to initialize token store: {}", e)))?;
 
     let token_set = if use_device_flow {
-        println!("Starting device authorization flow...\n");
-
         let spinner = create_spinner("Requesting device code...");
         let device_flow = DeviceFlow::new(auth_config);
 
@@ -81,7 +79,7 @@ pub async fn handle_login(
 
     complete_spinner_and_clear(spinner);
 
-    print_success("Login successful!");
+    print_success("⛪ Login successful!");
     Ok(())
 }
 
@@ -143,6 +141,6 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
     }
 
     complete_spinner_and_clear(spinner);
-    print_success("Logout successful!");
+    print_success("⛪ Logout successful!");
     Ok(())
 }

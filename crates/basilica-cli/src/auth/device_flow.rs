@@ -4,7 +4,7 @@
 //! devices that lack a web browser or have limited input capabilities.
 
 use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
-use crate::output::{print_info, print_success};
+use crate::output::print_info;
 use console::{style, Term};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -205,7 +205,6 @@ impl DeviceFlow {
         };
         term.clear_last_lines(lines_to_clear)
             .map_err(|e| AuthError::ConfigError(format!("Terminal error: {}", e)))?;
-        print_success("Login successful!");
 
         Ok(token_set)
     }
