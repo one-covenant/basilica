@@ -3,12 +3,17 @@ use crate::grpc::BillingServiceImpl;
 use crate::storage::rds::RdsConnection;
 use crate::telemetry::{TelemetryIngester, TelemetryProcessor};
 
+use axum::{http::StatusCode, response::Json, routing::get, Router};
 use basilica_protocol::billing::billing_service_server::BillingServiceServer;
+use chrono;
+use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
+use tower::ServiceBuilder;
+use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 
 /// Billing server that hosts the gRPC service
@@ -137,24 +142,55 @@ impl BillingServer {
         self,
         shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
     ) -> anyhow::Result<()> {
-        let addr: SocketAddr = format!(
+        let grpc_addr: SocketAddr = format!(
             "{}:{}",
             self.config.grpc.listen_address, self.config.grpc.port
         )
         .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid server address: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Invalid gRPC server address: {}", e))?;
 
-        let listener = tokio::net::TcpListener::bind(addr)
+        let http_addr: SocketAddr = format!(
+            "{}:{}",
+            self.config.http.listen_address, self.config.http.port
+        )
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid HTTP server address: {}", e))?;
+
+        let grpc_listener = tokio::net::TcpListener::bind(grpc_addr)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", addr, e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", grpc_addr, e))?;
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            shutdown_signal.await;
-            let _ = tx.send(());
+        let http_listener = tokio::net::TcpListener::bind(http_addr)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", http_addr, e))?;
+
+        let (grpc_tx, grpc_rx) = tokio::sync::oneshot::channel();
+        let (http_tx, http_rx) = tokio::sync::oneshot::channel();
+
+        let rds_connection = self.rds_connection.clone();
+
+        // Start HTTP server
+        let http_handle = tokio::spawn(async move {
+            Self::start_http_server(http_listener, http_rx, rds_connection).await
         });
 
-        self.run_with_listener(listener, rx).await
+        // Start gRPC server
+        let grpc_handle =
+            tokio::spawn(async move { self.run_with_listener(grpc_listener, grpc_rx).await });
+
+        // Wait for shutdown signal and propagate to both servers
+        tokio::spawn(async move {
+            shutdown_signal.await;
+            let _ = grpc_tx.send(());
+            let _ = http_tx.send(());
+        });
+
+        // Wait for both servers to complete
+        let (grpc_result, http_result) = tokio::try_join!(grpc_handle, http_handle)?;
+        grpc_result?;
+        http_result?;
+
+        Ok(())
     }
 
     /// Graceful shutdown
@@ -181,4 +217,62 @@ impl BillingServer {
 
         info!("Telemetry consumer loop stopped");
     }
+
+    async fn start_http_server(
+        listener: tokio::net::TcpListener,
+        shutdown_signal: tokio::sync::oneshot::Receiver<()>,
+        rds_connection: Arc<RdsConnection>,
+    ) -> anyhow::Result<()> {
+        let addr = listener.local_addr()?;
+        info!("Starting billing HTTP server on {}", addr);
+
+        let app = Router::new()
+            .route("/health", get(health_check))
+            .route("/metrics", get(metrics_handler))
+            .layer(
+                ServiceBuilder::new()
+                    .layer(CorsLayer::permissive())
+                    .into_inner(),
+            )
+            .with_state(AppState { rds_connection });
+
+        let server = axum::serve(listener, app);
+
+        server
+            .with_graceful_shutdown(async {
+                let _ = shutdown_signal.await;
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("HTTP server error: {}", e))?;
+
+        info!("HTTP server stopped gracefully");
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct AppState {
+    rds_connection: Arc<RdsConnection>,
+}
+
+async fn health_check(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Result<Json<Value>, StatusCode> {
+    let pool = state.rds_connection.pool();
+    match sqlx::query("SELECT 1").fetch_one(pool).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "healthy",
+            "service": "basilica-billing",
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "database": "connected"
+        }))),
+        Err(e) => {
+            error!("Health check database error: {}", e);
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
+    }
+}
+
+async fn metrics_handler() -> Result<String, StatusCode> {
+    Ok("# Billing service metrics endpoint\n".to_string())
 }

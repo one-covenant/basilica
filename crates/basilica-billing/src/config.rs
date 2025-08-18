@@ -188,7 +188,7 @@ impl BillingConfig {
             }
         }
 
-        figment = figment.merge(Env::prefixed("BILLING_").split("_"));
+        figment = figment.merge(Env::prefixed("BILLING_").split("__"));
 
         figment
             .extract()
@@ -206,7 +206,7 @@ impl BillingConfig {
         prefix: &str,
     ) -> Result<(), ConfigurationError> {
         let figment = Figment::from(Serialized::defaults(config.clone()))
-            .merge(Env::prefixed(prefix).split("_"));
+            .merge(Env::prefixed(prefix).split("__"));
 
         *config = figment
             .extract()

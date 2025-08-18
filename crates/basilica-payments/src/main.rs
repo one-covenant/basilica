@@ -1,10 +1,11 @@
 use basilica_payments::{
     blockchain::{local_treasury::LocalTreasury, monitor::ChainMonitor},
-    config::Config,
+    config::PaymentsConfig,
     domain::price::PriceConverter,
-    grpc::payments_service::PaymentsServer,
+    grpc::payments_service::PaymentsServer as GrpcPaymentsServer,
     price_oracle::{PriceOracle, PriceOracleConfig},
     processor::{billing_client::GrpcBillingClient, dispatcher::OutboxDispatcher},
+    server::PaymentsServer,
     storage::PgRepos,
 };
 
@@ -50,22 +51,35 @@ async fn main() -> Result<()> {
         .init();
 
     if args.gen_config {
-        let config = Config::default();
+        let config = PaymentsConfig::default();
         let toml = toml::to_string_pretty(&config)?;
         println!("{}", toml);
         return Ok(());
     }
 
-    let cfg = Config::load(args.config).context("Failed to load configuration")?;
+    let cfg = PaymentsConfig::load(args.config).context("Failed to load configuration")?;
+    cfg.validate().context("Configuration validation failed")?;
+
+    let warnings = cfg.warnings();
+    for warning in warnings {
+        warn!("{}", warning);
+    }
 
     if args.dry_run {
         info!("Configuration loaded successfully (dry-run mode)");
-        info!("gRPC bind address: {}", cfg.grpc_bind);
-        info!("Substrate websocket: {}", cfg.subxt_ws);
-        info!("Billing gRPC endpoint: {}", cfg.billing_grpc);
-        let db_display = match cfg.database_url.rsplit_once('@') {
+        info!(
+            "gRPC listen address: {}:{}",
+            cfg.grpc.listen_address, cfg.grpc.port
+        );
+        info!(
+            "HTTP listen address: {}:{}",
+            cfg.http.listen_address, cfg.http.port
+        );
+        info!("Substrate websocket: {}", cfg.blockchain.websocket_url);
+        info!("Billing gRPC endpoint: {}", cfg.billing.grpc_endpoint);
+        let db_display = match cfg.database.url.rsplit_once('@') {
             Some((_, rest)) => rest,
-            None => &cfg.database_url,
+            None => &cfg.database.url,
         };
         info!("Database URL: {}", db_display);
         info!("Configuration validated successfully (dry-run mode)");
@@ -73,18 +87,29 @@ async fn main() -> Result<()> {
     }
 
     info!("Starting basilica-payments service");
-    info!("gRPC bind address: {}", cfg.grpc_bind);
-    info!("Substrate websocket: {}", cfg.subxt_ws);
-    info!("Billing gRPC endpoint: {}", cfg.billing_grpc);
+    info!(
+        "gRPC listen address: {}:{}",
+        cfg.grpc.listen_address, cfg.grpc.port
+    );
+    info!(
+        "HTTP listen address: {}:{}",
+        cfg.http.listen_address, cfg.http.port
+    );
+    info!("Substrate websocket: {}", cfg.blockchain.websocket_url);
+    info!("Billing gRPC endpoint: {}", cfg.billing.grpc_endpoint);
 
-    let db_display = match cfg.database_url.rsplit_once('@') {
+    let db_display = match cfg.database.url.rsplit_once('@') {
         Some((_, rest)) => rest,
-        None => &cfg.database_url,
+        None => &cfg.database.url,
     };
     info!("Connecting to database: {}", db_display);
     let pool = PgPoolOptions::new()
-        .max_connections(16)
-        .connect(&cfg.database_url)
+        .max_connections(cfg.database.max_connections)
+        .min_connections(cfg.database.min_connections)
+        .acquire_timeout(cfg.acquire_timeout())
+        .idle_timeout(cfg.idle_timeout())
+        .max_lifetime(cfg.max_lifetime())
+        .connect(&cfg.database.url)
         .await
         .context("Failed to connect to database")?;
 
@@ -98,52 +123,62 @@ async fn main() -> Result<()> {
 
     let repos = PgRepos::new(pool.clone());
 
-    let aead =
-        Arc::new(Aead::new(&cfg.aead_key_hex).context("Failed to initialize AEAD encryption")?);
-    let treasury = Arc::new(LocalTreasury::new(cfg.ss58_prefix));
+    let aead = Arc::new(
+        Aead::new(&cfg.treasury.aead_key_hex).context("Failed to initialize AEAD encryption")?,
+    );
+    let treasury = Arc::new(LocalTreasury::new(cfg.blockchain.ss58_prefix));
 
-    info!("Connecting to billing service at: {}", cfg.billing_grpc);
-    let billing = GrpcBillingClient::connect(&cfg.billing_grpc)
+    info!(
+        "Connecting to billing service at: {}",
+        cfg.billing.grpc_endpoint
+    );
+    let billing = GrpcBillingClient::connect(&cfg.billing.grpc_endpoint)
         .await
         .context("Failed to connect to billing service")?;
 
     let oracle_config = PriceOracleConfig {
-        update_interval: cfg.price_update_interval,
-        max_price_age: cfg.price_max_age,
-        request_timeout: cfg.price_request_timeout,
+        update_interval: cfg.price_oracle.update_interval_seconds,
+        max_price_age: cfg.price_oracle.max_price_age_seconds,
+        request_timeout: cfg.price_oracle.request_timeout_seconds,
     };
 
     let oracle = Arc::new(PriceOracle::new(oracle_config));
     let oracle_for_updates = Arc::clone(&oracle);
     oracle_for_updates.run().await;
 
-    let price = PriceConverter::new(oracle, cfg.tao_decimals);
+    let price = PriceConverter::new(oracle, cfg.treasury.tao_decimals);
 
-    let svc = PaymentsServer::new(repos.clone(), treasury, aead).into_service();
+    let grpc_svc = GrpcPaymentsServer::new(repos.clone(), treasury, aead).into_service();
     let dispatcher = OutboxDispatcher::new(repos.clone(), billing, price);
 
-    info!("Connecting to substrate node at: {}", cfg.subxt_ws);
-    let monitor = ChainMonitor::new(repos.clone(), &cfg.subxt_ws)
+    info!(
+        "Connecting to substrate node at: {}",
+        cfg.blockchain.websocket_url
+    );
+    let monitor = ChainMonitor::new(repos.clone(), &cfg.blockchain.websocket_url)
         .await
         .context("Failed to initialize blockchain monitor")?;
 
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter
-        .set_serving::<PaymentsServiceServer<PaymentsServer<LocalTreasury>>>()
+        .set_serving::<PaymentsServiceServer<GrpcPaymentsServer<LocalTreasury>>>()
         .await;
 
-    let bind: SocketAddr = cfg
-        .grpc_bind
+    let grpc_bind: SocketAddr = format!("{}:{}", cfg.grpc.listen_address, cfg.grpc.port)
         .parse()
         .context("Failed to parse gRPC bind address")?;
 
-    info!("Starting gRPC server on {}", bind);
+    info!("Starting gRPC server on {}", grpc_bind);
+
+    // Start HTTP server
+    let http_server = PaymentsServer::new(cfg.clone(), Arc::new(pool));
+    let http_handle = tokio::spawn(async move { http_server.serve(shutdown_signal()).await });
 
     tokio::select! {
         r = Server::builder()
             .add_service(health_service)
-            .add_service(svc)
-            .serve(bind) => {
+            .add_service(grpc_svc)
+            .serve(grpc_bind) => {
             r.context("gRPC server failed")?;
         },
         r = dispatcher.run() => {
@@ -151,6 +186,9 @@ async fn main() -> Result<()> {
         },
         r = monitor.run() => {
             r.context("Blockchain monitor failed")?;
+        },
+        r = http_handle => {
+            r.context("HTTP server task failed")?.context("HTTP server failed")?;
         },
         _ = shutdown_signal() => {
             warn!("Received shutdown signal");
