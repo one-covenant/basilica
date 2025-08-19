@@ -23,10 +23,10 @@ fn main() {
 
     // Default values (same as current hardcoded values)
     let defaults = [
-        ("AUTH0_DOMAIN", "dev-tjmaan0xhd7k6nek.us.auth0.com"),
-        ("AUTH0_CLIENT_ID", "fZwc5GzY8CZ9BJYuEQT2WjJ9aqktaSsY"),
-        ("AUTH0_AUDIENCE", "https://api.basilica.ai"),
-        ("AUTH0_ISSUER", "https://dev-tjmaan0xhd7k6nek.us.auth0.com/"),
+        ("AUTH0_DOMAIN", "dev-ndynjuhl74mrh162.us.auth0.com"),
+        ("AUTH0_CLIENT_ID", "CVwgCKL9MT5txAGRLCUQu89rvKXAwOVB"),
+        ("AUTH0_AUDIENCE", "https://api.basilica.ai/"),
+        ("AUTH0_ISSUER", "https://dev-ndynjuhl74mrh162.us.auth0.com/"),
     ];
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
