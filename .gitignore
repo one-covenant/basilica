@@ -19,6 +19,10 @@
 ehthumbs.db
 Thumbs.db
 
+# Service wallets (auto-generated for containers)
+scripts/api/service-wallet/
+scripts/*/service-wallet/
+
 # Logs
 *.log
 

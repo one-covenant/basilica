@@ -53,3 +53,15 @@ variable "additional_listener_rules" {
   }))
   default = {}
 }
+
+variable "create_billing_target_group" {
+  description = "Whether to create billing target group"
+  type        = bool
+  default     = true
+}
+
+variable "create_payments_target_group" {
+  description = "Whether to create payments target group"
+  type        = bool
+  default     = true
+}

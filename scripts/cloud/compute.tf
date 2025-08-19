@@ -12,8 +12,9 @@ locals {
   db_creds = jsondecode(data.aws_secretsmanager_secret_version.db_credentials.secret_string)
 
   # Construct database URLs for each service
-  billing_database_url  = "postgres://${local.db_creds.username}:${urlencode(local.db_creds.password)}@${local.db_creds.host}:${local.db_creds.port}/basilica_v3_billing?sslmode=disable"
-  payments_database_url = "postgres://${local.db_creds.username}:${urlencode(local.db_creds.password)}@${local.db_creds.host}:${local.db_creds.port}/basilica_v3_payments?sslmode=disable"
+  billing_database_url      = "postgres://${local.db_creds.username}:${urlencode(local.db_creds.password)}@${local.db_creds.host}:${local.db_creds.port}/basilica_v3_billing?sslmode=disable"
+  payments_database_url     = "postgres://${local.db_creds.username}:${urlencode(local.db_creds.password)}@${local.db_creds.host}:${local.db_creds.port}/basilica_v3_payments?sslmode=disable"
+  basilica_api_database_url = "postgres://${local.db_creds.username}:${urlencode(local.db_creds.password)}@${local.db_creds.host}:${local.db_creds.port}/basilica_v3_api?sslmode=disable"
 }
 
 # =============================================================================
@@ -272,6 +273,98 @@ module "payments_service" {
 }
 
 # =============================================================================
+# BASILICA API SERVICE
+# =============================================================================
+
+# External-facing Basilica API Gateway service
+module "basilica_api_service" {
+  source = "./modules/ecs-service"
+
+  name_prefix                 = local.name_prefix
+  service_name                = "api"
+  cluster_id                  = aws_ecs_cluster.main.id
+  vpc_id                      = module.networking.vpc_id
+  subnet_ids                  = module.networking.private_subnet_ids
+  ecs_tasks_security_group_id = module.networking.ecs_tasks_security_group_id
+
+  # Container configuration
+  container_image = var.basilica_api_image
+  container_port  = 8000
+  grpc_port       = 8001 # API doesn't use gRPC but module requires this
+  metrics_port    = 9093
+  cpu             = local.workspace_config.basilica_api_cpu
+  memory          = local.workspace_config.basilica_api_memory
+
+  # Load balancer configuration - external ALB
+  alb_target_group_arn = module.basilica_api_alb.additional_target_group_arns["api-http"]
+  alb_listener_arn     = module.basilica_api_alb.listener_arn
+  health_check_path    = "/health"
+  health_check_type    = "http"
+
+  # Scaling configuration
+  min_capacity    = local.workspace_config.min_capacity
+  max_capacity    = local.workspace_config.max_capacity
+  target_capacity = local.workspace_config.target_capacity
+
+  # Service discovery
+  service_discovery_namespace_id = aws_service_discovery_private_dns_namespace.main.id
+
+  # No init container - using separate db init task
+  init_container = {
+    enabled = false
+  }
+
+  # Environment variables
+  environment_variables = {
+    # Server Configuration
+    BASILICA_API_SERVER__BIND_ADDRESS    = "0.0.0.0:8000"
+    BASILICA_API_SERVER__MAX_CONNECTIONS = "10000"
+    BASILICA_API_SERVER__REQUEST_TIMEOUT = "30"
+    BASILICA_API_SERVER__CORS_ORIGINS    = "[\"*\"]"
+
+    # Database Configuration
+    BASILICA_API_DATABASE__URL             = local.basilica_api_database_url
+    BASILICA_API_DATABASE__MAX_CONNECTIONS = "5"
+
+    # Bittensor Integration
+    BASILICA_API_BITTENSOR__CHAIN_ENDPOINT     = "wss://entrypoint-finney.opentensor.ai:443"
+    BASILICA_API_BITTENSOR__NETWORK            = var.basilica_api_network
+    BASILICA_API_BITTENSOR__NETUID             = var.basilica_api_netuid
+    BASILICA_API_BITTENSOR__DISCOVERY_INTERVAL = "60"
+    BASILICA_API_BITTENSOR__VALIDATOR_HOTKEY   = var.basilica_api_validator_hotkey
+
+    # Auth0 Integration
+    BASILICA_AUTH0_DOMAIN    = var.basilica_auth0_domain
+    BASILICA_AUTH0_CLIENT_ID = var.basilica_auth0_client_id
+    BASILICA_AUTH0_AUDIENCE  = var.basilica_auth0_audience
+    BASILICA_AUTH0_ISSUER    = var.basilica_auth0_issuer
+
+    # Cache Configuration
+    BASILICA_API_CACHE__BACKEND     = "in_memory"
+    BASILICA_API_CACHE__DEFAULT_TTL = "300"
+    BASILICA_API_CACHE__MAX_SIZE    = "10000"
+    BASILICA_API_CACHE__KEY_PREFIX  = "basilica:api:"
+
+    # Rate Limiting Configuration
+    BASILICA_API_RATE_LIMIT__STORAGE_BACKEND             = "in_memory"
+    BASILICA_API_RATE_LIMIT__DEFAULT_REQUESTS_PER_MINUTE = "60"
+    BASILICA_API_RATE_LIMIT__BURST_SIZE                  = "100"
+    BASILICA_API_RATE_LIMIT__PER_IP_LIMITING             = "true"
+    BASILICA_API_RATE_LIMIT__PREMIUM_REQUESTS_PER_MINUTE = "600"
+
+    # Logging
+    RUST_LOG = "basilica_api=info,basilica_protocol=info"
+  }
+
+  # No secrets needed currently
+  secrets = []
+
+  tags = local.common_tags
+
+  depends_on = [module.rds, module.basilica_api_alb]
+}
+
+# =============================================================================
 # DATABASE INITIALIZATION
 # =============================================================================
 
@@ -302,9 +395,10 @@ module "db_init" {
       echo "Attempting to create databases using extracted password..."
       echo "CREATE DATABASE basilica_v3_billing;" | psql || echo "Database basilica_v3_billing may already exist"
       echo "CREATE DATABASE basilica_v3_payments;" | psql || echo "Database basilica_v3_payments may already exist"
+      echo "CREATE DATABASE basilica_v3_api;" | psql || echo "Database basilica_v3_api may already exist"
 
       echo "Verifying databases exist..."
-      echo "\l" | psql | grep -E "(basilica_v3_billing|basilica_v3_payments)" || echo "Could not verify databases"
+      echo "\l" | psql | grep -E "(basilica_v3_billing|basilica_v3_payments|basilica_v3_api)" || echo "Could not verify databases"
 
       echo "Database initialization task completed"
     EOT

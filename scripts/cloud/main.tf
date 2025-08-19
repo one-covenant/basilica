@@ -20,6 +20,8 @@ locals {
       billing_memory             = 512
       payments_cpu               = 256
       payments_memory            = 512
+      basilica_api_cpu           = 256
+      basilica_api_memory        = 512
       min_capacity               = 1
       max_capacity               = 3
       target_capacity            = 1
@@ -36,6 +38,8 @@ locals {
       billing_memory             = 1024
       payments_cpu               = 512
       payments_memory            = 1024
+      basilica_api_cpu           = 512
+      basilica_api_memory        = 1024
       min_capacity               = 2
       max_capacity               = 10
       target_capacity            = 3
@@ -135,6 +139,52 @@ module "alb" {
       target_group_key  = "pay-grpc"
       listener_protocol = "HTTPS"
       path_patterns     = ["/basilica.payments.v1.PaymentsService/*"]
+    }
+  }
+
+  tags = local.common_tags
+}
+
+# External Application Load Balancer for Basilica API
+module "basilica_api_alb" {
+  source = "./modules/alb"
+
+  name_prefix        = "${var.project_name}-${terraform.workspace}-api"
+  vpc_id             = module.networking.vpc_id
+  subnet_ids         = module.networking.public_subnet_ids
+  security_group_ids = [module.networking.alb_security_group_id]
+  certificate_arn    = var.certificate_arn
+
+  # Don't create billing/payments target groups for API ALB
+  create_billing_target_group  = false
+  create_payments_target_group = false
+
+  # Create API target group with proper health check
+  additional_target_groups = {
+    "api-http" = {
+      port             = 8000
+      protocol         = "HTTP"
+      protocol_version = "HTTP1"
+      health_check = {
+        enabled             = true
+        healthy_threshold   = 2
+        unhealthy_threshold = 2
+        timeout             = 5
+        interval            = 30
+        path                = "/health"
+        matcher             = "200"
+        protocol            = "HTTP"
+      }
+    }
+  }
+
+  # Forward all traffic to API service
+  additional_listener_rules = {
+    "api-all" = {
+      target_group_key  = "api-http"
+      priority          = 100
+      listener_protocol = "HTTPS"
+      path_patterns     = ["/*"]
     }
   }
 

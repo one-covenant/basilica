@@ -11,11 +11,15 @@ output "alb_zone_id" {
 }
 
 output "billing_target_group_arn" {
-  value = aws_lb_target_group.billing.arn
+  value = var.create_billing_target_group ? aws_lb_target_group.billing[0].arn : null
 }
 
 output "payments_target_group_arn" {
-  value = aws_lb_target_group.payments.arn
+  value = var.create_payments_target_group ? aws_lb_target_group.payments[0].arn : null
+}
+
+output "default_target_group_arn" {
+  value = aws_lb_target_group.default.arn
 }
 
 output "additional_target_group_arns" {

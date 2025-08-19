@@ -13,6 +13,8 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_lb_target_group" "billing" {
+  count = var.create_billing_target_group ? 1 : 0
+
   name        = "${var.name_prefix}-billing-http-tg"
   port        = 8080
   protocol    = "HTTP"
@@ -37,6 +39,8 @@ resource "aws_lb_target_group" "billing" {
 }
 
 resource "aws_lb_target_group" "payments" {
+  count = var.create_payments_target_group ? 1 : 0
+
   name        = "${var.name_prefix}-payments-tg"
   port        = 8082
   protocol    = "HTTP"
@@ -158,12 +162,14 @@ resource "aws_lb_listener" "https" {
 }
 
 resource "aws_lb_listener_rule" "billing" {
+  count = var.create_billing_target_group ? 1 : 0
+
   listener_arn = var.certificate_arn != null ? aws_lb_listener.https[0].arn : aws_lb_listener.http.arn
   priority     = 100
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.billing.arn
+    target_group_arn = aws_lb_target_group.billing[0].arn
   }
 
   condition {
@@ -174,12 +180,14 @@ resource "aws_lb_listener_rule" "billing" {
 }
 
 resource "aws_lb_listener_rule" "payments" {
+  count = var.create_payments_target_group ? 1 : 0
+
   listener_arn = var.certificate_arn != null ? aws_lb_listener.https[0].arn : aws_lb_listener.http.arn
   priority     = 200
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.payments.arn
+    target_group_arn = aws_lb_target_group.payments[0].arn
   }
 
   condition {
