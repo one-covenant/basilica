@@ -48,7 +48,11 @@ impl TokenStore {
 
         // Try to use system keychain
         let (keyring_entry, use_system_keychain) = match Entry::new(SERVICE_NAME, ACCOUNT_NAME) {
-            Ok(entry) => (Some(entry), true),
+            Ok(entry) => match entry.get_password() {
+                Ok(_) => (Some(entry), true),
+                Err(KeyringError::NoEntry) => (Some(entry), true),
+                Err(_) => (None, false),
+            },
             Err(_) => (None, false),
         };
 
@@ -96,7 +100,10 @@ impl TokenStore {
     /// Store tokens securely
     pub async fn store_tokens(&self, service_name: &str, tokens: &TokenSet) -> AuthResult<()> {
         if self.use_system_keychain {
-            self.store_in_keychain(service_name, tokens).await
+            match self.store_in_keychain(service_name, tokens).await {
+                Ok(()) => Ok(()),
+                Err(_) => self.store_in_file(service_name, tokens).await,
+            }
         } else {
             self.store_in_file(service_name, tokens).await
         }
@@ -110,7 +117,10 @@ impl TokenStore {
     /// Retrieve stored tokens
     pub async fn get_tokens(&self, service_name: &str) -> AuthResult<Option<TokenSet>> {
         if self.use_system_keychain {
-            self.retrieve_from_keychain(service_name).await
+            match self.retrieve_from_keychain(service_name).await {
+                Ok(tokens) => Ok(tokens),
+                Err(_) => self.retrieve_from_file(service_name).await,
+            }
         } else {
             self.retrieve_from_file(service_name).await
         }
@@ -124,7 +134,14 @@ impl TokenStore {
     /// Delete stored tokens
     pub async fn delete_tokens(&self, service_name: &str) -> AuthResult<()> {
         if self.use_system_keychain {
-            self.delete_from_keychain(service_name).await
+            let keychain_result = self.delete_from_keychain(service_name).await;
+            let file_result = self.delete_from_file(service_name).await;
+
+            match (keychain_result, file_result) {
+                (Ok(()), _) => Ok(()),
+                (Err(_), Ok(())) => Ok(()),
+                (Err(e1), Err(_)) => Err(e1),
+            }
         } else {
             self.delete_from_file(service_name).await
         }

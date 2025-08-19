@@ -11,12 +11,6 @@ pub enum Commands {
         action: ConfigAction,
     },
 
-    /// Show wallet information and balance
-    Wallet {
-        /// Optional wallet name to use (overrides default from config)
-        #[arg(short, long)]
-        name: Option<String>,
-    },
 
     /// List available GPU resources
     Ls {

@@ -35,7 +35,6 @@ NETWORK COMPONENTS:
 
 CONFIGURATION:
   basilica config show              # Show configuration
-  basilica wallet                   # Show wallet info
 
 AUTHENTICATION:
   basilica login                    # Log in to Basilica
@@ -114,7 +113,6 @@ impl Args {
             Commands::Config { action } => {
                 handlers::config::handle_config(action, &config, &config_path).await
             }
-            Commands::Wallet { name } => handlers::wallet::handle_wallet(&config, name).await,
             Commands::Login { device_code } => {
                 handlers::auth::handle_login(device_code, &config, &config_path).await
             }

@@ -25,7 +25,6 @@ pub mod error;
 pub mod output;
 pub mod progress;
 pub mod ssh;
-pub mod wallet;
 
 pub use cli::*;
 pub use error::*;
