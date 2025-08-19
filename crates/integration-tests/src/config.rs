@@ -57,7 +57,7 @@ impl TestConfig {
                         "http" => 80,
                         _ => return false,
                     });
-                    
+
                     timeout(Duration::from_secs(2), TcpStream::connect((host, port)))
                         .await
                         .is_ok()
@@ -123,11 +123,11 @@ mod tests {
     fn test_config_from_env() {
         env::set_var("PAYMENTS_ENDPOINT", "http://test:8080");
         env::set_var("BILLING_ENDPOINT", "http://test:8081");
-        
+
         let config = TestConfig::from_env();
         assert_eq!(config.payments_endpoint, "http://test:8080");
         assert_eq!(config.billing_endpoint, "http://test:8081");
-        
+
         env::remove_var("PAYMENTS_ENDPOINT");
         env::remove_var("BILLING_ENDPOINT");
     }

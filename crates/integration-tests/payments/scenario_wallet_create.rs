@@ -10,8 +10,8 @@ async fn main() -> Result<()> {
         .nth(1)
         .unwrap_or_else(|| "test-user-123".to_string());
 
-    let endpoint = std::env::var("PAYMENTS_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:50061".to_string());
+    let endpoint =
+        std::env::var("PAYMENTS_ENDPOINT").unwrap_or_else(|_| "http://localhost:50061".to_string());
 
     println!("Creating wallet for user: {}", user_id);
     println!("Connecting to: {}", endpoint);
