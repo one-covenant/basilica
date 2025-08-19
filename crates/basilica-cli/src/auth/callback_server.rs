@@ -139,64 +139,71 @@ impl CallbackServer {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Authorization Successful</title>
+    <title>Authorization Successful - Basilica CLI</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #000000;
             margin: 0;
             padding: 0;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            color: white;
         }
         .container {
+            background: #ffffff;
+            padding: 48px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            width: 100%;
             text-align: center;
-            background: rgba(255, 255, 255, 0.1);
-            padding: 3rem;
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
         }
-        .check-icon {
-            font-size: 4rem;
-            color: #4ade80;
-            margin-bottom: 1rem;
+        .logo {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 24px;
+            display: block;
+        }
+        .success-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 24px;
+            background: #10B981;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 32px;
         }
         h1 {
-            margin: 0 0 1rem 0;
-            font-size: 2rem;
-            font-weight: 300;
+            margin: 0 0 16px 0;
+            font-size: 24px;
+            font-weight: 600;
+            color: #111827;
         }
         p {
-            margin: 0;
-            font-size: 1.1rem;
-            opacity: 0.9;
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            color: #6B7280;
             line-height: 1.5;
         }
         .close-instruction {
-            margin-top: 2rem;
-            font-size: 0.9rem;
-            opacity: 0.7;
+            margin-top: 24px;
+            font-size: 14px;
+            color: #9CA3AF;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="check-icon">✓</div>
-        <h1>Authorization Successful!</h1>
-        <p>You have successfully authorized the Basilica CLI.</p>
+        <img src="https://www.synapz.org/assets/basilica/basilica_logo200x200.png" alt="Basilica" class="logo">
+        <div class="success-icon">✓</div>
+        <h1>Welcome to Basilica CLI</h1>
         <p class="close-instruction">You can now close this window and return to the CLI.</p>
     </div>
-    <script>
-        // Auto-close after 3 seconds
-        setTimeout(function() {
-            window.close();
-        }, 3000);
-    </script>
 </body>
 </html>
         "#
@@ -212,75 +219,84 @@ impl CallbackServer {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Authorization Failed</title>
+    <title>Authorization Failed - Basilica CLI</title>
     <style>
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #000000;
             margin: 0;
             padding: 0;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            color: white;
         }}
         .container {{
+            background: #ffffff;
+            padding: 48px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            width: 100%;
             text-align: center;
-            background: rgba(255, 255, 255, 0.1);
-            padding: 3rem;
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
-            max-width: 500px;
+        }}
+        .logo {{
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 24px;
+            display: block;
         }}
         .error-icon {{
-            font-size: 4rem;
-            color: #fca5a5;
-            margin-bottom: 1rem;
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 24px;
+            background: #EF4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 32px;
         }}
         h1 {{
-            margin: 0 0 1rem 0;
-            font-size: 2rem;
-            font-weight: 300;
+            margin: 0 0 16px 0;
+            font-size: 24px;
+            font-weight: 600;
+            color: #111827;
         }}
         p {{
-            margin: 0 0 1rem 0;
-            font-size: 1.1rem;
-            opacity: 0.9;
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            color: #6B7280;
             line-height: 1.5;
         }}
         .error-details {{
-            background: rgba(0, 0, 0, 0.2);
-            padding: 1rem;
-            border-radius: 10px;
-            margin: 1.5rem 0;
-            font-family: monospace;
-            font-size: 0.9rem;
+            background: #F9FAFB;
+            border: 1px solid #E5E7EB;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 16px 0;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 14px;
+            color: #EF4444;
             word-break: break-word;
+            text-align: left;
         }}
         .close-instruction {{
-            margin-top: 2rem;
-            font-size: 0.9rem;
-            opacity: 0.7;
+            margin-top: 24px;
+            font-size: 14px;
+            color: #9CA3AF;
         }}
     </style>
 </head>
 <body>
     <div class="container">
+        <img src="https://www.synapz.org/assets/basilica/basilica_logo200x200.png" alt="Basilica" class="logo">
         <div class="error-icon">✗</div>
         <h1>Authorization Failed</h1>
-        <p>There was an error during the authorization process.</p>
         <div class="error-details">{}</div>
         <p class="close-instruction">Please close this window and try again in the CLI.</p>
     </div>
-    <script>
-        // Auto-close after 5 seconds
-        setTimeout(function() {{
-            window.close();
-        }}, 5000);
-    </script>
 </body>
 </html>
         "#,
