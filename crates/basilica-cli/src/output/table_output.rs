@@ -38,12 +38,12 @@ pub fn display_executors(executors: &[ExecutorDetails]) -> Result<()> {
     struct ExecutorRow {
         #[tabled(rename = "ID")]
         id: String,
-        #[tabled(rename = "GPUs")]
-        gpus: String,
-        #[tabled(rename = "CPU")]
-        cpu: String,
-        #[tabled(rename = "Memory")]
-        memory: String,
+        // #[tabled(rename = "GPUs")]
+        // gpus: String,
+        // #[tabled(rename = "CPU")]
+        // cpu: String,
+        // #[tabled(rename = "Memory")]
+        // memory: String,
         #[tabled(rename = "Location")]
         location: String,
     }
@@ -51,22 +51,22 @@ pub fn display_executors(executors: &[ExecutorDetails]) -> Result<()> {
     let rows: Vec<ExecutorRow> = executors
         .iter()
         .map(|executor| {
-            let gpu_info = if executor.gpu_specs.is_empty() {
-                "None".to_string()
-            } else {
-                format!(
-                    "{} x {} ({}GB)",
-                    executor.gpu_specs.len(),
-                    executor.gpu_specs[0].name,
-                    executor.gpu_specs[0].memory_gb
-                )
-            };
+            // let gpu_info = if executor.gpu_specs.is_empty() {
+            //     "None".to_string()
+            // } else {
+            //     format!(
+            //         "{} x {} ({}GB)",
+            //         executor.gpu_specs.len(),
+            //         executor.gpu_specs[0].name,
+            //         executor.gpu_specs[0].memory_gb
+            //     )
+            // };
 
             ExecutorRow {
                 id: executor.id.clone(),
-                gpus: gpu_info,
-                cpu: format!("{} cores", executor.cpu_specs.cores),
-                memory: format!("{}GB", executor.cpu_specs.memory_gb),
+                // gpus: gpu_info,
+                // cpu: format!("{} cores", executor.cpu_specs.cores),
+                // memory: format!("{}GB", executor.cpu_specs.memory_gb),
                 location: executor
                     .location
                     .clone()

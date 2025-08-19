@@ -65,14 +65,14 @@ pub async fn handle_ls(
         struct ExecutorRow {
             #[tabled(rename = "Executor ID")]
             id: String,
-            #[tabled(rename = "GPUs")]
-            gpu_count: String,
-            #[tabled(rename = "GPU Info")]
-            gpu_info: String,
-            #[tabled(rename = "CPU")]
-            cpu: String,
-            #[tabled(rename = "RAM")]
-            ram: String,
+            // #[tabled(rename = "GPUs")]
+            // gpu_count: String,
+            // #[tabled(rename = "GPU Info")]
+            // gpu_info: String,
+            // #[tabled(rename = "CPU")]
+            // cpu: String,
+            // #[tabled(rename = "RAM")]
+            // ram: String,
             #[tabled(rename = "Score")]
             score: String,
             #[tabled(rename = "Uptime")]
@@ -83,20 +83,20 @@ pub async fn handle_ls(
             .available_executors
             .into_iter()
             .map(|executor| {
-                let (gpu_count, gpu_info) = if executor.executor.gpu_specs.is_empty() {
-                    ("0".to_string(), "No GPU".to_string())
-                } else {
-                    let gpu_names: Vec<String> = executor
-                        .executor
-                        .gpu_specs
-                        .iter()
-                        .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
-                        .collect();
-                    (
-                        executor.executor.gpu_specs.len().to_string(),
-                        gpu_names.join(", "),
-                    )
-                };
+                // let (gpu_count, gpu_info) = if executor.executor.gpu_specs.is_empty() {
+                //     ("0".to_string(), "No GPU".to_string())
+                // } else {
+                //     let gpu_names: Vec<String> = executor
+                //         .executor
+                //         .gpu_specs
+                //         .iter()
+                //         .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                //         .collect();
+                //     (
+                //         executor.executor.gpu_specs.len().to_string(),
+                //         gpu_names.join(", "),
+                //     )
+                // };
 
                 // Remove miner prefix from executor ID if present
                 let executor_id = match executor.executor.id.split_once("__") {
@@ -106,10 +106,10 @@ pub async fn handle_ls(
 
                 ExecutorRow {
                     id: executor_id,
-                    gpu_count,
-                    gpu_info,
-                    cpu: format!("{} cores", executor.executor.cpu_specs.cores),
-                    ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
+                    // gpu_count,
+                    // gpu_info,
+                    // cpu: format!("{} cores", executor.executor.cpu_specs.cores),
+                    // ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
                     score: format!("{:.2}", executor.availability.verification_score),
                     uptime: format!("{:.1}%", executor.availability.uptime_percentage),
                 }
@@ -733,18 +733,18 @@ fn display_rental_status(status: &RentalStatusResponse) {
         status.updated_at.format("%Y-%m-%d %H:%M:%S UTC")
     );
 
-    println!("\nExecutor Details:");
-    println!("  GPUs: {} available", status.executor.gpu_specs.len());
-    for gpu in &status.executor.gpu_specs {
-        println!("    - {} ({} GB)", gpu.name, gpu.memory_gb);
-    }
-    println!(
-        "  CPU: {} cores ({})",
-        status.executor.cpu_specs.cores, status.executor.cpu_specs.model
-    );
-    println!("  Memory: {} GB", status.executor.cpu_specs.memory_gb);
+    // println!("\nExecutor Details:");
+    // println!("  GPUs: {} available", status.executor.gpu_specs.len());
+    // for gpu in &status.executor.gpu_specs {
+    //     println!("    - {} ({} GB)", gpu.name, gpu.memory_gb);
+    // }
+    // println!(
+    //     "  CPU: {} cores ({})",
+    //     status.executor.cpu_specs.cores, status.executor.cpu_specs.model
+    // );
+    // println!("  Memory: {} GB", status.executor.cpu_specs.memory_gb);
 
-    if let Some(location) = &status.executor.location {
-        println!("  Location: {location}");
-    }
+    // if let Some(location) = &status.executor.location {
+    //     println!("  Location: {location}");
+    // }
 }

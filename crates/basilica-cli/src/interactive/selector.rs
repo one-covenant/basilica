@@ -28,24 +28,24 @@ impl InteractiveSelector {
         let items: Vec<String> = executors
             .iter()
             .map(|executor| {
-                let gpu_info = if executor.gpu_specs.is_empty() {
-                    "No GPUs".to_string()
-                } else {
-                    format!(
-                        "{} x {} ({}GB each)",
-                        executor.gpu_specs.len(),
-                        executor.gpu_specs[0].name,
-                        executor.gpu_specs[0].memory_gb
-                    )
-                };
+                // let gpu_info = if executor.gpu_specs.is_empty() {
+                //     "No GPUs".to_string()
+                // } else {
+                //     format!(
+                //         "{} x {} ({}GB each)",
+                //         executor.gpu_specs.len(),
+                //         executor.gpu_specs[0].name,
+                //         executor.gpu_specs[0].memory_gb
+                //     )
+                // };
 
                 format!(
-                    "{} - {} - CPU: {}c/{}GB - ${:.2}/hr{}{}",
+                    "{}{}{}",
                     executor.executor_id,
-                    gpu_info,
-                    executor.cpu_specs.cores,
-                    executor.cpu_specs.memory_gb,
-                    executor.price_per_hour,
+                    // gpu_info,
+                    // executor.cpu_specs.cores,
+                    // executor.cpu_specs.memory_gb,
+                    // executor.price_per_hour,
                     executor
                         .location
                         .as_ref()
