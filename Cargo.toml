@@ -9,6 +9,7 @@ members = [
   "crates/basilica-payments",
   "crates/bittensor",
   "crates/basilica-api",
+  "crates/basilica-cli",
   "crates/integration-tests",
   "crates/collateral-contract",
 ]
@@ -104,4 +105,4 @@ crabtensor = { git = "https://github.com/storb-tech/crabtensor", tag = "v0.5.2" 
 
 [workspace.metadata]
 # Workspace metadata for tooling
-rust-version = "1.70"
+rust-version = "1.80"

@@ -1,6 +1,7 @@
 //! Types for rental operations
 
 use chrono::{DateTime, Utc};
+use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -22,6 +23,7 @@ pub struct ContainerSpec {
     pub environment: HashMap<String, String>,
     pub ports: Vec<PortMapping>,
     pub resources: ResourceRequirements,
+    #[serde(default)]
     pub entrypoint: Vec<String>,
     pub command: Vec<String>,
     pub volumes: Vec<VolumeMount>,
@@ -39,6 +41,7 @@ pub struct PortMapping {
 }
 
 /// Resource requirements
+// TODO: make this type compatible with the one in basilica-api
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceRequirements {
     pub cpu_cores: f64,
@@ -68,7 +71,7 @@ pub struct NetworkConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RentalResponse {
     pub rental_id: String,
-    pub ssh_credentials: String,
+    pub ssh_credentials: Option<String>,
     pub container_info: ContainerInfo,
 }
 
@@ -77,19 +80,28 @@ pub struct RentalResponse {
 pub struct ContainerInfo {
     pub container_id: String,
     pub container_name: String,
+    #[serde(default)]
     pub mapped_ports: Vec<PortMapping>,
     pub status: String,
+    #[serde(default)]
     pub labels: HashMap<String, String>,
 }
 
 /// Rental state
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum RentalState {
     Provisioning,
     Active,
     Stopping,
     Stopped,
     Failed,
+}
+
+impl fmt::Display for RentalState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 
 /// Rental information stored in memory and persistence
@@ -100,11 +112,12 @@ pub struct RentalInfo {
     pub executor_id: String,
     pub container_id: String,
     pub ssh_session_id: String,
-    pub ssh_credentials: String,
+    pub ssh_credentials: String, // Validator SSH access to executor
     pub state: RentalState,
     pub created_at: DateTime<Utc>,
     pub container_spec: ContainerSpec,
     pub miner_id: String,
+    pub executor_details: Option<crate::api::types::ExecutorDetails>,
 }
 
 /// Rental status

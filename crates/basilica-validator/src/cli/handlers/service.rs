@@ -1,6 +1,8 @@
 use super::HandlerUtils;
+use crate::cli::handlers::rental::create_rental_manager;
 use crate::collateral::collateral_scan::Collateral;
 use crate::config::ValidatorConfig;
+use crate::miner_prover::miner_client::{BittensorServiceSigner, MinerClient, MinerClientConfig};
 
 use anyhow::Result;
 use bittensor::Service as BittensorService;
@@ -291,7 +293,7 @@ async fn start_validator_services(
         HandlerUtils::print_info("Running in local test mode - Bittensor services disabled");
     }
 
-    let (_bittensor_service, miner_prover_opt, weight_setter_opt) = if !local_test {
+    let (bittensor_service, miner_prover_opt, weight_setter_opt) = if !local_test {
         let bittensor_service: Arc<BittensorService> =
             Arc::new(BittensorService::new(config.bittensor.common.clone()).await?);
 
@@ -360,7 +362,7 @@ async fn start_validator_services(
     };
 
     // Create validator hotkey for API handler
-    let validator_hotkey = if let Some(ref bittensor_service) = _bittensor_service {
+    let validator_hotkey = if let Some(ref bittensor_service) = bittensor_service {
         // Get the account ID from bittensor service and convert to SS58 string
         let account_id = bittensor_service.get_account_id();
         let ss58_address = format!("{account_id}");
@@ -372,14 +374,42 @@ async fn start_validator_services(
             .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?
     };
 
-    let api_handler = crate::api::ApiHandler::new(
+    let mut api_handler = crate::api::ApiHandler::new(
         config.api.clone(),
         persistence_arc.clone(),
         gpu_profile_repo.clone(),
         storage.clone(),
         config.clone(),
-        validator_hotkey,
+        validator_hotkey.clone(),
     );
+
+    let rental_manager = if let Some(ref bittensor_service) = bittensor_service {
+        Some(
+            create_rental_manager(
+                &config,
+                validator_hotkey.clone(),
+                persistence_arc.clone(),
+                bittensor_service.clone(),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    let miner_client = if let Some(ref bittensor_service) = bittensor_service {
+        let signer = Box::new(BittensorServiceSigner::new(bittensor_service.clone()));
+
+        MinerClient::with_signer(MinerClientConfig::default(), validator_hotkey, signer)
+    } else {
+        MinerClient::new(MinerClientConfig::default(), validator_hotkey)
+    };
+
+    api_handler = api_handler.with_miner_client(Arc::new(miner_client));
+
+    if let Some(rental_manager) = rental_manager {
+        api_handler = api_handler.with_rental_manager(Arc::new(rental_manager));
+    }
 
     // Store metrics for cleanup (if needed)
     let _validator_metrics = validator_metrics;
@@ -524,7 +554,7 @@ async fn test_api_health(config: &crate::config::ValidatorConfig) -> Result<u64>
 
     // Use the configured server host and port
     let api_url = format!(
-        "http://{}:{}/api/v1/health",
+        "http://{}:{}/health",
         config.server.host, config.server.port
     );
     let response = client

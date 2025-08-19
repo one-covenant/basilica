@@ -3,13 +3,13 @@
 use crate::{
     api,
     config::Config,
-    discovery::ValidatorDiscovery,
     error::{Error, Result},
-    load_balancer::LoadBalancer,
 };
 use axum::Router;
+use basilica_validator::ValidatorClient;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::sync::Arc;
-use tokio::{signal, sync::RwLock};
+use tokio::signal;
 use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -30,14 +30,23 @@ pub struct AppState {
     /// Application configuration
     pub config: Arc<Config>,
 
-    /// Validator discovery service
-    pub discovery: Arc<ValidatorDiscovery>,
+    /// Validator client for making requests
+    pub validator_client: Arc<ValidatorClient>,
 
-    /// Load balancer
-    pub load_balancer: Arc<RwLock<LoadBalancer>>,
+    /// Validator endpoint for reference
+    pub validator_endpoint: String,
+
+    /// Validator UID in the subnet
+    pub validator_uid: u16,
+
+    /// Validator hotkey (SS58 address)
+    pub validator_hotkey: String,
 
     /// HTTP client for validator requests
     pub http_client: reqwest::Client,
+
+    /// Database pool for user rental tracking
+    pub db: PgPool,
 }
 
 impl Server {
@@ -47,26 +56,65 @@ impl Server {
 
         let config = Arc::new(config);
 
-        // Initialize Bittensor service for validator discovery
+        // Validate configuration
+        if config.bittensor.validator_hotkey.is_empty() {
+            return Err(Error::ConfigError(
+                "validator_hotkey must be configured in bittensor section".to_string(),
+            ));
+        }
+
+        // Initialize Bittensor service to find validator endpoint
+        info!("Connecting to Bittensor network to discover validator endpoint");
         let bittensor_config = config.to_bittensor_config();
         let bittensor_service = bittensor::Service::new(bittensor_config).await?;
 
-        // Initialize validator discovery
-        let discovery = Arc::new(ValidatorDiscovery::new(
-            Arc::new(bittensor_service),
-            config.clone(),
-        ));
+        // Query metagraph to find validator by hotkey
+        info!(
+            "Looking up validator with hotkey: {}",
+            config.bittensor.validator_hotkey
+        );
+        let metagraph = bittensor_service
+            .get_metagraph(config.bittensor.netuid)
+            .await?;
 
-        // Start discovery task
-        let discovery_clone = discovery.clone();
-        tokio::spawn(async move {
-            discovery_clone.start_discovery_loop().await;
-        });
+        // Use NeuronDiscovery to find validator
+        let discovery = bittensor::NeuronDiscovery::new(&metagraph);
+        let validator_info = discovery
+            .find_neuron_by_hotkey(&config.bittensor.validator_hotkey)
+            .ok_or_else(|| {
+                Error::ConfigError(format!(
+                    "Validator with hotkey {} not found in subnet {}",
+                    config.bittensor.validator_hotkey, config.bittensor.netuid
+                ))
+            })?;
 
-        // Initialize load balancer
-        let load_balancer = Arc::new(RwLock::new(LoadBalancer::new(
-            config.load_balancer.strategy.clone(),
-        )));
+        // Verify it's actually a validator (has validator_permit)
+        if !validator_info.is_validator {
+            return Err(Error::ConfigError(format!(
+                "Hotkey {} exists but does not have validator permit in subnet {}",
+                config.bittensor.validator_hotkey, config.bittensor.netuid
+            )));
+        }
+
+        let validator_uid = validator_info.uid;
+
+        // Get axon info from the validator info
+        let axon_info = validator_info.axon_info.ok_or_else(|| {
+            Error::ConfigError(format!("No axon info found for validator {validator_uid}"))
+        })?;
+
+        let validator_endpoint = format!("http://{}:{}", axon_info.ip, axon_info.port);
+        info!(
+            "Found validator {} at endpoint {}",
+            validator_uid, validator_endpoint
+        );
+
+        // Create validator client
+        let validator_client = Arc::new(ValidatorClient::new(&validator_endpoint).map_err(
+            |e| Error::Internal {
+                message: format!("Failed to create validator client: {e}"),
+            },
+        )?);
 
         // Create HTTP client for validator communication
         let http_client = reqwest::Client::builder()
@@ -76,13 +124,66 @@ impl Server {
             .build()
             .map_err(Error::HttpClient)?;
 
+        // Initialize database connection
+        info!("Initializing database connection");
+
+        let db = PgPoolOptions::new()
+            .max_connections(config.database.max_connections)
+            .connect(&config.database.url)
+            .await
+            .map_err(|e| Error::Internal {
+                message: format!("Failed to connect to database: {}", e),
+            })?;
+
+        // Run migrations
+        info!("Running database migrations");
+        sqlx::migrate!("./migrations")
+            .run(&db)
+            .await
+            .map_err(|e| Error::Internal {
+                message: format!("Failed to run migrations: {}", e),
+            })?;
+
         // Create application state
         let state = AppState {
             config: config.clone(),
-            discovery,
-            load_balancer,
-            http_client,
+            validator_client: validator_client.clone(),
+            validator_endpoint: validator_endpoint.clone(),
+            validator_uid,
+            validator_hotkey: config.bittensor.validator_hotkey.clone(),
+            http_client: http_client.clone(),
+            db,
         };
+
+        // Start optional health check task using HTTP client
+        let health_http_client = http_client;
+        let health_endpoint = validator_endpoint.clone();
+        let health_interval = config.health_check_interval();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(health_interval);
+            loop {
+                interval.tick().await;
+                let health_url = format!("{health_endpoint}/health");
+                match health_http_client.get(&health_url).send().await {
+                    Ok(response) if response.status().is_success() => {
+                        tracing::debug!("Validator health check passed");
+                    }
+                    Ok(response) => {
+                        tracing::warn!(
+                            "Validator health check returned status: {}",
+                            response.status()
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Validator health check failed for {}: {}",
+                            health_endpoint,
+                            e
+                        );
+                    }
+                }
+            }
+        });
 
         // Build the application router
         let app = Self::build_router(state)?;
@@ -103,7 +204,7 @@ impl Server {
             .layer(cors);
 
         let app = Router::new()
-            .nest("/api/v1", api::routes(state.clone()))
+            .merge(api::routes(state.clone()))
             .merge(api::docs_routes())
             .layer(middleware)
             .with_state(state);

@@ -4,6 +4,7 @@ mod tests {
     use crate::persistence::{gpu_profile_repository::GpuProfileRepository, SimplePersistence};
     use basilica_common::identity::MinerUid;
     use chrono::Utc;
+
     use std::collections::HashMap;
     use std::sync::Arc;
 

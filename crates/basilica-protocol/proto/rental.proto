@@ -160,7 +160,7 @@ message StopRentalRequest {
   bool force = 4;
 }
 
-// Stop rental response
+// Stop rental response (gRPC only - HTTP API returns 204 No Content with empty body)
 message StopRentalResponse {
   bool success = 1;
   string message = 2;
