@@ -3,7 +3,7 @@
 //! This module provides functionality for validators to rent GPU resources
 //! and deploy containers on executor machines.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -38,6 +38,20 @@ pub struct RentalManager {
     ssh_key_manager: Option<Arc<ValidatorSshKeyManager>>,
 }
 
+/// Parse SSH host from credentials string format "user@host:port"
+fn parse_ssh_host(credentials: &str) -> Result<&str> {
+    let (_, host_port) = credentials
+        .split_once('@')
+        .context("Invalid SSH credentials format: missing '@' separator")?;
+
+    let host = host_port
+        .split(':')
+        .next()
+        .filter(|h| !h.is_empty())
+        .context("Invalid SSH credentials format: empty host")?;
+
+    Ok(host)
+}
 impl RentalManager {
     /// Create a new rental manager
     pub fn new(miner_client: Arc<MinerClient>, persistence: Arc<SimplePersistence>) -> Self {
@@ -131,6 +145,45 @@ impl RentalManager {
             }
         };
 
+        // Check if SSH port is mapped and construct proper SSH credentials for end-user
+        let ssh_credentials = container_info
+            .mapped_ports
+            .iter()
+            .find(|p| p.container_port == 22)
+            .map(|ssh_mapping| {
+                // Parse host from original credentials (format: "user@host:port")
+                let host = parse_ssh_host(&ssh_session.access_credentials).unwrap_or_else(|e| {
+                    tracing::warn!("Failed to parse SSH host from credentials: {}", e);
+                    "localhost"
+                });
+                // Always use root as username for containers with the mapped port
+                format!("root@{}:{}", host, ssh_mapping.host_port)
+            });
+
+        // Fetch executor details from persistence
+        let executor_details = match self
+            .persistence
+            .get_executor_details(&request.executor_id)
+            .await
+        {
+            Ok(Some(details)) => Some(details),
+            Ok(None) => {
+                tracing::warn!(
+                    "Executor details not found for executor_id: {}",
+                    request.executor_id
+                );
+                None
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to fetch executor details for executor_id {}: {}",
+                    request.executor_id,
+                    e
+                );
+                return Err(anyhow::anyhow!("Failed to fetch executor details: {}", e));
+            }
+        };
+
         // Store rental info
         let rental_info = RentalInfo {
             rental_id: rental_id.clone(),
@@ -138,11 +191,12 @@ impl RentalManager {
             executor_id: request.executor_id.clone(),
             container_id: container_info.container_id.clone(),
             ssh_session_id: ssh_session.session_id.clone(),
-            ssh_credentials: ssh_session.access_credentials.clone(),
+            ssh_credentials: ssh_session.access_credentials.clone(), // Store validator's SSH credentials for operations
             state: RentalState::Active,
             created_at: chrono::Utc::now(),
             container_spec: request.container_spec.clone(),
             miner_id: request.miner_id.clone(),
+            executor_details,
         };
 
         // Save to persistence
@@ -160,7 +214,7 @@ impl RentalManager {
 
         Ok(RentalResponse {
             rental_id,
-            ssh_credentials: ssh_session.access_credentials,
+            ssh_credentials,
             container_info,
         })
     }
@@ -173,7 +227,7 @@ impl RentalManager {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
-        // Get container status
+        // Get container status using validator SSH credentials
         let container_client = ContainerClient::new(
             rental_info.ssh_credentials.clone(),
             self.ssh_key_manager
@@ -211,7 +265,7 @@ impl RentalManager {
         // Stop health monitoring
         self.health_monitor.stop_monitoring(rental_id).await?;
 
-        // Stop container
+        // Stop container using validator SSH credentials
         let container_client = ContainerClient::new(
             rental_info.ssh_credentials.clone(),
             self.ssh_key_manager
@@ -312,5 +366,31 @@ impl RentalManager {
         self.persistence
             .list_validator_rentals(validator_hotkey)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ssh_host() {
+        // Valid formats
+        assert_eq!(
+            parse_ssh_host("user@example.com:22").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            parse_ssh_host("root@192.168.1.1:2222").unwrap(),
+            "192.168.1.1"
+        );
+        assert_eq!(parse_ssh_host("admin@host").unwrap(), "host");
+
+        // Invalid formats should return errors
+        assert!(parse_ssh_host("no-at-sign").is_err());
+        assert!(parse_ssh_host("@:22").is_err());
+        assert!(parse_ssh_host("user@").is_err());
+        assert!(parse_ssh_host("user@:22").is_err());
+        assert!(parse_ssh_host("").is_err());
     }
 }

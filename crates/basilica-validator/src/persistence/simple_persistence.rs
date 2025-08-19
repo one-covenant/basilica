@@ -6,7 +6,19 @@ use uuid::Uuid;
 
 use crate::persistence::entities::{Rental, RentalStatus, VerificationLog};
 use crate::persistence::ValidatorPersistence;
-use crate::rental::RentalInfo;
+use crate::rental::{RentalInfo, RentalState};
+
+/// Extract GPU memory size in GB from GPU name string
+fn extract_gpu_memory_gb(gpu_name: &str) -> u32 {
+    use regex::Regex;
+
+    let re = Regex::new(r"(\d+)GB").unwrap();
+    if let Some(captures) = re.captures(gpu_name) {
+        captures[1].parse().unwrap_or(0)
+    } else {
+        0
+    }
+}
 
 /// Simplified persistence implementation for quick testing
 pub struct SimplePersistence {
@@ -568,6 +580,139 @@ impl SimplePersistence {
         Ok(entries)
     }
 
+    /// Get available executors for rental (not currently rented)
+    pub async fn get_available_executors(
+        &self,
+        min_gpu_memory: Option<u32>,
+        gpu_type: Option<String>,
+        min_gpu_count: Option<u32>,
+    ) -> Result<Vec<AvailableExecutorData>, anyhow::Error> {
+        // Build the base query with LEFT JOIN to find executors without active rentals
+        // Also join with gpu_uuid_assignments to get actual GPU data
+        let mut query_str = String::from(
+            "SELECT 
+                me.executor_id,
+                me.miner_id,
+                me.gpu_specs,
+                me.cpu_specs,
+                me.location,
+                me.status,
+                me.gpu_count,
+                m.verification_score,
+                m.uptime_percentage,
+                GROUP_CONCAT(gua.gpu_name) as gpu_names
+            FROM miner_executors me
+            JOIN miners m ON me.miner_id = m.id
+            LEFT JOIN rentals r ON me.executor_id GLOB ('*__' || r.executor_id)
+                AND r.state IN ('Active', 'Provisioning', 'active', 'provisioning')
+            LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
+            WHERE r.id IS NULL
+                AND (me.status IS NULL OR me.status != 'offline')
+            GROUP BY me.executor_id",
+        );
+
+        // Add GPU count filter if specified (use HAVING since we're grouping)
+        if let Some(min_count) = min_gpu_count {
+            query_str.push_str(&format!(" HAVING COUNT(gua.gpu_uuid) >= {}", min_count));
+        }
+
+        let rows = sqlx::query(&query_str).fetch_all(&self.pool).await?;
+
+        let mut executors = Vec::new();
+        for row in rows {
+            let gpu_specs_json: String = row.get("gpu_specs");
+            let cpu_specs_json: String = row.get("cpu_specs");
+
+            // Get GPU data from gpu_uuid_assignments join
+            let gpu_names: Option<String> = row.get("gpu_names");
+
+            // Parse GPU specs - first try from gpu_uuid_assignments data, then fall back to JSON
+            let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
+
+            if let Some(names) = gpu_names {
+                if !names.is_empty() {
+                    // Parse GPU names from GROUP_CONCAT result
+                    for gpu_name in names.split(',') {
+                        // Extract memory from GPU name
+                        let memory_gb = extract_gpu_memory_gb(gpu_name);
+
+                        gpu_specs.push(crate::api::types::GpuSpec {
+                            name: gpu_name.to_string(),
+                            memory_gb,
+                            compute_capability: "8.0".to_string(), // Default, could be parsed from prover results
+                        });
+                    }
+                }
+            }
+
+            // If no GPU data from joins, try parsing the JSON
+            if gpu_specs.is_empty() && !gpu_specs_json.is_empty() && gpu_specs_json != "{}" {
+                gpu_specs = match serde_json::from_str(&gpu_specs_json) {
+                    Ok(specs) => specs,
+                    Err(e) => {
+                        tracing::debug!("Failed to parse GPU specs JSON: {}", e);
+                        vec![]
+                    }
+                };
+            }
+
+            // Apply GPU memory filter if specified
+            if let Some(min_memory) = min_gpu_memory {
+                let meets_memory = gpu_specs.iter().any(|gpu| gpu.memory_gb >= min_memory);
+                if !meets_memory && !gpu_specs.is_empty() {
+                    continue;
+                }
+            }
+
+            // Apply GPU type filter if specified
+            if let Some(ref gpu_type_filter) = gpu_type {
+                let matches_type = gpu_specs.iter().any(|gpu| {
+                    gpu.name
+                        .to_lowercase()
+                        .contains(&gpu_type_filter.to_lowercase())
+                });
+                if !matches_type && !gpu_specs.is_empty() {
+                    continue;
+                }
+            }
+
+            // Parse CPU specs if JSON is available
+            let cpu_specs: crate::api::types::CpuSpec =
+                if !cpu_specs_json.is_empty() && cpu_specs_json != "{}" {
+                    match serde_json::from_str(&cpu_specs_json) {
+                        Ok(specs) => specs,
+                        Err(e) => {
+                            tracing::debug!("Failed to parse CPU specs JSON: {}", e);
+                            crate::api::types::CpuSpec {
+                                cores: 0,
+                                model: "Unknown".to_string(),
+                                memory_gb: 0,
+                            }
+                        }
+                    }
+                } else {
+                    crate::api::types::CpuSpec {
+                        cores: 0,
+                        model: "Unknown".to_string(),
+                        memory_gb: 0,
+                    }
+                };
+
+            executors.push(AvailableExecutorData {
+                executor_id: row.get("executor_id"),
+                miner_id: row.get("miner_id"),
+                gpu_specs,
+                cpu_specs,
+                location: row.get("location"),
+                verification_score: row.get("verification_score"),
+                uptime_percentage: row.get("uptime_percentage"),
+                status: row.get("status"),
+            });
+        }
+
+        Ok(executors)
+    }
+
     /// Helper function to convert database row to VerificationLog
     fn row_to_verification_log(
         &self,
@@ -699,19 +844,19 @@ impl SimplePersistence {
     }
 
     /// Helper function to parse rental state from string
-    fn parse_rental_state(state_str: &str, rental_id: &str) -> crate::rental::RentalState {
+    fn parse_rental_state(state_str: &str, rental_id: &str) -> RentalState {
         match state_str {
-            "provisioning" => crate::rental::RentalState::Provisioning,
-            "active" => crate::rental::RentalState::Active,
-            "stopping" => crate::rental::RentalState::Stopping,
-            "stopped" => crate::rental::RentalState::Stopped,
-            "failed" => crate::rental::RentalState::Failed,
+            "provisioning" => RentalState::Provisioning,
+            "active" => RentalState::Active,
+            "stopping" => RentalState::Stopping,
+            "stopped" => RentalState::Stopped,
+            "failed" => RentalState::Failed,
             unknown => {
                 warn!(
                     "Unknown rental state '{}' for rental {}, defaulting to Failed",
                     unknown, rental_id
                 );
-                crate::rental::RentalState::Failed
+                RentalState::Failed
             }
         }
     }
@@ -1171,6 +1316,110 @@ impl SimplePersistence {
         Ok(executors)
     }
 
+    /// Get miner ID by executor ID
+    pub async fn get_miner_id_by_executor(
+        &self,
+        executor_id: &str,
+    ) -> Result<String, anyhow::Error> {
+        let miner_id: String = sqlx::query(
+            "SELECT miner_id FROM miner_executors \
+                 WHERE executor_id GLOB '*__' || ? \
+                 LIMIT 1",
+        )
+        .bind(executor_id)
+        .fetch_one(&self.pool)
+        .await?
+        .get("miner_id");
+
+        Ok(miner_id)
+    }
+
+    /// Get detailed executor information including GPU and CPU specs
+    pub async fn get_executor_details(
+        &self,
+        executor_id: &str,
+    ) -> Result<Option<crate::api::types::ExecutorDetails>, anyhow::Error> {
+        // First get the executor basic info with GPU data from gpu_uuid_assignments
+        let row = sqlx::query(
+            "SELECT 
+                me.executor_id, 
+                me.gpu_specs, 
+                me.cpu_specs, 
+                me.location,
+                GROUP_CONCAT(gua.gpu_name) as gpu_names
+             FROM miner_executors me
+             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
+             WHERE me.executor_id = ? OR me.executor_id GLOB '*__' || ?
+             GROUP BY me.executor_id, me.gpu_specs, me.cpu_specs, me.location
+             LIMIT 1",
+        )
+        .bind(executor_id)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let executor_id: String = row.get("executor_id");
+            let gpu_specs_json: String = row.get("gpu_specs");
+            let cpu_specs_json: String = row.get("cpu_specs");
+            let location: Option<String> = row.get("location");
+
+            // Get GPU data from gpu_uuid_assignments join
+            let gpu_names: Option<String> = row.get("gpu_names");
+
+            // Parse GPU specs - first try from gpu_uuid_assignments data, then fall back to JSON
+            let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
+
+            if let Some(names) = gpu_names {
+                if !names.is_empty() {
+                    // Parse GPU names from GROUP_CONCAT result
+                    for gpu_name in names.split(',') {
+                        // Extract memory from GPU name
+                        let memory_gb = extract_gpu_memory_gb(gpu_name);
+
+                        gpu_specs.push(crate::api::types::GpuSpec {
+                            name: gpu_name.to_string(),
+                            memory_gb,
+                            compute_capability: "8.0".to_string(),
+                        });
+                    }
+                }
+            }
+
+            // If no GPU data from joins, try parsing the JSON
+            if gpu_specs.is_empty() && !gpu_specs_json.is_empty() && gpu_specs_json != "{}" {
+                gpu_specs = serde_json::from_str(&gpu_specs_json).unwrap_or_default();
+            }
+
+            // Parse CPU specs if JSON is available
+            let cpu_specs: crate::api::types::CpuSpec =
+                if !cpu_specs_json.is_empty() && cpu_specs_json != "{}" {
+                    serde_json::from_str(&cpu_specs_json).unwrap_or_else(|_| {
+                        crate::api::types::CpuSpec {
+                            cores: 0,
+                            model: "Unknown".to_string(),
+                            memory_gb: 0,
+                        }
+                    })
+                } else {
+                    crate::api::types::CpuSpec {
+                        cores: 0,
+                        model: "Unknown".to_string(),
+                        memory_gb: 0,
+                    }
+                };
+
+            Ok(Some(crate::api::types::ExecutorDetails {
+                id: executor_id,
+                gpu_specs,
+                cpu_specs,
+                location,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Get the actual gpu_count for an executor from gpu_uuid_assignments
     pub async fn get_executor_gpu_count_from_assignments(
         &self,
@@ -1260,11 +1509,11 @@ impl ValidatorPersistence for SimplePersistence {
         .bind(&rental.ssh_session_id)
         .bind(&rental.ssh_credentials)
         .bind(match &rental.state {
-            crate::rental::RentalState::Provisioning => "provisioning",
-            crate::rental::RentalState::Active => "active",
-            crate::rental::RentalState::Stopping => "stopping",
-            crate::rental::RentalState::Stopped => "stopped",
-            crate::rental::RentalState::Failed => "failed",
+            RentalState::Provisioning => "provisioning",
+            RentalState::Active => "active",
+            RentalState::Stopping => "stopping",
+            RentalState::Stopped => "stopped",
+            RentalState::Failed => "failed",
         })
         .bind(rental.created_at.to_rfc3339())
         .bind(serde_json::to_string(&rental.container_spec)?)
@@ -1289,17 +1538,20 @@ impl ValidatorPersistence for SimplePersistence {
 
             let state = Self::parse_rental_state(&state_str, &rental_id);
 
+            let ssh_creds: String = row.get("ssh_credentials");
+
             Ok(Some(RentalInfo {
                 rental_id,
                 validator_hotkey: row.get("validator_hotkey"),
                 executor_id: row.get("executor_id"),
                 container_id: row.get("container_id"),
                 ssh_session_id: row.get("ssh_session_id"),
-                ssh_credentials: row.get("ssh_credentials"),
+                ssh_credentials: ssh_creds,
                 state,
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
                 container_spec: serde_json::from_str(&container_spec_str)?,
                 miner_id: row.get::<String, _>("miner_id"),
+                executor_details: None, // Will be populated lazily when needed
             }))
         } else {
             Ok(None)
@@ -1326,17 +1578,20 @@ impl ValidatorPersistence for SimplePersistence {
 
             let state = Self::parse_rental_state(&state_str, &rental_id);
 
+            let ssh_creds: String = row.get("ssh_credentials");
+
             rentals.push(RentalInfo {
                 rental_id,
                 validator_hotkey: row.get("validator_hotkey"),
                 executor_id: row.get("executor_id"),
                 container_id: row.get("container_id"),
                 ssh_session_id: row.get("ssh_session_id"),
-                ssh_credentials: row.get("ssh_credentials"),
+                ssh_credentials: ssh_creds,
                 state,
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
                 container_spec: serde_json::from_str(&container_spec_str)?,
                 miner_id: row.get::<String, _>("miner_id"),
+                executor_details: None, // Will be populated lazily when needed
             });
         }
 
@@ -1421,6 +1676,19 @@ pub struct ExecutorData {
     pub gpu_specs: Vec<crate::api::types::GpuSpec>,
     pub cpu_specs: crate::api::types::CpuSpec,
     pub location: Option<String>,
+}
+
+/// Available executor data for rental listings
+#[derive(Debug, Clone)]
+pub struct AvailableExecutorData {
+    pub executor_id: String,
+    pub miner_id: String,
+    pub gpu_specs: Vec<crate::api::types::GpuSpec>,
+    pub cpu_specs: crate::api::types::CpuSpec,
+    pub location: Option<String>,
+    pub verification_score: f64,
+    pub uptime_percentage: f64,
+    pub status: Option<String>,
 }
 
 #[cfg(test)]

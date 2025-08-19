@@ -36,7 +36,6 @@ async fn main() -> Result<()> {
         .with_thread_ids(true)
         .with_file(true)
         .with_line_number(true)
-        .json()
         .init();
 
     info!("Starting Basilica API Gateway v{}", basilica_api::VERSION);
@@ -49,7 +48,7 @@ async fn main() -> Result<()> {
     }
 
     // Load configuration
-    let config = Config::load(args.config.as_deref())?;
+    let config = Config::load(args.config)?;
     info!(
         "Configuration loaded, binding to {}",
         config.server.bind_address

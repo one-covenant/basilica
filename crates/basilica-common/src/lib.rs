@@ -18,6 +18,7 @@
 //! - Memory safety and security by design
 //! - Trait-based abstractions for dependency injection
 
+pub mod auth_constants;
 pub mod config;
 pub mod crypto;
 pub mod error;
@@ -32,6 +33,7 @@ pub mod ssh;
 pub mod storage;
 
 // Re-export commonly used types at the crate root for convenience
+pub use auth_constants::*;
 pub use config::*;
 pub use crypto::*;
 pub use error::*;

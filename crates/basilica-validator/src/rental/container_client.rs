@@ -23,9 +23,29 @@ pub struct ContainerClient {
     pub(crate) strict_host_key_checking: bool,
     /// Path to known hosts file
     pub(crate) known_hosts_file: Option<PathBuf>,
+    /// SSH log level to control verbosity (ERROR, QUIET, FATAL, INFO, VERBOSE, DEBUG)
+    pub(crate) ssh_log_level: Option<String>,
 }
 
 impl ContainerClient {
+    /// Parse SSH connection string to extract host and port
+    /// Handles formats like "user@host:port" or "user@host"
+    fn parse_ssh_connection(connection: &str) -> (String, Option<u16>) {
+        if let Some(at_pos) = connection.rfind('@') {
+            let user_part = &connection[..=at_pos];
+            let host_port = &connection[at_pos + 1..];
+
+            if let Some(colon_pos) = host_port.rfind(':') {
+                let host = &host_port[..colon_pos];
+                let port_str = &host_port[colon_pos + 1..];
+                if let Ok(port_num) = port_str.parse::<u16>() {
+                    return (format!("{user_part}{host}"), Some(port_num));
+                }
+            }
+        }
+        (connection.to_string(), None)
+    }
+
     /// Create a new container client with validator's private key
     pub fn new(ssh_connection: String, ssh_private_key_path: Option<PathBuf>) -> Result<Self> {
         Ok(Self {
@@ -33,6 +53,7 @@ impl ContainerClient {
             ssh_private_key_path,
             strict_host_key_checking: false,
             known_hosts_file: None,
+            ssh_log_level: Some("ERROR".to_string()),
         })
     }
 
@@ -42,13 +63,20 @@ impl ContainerClient {
         ssh_private_key_path: Option<PathBuf>,
         strict_host_key_checking: bool,
         known_hosts_file: Option<PathBuf>,
+        ssh_log_level: Option<String>,
     ) -> Result<Self> {
         Ok(Self {
             ssh_connection,
             ssh_private_key_path,
             strict_host_key_checking,
             known_hosts_file,
+            ssh_log_level,
         })
+    }
+
+    /// Set SSH log level for runtime configuration
+    pub fn set_ssh_log_level(&mut self, log_level: Option<String>) {
+        self.ssh_log_level = log_level;
     }
 
     /// Execute a command over SSH
@@ -72,30 +100,18 @@ impl ContainerClient {
         ssh_cmd.arg("-o").arg("ConnectTimeout=10");
         ssh_cmd.arg("-o").arg("BatchMode=yes");
 
+        // Add SSH log level if specified to control verbosity
+        if let Some(ref log_level) = self.ssh_log_level {
+            ssh_cmd.arg("-o").arg(format!("LogLevel={}", log_level));
+        }
+
         // Add SSH private key if provided
         if let Some(ref key_path) = self.ssh_private_key_path {
             ssh_cmd.arg("-i").arg(key_path);
         }
 
         // Parse connection string to handle user@host:port format
-        let (connection_str, port) = if let Some(at_pos) = self.ssh_connection.rfind('@') {
-            let user_part = &self.ssh_connection[..=at_pos];
-            let host_port = &self.ssh_connection[at_pos + 1..];
-
-            if let Some(colon_pos) = host_port.rfind(':') {
-                let host = &host_port[..colon_pos];
-                let port_str = &host_port[colon_pos + 1..];
-                if let Ok(port_num) = port_str.parse::<u16>() {
-                    (format!("{user_part}{host}"), Some(port_num))
-                } else {
-                    (self.ssh_connection.clone(), None)
-                }
-            } else {
-                (self.ssh_connection.clone(), None)
-            }
-        } else {
-            (self.ssh_connection.clone(), None)
-        };
+        let (connection_str, port) = Self::parse_ssh_connection(&self.ssh_connection);
 
         // Add port if specified
         if let Some(port) = port {
@@ -525,11 +541,24 @@ impl ContainerClient {
 
         ssh_cmd.arg("-o").arg("BatchMode=yes");
 
+        // Add SSH log level if specified to control verbosity
+        if let Some(ref log_level) = self.ssh_log_level {
+            ssh_cmd.arg("-o").arg(format!("LogLevel={}", log_level));
+        }
+
         if let Some(ref key_path) = self.ssh_private_key_path {
             ssh_cmd.arg("-i").arg(key_path);
         }
 
-        ssh_cmd.arg(&self.ssh_connection);
+        // Parse connection string to handle user@host:port format
+        let (connection_str, port) = Self::parse_ssh_connection(&self.ssh_connection);
+
+        // Add port if specified
+        if let Some(port) = port {
+            ssh_cmd.arg("-p").arg(port.to_string());
+        }
+
+        ssh_cmd.arg(&connection_str);
         ssh_cmd.arg(docker_cmd);
 
         ssh_cmd.stdout(Stdio::piped());

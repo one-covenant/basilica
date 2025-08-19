@@ -1,0 +1,78 @@
+[package]
+name = "basilica-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["Basilica Team"]
+description = "Unified CLI for Basilica GPU rental and network management"
+license = "MIT"
+repository = "https://github.com/tplr-ai/basilica"
+
+[[bin]]
+name = "basilica"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+figment = { workspace = true }
+clap = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# HTTP client for API communication
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
+futures = "0.3"
+futures-util = "0.3"
+bytes = "1.5"
+eventsource-stream = "0.2"
+
+# Terminal UI and interaction
+dialoguer = "0.11"
+indicatif = "0.17"
+console = "0.15"
+tabled = "0.15"
+
+# SSH functionality (using external ssh command for now)
+shell-escape = "0.1"
+
+# File operations
+shellexpand = "3.1"
+etcetera = "0.8"
+
+# OAuth dependencies
+oauth2 = "4.4"
+axum = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+tower-http = { workspace = true, features = ["cors"] }
+rand = { workspace = true }
+base64 = "0.21"
+sha2 = "0.10"
+keyring = "2.0"
+directories = "5.0"
+webbrowser = "0.8"
+url = "2.4"
+
+# Wallet management
+bittensor_wallet = { git = "https://github.com/opentensor/btwallet", tag = "v3.1.0", default-features = false }
+sp-core = "34.0.0"
+
+# Internal crate dependencies
+basilica-common = { path = "../basilica-common" }
+basilica-api = { path = "../basilica-api", features = ["client"] }
+basilica-validator = { path = "../basilica-validator", features = [
+    "client",
+    "openapi",
+    "cli",
+] }
+
+[dev-dependencies]
+tempfile = "3.8"
