@@ -119,6 +119,7 @@ impl Args {
                 handlers::auth::handle_login(device_code, &config, &config_path).await
             }
             Commands::Logout => handlers::auth::handle_logout(&config).await,
+            #[cfg(debug_assertions)]
             Commands::TestAuth { api } => {
                 if api {
                     handlers::test_auth::handle_test_api_auth(&config, &config_path, self.no_auth)

@@ -122,6 +122,7 @@ pub enum Commands {
     Logout,
 
     /// Test authentication token
+    #[cfg(debug_assertions)]
     TestAuth {
         /// Test against Basilica API instead of Auth0
         #[arg(long)]
