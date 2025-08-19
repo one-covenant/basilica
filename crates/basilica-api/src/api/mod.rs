@@ -16,10 +16,13 @@ use utoipa_swagger_ui::SwaggerUi;
 
 /// Create all API routes
 pub fn routes(state: AppState) -> Router<AppState> {
+    // Unprotected routes (for health checks, etc.)
+    let public_routes = Router::new()
+        // Health endpoint - no authentication required for ALB health checks
+        .route("/health", get(routes::health::health_check));
+
     // Protected routes with Auth0 authentication and scope validation
     let protected_routes = Router::new()
-        // Health endpoint
-        .route("/health", get(routes::health::health_check))
         .route("/rentals", get(routes::rentals::list_rentals_validator))
         .route("/rentals", post(routes::rentals::start_rental))
         .route("/rentals/:id", get(routes::rentals::get_rental_status))
@@ -39,8 +42,9 @@ pub fn routes(state: AppState) -> Router<AppState> {
             middleware::auth0_middleware,
         ));
 
-    // Build the router with all protected routes
+    // Build the router with both public and protected routes
     let router = Router::new()
+        .merge(public_routes)
         .merge(protected_routes)
         .with_state(state.clone());
 
