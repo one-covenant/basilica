@@ -59,6 +59,14 @@ done
 
 cd "$PROJECT_ROOT"
 
+# Load environment variables from .env if it exists
+if [[ -f .env ]]; then
+    echo "Loading environment variables from .env"
+    set -a
+    source .env
+    set +a
+fi
+
 BUILD_ARGS=""
 if [[ "$RELEASE_MODE" == "true" ]]; then
     BUILD_ARGS="--build-arg BUILD_MODE=release"
@@ -79,6 +87,23 @@ fi
 if [[ -n "$METADATA_CHAIN_ENDPOINT" ]]; then
     BUILD_ARGS="$BUILD_ARGS --build-arg METADATA_CHAIN_ENDPOINT=$METADATA_CHAIN_ENDPOINT"
     echo "Building with METADATA_CHAIN_ENDPOINT=$METADATA_CHAIN_ENDPOINT"
+fi
+
+# Pass Auth0 configuration if set
+if [[ -n "$BASILICA_AUTH0_CLIENT_ID" ]]; then
+    BUILD_ARGS="$BUILD_ARGS --build-arg BASILICA_AUTH0_CLIENT_ID=$BASILICA_AUTH0_CLIENT_ID"
+fi
+
+if [[ -n "$BASILICA_AUTH0_AUDIENCE" ]]; then
+    BUILD_ARGS="$BUILD_ARGS --build-arg BASILICA_AUTH0_AUDIENCE=$BASILICA_AUTH0_AUDIENCE"
+fi
+
+if [[ -n "$BASILICA_AUTH0_ISSUER" ]]; then
+    BUILD_ARGS="$BUILD_ARGS --build-arg BASILICA_AUTH0_ISSUER=$BASILICA_AUTH0_ISSUER"
+fi
+
+if [[ -n "$BASILICA_AUTH0_DOMAIN" ]]; then
+    BUILD_ARGS="$BUILD_ARGS --build-arg BASILICA_AUTH0_DOMAIN=$BASILICA_AUTH0_DOMAIN"
 fi
 
 if [[ "$BUILD_IMAGE" == "true" ]]; then
