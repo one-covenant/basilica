@@ -58,7 +58,7 @@ sqlx = { version = "0.7", features = [
 ] }
 
 # gRPC and networking
-tonic = "0.10"
+tonic = { version = "0.10", features = ["tls"] }
 tonic-build = "0.10"
 prost = "0.12"
 prost-types = "0.12"

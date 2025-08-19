@@ -6471,6 +6471,7 @@ dependencies = [
  "prost-types",
  "rand 0.8.5",
  "reqwest 0.11.27",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -6479,6 +6480,7 @@ dependencies = [
  "tonic 0.10.2",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
@@ -15605,6 +15607,7 @@ dependencies = [
  "pin-project",
  "prost 0.12.6",
  "rustls 0.21.12",
+ "rustls-native-certs 0.6.3",
  "rustls-pemfile",
  "tokio",
  "tokio-rustls 0.24.1",

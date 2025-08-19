@@ -4,6 +4,7 @@
 //! across the Basilica system components.
 
 pub mod auth_test_utils;
+pub mod config;
 
 // Re-export commonly used types for convenience
 pub use auth_test_utils::{
@@ -11,3 +12,5 @@ pub use auth_test_utils::{
     create_miner_auth_service_with_config, create_test_auth, create_test_auth_with_bad_signature,
     create_valid_auth, test_hotkeys, MockBittensorService, MockExecutorAuthService,
 };
+
+pub use config::{ServiceAvailability, TestConfig};
