@@ -11,7 +11,8 @@ use crate::config::ValidatorConfig;
 use crate::miner_prover::miner_client::{BittensorServiceSigner, MinerClient, MinerClientConfig};
 use crate::persistence::{SimplePersistence, ValidatorPersistence};
 use crate::rental::{
-    ContainerSpec, NetworkConfig, PortMapping, RentalManager, RentalRequest, ResourceRequirements,
+    ContainerSpec, NetworkConfig, PortMapping, RentalManager, RentalRequest, RentalState,
+    ResourceRequirements,
 };
 use crate::ssh::ValidatorSshKeyManager;
 use basilica_common::identity::Hotkey;
@@ -60,7 +61,7 @@ async fn resolve_miner_info(
 }
 
 /// Create rental manager with all necessary setup
-async fn create_rental_manager(
+pub async fn create_rental_manager(
     config: &ValidatorConfig,
     validator_hotkey: Hotkey,
     persistence: Arc<SimplePersistence>,
@@ -312,7 +313,11 @@ async fn handle_start_rental(
 
     info!("Rental started successfully!");
     info!("Rental ID: {}", rental_response.rental_id);
-    info!("SSH Access: {}", rental_response.ssh_credentials);
+    if let Some(ref ssh_creds) = rental_response.ssh_credentials {
+        info!("SSH Access: {}", ssh_creds);
+    } else {
+        info!("SSH Access: Not available (port 22 not mapped)");
+    }
     info!(
         "Container: {} ({})",
         rental_response.container_info.container_name, rental_response.container_info.container_id
@@ -433,11 +438,11 @@ async fn handle_list_rentals(
     let filtered_rentals: Vec<_> = match state_filter.as_str() {
         "active" => rentals
             .into_iter()
-            .filter(|r| matches!(r.state, crate::rental::RentalState::Active))
+            .filter(|r| matches!(r.state, RentalState::Active))
             .collect(),
         "stopped" => rentals
             .into_iter()
-            .filter(|r| matches!(r.state, crate::rental::RentalState::Stopped))
+            .filter(|r| matches!(r.state, RentalState::Stopped))
             .collect(),
         _ => rentals, // "all" or any other value shows all rentals
     };

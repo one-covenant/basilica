@@ -1,0 +1,42 @@
+# Basilica CLI Configuration
+# 
+# This file configures the Basilica CLI for interacting with the network
+# Copy this file to ~/.basilica/config.toml and adjust values as needed
+
+# API Configuration
+[api]
+# Base URL for the Basilica API
+base_url = "http://localhost:8000"
+
+# SSH Configuration
+[ssh]
+# Path to your SSH public key for instance access
+# This key will be added to provisioned instances
+key_path = "~/.ssh/basilica.pub"
+
+# Path to your SSH private key for instance access
+# This key will be used to connect to provisioned instances
+private_key_path = "~/.ssh/basilica"
+
+# Docker Image Configuration
+[image]
+# Default Docker image to use when provisioning instances
+# Can be overridden with --image flag
+name = "nvidia/cuda:12.2.0-runtime-ubuntu22.04"
+
+# Wallet Configuration
+[wallet]
+# Name of the default wallet to use
+# The actual wallet will be located at: base_wallet_path/{default_wallet}
+default_wallet = "default"
+
+# Base path to the Bittensor wallets directory
+# This should match your Bittensor CLI wallet location
+# Wallets are stored as subdirectories: base_wallet_path/{wallet_name}/
+base_wallet_path = "~/.bittensor/wallets"
+
+# Alternative base wallet paths for different environments:
+# For testnet wallet:
+# base_wallet_path = "~/.bittensor-testnet/wallets"
+# For custom location:
+# base_wallet_path = "/path/to/your/wallets"

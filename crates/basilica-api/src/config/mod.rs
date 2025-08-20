@@ -1,29 +1,21 @@
 //! Configuration module for the Basilica API gateway
 
-mod auth;
 mod cache;
-mod discovery;
-mod load_balancer;
 mod rate_limit;
 mod server;
-mod telemetry;
 
-pub use auth::AuthConfig;
 pub use cache::{CacheBackend, CacheConfig};
-pub use discovery::DiscoveryConfig;
-pub use load_balancer::{LoadBalancerConfig, LoadBalancerStrategy};
 pub use rate_limit::{RateLimitBackend, RateLimitConfig};
 pub use server::ServerConfig;
-pub use telemetry::TelemetryConfig;
 
-use basilica_common::config::{BittensorConfig, ConfigLoader};
+use basilica_common::config::BittensorConfig;
 use basilica_common::ConfigurationError as ConfigError;
 use figment::{
     providers::{Env, Format, Serialized, Toml},
     Figment,
 };
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Bittensor integration configuration
@@ -41,8 +33,8 @@ pub struct BittensorIntegrationConfig {
     /// Validator discovery interval in seconds
     pub discovery_interval: u64,
 
-    /// Minimum validator score to consider
-    pub min_validator_score: f64,
+    /// Validator hotkey to connect to (SS58 address) - REQUIRED
+    pub validator_hotkey: String,
 }
 
 impl Default for BittensorIntegrationConfig {
@@ -52,7 +44,26 @@ impl Default for BittensorIntegrationConfig {
             netuid: 42,
             chain_endpoint: None,
             discovery_interval: 60,
-            min_validator_score: 0.5,
+            validator_hotkey: String::new(), // Must be provided in config
+        }
+    }
+}
+
+/// Database configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseConfig {
+    /// Database URL (e.g., "sqlite:basilica-api.db" or "postgres://user:pass@host/db")
+    pub url: String,
+
+    /// Maximum number of connections in the pool
+    pub max_connections: u32,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            url: "postgres://basilica:dev@localhost:5432/basilica".to_string(),
+            max_connections: 5,
         }
     }
 }
@@ -66,32 +77,38 @@ pub struct Config {
     /// Bittensor network configuration
     pub bittensor: BittensorIntegrationConfig,
 
-    /// Load balancer configuration
-    pub load_balancer: LoadBalancerConfig,
-
     /// Cache configuration
     pub cache: CacheConfig,
 
     /// Rate limiting configuration
     pub rate_limit: RateLimitConfig,
 
-    /// Authentication configuration
-    pub auth: AuthConfig,
-
-    /// Telemetry configuration
-    pub telemetry: TelemetryConfig,
-
-    /// Validator discovery configuration
-    pub discovery: DiscoveryConfig,
+    /// Database configuration
+    pub database: DatabaseConfig,
 }
 
 impl Config {
     /// Load configuration from file and environment
-    pub fn load(config_path: Option<&Path>) -> Result<Self, ConfigError> {
-        match config_path {
-            Some(path) => <Config as ConfigLoader<Config>>::load_from_file(path),
-            None => <Config as ConfigLoader<Config>>::load(None),
+    pub fn load(path_override: Option<PathBuf>) -> Result<Self, ConfigError> {
+        let default_config = Config::default();
+        let mut figment = Figment::from(Serialized::defaults(default_config));
+
+        if let Some(path) = path_override {
+            if path.exists() {
+                figment = figment.merge(Toml::file(&path));
+            }
+        } else {
+            let default_path = PathBuf::from("basilica-api.toml");
+            if default_path.exists() {
+                figment = figment.merge(Toml::file(default_path));
+            }
         }
+
+        figment = figment.merge(Env::prefixed("BASILICA_API_").split("__"));
+
+        figment.extract().map_err(|e| ConfigError::ParseError {
+            details: e.to_string(),
+        })
     }
 
     /// Generate example configuration file
@@ -109,7 +126,7 @@ impl Config {
 
     /// Get health check interval as Duration
     pub fn health_check_interval(&self) -> Duration {
-        Duration::from_secs(self.load_balancer.health_check_interval)
+        Duration::from_secs(30) // Default 30 seconds
     }
 
     /// Get discovery interval as Duration
@@ -119,12 +136,12 @@ impl Config {
 
     /// Get connection timeout as Duration
     pub fn connection_timeout(&self) -> Duration {
-        Duration::from_secs(self.load_balancer.connection_timeout)
+        Duration::from_secs(10) // Default 10 seconds
     }
 
     /// Get validator timeout as Duration
     pub fn validator_timeout(&self) -> Duration {
-        Duration::from_secs(self.discovery.validator_timeout)
+        Duration::from_secs(30) // Default 30 seconds
     }
 
     /// Create BittensorConfig from our configuration
@@ -133,48 +150,10 @@ impl Config {
             network: self.bittensor.network.clone(),
             netuid: self.bittensor.netuid,
             chain_endpoint: self.bittensor.chain_endpoint.clone(),
-            wallet_name: "basilica-api".to_string(),
+            wallet_name: "default".to_string(),
             hotkey_name: "default".to_string(),
             weight_interval_secs: 300, // 5 minutes default
         }
-    }
-}
-
-impl ConfigLoader<Config> for Config {
-    fn load(path: Option<PathBuf>) -> Result<Config, ConfigError> {
-        let figment = match path {
-            Some(p) => Figment::from(Serialized::defaults(Config::default()))
-                .merge(Toml::file(p))
-                .merge(Env::prefixed("BASILICA_API_").split("__")),
-            None => Figment::from(Serialized::defaults(Config::default()))
-                .merge(Toml::file("basilica-api.toml"))
-                .merge(Env::prefixed("BASILICA_API_").split("__")),
-        };
-
-        figment.extract().map_err(|e| ConfigError::ParseError {
-            details: e.to_string(),
-        })
-    }
-
-    fn load_from_file(path: &Path) -> Result<Config, ConfigError> {
-        let figment = Figment::from(Serialized::defaults(Config::default()))
-            .merge(Toml::file(path))
-            .merge(Env::prefixed("BASILICA_API_").split("__"));
-
-        figment.extract().map_err(|e| ConfigError::ParseError {
-            details: e.to_string(),
-        })
-    }
-
-    fn apply_env_overrides(config: &mut Config, prefix: &str) -> Result<(), ConfigError> {
-        let figment = Figment::from(Serialized::defaults(config.clone()))
-            .merge(Env::prefixed(prefix).split("__"));
-
-        *config = figment.extract().map_err(|e| ConfigError::ParseError {
-            details: e.to_string(),
-        })?;
-
-        Ok(())
     }
 }
 
@@ -215,6 +194,6 @@ mod tests {
 
         assert_eq!(bt_config.network, config.bittensor.network);
         assert_eq!(bt_config.netuid, config.bittensor.netuid);
-        assert_eq!(bt_config.wallet_name, "basilica-api");
+        assert_eq!(bt_config.wallet_name, "default");
     }
 }

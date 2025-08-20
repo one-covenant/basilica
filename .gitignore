@@ -75,7 +75,7 @@ scripts/provision/configs/staging.toml
 config/miner.toml
 config/executor.toml
 config/validator.toml
-config/basilica-api.toml
+config/api.toml
 config/gpu-attestor.toml
 !config/*.toml.example
 
@@ -114,3 +114,4 @@ temp/
 scripts/localnet/ssh-keys
 scripts/localnet/wallets
 scripts/localnet/keys
+CLAUDE.md

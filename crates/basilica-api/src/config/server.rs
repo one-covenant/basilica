@@ -15,9 +15,8 @@ pub struct ServerConfig {
     /// Request timeout in seconds
     pub request_timeout: u64,
 
-    /// Enable compression
-    pub enable_compression: bool,
-
+    // /// Enable compression
+    // pub enable_compression: bool,
     /// CORS allowed origins
     pub cors_origins: Vec<String>,
 }
@@ -28,7 +27,7 @@ impl Default for ServerConfig {
             bind_address: "0.0.0.0:8000".parse().unwrap(),
             max_connections: 10000,
             request_timeout: 30,
-            enable_compression: true,
+            // enable_compression: true,
             cors_origins: vec!["*".to_string()],
         }
     }

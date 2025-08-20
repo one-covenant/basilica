@@ -16,6 +16,10 @@ pub enum Error {
     #[error("Configuration error: {0}")]
     Config(#[from] basilica_common::ConfigurationError),
 
+    /// Configuration error string
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+
     /// Bittensor integration error
     #[error("Bittensor error: {0}")]
     Bittensor(#[from] bittensor::BittensorError),
@@ -28,15 +32,11 @@ pub enum Error {
     #[error("Validator communication error: {message}")]
     ValidatorCommunication { message: String },
 
-    /// No validators available
-    #[error("No validators available")]
-    NoValidatorsAvailable,
+    /// Missing authentication (no token provided)
+    #[error("Authentication required: {message}")]
+    MissingAuthentication { message: String },
 
-    /// Load balancer error
-    #[error("Load balancer error: {message}")]
-    LoadBalancer { message: String },
-
-    /// Authentication error
+    /// Authentication error (expired/invalid token)
     #[error("Authentication error: {message}")]
     Authentication { message: String },
 
@@ -76,6 +76,10 @@ pub enum Error {
     #[error("Resource not found: {resource}")]
     NotFound { resource: String },
 
+    /// Bad request with message
+    #[error("Bad request: {message}")]
+    BadRequest { message: String },
+
     /// Serialization error
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
@@ -98,8 +102,8 @@ impl Error {
             Error::Bittensor(_) => "BASILICA_API_BITTENSOR_ERROR",
             Error::HttpClient(_) => "BASILICA_API_HTTP_CLIENT_ERROR",
             Error::ValidatorCommunication { .. } => "BASILICA_API_VALIDATOR_COMM_ERROR",
-            Error::NoValidatorsAvailable => "BASILICA_API_NO_VALIDATORS",
-            Error::LoadBalancer { .. } => "BASILICA_API_LOAD_BALANCER_ERROR",
+            Error::ConfigError(_) => "BASILICA_API_CONFIG_ERROR",
+            Error::MissingAuthentication { .. } => "BASILICA_API_AUTH_MISSING",
             Error::Authentication { .. } => "BASILICA_API_AUTH_ERROR",
             Error::Authorization { .. } => "BASILICA_API_AUTHZ_ERROR",
             Error::RateLimitExceeded => "BASILICA_API_RATE_LIMIT",
@@ -110,6 +114,7 @@ impl Error {
             Error::Internal { .. } => "BASILICA_API_INTERNAL_ERROR",
             Error::ServiceUnavailable => "BASILICA_API_SERVICE_UNAVAILABLE",
             Error::NotFound { .. } => "BASILICA_API_NOT_FOUND",
+            Error::BadRequest { .. } => "BASILICA_API_BAD_REQUEST",
             Error::Serialization(_) => "BASILICA_API_SERIALIZATION_ERROR",
             Error::Other(_) => "BASILICA_API_OTHER_ERROR",
         }
@@ -123,7 +128,6 @@ impl Error {
                 | Error::ValidatorCommunication { .. }
                 | Error::Timeout
                 | Error::ServiceUnavailable
-                | Error::NoValidatorsAvailable
         )
     }
 
@@ -131,11 +135,13 @@ impl Error {
     pub fn is_client_error(&self) -> bool {
         matches!(
             self,
-            Error::Authentication { .. }
+            Error::MissingAuthentication { .. }
+                | Error::Authentication { .. }
                 | Error::Authorization { .. }
                 | Error::RateLimitExceeded
                 | Error::InvalidRequest { .. }
                 | Error::NotFound { .. }
+                | Error::BadRequest { .. }
         )
     }
 }
@@ -147,8 +153,8 @@ impl IntoResponse for Error {
             Error::Bittensor(_) => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
             Error::HttpClient(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
             Error::ValidatorCommunication { .. } => (StatusCode::BAD_GATEWAY, self.to_string()),
-            Error::NoValidatorsAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
-            Error::LoadBalancer { .. } => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
+            Error::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            Error::MissingAuthentication { .. } => (StatusCode::UNAUTHORIZED, self.to_string()),
             Error::Authentication { .. } => (StatusCode::UNAUTHORIZED, self.to_string()),
             Error::Authorization { .. } => (StatusCode::FORBIDDEN, self.to_string()),
             Error::RateLimitExceeded => (
@@ -162,6 +168,7 @@ impl IntoResponse for Error {
             Error::Internal { .. } => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             Error::ServiceUnavailable => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
             Error::NotFound { .. } => (StatusCode::NOT_FOUND, self.to_string()),
+            Error::BadRequest { .. } => (StatusCode::BAD_REQUEST, self.to_string()),
             Error::Serialization(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             Error::Other(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
@@ -209,13 +216,10 @@ mod tests {
     #[test]
     fn test_error_codes() {
         assert_eq!(
-            Error::NoValidatorsAvailable.error_code(),
-            "BASILICA_API_NO_VALIDATORS"
-        );
-        assert_eq!(
             Error::RateLimitExceeded.error_code(),
             "BASILICA_API_RATE_LIMIT"
         );
+        assert_eq!(Error::Timeout.error_code(), "BASILICA_API_TIMEOUT");
     }
 
     #[test]
@@ -230,6 +234,10 @@ mod tests {
 
     #[test]
     fn test_client_errors() {
+        assert!(Error::MissingAuthentication {
+            message: "test".to_string()
+        }
+        .is_client_error());
         assert!(Error::Authentication {
             message: "test".to_string()
         }
