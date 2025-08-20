@@ -28,12 +28,16 @@ pub struct CliConfig {
 pub struct ApiConfig {
     /// Base URL for the Basilica API
     pub base_url: String,
+
+    /// Request timeout in seconds
+    pub request_timeout: u64,
 }
 
 impl Default for ApiConfig {
     fn default() -> Self {
         Self {
             base_url: "https://api.basilica.ai".to_string(),
+            request_timeout: 120,
         }
     }
 }

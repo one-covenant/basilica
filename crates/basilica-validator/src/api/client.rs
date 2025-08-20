@@ -10,7 +10,7 @@ use eventsource_stream::Eventsource;
 use futures::StreamExt;
 use futures_util::Stream;
 use reqwest::Client;
-use std::pin::Pin;
+use std::{pin::Pin, time::Duration};
 
 /// HTTP client for the Validator API
 #[derive(Clone, Debug)]
@@ -21,9 +21,9 @@ pub struct ValidatorClient {
 
 impl ValidatorClient {
     /// Create a new ValidatorClient instance
-    pub fn new(base_url: impl Into<String>) -> Result<Self> {
+    pub fn new(base_url: impl Into<String>, timeout: Duration) -> Result<Self> {
         let http_client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(timeout)
             .build()
             .context("Failed to build HTTP client")?;
 
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn test_client_creation() {
-        let client = ValidatorClient::new("http://localhost:8080");
+        let client = ValidatorClient::new("http://localhost:8080", Duration::from_secs(30));
         assert!(client.is_ok());
     }
 

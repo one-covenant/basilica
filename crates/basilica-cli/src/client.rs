@@ -6,6 +6,8 @@
 //! This is distinct from the general HTTP client library in basilica-api/src/client.rs
 //! which provides the underlying HTTP client functionality.
 
+use std::time::Duration;
+
 use crate::auth::{OAuthFlow, TokenStore};
 use crate::config::CliConfig;
 use anyhow::Result;
@@ -27,7 +29,9 @@ pub async fn create_authenticated_client(
 ) -> Result<BasilicaClient> {
     let api_url = config.api.base_url.clone();
 
-    let mut builder = ClientBuilder::default().base_url(api_url);
+    let mut builder = ClientBuilder::default()
+        .base_url(api_url)
+        .timeout(Duration::from_secs(config.api.request_timeout));
 
     if !bypass_auth {
         // Use JWT authentication
