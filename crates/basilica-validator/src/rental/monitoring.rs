@@ -22,9 +22,11 @@ type MonitoringTask = (tokio::task::JoinHandle<()>, CancellationToken);
 /// Health monitor for containers
 pub struct HealthMonitor {
     /// Active monitoring tasks with cancellation tokens
-    monitoring_tasks: Arc<RwLock<HashMap<String, MonitoringTask>>>,
+    pub monitoring_tasks: Arc<RwLock<HashMap<String, MonitoringTask>>>,
     /// Health check configuration
     config: HealthCheckConfig,
+    /// Channel to send unhealthy events
+    unhealthy_sender: mpsc::Sender<String>,
 }
 
 /// Health check configuration
@@ -32,8 +34,6 @@ pub struct HealthMonitor {
 pub struct HealthCheckConfig {
     /// Health check interval
     pub check_interval: Duration,
-    /// Number of consecutive failures before marking unhealthy
-    pub failure_threshold: u32,
     /// Timeout for health check commands
     pub check_timeout: Duration,
 }
@@ -42,47 +42,47 @@ impl Default for HealthCheckConfig {
     fn default() -> Self {
         Self {
             check_interval: Duration::from_secs(30),
-            failure_threshold: 3,
             check_timeout: Duration::from_secs(10),
         }
     }
 }
 
-impl Default for HealthMonitor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl HealthMonitor {
     /// Create a new health monitor
-    pub fn new() -> Self {
+    pub fn new(tx: mpsc::Sender<String>) -> Self {
         Self {
             monitoring_tasks: Arc::new(RwLock::new(HashMap::new())),
+            unhealthy_sender: tx,
             config: HealthCheckConfig::default(),
         }
     }
 
     /// Create with custom configuration
-    pub fn with_config(config: HealthCheckConfig) -> Self {
+    pub fn with_config(config: HealthCheckConfig, tx: mpsc::Sender<String>) -> Self {
         Self {
             monitoring_tasks: Arc::new(RwLock::new(HashMap::new())),
+            unhealthy_sender: tx,
             config,
         }
     }
 
     /// Start monitoring a container
-    pub async fn start_monitoring(&self, rental_id: &str, client: &ContainerClient) -> Result<()> {
+    pub async fn start_monitoring(
+        &self,
+        rental_id: &str,
+        client: &ContainerClient,
+        container_id: String,
+    ) -> Result<()> {
         let rental_id_str = rental_id.to_string();
         let client = client.clone();
         let config = self.config.clone();
         let cancellation_token = CancellationToken::new();
         let task_token = cancellation_token.clone();
+        let unhealthy_sender = self.unhealthy_sender.clone();
 
         // Spawn monitoring task
         let task = tokio::spawn(async move {
             let mut check_interval = interval(config.check_interval);
-            let mut consecutive_failures = 0;
 
             loop {
                 tokio::select! {
@@ -92,30 +92,30 @@ impl HealthMonitor {
                     }
                     _ = check_interval.tick() => {
                         // Perform health check
-                        match Self::perform_health_check(&client, &rental_id_str).await {
+                        match Self::perform_health_check(&client, &container_id).await {
                             Ok(healthy) => {
                                 if healthy {
-                                    consecutive_failures = 0;
                                     debug!("Container {} is healthy", rental_id_str);
                                 } else {
-                                    consecutive_failures += 1;
-                                    warn!(
-                                        "Container {} health check failed ({}/{})",
-                                        rental_id_str, consecutive_failures, config.failure_threshold
-                                    );
-
-                                    if consecutive_failures >= config.failure_threshold {
-                                        error!(
-                                            "Container {} marked as unhealthy after {} consecutive failures",
-                                            rental_id_str, consecutive_failures
-                                        );
-                                        // Trigger unhealthy event notification
-                                    }
+                                    error!("Container {} marked as unhealthy", rental_id_str);
+                                    // Trigger unhealthy event notification
+                                    unhealthy_sender.send(rental_id_str.clone()).await.expect("Failed to send unhealthy event");
+                                    info!("Unhealthy event notification sent for rental {}", rental_id_str);
+                                    // Exit monitoring loop after sending notification
+                                    break;
                                 }
                             }
                             Err(e) => {
                                 error!("Health check error for container {}: {}", rental_id_str, e);
-                                consecutive_failures += 1;
+                                error!("Container {} marked as unhealthy", rental_id_str);
+                                // Trigger unhealthy event notification
+                                unhealthy_sender
+                                    .send(rental_id_str.clone())
+                                    .await
+                                    .expect("Failed to send unhealthy event");
+                                info!("Unhealthy event notification sent for rental {}", rental_id_str);
+                                // Exit monitoring loop after sending notification
+                                break;
                             }
                         }
                     }
