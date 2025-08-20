@@ -252,7 +252,7 @@ impl TokenStore {
             AuthError::StorageError(format!("Failed to create keyring entry: {}", e))
         })?;
 
-        match service_entry.delete_password() {
+        match service_entry.delete_credential() {
             Ok(_) => {}
             Err(KeyringError::NoEntry) => {
                 // Already deleted, not an error

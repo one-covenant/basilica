@@ -11,7 +11,6 @@ pub enum Commands {
         action: ConfigAction,
     },
 
-
     /// List available GPU resources
     Ls {
         #[command(flatten)]
