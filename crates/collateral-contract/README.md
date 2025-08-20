@@ -23,9 +23,40 @@ forge install OpenZeppelin/openzeppelin-contracts-upgradeable
 forge test
 ```
 
-### CLI Development
+### deploy to testnet
 
 ```bash
+export NETUID=39
+export TRUSTEE_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
+export MIN_COLLATERAL=1000000000000000000
+export DECISION_TIMEOUT=3600
+export ADMIN_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
+
+forge script script/DeployUpgradeable.s.sol \
+ --rpc-url https://test.chain.opentensor.ai \
+ --private-key YOUR_PRIVATE_KEY \
+ --broadcast
+
+# Output like
+# CollateralUpgradeable
+
+✅ [Success] Hash: 0xb727d00872419766cd274f5c15b764bb010e74728720925cc5d5c85405dcea31
+Contract Address: 0x567E4c231AB946CdEf1C48eFA154BB8790Ae58Ba
+Block: 5232407
+Paid: 0.005569686466097676 ETH (276627 gas \* 20.134283588 gwei)
+
+# ERC1967Proxy
+
+✅ [Success] Hash: 0xcd91c195019ec4373be318554e4dbfbb95a59a8a823016253c3b4e673310ffa6
+Contract Address: 0x22ffee3f67E476870C1A79059C3c51AeD096dF92
+Block: 5232407
+Paid: 0.068712128660782484 ETH (3412693 gas \* 20.134283588 gwei)
+
+```
+
+### CLI Development
+
+````bash
 # Build the CLI
 cargo build --bin collateral-cli
 
@@ -34,7 +65,7 @@ cargo test --lib
 
 # Run all tests
 cargo test
-```
+
 
 ## CLI Tool Usage
 
@@ -47,6 +78,13 @@ The `collateral-cli` provides a comprehensive interface for interacting with the
 cargo build --release --bin collateral-cli
 
 # The binary will be available at target/release/collateral-cli
+````
+
+```bash
+# Install the CLI tool
+cd crates/collateral-contract
+cargo install --path .
+# The binary will be available at $HOME/.cargo/bin/collateral-cli
 ```
 
 ### Global Options
@@ -293,92 +331,3 @@ forge test --gas-report
 # Test contract deployment
 forge script script/DeployUpgradeable.s.sol
 ```
-
-## Development Workflow
-
-### Smart Contract Development
-
-```bash
-# 1. Modify contracts in src/
-# 2. Compile contracts
-forge build
-
-# 3. Run tests
-forge test
-
-# 4. Deploy locally (if needed)
-anvil  # In another terminal
-forge script script/DeployUpgradeable.s.sol --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
-```
-
-### CLI Development
-
-```bash
-# 1. Modify CLI code in src/bin/main.rs
-# 2. Build and test
-cargo build --bin collateral-cli
-cargo test --bin collateral-cli
-
-# 3. Test CLI functionality
-cargo run --bin collateral-cli -- --help
-
-# 4. Test with local network (requires anvil)
-anvil  # In another terminal
-cargo run --bin collateral-cli -- --network local --contract-address 0x5FbDB2315678afecb367f032d93F642f64180aa3 query netuid
-```
-
-## Error Testing
-
-### Invalid Input Testing
-
-```bash
-# Test invalid hotkey formats
-cargo run --bin collateral-cli -- tx deposit --hotkey "invalid" --executor-id 123 --amount 1000000000000000000 --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12
-
-# Test invalid address formats
-cargo run --bin collateral-cli -- --contract-address "too_short" query netuid
-
-# Test invalid amounts
-cargo run --bin collateral-cli -- tx deposit --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --executor-id 123 --amount "invalid_amount" --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12
-
-# Test missing required arguments
-cargo run --bin collateral-cli -- tx deposit --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-```
-
-### Network Connection Testing
-
-```bash
-# Test with non-existent network endpoints (should timeout)
-RUST_LOG=debug cargo run --bin collateral-cli -- --network local query netuid
-
-# Test with invalid contract addresses (should return contract errors)
-cargo run --bin collateral-cli -- --contract-address 0x0000000000000000000000000000000000000000 query netuid
-```
-
-## Performance Testing
-
-```bash
-# Test event scanning performance
-time cargo run --bin collateral-cli -- events scan --from-block 1000
-
-# Test with large block ranges
-cargo run --bin collateral-cli -- events scan --from-block 1000 --format json | jq length
-
-# Memory usage testing
-valgrind --tool=massif cargo run --bin collateral-cli -- events scan --from-block 1000
-```
-
-## Environment Variables
-
-```bash
-# Set private key via environment
-export PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12
-
-# Enable debug logging
-export RUST_LOG=debug
-
-# Test with environment variables
-cargo run --bin collateral-cli -- tx deposit --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --executor-id 123 --amount 1000000000000000000
-```
-
-For detailed CLI documentation, see [CLI.md](CLI.md).

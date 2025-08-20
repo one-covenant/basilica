@@ -2,7 +2,8 @@
 src = "src"
 out = "out"
 libs = ["lib"]
-solc = "0.8.28"
+solc = "0.8.22"
+evm_version = "london"
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/"

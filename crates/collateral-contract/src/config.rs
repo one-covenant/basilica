@@ -10,8 +10,8 @@ pub const TEST_CHAIN_ID: u64 = 945;
 pub const TEST_RPC_URL: &str = "https://test.finney.opentensor.ai";
 
 // Local network configuration
-pub const LOCAL_CHAIN_ID: u64 = 0;
-pub const LOCAL_RPC_URL: &str = "http://localhost:9944";
+pub const LOCAL_CHAIN_ID: u64 = 31337;
+pub const LOCAL_RPC_URL: &str = "http://localhost:8545";
 pub const LOCAL_WS_URL: &str = "ws://localhost:9944";
 
 /// Maximum number of blocks to scan in a single iteration when scanning for collateral events
@@ -19,3 +19,6 @@ pub const MAX_BLOCKS_PER_SCAN: u64 = 1000;
 
 /// Block number at which the collateral contract was deployed. Used as starting point for event scanning.
 pub const CONTRACT_DEPLOYED_BLOCK_NUMBER: u64 = 0;
+
+pub const DEFAULT_CONTRACT_ADDRESS: Address =
+    address!("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512");

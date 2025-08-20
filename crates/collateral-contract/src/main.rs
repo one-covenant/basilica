@@ -1,3 +1,5 @@
+mod config;
+
 use alloy_primitives::FixedBytes;
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
@@ -5,12 +7,13 @@ use alloy_sol_types::SolEvent;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use collateral_contract::{get_collateral_with_config, CollateralEvent};
+use config::{
+    CHAIN_ID, COLLATERAL_ADDRESS, DEFAULT_CONTRACT_ADDRESS, LOCAL_CHAIN_ID, LOCAL_RPC_URL, RPC_URL,
+    TEST_CHAIN_ID, TEST_RPC_URL,
+};
 use hex::FromHex;
 use std::collections::HashMap;
 use std::str::FromStr;
-
-#[cfg(test)]
-mod cli_tests;
 
 #[derive(Debug, Clone, ValueEnum, Default)]
 enum Network {
@@ -23,54 +26,31 @@ enum Network {
     Local,
 }
 
-// impl Default for Network {
-//     fn default() -> Self {
-//         Network::Mainnet
-//     }
-// }
-
 #[derive(Debug, Clone)]
 struct NetworkConfig {
     pub chain_id: u64,
     pub rpc_url: String,
-    pub default_contract_address: Address,
+    pub contract_address: Address,
 }
 
 impl NetworkConfig {
     fn from_network(network: &Network) -> Self {
         match network {
             Network::Mainnet => NetworkConfig {
-                chain_id: 964,
-                rpc_url: "https://lite.chain.opentensor.ai:443".to_string(),
-                default_contract_address: Address::from_str(
-                    "0x0000000000000000000000000000000000000001",
-                )
-                .unwrap(),
+                chain_id: CHAIN_ID,
+                rpc_url: RPC_URL.to_string(),
+                contract_address: COLLATERAL_ADDRESS,
             },
             Network::Testnet => NetworkConfig {
-                chain_id: 945,
-                rpc_url: "https://test.finney.opentensor.ai".to_string(),
-                default_contract_address: Address::from_str(
-                    "0x0000000000000000000000000000000000000001",
-                )
-                .unwrap(),
+                chain_id: TEST_CHAIN_ID,
+                rpc_url: TEST_RPC_URL.to_string(),
+                contract_address: DEFAULT_CONTRACT_ADDRESS,
             },
             Network::Local => NetworkConfig {
-                chain_id: 31337,
-                rpc_url: "http://localhost:8545".to_string(),
-                default_contract_address: Address::from_str(
-                    "0x0000000000000000000000000000000000000001",
-                )
-                .unwrap(),
+                chain_id: LOCAL_CHAIN_ID,
+                rpc_url: LOCAL_RPC_URL.to_string(),
+                contract_address: DEFAULT_CONTRACT_ADDRESS,
             },
-        }
-    }
-
-    fn get_contract_address(&self, override_address: &Option<String>) -> Result<Address> {
-        if let Some(addr_str) = override_address {
-            parse_address(addr_str)
-        } else {
-            Ok(self.default_contract_address)
         }
     }
 }
@@ -83,10 +63,6 @@ struct Cli {
     /// Network to connect to
     #[arg(long, value_enum, default_value = "mainnet")]
     network: Network,
-
-    /// Contract address (overrides network default)
-    #[arg(long)]
-    contract_address: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -239,28 +215,19 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let network_config = NetworkConfig::from_network(&cli.network);
-    let contract_address = network_config.get_contract_address(&cli.contract_address)?;
 
     println!("Using network: {:?}", cli.network);
-    println!("Contract address: {}", contract_address);
+    println!("Contract address: {}", network_config.contract_address);
     println!("RPC URL: {}", network_config.rpc_url);
 
     match cli.command {
-        Commands::Tx(tx_cmd) => handle_tx_command(tx_cmd, &network_config, contract_address).await,
-        Commands::Query(query_cmd) => {
-            handle_query_command(query_cmd, &network_config, contract_address).await
-        }
-        Commands::Events(event_cmd) => {
-            handle_event_command(event_cmd, &network_config, contract_address).await
-        }
+        Commands::Tx(tx_cmd) => handle_tx_command(tx_cmd, &network_config).await,
+        Commands::Query(query_cmd) => handle_query_command(query_cmd, &network_config).await,
+        Commands::Events(event_cmd) => handle_event_command(event_cmd, &network_config).await,
     }
 }
 
-async fn handle_tx_command(
-    cmd: TxCommands,
-    network_config: &NetworkConfig,
-    contract_address: Address,
-) -> Result<()> {
+async fn handle_tx_command(cmd: TxCommands, network_config: &NetworkConfig) -> Result<()> {
     match cmd {
         TxCommands::Deposit {
             private_key,
@@ -281,7 +248,6 @@ async fn handle_tx_command(
                 executor_id,
                 amount_u256,
                 network_config,
-                contract_address,
             )
             .await?;
             println!("Deposit transaction completed successfully!");
@@ -307,7 +273,6 @@ async fn handle_tx_command(
                 &url,
                 checksum,
                 network_config,
-                contract_address,
             )
             .await?;
             println!("Reclaim collateral transaction completed successfully!");
@@ -319,13 +284,7 @@ async fn handle_tx_command(
             let request_id = parse_u256(&reclaim_request_id)?;
 
             println!("Finalizing reclaim request {}", reclaim_request_id);
-            finalize_reclaim_with_network_config(
-                &private_key,
-                request_id,
-                network_config,
-                contract_address,
-            )
-            .await?;
+            finalize_reclaim_with_network_config(&private_key, request_id, network_config).await?;
             println!("Finalize reclaim transaction completed successfully!");
         }
         TxCommands::DenyReclaim {
@@ -344,7 +303,6 @@ async fn handle_tx_command(
                 &url,
                 checksum,
                 network_config,
-                contract_address,
             )
             .await?;
             println!("Deny reclaim transaction completed successfully!");
@@ -370,7 +328,6 @@ async fn handle_tx_command(
                 &url,
                 checksum,
                 network_config,
-                contract_address,
             )
             .await?;
             println!("Slash collateral transaction completed successfully!");
@@ -379,29 +336,22 @@ async fn handle_tx_command(
     Ok(())
 }
 
-async fn handle_query_command(
-    cmd: QueryCommands,
-    network_config: &NetworkConfig,
-    contract_address: Address,
-) -> Result<()> {
+async fn handle_query_command(cmd: QueryCommands, network_config: &NetworkConfig) -> Result<()> {
     match cmd {
         QueryCommands::Netuid => {
-            let result = netuid_with_network_config(network_config, contract_address).await?;
+            let result = netuid_with_network_config(network_config).await?;
             println!("Network UID: {}", result);
         }
         QueryCommands::Trustee => {
-            let result = trustee_with_network_config(network_config, contract_address).await?;
+            let result = trustee_with_network_config(network_config).await?;
             println!("Trustee address: {}", result);
         }
         QueryCommands::DecisionTimeout => {
-            let result =
-                decision_timeout_with_network_config(network_config, contract_address).await?;
+            let result = decision_timeout_with_network_config(network_config).await?;
             println!("Decision timeout: {} seconds", result);
         }
         QueryCommands::MinCollateralIncrease => {
-            let result =
-                min_collateral_increase_with_network_config(network_config, contract_address)
-                    .await?;
+            let result = min_collateral_increase_with_network_config(network_config).await?;
             println!("Minimum collateral increase: {} wei", result);
         }
         QueryCommands::ExecutorToMiner {
@@ -409,13 +359,9 @@ async fn handle_query_command(
             executor_id,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
-            let result = executor_to_miner_with_network_config(
-                hotkey_bytes,
-                executor_id,
-                network_config,
-                contract_address,
-            )
-            .await?;
+            let result =
+                executor_to_miner_with_network_config(hotkey_bytes, executor_id, network_config)
+                    .await?;
             println!("Miner address for executor {}: {}", executor_id, result);
         }
         QueryCommands::Collaterals {
@@ -423,19 +369,13 @@ async fn handle_query_command(
             executor_id,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
-            let result = collaterals_with_network_config(
-                hotkey_bytes,
-                executor_id,
-                network_config,
-                contract_address,
-            )
-            .await?;
+            let result =
+                collaterals_with_network_config(hotkey_bytes, executor_id, network_config).await?;
             println!("Collateral for executor {}: {} wei", executor_id, result);
         }
         QueryCommands::Reclaims { reclaim_request_id } => {
             let request_id = parse_u256(&reclaim_request_id)?;
-            let result =
-                reclaims_with_network_config(request_id, network_config, contract_address).await?;
+            let result = reclaims_with_network_config(request_id, network_config).await?;
             println!("Reclaim details for request {}:", reclaim_request_id);
             println!("  Hotkey: {}", hex::encode(result.hotkey));
             println!("  Executor ID: {}", result.executor_id);
@@ -447,17 +387,12 @@ async fn handle_query_command(
     Ok(())
 }
 
-async fn handle_event_command(
-    cmd: EventCommands,
-    network_config: &NetworkConfig,
-    contract_address: Address,
-) -> Result<()> {
+async fn handle_event_command(cmd: EventCommands, network_config: &NetworkConfig) -> Result<()> {
     match cmd {
         EventCommands::Scan { from_block, format } => {
             println!("Scanning events from block {}", from_block);
             let (to_block, events) =
-                scan_events_with_network_config(from_block, network_config, contract_address)
-                    .await?;
+                scan_events_with_network_config(from_block, network_config).await?;
 
             println!("Scanned blocks {} to {}", from_block, to_block);
 
@@ -472,16 +407,6 @@ async fn handle_event_command(
 }
 
 // Helper functions for parsing inputs
-fn parse_address(address: &str) -> Result<Address> {
-    let address = address.strip_prefix("0x").unwrap_or(address);
-    if address.len() != 40 {
-        return Err(anyhow::anyhow!(
-            "Address must be 20 bytes (40 hex characters)"
-        ));
-    }
-    Address::from_str(&format!("0x{}", address))
-        .map_err(|e| anyhow::anyhow!("Invalid address format: {}", e))
-}
 
 fn parse_hotkey(hotkey: &str) -> Result<[u8; 32]> {
     let hotkey = hotkey.strip_prefix("0x").unwrap_or(hotkey);
@@ -520,13 +445,12 @@ async fn deposit_with_network_config(
     executor_id: u128,
     amount: U256,
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<()> {
     let contract = get_collateral_with_config(
         private_key,
         network_config.chain_id,
         &network_config.rpc_url,
-        contract_address,
+        network_config.contract_address,
     )
     .await?;
 
@@ -550,13 +474,12 @@ async fn reclaim_collateral_with_network_config(
     url: &str,
     url_content_md5_checksum: u128,
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<()> {
     let contract = get_collateral_with_config(
         private_key,
         network_config.chain_id,
         &network_config.rpc_url,
-        contract_address,
+        network_config.contract_address,
     )
     .await?;
 
@@ -576,13 +499,12 @@ async fn finalize_reclaim_with_network_config(
     private_key: &str,
     reclaim_request_id: U256,
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<()> {
     let contract = get_collateral_with_config(
         private_key,
         network_config.chain_id,
         &network_config.rpc_url,
-        contract_address,
+        network_config.contract_address,
     )
     .await?;
 
@@ -598,13 +520,12 @@ async fn deny_reclaim_with_network_config(
     url: &str,
     url_content_md5_checksum: u128,
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<()> {
     let contract = get_collateral_with_config(
         private_key,
         network_config.chain_id,
         &network_config.rpc_url,
-        contract_address,
+        network_config.contract_address,
     )
     .await?;
 
@@ -625,13 +546,12 @@ async fn slash_collateral_with_network_config(
     url: &str,
     url_content_md5_checksum: u128,
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<()> {
     let contract = get_collateral_with_config(
         private_key,
         network_config.chain_id,
         &network_config.rpc_url,
-        contract_address,
+        network_config.contract_address,
     )
     .await?;
 
@@ -648,50 +568,44 @@ async fn slash_collateral_with_network_config(
 }
 
 // Query wrapper functions
-async fn netuid_with_network_config(
-    network_config: &NetworkConfig,
-    contract_address: Address,
-) -> Result<u16> {
+async fn netuid_with_network_config(network_config: &NetworkConfig) -> Result<u16> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let contract = collateral_contract::CollateralUpgradeable::new(contract_address, provider);
+    let contract =
+        collateral_contract::CollateralUpgradeable::new(network_config.contract_address, provider);
     let netuid = contract.NETUID().call().await?;
     Ok(netuid)
 }
 
-async fn trustee_with_network_config(
-    network_config: &NetworkConfig,
-    contract_address: Address,
-) -> Result<Address> {
+async fn trustee_with_network_config(network_config: &NetworkConfig) -> Result<Address> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let contract = collateral_contract::CollateralUpgradeable::new(contract_address, provider);
+    let contract =
+        collateral_contract::CollateralUpgradeable::new(network_config.contract_address, provider);
     let trustee = contract.TRUSTEE().call().await?;
     Ok(trustee)
 }
 
-async fn decision_timeout_with_network_config(
-    network_config: &NetworkConfig,
-    contract_address: Address,
-) -> Result<u64> {
+async fn decision_timeout_with_network_config(network_config: &NetworkConfig) -> Result<u64> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let contract = collateral_contract::CollateralUpgradeable::new(contract_address, provider);
+    let contract =
+        collateral_contract::CollateralUpgradeable::new(network_config.contract_address, provider);
     let decision_timeout = contract.DECISION_TIMEOUT().call().await?;
     Ok(decision_timeout)
 }
 
 async fn min_collateral_increase_with_network_config(
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<U256> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let contract = collateral_contract::CollateralUpgradeable::new(contract_address, provider);
+    let contract =
+        collateral_contract::CollateralUpgradeable::new(network_config.contract_address, provider);
     let min_collateral_increase = contract.MIN_COLLATERAL_INCREASE().call().await?;
     Ok(min_collateral_increase)
 }
@@ -700,12 +614,12 @@ async fn executor_to_miner_with_network_config(
     hotkey: [u8; 32],
     executor_id: u128,
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<Address> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let contract = collateral_contract::CollateralUpgradeable::new(contract_address, provider);
+    let contract =
+        collateral_contract::CollateralUpgradeable::new(network_config.contract_address, provider);
     let executor_bytes = executor_id.to_be_bytes();
     let executor_to_miner = contract
         .executorToMiner(
@@ -721,12 +635,12 @@ async fn collaterals_with_network_config(
     hotkey: [u8; 32],
     executor_id: u128,
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<U256> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let contract = collateral_contract::CollateralUpgradeable::new(contract_address, provider);
+    let contract =
+        collateral_contract::CollateralUpgradeable::new(network_config.contract_address, provider);
     let executor_bytes = executor_id.to_be_bytes();
     let collaterals = contract
         .collaterals(
@@ -741,12 +655,12 @@ async fn collaterals_with_network_config(
 async fn reclaims_with_network_config(
     reclaim_request_id: U256,
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<collateral_contract::Reclaim> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let contract = collateral_contract::CollateralUpgradeable::new(contract_address, provider);
+    let contract =
+        collateral_contract::CollateralUpgradeable::new(network_config.contract_address, provider);
     let result = contract.reclaims(reclaim_request_id).call().await?;
     let reclaim = collateral_contract::Reclaim::from((
         result.hotkey,
@@ -761,7 +675,6 @@ async fn reclaims_with_network_config(
 async fn scan_events_with_network_config(
     from_block: u64,
     network_config: &NetworkConfig,
-    contract_address: Address,
 ) -> Result<(u64, HashMap<u64, Vec<CollateralEvent>>)> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
@@ -774,14 +687,14 @@ async fn scan_events_with_network_config(
         ));
     }
 
-    let mut to_block = from_block + collateral_contract::config::MAX_BLOCKS_PER_SCAN;
+    let mut to_block = from_block + config::MAX_BLOCKS_PER_SCAN;
 
     if to_block > current_block {
         to_block = current_block;
     }
 
     let filter = alloy::rpc::types::Filter::new()
-        .address(contract_address)
+        .address(network_config.contract_address)
         .from_block(from_block)
         .to_block(to_block);
 

@@ -13,9 +13,6 @@ pub use CollateralUpgradeable::{Deposit, Reclaimed, Slashed};
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod lib_tests;
-
 use config::{CHAIN_ID, MAX_BLOCKS_PER_SCAN, PROXY_ADDRESS, RPC_URL};
 
 sol!(
@@ -63,7 +60,7 @@ pub enum CollateralEvent {
     Slashed(CollateralUpgradeable::Slashed),
 }
 
-// get the collateral contract instance
+// get the collateral contract instance in mainnet
 pub async fn get_collateral(
     private_key: &str,
 ) -> Result<
