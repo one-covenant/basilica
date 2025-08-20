@@ -146,7 +146,6 @@ if [[ "$BUILD_IMAGE" == "true" ]]; then
             $BUILD_ARGS \
             -f scripts/cli/Dockerfile \
             -t "$IMAGE_NAME:$IMAGE_TAG" \
-            --load \
             .
         echo "Multi-architecture Docker images built successfully"
     else
