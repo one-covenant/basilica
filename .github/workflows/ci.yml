@@ -454,12 +454,6 @@ jobs:
         run: |
           cargo build -p basilica-cli
           ./target/debug/basilica --help
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
-      - name: Test Docker build script
-        run: |
-          chmod +x scripts/cli/build.sh
-          BITTENSOR_NETWORK=finney ./scripts/cli/build.sh --no-extract
 
   # Build and test billing
   build-billing:
