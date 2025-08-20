@@ -15,6 +15,8 @@ contract DeployUpgradeableScript is Script {
     function run() public {
         // Get deployment parameters from environment or use defaults
         uint16 netuid = uint16(vm.envOr("NETUID", uint256(39)));
+        console.log("sender address is :", msg.sender);
+        console.log("msg.sender balance is :", msg.sender.balance);
         address trustee = vm.envOr("TRUSTEE_ADDRESS", msg.sender);
         uint256 minCollateralIncrease = vm.envOr(
             "MIN_COLLATERAL",
