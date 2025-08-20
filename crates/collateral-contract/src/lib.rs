@@ -13,6 +13,9 @@ pub use CollateralUpgradeable::{Deposit, Reclaimed, Slashed};
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod lib_tests;
+
 use config::{CHAIN_ID, MAX_BLOCKS_PER_SCAN, PROXY_ADDRESS, RPC_URL};
 
 sol!(
@@ -76,6 +79,29 @@ pub async fn get_collateral(
         .await?;
 
     let proxied = CollateralUpgradeable::new(PROXY_ADDRESS, provider);
+
+    Ok(proxied)
+}
+
+// get the collateral contract instance with custom network config
+pub async fn get_collateral_with_config(
+    private_key: &str,
+    chain_id: u64,
+    rpc_url: &str,
+    contract_address: Address,
+) -> Result<
+    CollateralUpgradeable::CollateralUpgradeableInstance<impl alloy_provider::Provider>,
+    anyhow::Error,
+> {
+    let mut signer: PrivateKeySigner = private_key.parse()?;
+    signer.set_chain_id(Some(chain_id));
+
+    let provider = ProviderBuilder::new()
+        .wallet(signer)
+        .connect(rpc_url)
+        .await?;
+
+    let proxied = CollateralUpgradeable::new(contract_address, provider);
 
     Ok(proxied)
 }
@@ -174,6 +200,31 @@ pub async fn deposit(
     amount: U256,
 ) -> Result<(), anyhow::Error> {
     let contract = get_collateral(private_key).await?;
+
+    let executor_bytes = executor_id.to_be_bytes();
+    let tx = contract
+        .deposit(
+            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&executor_bytes),
+        )
+        .value(amount);
+    let tx = tx.send().await?;
+    let receipt = tx.get_receipt().await?;
+    tracing::info!("{receipt:?}");
+    Ok(())
+}
+
+pub async fn deposit_with_config(
+    private_key: &str,
+    hotkey: [u8; 32],
+    executor_id: u128,
+    amount: U256,
+    chain_id: u64,
+    rpc_url: &str,
+    contract_address: Address,
+) -> Result<(), anyhow::Error> {
+    let contract =
+        get_collateral_with_config(private_key, chain_id, rpc_url, contract_address).await?;
 
     let executor_bytes = executor_id.to_be_bytes();
     let tx = contract
