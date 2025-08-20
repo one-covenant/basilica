@@ -34,17 +34,19 @@ struct NetworkConfig {
 }
 
 impl NetworkConfig {
-    fn from_network(network: &Network) -> Self {
+    fn from_network(network: &Network, contract_address: Option<String>) -> Self {
+        let contract_address = contract_address
+            .map(|addr| Address::from_str(&addr).expect("Invalid contract address"));
         match network {
             Network::Mainnet => NetworkConfig {
                 chain_id: CHAIN_ID,
                 rpc_url: RPC_URL.to_string(),
-                contract_address: COLLATERAL_ADDRESS,
+                contract_address: contract_address.unwrap_or(COLLATERAL_ADDRESS),
             },
             Network::Testnet => NetworkConfig {
                 chain_id: TEST_CHAIN_ID,
                 rpc_url: TEST_RPC_URL.to_string(),
-                contract_address: DEFAULT_CONTRACT_ADDRESS,
+                contract_address: contract_address.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
             },
             Network::Local => NetworkConfig {
                 chain_id: LOCAL_CHAIN_ID,
@@ -63,6 +65,10 @@ struct Cli {
     /// Network to connect to
     #[arg(long, value_enum, default_value = "mainnet")]
     network: Network,
+
+    /// Contract address to use
+    #[arg(long)]
+    contract_address: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -214,7 +220,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
-    let network_config = NetworkConfig::from_network(&cli.network);
+    let network_config = NetworkConfig::from_network(&cli.network, cli.contract_address);
 
     println!("Using network: {:?}", cli.network);
     println!("Contract address: {}", network_config.contract_address);
