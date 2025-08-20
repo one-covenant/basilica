@@ -93,12 +93,12 @@ add_to_path() {
     local dir="$1"
     local profile_file
     profile_file=$(detect_shell_profile)
-    
+
     # Check if PATH export already exists
     if grep -q "export PATH.*$dir" "$profile_file" 2>/dev/null; then
         return 0
     fi
-    
+
     # Add PATH export to profile
     echo "export PATH=\"$dir:\$PATH\"" >> "$profile_file"
     print_info "Added $dir to PATH in $profile_file"
@@ -199,10 +199,9 @@ show_completion() {
     echo
     print_info "Basilica CLI installed successfully!"
     echo
-    
+
     echo "Get started:"
     echo "  basilica login"
-    echo "  basilica up <gpu-spec>"
     echo "  basilica exec <uid> \"python train.py\""
     echo "  basilica down <uid>"
     echo
