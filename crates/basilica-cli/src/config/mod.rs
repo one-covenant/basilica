@@ -30,6 +30,7 @@ pub struct ApiConfig {
     pub base_url: String,
 
     /// Request timeout in seconds
+    #[serde(default = "default_api_request_timeout")]
     pub request_timeout: u64,
 }
 
@@ -56,6 +57,10 @@ pub struct SshConfig {
 
 fn default_ssh_timeout() -> u64 {
     30
+}
+
+fn default_api_request_timeout() -> u64 {
+    120
 }
 
 impl Default for SshConfig {
