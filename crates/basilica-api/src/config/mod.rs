@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn test_duration_conversions() {
         let config = Config::default();
-        assert_eq!(config.request_timeout(), Duration::from_secs(30));
+        assert_eq!(config.request_timeout(), Duration::from_secs(120));
         assert_eq!(config.health_check_interval(), Duration::from_secs(30));
         assert_eq!(config.discovery_interval(), Duration::from_secs(60));
     }
