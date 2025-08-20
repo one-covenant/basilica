@@ -118,7 +118,8 @@ impl TokenStore {
     pub async fn get_tokens(&self, service_name: &str) -> AuthResult<Option<TokenSet>> {
         if self.use_system_keychain {
             match self.retrieve_from_keychain(service_name).await {
-                Ok(tokens) => Ok(tokens),
+                Ok(Some(tokens)) => Ok(Some(tokens)),
+                Ok(None) => self.retrieve_from_file(service_name).await,
                 Err(_) => self.retrieve_from_file(service_name).await,
             }
         } else {
