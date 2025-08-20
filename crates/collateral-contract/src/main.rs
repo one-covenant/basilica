@@ -1,5 +1,4 @@
 mod config;
-
 use alloy_primitives::FixedBytes;
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
@@ -14,6 +13,7 @@ use config::{
 use hex::FromHex;
 use std::collections::HashMap;
 use std::str::FromStr;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, ValueEnum, Default)]
 enum Network {
@@ -37,6 +37,7 @@ impl NetworkConfig {
     fn from_network(network: &Network, contract_address: Option<String>) -> Self {
         let contract_address = contract_address
             .map(|addr| Address::from_str(&addr).expect("Invalid contract address"));
+        println!("==========Contract address: {:?}", contract_address);
         match network {
             Network::Mainnet => NetworkConfig {
                 chain_id: CHAIN_ID,
@@ -51,7 +52,7 @@ impl NetworkConfig {
             Network::Local => NetworkConfig {
                 chain_id: LOCAL_CHAIN_ID,
                 rpc_url: LOCAL_RPC_URL.to_string(),
-                contract_address: DEFAULT_CONTRACT_ADDRESS,
+                contract_address: contract_address.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
             },
         }
     }
@@ -99,7 +100,7 @@ enum TxCommands {
         hotkey: String,
         /// Executor ID as integer
         #[arg(long)]
-        executor_id: u128,
+        executor_id: String,
         /// Amount to deposit in wei
         #[arg(long)]
         amount: String,
@@ -114,7 +115,7 @@ enum TxCommands {
         hotkey: String,
         /// Executor ID as integer
         #[arg(long)]
-        executor_id: u128,
+        executor_id: String,
         /// URL for proof of reclaim
         #[arg(long)]
         url: String,
@@ -156,7 +157,7 @@ enum TxCommands {
         hotkey: String,
         /// Executor ID as integer
         #[arg(long)]
-        executor_id: u128,
+        executor_id: String,
         /// URL for proof of slashing
         #[arg(long)]
         url: String,
@@ -183,7 +184,7 @@ enum QueryCommands {
         hotkey: String,
         /// Executor ID as integer
         #[arg(long)]
-        executor_id: u128,
+        executor_id: String,
     },
     /// Get the collateral amount for an executor
     Collaterals {
@@ -192,7 +193,7 @@ enum QueryCommands {
         hotkey: String,
         /// Executor ID as integer
         #[arg(long)]
-        executor_id: u128,
+        executor_id: String,
     },
     /// Get reclaim details by request ID
     Reclaims {
@@ -243,6 +244,7 @@ async fn handle_tx_command(cmd: TxCommands, network_config: &NetworkConfig) -> R
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let amount_u256 = parse_u256(&amount)?;
+            let executor_uuid = Uuid::parse_str(&executor_id)?;
 
             println!(
                 "Depositing {} wei for executor {} with hotkey {}",
@@ -251,7 +253,7 @@ async fn handle_tx_command(cmd: TxCommands, network_config: &NetworkConfig) -> R
             deposit_with_network_config(
                 &private_key,
                 hotkey_bytes,
-                executor_id,
+                executor_uuid,
                 amount_u256,
                 network_config,
             )
@@ -267,6 +269,7 @@ async fn handle_tx_command(cmd: TxCommands, network_config: &NetworkConfig) -> R
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
+            let executor_uuid = Uuid::parse_str(&executor_id)?;
 
             println!(
                 "Reclaiming collateral for executor {} with hotkey {}",
@@ -275,7 +278,7 @@ async fn handle_tx_command(cmd: TxCommands, network_config: &NetworkConfig) -> R
             reclaim_collateral_with_network_config(
                 &private_key,
                 hotkey_bytes,
-                executor_id,
+                executor_uuid,
                 &url,
                 checksum,
                 network_config,
@@ -322,6 +325,7 @@ async fn handle_tx_command(cmd: TxCommands, network_config: &NetworkConfig) -> R
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
+            let executor_uuid = Uuid::parse_str(&executor_id)?;
 
             println!(
                 "Slashing collateral for executor {} with hotkey {}",
@@ -330,7 +334,7 @@ async fn handle_tx_command(cmd: TxCommands, network_config: &NetworkConfig) -> R
             slash_collateral_with_network_config(
                 &private_key,
                 hotkey_bytes,
-                executor_id,
+                executor_uuid,
                 &url,
                 checksum,
                 network_config,
@@ -365,19 +369,30 @@ async fn handle_query_command(cmd: QueryCommands, network_config: &NetworkConfig
             executor_id,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
+            let executor_id_clone = executor_id.clone();
+            let executor_uuid = Uuid::parse_str(&executor_id)?;
             let result =
-                executor_to_miner_with_network_config(hotkey_bytes, executor_id, network_config)
+                executor_to_miner_with_network_config(hotkey_bytes, executor_uuid, network_config)
                     .await?;
-            println!("Miner address for executor {}: {}", executor_id, result);
+            println!(
+                "Miner address for executor {}: {}",
+                executor_id_clone, result
+            );
         }
         QueryCommands::Collaterals {
             hotkey,
             executor_id,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
+            let executor_id_clone = executor_id.clone();
+            let executor_uuid = Uuid::parse_str(&executor_id)?;
             let result =
-                collaterals_with_network_config(hotkey_bytes, executor_id, network_config).await?;
-            println!("Collateral for executor {}: {} wei", executor_id, result);
+                collaterals_with_network_config(hotkey_bytes, executor_uuid, network_config)
+                    .await?;
+            println!(
+                "Collateral for executor {}: {} wei",
+                executor_id_clone, result
+            );
         }
         QueryCommands::Reclaims { reclaim_request_id } => {
             let request_id = parse_u256(&reclaim_request_id)?;
@@ -448,7 +463,7 @@ fn parse_md5_checksum(checksum: &str) -> Result<u128> {
 async fn deposit_with_network_config(
     private_key: &str,
     hotkey: [u8; 32],
-    executor_id: u128,
+    executor_id: Uuid,
     amount: U256,
     network_config: &NetworkConfig,
 ) -> Result<()> {
@@ -460,11 +475,11 @@ async fn deposit_with_network_config(
     )
     .await?;
 
-    let executor_bytes = executor_id.to_be_bytes();
+    // let executor_bytes = executor_id.to_be_bytes();
     let tx = contract
         .deposit(
             FixedBytes::from_slice(&hotkey),
-            FixedBytes::from_slice(&executor_bytes),
+            FixedBytes::from_slice(executor_id.as_bytes()),
         )
         .value(amount);
     let tx = tx.send().await?;
@@ -476,7 +491,7 @@ async fn deposit_with_network_config(
 async fn reclaim_collateral_with_network_config(
     private_key: &str,
     hotkey: [u8; 32],
-    executor_id: u128,
+    executor_id: Uuid,
     url: &str,
     url_content_md5_checksum: u128,
     network_config: &NetworkConfig,
@@ -489,10 +504,9 @@ async fn reclaim_collateral_with_network_config(
     )
     .await?;
 
-    let executor_bytes = executor_id.to_be_bytes();
     let tx = contract.reclaimCollateral(
         FixedBytes::from_slice(&hotkey),
-        FixedBytes::from_slice(&executor_bytes),
+        FixedBytes::from_slice(executor_id.as_bytes()),
         url.to_string(),
         FixedBytes::from_slice(&url_content_md5_checksum.to_be_bytes()),
     );
@@ -548,7 +562,7 @@ async fn deny_reclaim_with_network_config(
 async fn slash_collateral_with_network_config(
     private_key: &str,
     hotkey: [u8; 32],
-    executor_id: u128,
+    executor_id: Uuid,
     url: &str,
     url_content_md5_checksum: u128,
     network_config: &NetworkConfig,
@@ -561,10 +575,9 @@ async fn slash_collateral_with_network_config(
     )
     .await?;
 
-    let executor_bytes = executor_id.to_be_bytes();
     let tx = contract.slashCollateral(
         FixedBytes::from_slice(&hotkey),
-        FixedBytes::from_slice(&executor_bytes),
+        FixedBytes::from_slice(executor_id.as_bytes()),
         url.to_string(),
         FixedBytes::from_slice(&url_content_md5_checksum.to_be_bytes()),
     );
@@ -618,7 +631,7 @@ async fn min_collateral_increase_with_network_config(
 
 async fn executor_to_miner_with_network_config(
     hotkey: [u8; 32],
-    executor_id: u128,
+    executor_id: Uuid,
     network_config: &NetworkConfig,
 ) -> Result<Address> {
     let provider = ProviderBuilder::new()
@@ -626,11 +639,10 @@ async fn executor_to_miner_with_network_config(
         .await?;
     let contract =
         collateral_contract::CollateralUpgradeable::new(network_config.contract_address, provider);
-    let executor_bytes = executor_id.to_be_bytes();
     let executor_to_miner = contract
         .executorToMiner(
             FixedBytes::from_slice(&hotkey),
-            FixedBytes::from_slice(&executor_bytes),
+            FixedBytes::from_slice(executor_id.as_bytes()),
         )
         .call()
         .await?;
@@ -639,7 +651,7 @@ async fn executor_to_miner_with_network_config(
 
 async fn collaterals_with_network_config(
     hotkey: [u8; 32],
-    executor_id: u128,
+    executor_id: Uuid,
     network_config: &NetworkConfig,
 ) -> Result<U256> {
     let provider = ProviderBuilder::new()
@@ -647,11 +659,10 @@ async fn collaterals_with_network_config(
         .await?;
     let contract =
         collateral_contract::CollateralUpgradeable::new(network_config.contract_address, provider);
-    let executor_bytes = executor_id.to_be_bytes();
     let collaterals = contract
         .collaterals(
             FixedBytes::from_slice(&hotkey),
-            FixedBytes::from_slice(&executor_bytes),
+            FixedBytes::from_slice(executor_id.as_bytes()),
         )
         .call()
         .await?;

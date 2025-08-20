@@ -1,0 +1,13 @@
+export NETUID=39
+export TRUSTEE_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
+export MIN_COLLATERAL=1
+export DECISION_TIMEOUT=1
+export ADMIN_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
+export PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
+
+forge script script/DeployUpgradeable.s.sol \
+ --rpc-url https://test.finney.opentensor.ai \
+ --private-key $PRIVATE_KEY \
+ --broadcast
+
+

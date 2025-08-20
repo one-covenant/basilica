@@ -1,0 +1,17 @@
+# transaction
+export CONTRACT_ADDRESS=0x970951a12F975E6762482ACA81E57D5A2A4e73F4
+export PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
+
+collateral-cli --network local --contract-address $CONTRACT_ADDRESS tx deposit \
+--private-key $PRIVATE_KEY \
+--hotkey 0x0000000000000000000000000000000000000000000000000000000000000001 \
+--amount 1000000000000000000 \
+--executor-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+
+collateral-cli --network local --contract-address $CONTRACT_ADDRESS tx reclaim-collateral \
+--private-key $PRIVATE_KEY \
+--hotkey 0x0000000000000000000000000000000000000000000000000000000000000001 \
+--executor-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6 \
+--url https://www.tplr.ai/ \
+--url-content-md5-checksum 269ff519d1140a175941ea4b00ccbe0d
+
