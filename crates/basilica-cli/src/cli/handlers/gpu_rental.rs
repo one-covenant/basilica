@@ -168,6 +168,7 @@ pub async fn handle_up(
         },
         command: options.command,
         volumes: vec![],
+        no_ssh: options.no_ssh,
     };
 
     spinner.set_message("Creating rental...");
@@ -198,12 +199,16 @@ pub async fn handle_up(
         response.rental_id
     ));
 
-    // Display SSH credentials if available
-    if let Some(ref ssh_creds) = response.ssh_credentials {
-        print_link("SSH", ssh_creds);
-    } else {
-        print_info("No SSH access configured for this container (port 22 not mapped)");
+    // Display SSH credentials only if SSH was expected to be enabled
+    if !options.no_ssh {
+        if let Some(ref ssh_creds) = response.ssh_credentials {
+            print_link("SSH", ssh_creds);
+        } else {
+            // This shouldn't happen since we always add SSH mapping unless --no-ssh is specified
+            print_info("SSH access not available (unexpected error)");
+        }
     }
+    // If no_ssh was specified, don't print anything about SSH - user knows what they asked for
 
     Ok(())
 }

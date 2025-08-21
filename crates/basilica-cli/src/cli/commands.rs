@@ -214,6 +214,10 @@ pub struct UpOptions {
     /// Command to run
     #[arg(long)]
     pub command: Vec<String>,
+
+    /// Disable SSH access (faster startup)
+    #[arg(long)]
+    pub no_ssh: bool,
 }
 
 /// Filters for listing active rentals
