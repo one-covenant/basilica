@@ -1,4 +1,3 @@
-mod config;
 use alloy_primitives::U256;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -51,7 +50,7 @@ enum TxCommands {
         /// Hotkey as hex string (32 bytes)
         #[arg(long)]
         hotkey: String,
-        /// Executor ID as integer
+        /// Executor ID as string
         #[arg(long)]
         executor_id: String,
         /// Amount to deposit in wei
@@ -66,7 +65,7 @@ enum TxCommands {
         /// Hotkey as hex string (32 bytes)
         #[arg(long)]
         hotkey: String,
-        /// Executor ID as integer
+        /// Executor ID as string
         #[arg(long)]
         executor_id: String,
         /// URL for proof of reclaim
@@ -108,7 +107,7 @@ enum TxCommands {
         /// Hotkey as hex string (32 bytes)
         #[arg(long)]
         hotkey: String,
-        /// Executor ID as integer
+        /// Executor ID as string
         #[arg(long)]
         executor_id: String,
         /// URL for proof of slashing
@@ -135,7 +134,7 @@ enum QueryCommands {
         /// Hotkey as hex string (32 bytes)
         #[arg(long)]
         hotkey: String,
-        /// Executor ID as integer
+        /// Executor ID as string
         #[arg(long)]
         executor_id: String,
     },
@@ -144,7 +143,7 @@ enum QueryCommands {
         /// Hotkey as hex string (32 bytes)
         #[arg(long)]
         hotkey: String,
-        /// Executor ID as integer
+        /// Executor ID as string
         #[arg(long)]
         executor_id: String,
     },
