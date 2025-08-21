@@ -1,6 +1,6 @@
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
-use collateral_contract::CollateralEvent;
+use collateral_contract::{config::CollateralNetworkConfig, CollateralEvent};
 use std::sync::Arc;
 use tracing::{error, info};
 
@@ -39,7 +39,9 @@ impl Collateral {
     pub async fn scan_handle_collateral_events(&self) -> Result<()> {
         let last_block = self.persistence.get_last_scanned_block_number().await?;
         let from_block = last_block + 1;
-        let (to_block, events_map) = collateral_contract::scan_events(from_block).await?;
+        let (to_block, events_map) =
+            collateral_contract::scan_events(from_block, &CollateralNetworkConfig::default())
+                .await?;
 
         let mut sorted_events_map = events_map.iter().collect::<Vec<_>>();
 
