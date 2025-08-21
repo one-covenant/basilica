@@ -153,8 +153,14 @@ pub async fn handle_up(
         complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
     })?;
 
+    let command = if options.command.is_empty() {
+        vec!["/bin/bash".to_string()]
+    } else {
+        options.command
+    };
+
     let request = StartRentalRequest {
-        executor_id: target.clone(), // Optional - None means system will select
+        executor_id: target.clone(),
         container_image,
         ssh_public_key,
         environment: env_vars,
@@ -166,7 +172,7 @@ pub async fn handle_up(
             gpu_count: options.gpu_min.unwrap_or(0),
             gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
         },
-        command: options.command,
+        command,
         volumes: vec![],
         no_ssh: options.no_ssh,
     };
