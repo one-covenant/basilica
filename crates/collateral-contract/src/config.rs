@@ -24,7 +24,7 @@ pub const MAX_BLOCKS_PER_SCAN: u64 = 1000;
 pub const CONTRACT_DEPLOYED_BLOCK_NUMBER: u64 = 0;
 
 pub const DEFAULT_CONTRACT_ADDRESS: Address =
-    address!("0x0000000000000000000000000000000000000001");
+    address!("0x0000000000000000000000000000000000000002");
 
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum Network {
