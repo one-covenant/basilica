@@ -12,8 +12,8 @@ collateral-cli --network $NETWORK --contract-address $CONTRACT_ADDRESS tx deposi
 --executor-id $EXECUTOR_ID
 
 # check the executor to miner, miner is not zero if deposit is successful
-collateral-cli --network $NETWORK --contract-address $CONTRACT_ADDRESS query \
-executor-to-miner --hotkey $HOTKEY \
+collateral-cli --network $NETWORK --contract-address $CONTRACT_ADDRESS query executor-to-miner \
+--hotkey $HOTKEY \
 --executor-id $EXECUTOR_ID
 
 # check the collaterals should be 10
@@ -62,3 +62,7 @@ collateral-cli --network $NETWORK --contract-address $CONTRACT_ADDRESS tx slash-
 --url https://www.tplr.ai/ \
 --url-content-md5-checksum 269ff519d1140a175941ea4b00ccbe0d
 
+# scan the events
+collateral-cli --network $NETWORK --contract-address $CONTRACT_ADDRESS events scan \ 
+--from-block 0 \
+--to-block 1000
