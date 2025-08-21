@@ -26,7 +26,7 @@ impl Default for ServerConfig {
         Self {
             bind_address: "0.0.0.0:8000".parse().unwrap(),
             max_connections: 10000,
-            request_timeout: 120,
+            request_timeout: 900,
             // enable_compression: true,
             cors_origins: vec!["*".to_string()],
         }

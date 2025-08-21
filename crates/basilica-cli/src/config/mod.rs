@@ -38,7 +38,7 @@ impl Default for ApiConfig {
     fn default() -> Self {
         Self {
             base_url: "https://api.basilica.ai".to_string(),
-            request_timeout: 120,
+            request_timeout: 900,
         }
     }
 }
