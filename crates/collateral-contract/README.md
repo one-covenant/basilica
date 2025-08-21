@@ -31,6 +31,7 @@ export TRUSTEE_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
 export MIN_COLLATERAL=1000000000000000000
 export DECISION_TIMEOUT=3600
 export ADMIN_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
+export PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
 
 forge script script/DeployUpgradeable.s.sol \
  --rpc-url https://test.chain.opentensor.ai \
@@ -114,21 +115,21 @@ collateral-cli --contract-address 0x1234567890123456789012345678901234567890
 ```bash
 # Basic deposit on mainnet
 collateral-cli tx deposit \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --executor-id 123 \
   --amount 1000000000000000000
 
 # Deposit on testnet
 collateral-cli --network testnet tx deposit \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --executor-id 456 \
   --amount 5000000000000000000
 
 # Deposit with custom contract address
 collateral-cli --contract-address 0x5FbDB2315678afecb367f032d93F642f64180aa3 tx deposit \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --executor-id 789 \
   --amount 2000000000000000000
@@ -146,7 +147,7 @@ collateral-cli tx deposit \
 ```bash
 # Basic reclaim
 collateral-cli tx reclaim-collateral \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --executor-id 123 \
   --url "https://example.com/reclaim-proof" \
@@ -154,7 +155,7 @@ collateral-cli tx reclaim-collateral \
 
 # Reclaim on testnet
 collateral-cli --network testnet tx reclaim-collateral \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --executor-id 456 \
   --url "https://proof-server.testnet.com/evidence/456" \
@@ -166,12 +167,12 @@ collateral-cli --network testnet tx reclaim-collateral \
 ```bash
 # Finalize reclaim request
 collateral-cli tx finalize-reclaim \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --reclaim-request-id 42
 
 # Finalize with hex request ID
 collateral-cli tx finalize-reclaim \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --reclaim-request-id 0x2a
 ```
 
@@ -180,7 +181,7 @@ collateral-cli tx finalize-reclaim \
 ```bash
 # Deny reclaim request
 collateral-cli tx deny-reclaim \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --reclaim-request-id 42 \
   --url "https://example.com/denial-proof" \
   --url-content-md5-checksum 5d41402abc4b2a76b9719d911017c592
@@ -191,7 +192,7 @@ collateral-cli tx deny-reclaim \
 ```bash
 # Slash collateral for misconduct
 collateral-cli tx slash-collateral \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --executor-id 123 \
   --url "https://evidence.example.com/slash-proof" \
@@ -199,7 +200,7 @@ collateral-cli tx slash-collateral \
 
 # Slash on testnet with detailed proof
 collateral-cli --network testnet tx slash-collateral \
-  --private-key 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12 \
+  --private-key $PRIVATE_KEY \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
   --executor-id 999 \
   --url "https://audit.testnet.com/violations/999" \
@@ -254,19 +255,19 @@ collateral-cli --contract-address 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0 que
 
 ```bash
 # Scan events with pretty output (default)
-collateral-cli events scan --from-block 1000
+collateral-cli events scan --network testnet --from-block 0 --to-block 1000
 
 # Scan events with JSON output
-collateral-cli events scan --from-block 1000 --format json
+collateral-cli events scan --network testnet --from-block 0 --to-block 1000 --format json
 
 # Scan recent events (last 100 blocks from current)
 collateral-cli events scan --from-block $(echo "$(curl -s -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}' https://lite.chain.opentensor.ai:443 | jq -r .result | sed 's/0x//' | awk '{print strtonum(\"0x\" $0)}') - 100" | bc)
 
 # Scan events on testnet
-collateral-cli --network testnet events scan --from-block 5000 --format json
+collateral-cli --network testnet events scan --from-block 0 --to-block 1000 --format json
 
 # Scan events with custom contract
-collateral-cli --contract-address 0x8464135c8F25Da09e49BC8782676a84730C318bC events scan --from-block 0
+collateral-cli --contract-address 0x8464135c8F25Da09e49BC8782676a84730C318bC events scan --from-block 0 --to-block 1000
 ```
 
 ## Testing Commands
