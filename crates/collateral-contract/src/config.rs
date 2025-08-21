@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use alloy_primitives::{address, Address};
 use clap::ValueEnum;
 use std::str::FromStr;
