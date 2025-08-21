@@ -154,6 +154,7 @@ module "basilica_api_alb" {
   subnet_ids         = module.networking.public_subnet_ids
   security_group_ids = [module.networking.alb_security_group_id]
   certificate_arn    = var.certificate_arn
+  idle_timeout       = 1800
 
   # Don't create billing/payments target groups for API ALB
   create_billing_target_group  = false

@@ -65,3 +65,9 @@ variable "create_payments_target_group" {
   type        = bool
   default     = true
 }
+
+variable "idle_timeout" {
+  description = "The time in seconds that the connection is allowed to be idle"
+  type        = number
+  default     = 60
+}

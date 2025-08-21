@@ -319,7 +319,7 @@ module "basilica_api_service" {
     # Server Configuration
     BASILICA_API_SERVER__BIND_ADDRESS    = "0.0.0.0:8000"
     BASILICA_API_SERVER__MAX_CONNECTIONS = "10000"
-    BASILICA_API_SERVER__REQUEST_TIMEOUT = "30"
+    BASILICA_API_SERVER__REQUEST_TIMEOUT = "900"
     BASILICA_API_SERVER__CORS_ORIGINS    = "[\"*\"]"
 
     # Database Configuration
