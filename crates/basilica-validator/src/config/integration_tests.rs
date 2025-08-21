@@ -11,10 +11,10 @@ mod tests {
         assert_eq!(config.emission.burn_percentage, 0.0);
         assert_eq!(config.emission.burn_uid, DEFAULT_BURN_UID);
         assert_eq!(config.emission.weight_set_interval_blocks, 360);
-        assert_eq!(config.emission.gpu_allocations.len(), 2);
+        assert_eq!(config.emission.gpu_allocations.len(), 0);
 
-        // Verify the config validation passes with default burn_uid
-        assert!(config.validate().is_ok());
+        // Default config should fail validation because GPU allocations are empty
+        assert!(config.validate().is_err());
     }
 
     #[test]
@@ -27,13 +27,37 @@ mod tests {
         // Should fail validation
         assert!(config.validate().is_err());
 
+        // Set valid burn percentage and GPU allocations
         config.emission.burn_percentage = 10.0;
+        config
+            .emission
+            .gpu_allocations
+            .insert("H100".to_string(), 50.0);
+        config
+            .emission
+            .gpu_allocations
+            .insert("H200".to_string(), 50.0);
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_validator_config_serialization_with_emission() {
-        let config = ValidatorConfig::default();
+        let mut config = ValidatorConfig::default();
+
+        // Add valid GPU allocations for testing
+        config.emission.burn_percentage = 10.0;
+        config
+            .emission
+            .gpu_allocations
+            .insert("H100".to_string(), 8.0);
+        config
+            .emission
+            .gpu_allocations
+            .insert("H200".to_string(), 12.0);
+        config
+            .emission
+            .gpu_allocations
+            .insert("B200".to_string(), 80.0);
 
         // Test TOML serialization includes emission config
         let toml_str = toml::to_string(&config).expect("Failed to serialize to TOML");

@@ -67,6 +67,7 @@ impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
 pub enum GpuCategory {
     H100,
     H200,
+    B200,
     Other(String),
 }
 
@@ -77,6 +78,7 @@ impl FromStr for GpuCategory {
         match s.to_uppercase().as_str() {
             "H100" => Ok(GpuCategory::H100),
             "H200" => Ok(GpuCategory::H200),
+            "B200" => Ok(GpuCategory::B200),
             other => Ok(GpuCategory::Other(other.to_string())),
         }
     }
@@ -97,11 +99,13 @@ impl GpuCategorizer {
             .trim()
             .to_string();
 
-        // Match against known patterns - only H100 and H200 for now
+        // Match against known patterns - H100, H200, and B200
         if cleaned.contains("H100") {
             "H100".to_string()
         } else if cleaned.contains("H200") {
             "H200".to_string()
+        } else if cleaned.contains("B200") {
+            "B200".to_string()
         } else {
             "OTHER".to_string()
         }
@@ -112,6 +116,7 @@ impl GpuCategorizer {
         match model.to_uppercase().as_str() {
             "H100" => GpuCategory::H100,
             "H200" => GpuCategory::H200,
+            "B200" => GpuCategory::B200,
             _ => GpuCategory::Other(model.to_string()),
         }
     }

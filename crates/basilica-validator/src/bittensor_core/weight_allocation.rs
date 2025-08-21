@@ -386,8 +386,9 @@ mod tests {
 
     fn create_test_config() -> EmissionConfig {
         let mut gpu_allocations = HashMap::new();
-        gpu_allocations.insert("H100".to_string(), 40.0);
-        gpu_allocations.insert("H200".to_string(), 60.0);
+        gpu_allocations.insert("H100".to_string(), 8.0);
+        gpu_allocations.insert("H200".to_string(), 12.0);
+        gpu_allocations.insert("B200".to_string(), 80.0);
 
         EmissionConfig {
             burn_percentage: 10.0,
@@ -413,6 +414,11 @@ mod tests {
         miners.insert(
             "H200".to_string(),
             vec![(MinerUid::new(4), 0.9), (MinerUid::new(5), 0.7)],
+        );
+
+        miners.insert(
+            "B200".to_string(),
+            vec![(MinerUid::new(6), 1.0), (MinerUid::new(7), 0.9)],
         );
 
         miners
@@ -484,13 +490,14 @@ mod tests {
         assert!((burn.percentage - 10.0).abs() < 0.1);
 
         // Should have category allocations
-        assert_eq!(distribution.category_allocations.len(), 2);
+        assert_eq!(distribution.category_allocations.len(), 3);
         assert!(distribution.category_allocations.contains_key("H100"));
         assert!(distribution.category_allocations.contains_key("H200"));
+        assert!(distribution.category_allocations.contains_key("B200"));
 
         // Should have weights for miners + burn
-        assert_eq!(distribution.weights.len(), 6); // 5 miners + 1 burn
-        assert_eq!(distribution.miners_served, 5);
+        assert_eq!(distribution.weights.len(), 8); // 7 miners + 1 burn
+        assert_eq!(distribution.miners_served, 7);
 
         // Verify weight conservation
         let total_weight: u64 = distribution.weights.iter().map(|w| w.weight as u64).sum();
@@ -506,8 +513,8 @@ mod tests {
         let distribution = engine.calculate_weight_distribution(miners).unwrap();
 
         // With threshold removed, all miners should be included
-        // H100: 3 miners, H200: 2 miners
-        assert_eq!(distribution.miners_served, 5);
+        // H100: 3 miners, H200: 2 miners, B200: 2 miners
+        assert_eq!(distribution.miners_served, 7);
     }
 
     #[test]
@@ -586,8 +593,8 @@ mod tests {
         let h100_allocation = distribution.category_allocations.get("H100").unwrap();
         let h200_allocation = distribution.category_allocations.get("H200").unwrap();
 
-        assert!((h100_allocation.allocation_percentage - 40.0).abs() < 0.1);
-        assert!((h200_allocation.allocation_percentage - 60.0).abs() < 0.1);
+        assert!((h100_allocation.allocation_percentage - 8.0).abs() < 0.1);
+        assert!((h200_allocation.allocation_percentage - 12.0).abs() < 0.1);
     }
 
     #[test]
@@ -599,14 +606,17 @@ mod tests {
         let pools = engine.calculate_all_category_pools(total_weight).unwrap();
 
         // Should have pools for all configured categories
-        assert_eq!(pools.len(), 2);
+        assert_eq!(pools.len(), 3);
         assert!(pools.contains_key("H100"));
         assert!(pools.contains_key("H200"));
+        assert!(pools.contains_key("B200"));
 
-        // H100 should get 40% of total
-        assert_eq!(pools.get("H100"), Some(&4000));
-        // H200 should get 60% of total
-        assert_eq!(pools.get("H200"), Some(&6000));
+        // H100 should get 8% of total
+        assert_eq!(pools.get("H100"), Some(&800));
+        // H200 should get 12% of total
+        assert_eq!(pools.get("H200"), Some(&1200));
+        // B200 should get 80% of total
+        assert_eq!(pools.get("B200"), Some(&8000));
 
         // Total should equal input
         let total: u64 = pools.values().sum();
