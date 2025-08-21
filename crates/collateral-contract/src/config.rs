@@ -56,26 +56,28 @@ impl CollateralNetworkConfig {
         network: &Network,
         contract_address: Option<String>,
     ) -> anyhow::Result<Self> {
-        let contract_address = contract_address
-            .map(|addr| {
-                Address::from_str(&addr).map_err(|_| anyhow::anyhow!("Invalid contract address"))
-            })
-            .ok_or(anyhow::anyhow!("Invalid contract address"))?;
+        let parsed_addr: Option<Address> = match contract_address {
+            Some(s) => Some(
+                Address::from_str(&s)
+                    .map_err(|_| anyhow::anyhow!(format!("Invalid contract address: {s}")))?,
+            ),
+            None => None,
+        };
         match network {
             Network::Mainnet => Ok(CollateralNetworkConfig {
                 chain_id: CHAIN_ID,
                 rpc_url: RPC_URL.to_string(),
-                contract_address: contract_address.unwrap_or(COLLATERAL_ADDRESS),
+                contract_address: parsed_addr.unwrap_or(COLLATERAL_ADDRESS),
             }),
             Network::Testnet => Ok(CollateralNetworkConfig {
                 chain_id: TEST_CHAIN_ID,
                 rpc_url: TEST_RPC_URL.to_string(),
-                contract_address: contract_address.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
+                contract_address: parsed_addr.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
             }),
             Network::Local => Ok(CollateralNetworkConfig {
                 chain_id: LOCAL_CHAIN_ID,
                 rpc_url: LOCAL_RPC_URL.to_string(),
-                contract_address: contract_address.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
+                contract_address: parsed_addr.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
             }),
         }
     }
