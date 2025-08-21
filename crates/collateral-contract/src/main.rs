@@ -176,7 +176,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
-    let network_config = CollateralNetworkConfig::from_network(&cli.network, cli.contract_address);
+    let network_config = CollateralNetworkConfig::from_network(&cli.network, cli.contract_address)?;
 
     println!("Using network: {:?}", cli.network);
     println!("Contract address: {}", network_config.contract_address);

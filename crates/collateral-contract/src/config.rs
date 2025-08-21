@@ -47,29 +47,36 @@ pub struct CollateralNetworkConfig {
 impl Default for CollateralNetworkConfig {
     fn default() -> Self {
         Self::from_network(&Network::Mainnet, None)
+            .expect("Failed to create default network config")
     }
 }
 
 impl CollateralNetworkConfig {
-    pub fn from_network(network: &Network, contract_address: Option<String>) -> Self {
+    pub fn from_network(
+        network: &Network,
+        contract_address: Option<String>,
+    ) -> anyhow::Result<Self> {
         let contract_address = contract_address
-            .map(|addr| Address::from_str(&addr).expect("Invalid contract address"));
+            .map(|addr| {
+                Address::from_str(&addr).map_err(|_| anyhow::anyhow!("Invalid contract address"))
+            })
+            .ok_or(anyhow::anyhow!("Invalid contract address"))?;
         match network {
-            Network::Mainnet => CollateralNetworkConfig {
+            Network::Mainnet => Ok(CollateralNetworkConfig {
                 chain_id: CHAIN_ID,
                 rpc_url: RPC_URL.to_string(),
                 contract_address: contract_address.unwrap_or(COLLATERAL_ADDRESS),
-            },
-            Network::Testnet => CollateralNetworkConfig {
+            }),
+            Network::Testnet => Ok(CollateralNetworkConfig {
                 chain_id: TEST_CHAIN_ID,
                 rpc_url: TEST_RPC_URL.to_string(),
                 contract_address: contract_address.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
-            },
-            Network::Local => CollateralNetworkConfig {
+            }),
+            Network::Local => Ok(CollateralNetworkConfig {
                 chain_id: LOCAL_CHAIN_ID,
                 rpc_url: LOCAL_RPC_URL.to_string(),
                 contract_address: contract_address.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
-            },
+            }),
         }
     }
 }
