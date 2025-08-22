@@ -23,11 +23,11 @@ pub enum CliError {
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
-    #[error("Authentication failed: {message}")]
+    #[error("{message}")]
     Auth { message: String },
 
-    #[error("Network component error: {message}")]
-    NetworkComponent { message: String },
+    #[error("Delegation component error: {message}")]
+    DelegationComponent { message: String },
 
     #[error("Invalid argument: {message}")]
     InvalidArgument { message: String },
@@ -73,9 +73,9 @@ impl CliError {
         }
     }
 
-    /// Create a new network component error
-    pub fn network_component(message: impl Into<String>) -> Self {
-        Self::NetworkComponent {
+    /// Create a new delegation component error
+    pub fn delegation_component(message: impl Into<String>) -> Self {
+        Self::DelegationComponent {
             message: message.into(),
         }
     }
@@ -148,10 +148,20 @@ impl CliError {
             .with_suggestion("Check if the rental is still active and SSH port is exposed")
     }
 
+    /// Create rental failed error
+    pub fn rental_failed(message: impl Into<String>) -> Self {
+        Self::Internal(anyhow::anyhow!("Rental failed: {}", message.into()))
+    }
+
     /// Create authentication expired error with helpful suggestion
     pub fn auth_expired() -> Self {
         Self::auth("Authentication token has expired")
             .with_suggestion("Run 'basilica login' to refresh your credentials")
+    }
+
+    /// Create login required error with helpful suggestions
+    pub fn login_required() -> Self {
+        Self::auth("You are not logged in. Please run 'basilica login' to authenticate")
     }
 
     /// Create API request failed error with helpful suggestion
@@ -182,7 +192,7 @@ impl CliError {
     /// Create SSH key not found error with helpful suggestion
     pub fn ssh_key_not_found(path: impl Into<String>) -> Self {
         Self::invalid_argument(format!("SSH key not found at: {}", path.into()))
-            .with_suggestion("Generate SSH keys with 'ssh-keygen -t rsa -f ~/.ssh/basilica_rsa' or update the path in config")
+            .with_suggestion("SSH keys are automatically generated during login. Run 'basilica login' to create them, or generate manually with 'ssh-keygen -t rsa -f ~/.ssh/basilica_rsa'")
     }
 
     /// Create executor not available error with helpful suggestion

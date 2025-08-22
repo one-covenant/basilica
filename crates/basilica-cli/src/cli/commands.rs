@@ -5,22 +5,18 @@ use std::path::PathBuf;
 /// Main CLI commands
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Manage CLI configuration
-    Config {
-        #[command(subcommand)]
-        action: ConfigAction,
-    },
-
     /// List available GPU resources
+    #[command(alias = "list")]
     Ls {
         #[command(flatten)]
         filters: ListFilters,
     },
 
     /// Provision and start GPU instances
+    #[command(alias = "start")]
     Up {
-        /// Target executor UID/HUID
-        target: String,
+        /// Target executor UID/HUID (optional)
+        target: Option<String>,
 
         #[command(flatten)]
         options: UpOptions,
@@ -34,38 +30,41 @@ pub enum Commands {
 
     /// Check instance status
     Status {
-        /// Rental UID/HUID
-        target: String,
+        /// Rental UID/HUID (optional)
+        target: Option<String>,
     },
 
     /// View instance logs
     Logs {
-        /// Rental UID/HUID
-        target: String,
+        /// Rental UID/HUID (optional)
+        target: Option<String>,
 
         #[command(flatten)]
         options: LogsOptions,
     },
 
-    /// Terminate instances
+    /// Terminate instance
+    #[command(alias = "stop")]
     Down {
-        /// Rental UID/HUID to terminate
-        targets: Vec<String>,
+        /// Rental UID/HUID to terminate (optional)
+        target: Option<String>,
     },
 
     /// Execute commands on instances
     Exec {
-        /// Rental UID/HUID
-        target: String,
-
         /// Command to execute
         command: String,
+
+        /// Rental UID/HUID (optional)
+        #[arg(long)]
+        target: Option<String>,
     },
 
     /// SSH into instances
+    #[command(alias = "connect")]
     Ssh {
-        /// Rental UID/HUID
-        target: String,
+        /// Rental UID/HUID (optional)
+        target: Option<String>,
 
         #[command(flatten)]
         options: SshOptions,
@@ -121,31 +120,6 @@ pub enum Commands {
         #[arg(long)]
         api: bool,
     },
-}
-
-/// Configuration management actions
-#[derive(Subcommand, Debug)]
-pub enum ConfigAction {
-    /// Show current configuration
-    Show,
-
-    /// Set configuration value
-    Set {
-        /// Configuration key
-        key: String,
-
-        /// Configuration value
-        value: String,
-    },
-
-    /// Get configuration value
-    Get {
-        /// Configuration key
-        key: String,
-    },
-
-    /// Reset configuration to defaults
-    Reset,
 }
 
 /// Filters for listing GPUs
@@ -218,6 +192,10 @@ pub struct UpOptions {
     /// Disable SSH access (faster startup)
     #[arg(long)]
     pub no_ssh: bool,
+
+    /// Create rental in detached mode (don't auto-connect via SSH)
+    #[arg(short = 'd', long)]
+    pub detach: bool,
 }
 
 /// Filters for listing active rentals
@@ -258,8 +236,4 @@ pub struct SshOptions {
     /// Remote port forwarding (remote_port:local_host:local_port)
     #[arg(short = 'R', long)]
     pub remote_forward: Vec<String>,
-
-    /// SSH command to run
-    #[arg(last = true)]
-    pub command: Vec<String>,
 }

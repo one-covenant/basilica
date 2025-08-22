@@ -3,24 +3,22 @@
 use crate::auth::{should_use_device_flow, CallbackServer, DeviceFlow, OAuthFlow, TokenStore};
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
-use crate::output::print_success;
+use crate::output::{banner, compress_path, print_success};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
-use std::path::Path;
 use tracing::{debug, warn};
 
 /// Service name for token storage
 const SERVICE_NAME: &str = "basilica-cli";
 
 /// Handle login command
-pub async fn handle_login(
-    device_code: bool,
-    _config: &CliConfig,
-    _config_path: impl AsRef<Path>,
-) -> Result<()> {
+pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
     debug!("Starting login process, device_code: {}", device_code);
 
-    // Ensure config file exists (create with defaults if missing)
-    CliConfig::ensure_config_exists().await?;
+    // Display welcome banner at the start
+    println!();
+    banner::print_welcome_banner();
+    println!("{}", console::style("Welcome to Basilica!").green().bold());
+    println!();
 
     // Determine which flow to use
     let use_device_flow = device_code || should_use_device_flow();
@@ -80,6 +78,43 @@ pub async fn handle_login(
     complete_spinner_and_clear(spinner);
 
     print_success("⛪ Login successful!");
+    println!();
+
+    // Check and generate SSH keys if they don't exist
+    let spinner = create_spinner("Checking SSH keys...");
+
+    // First check if keys already exist
+    if config.ssh.ssh_keys_exist() {
+        complete_spinner_and_clear(spinner);
+        debug!("SSH keys already exist");
+    } else {
+        // Keys don't exist, generate them
+        spinner.set_message("Generating SSH keys for GPU rentals...");
+
+        match crate::ssh::ensure_ssh_keys_exist(&config.ssh).await {
+            Ok(()) => {
+                complete_spinner_and_clear(spinner);
+                // Show user where keys were generated
+                print_success("🔑 SSH keys generated successfully!");
+                println!("  Location: {}", compress_path(&config.ssh.key_path));
+                println!();
+            }
+            Err(e) => {
+                complete_spinner_error(spinner, "Failed to generate SSH keys");
+                warn!("Failed to generate SSH keys: {}", e);
+                println!();
+                println!("⚠️  SSH keys could not be generated automatically.");
+                println!("   You can generate them manually with:");
+                println!("   ssh-keygen -f ~/.ssh/basilica_rsa");
+                println!();
+                // Don't fail the login, just warn
+            }
+        }
+    }
+
+    // Show helpful command suggestions
+    banner::print_command_suggestions();
+
     Ok(())
 }
 
