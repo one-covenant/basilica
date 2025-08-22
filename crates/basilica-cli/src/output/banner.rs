@@ -49,11 +49,18 @@ pub fn print_command_suggestions() {
         style("- Start a GPU rental session").dim()
     );
 
-    // Check status
+    // List active rentals
+    println!(
+        "  {} {}",
+        style("basilica ps").yellow().bold(),
+        style("- List active rentals").dim()
+    );
+
+    // Check specific rental status
     println!(
         "  {} {}",
         style("basilica status").yellow().bold(),
-        style("- Check status of your current rentals").dim()
+        style("- Check status of a specific rental").dim()
     );
 
     // SSH into rental

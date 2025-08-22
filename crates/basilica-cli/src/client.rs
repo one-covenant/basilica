@@ -14,7 +14,7 @@ use crate::error::{CliError, Result};
 use basilica_api::client::{BasilicaClient, ClientBuilder, TokenRefresh};
 use tracing::{debug, warn};
 
-/// Creates an authenticated BasilicaClient with JWT or API key authentication
+/// Creates an authenticated BasilicaClient with JWT
 ///
 /// This function:
 /// 1. Attempts to use JWT tokens from TokenStore (unless bypass_auth is true)
@@ -66,8 +66,8 @@ pub async fn create_authenticated_client(
 /// This function now returns the stored token as-is, letting the BasilicaClient
 /// handle automatic refresh when needed. This prevents duplicate refresh attempts
 /// and simplifies the flow.
-async fn get_valid_jwt_token(_config: &CliConfig) -> anyhow::Result<String> {
-    let token_store = TokenStore::new()?;
+async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
+    let token_store = TokenStore::new().map_err(|e| CliError::internal(e.to_string()))?;
 
     // Try to get stored tokens
     let tokens = token_store
