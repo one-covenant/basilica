@@ -240,7 +240,7 @@ impl ExecutorManager {
                 ExecutorState {
                     machine: machine.clone(),
                     grpc_client: None,
-                    is_healthy: false,
+                    is_healthy: true,
                     last_health_check: None,
                     failed_checks: 0,
                     resources: None,
@@ -388,6 +388,20 @@ impl ExecutorManager {
                 "Starting executor health monitoring for {} machines",
                 manager.config.machines.len()
             );
+
+            let machine_ids: Vec<String> = {
+                let state = manager.state.read().await;
+                state.keys().cloned().collect()
+            };
+
+            for id in &machine_ids {
+                if let Err(e) = manager.check_health(id).await {
+                    debug!("Initial health check failed for {}: {}", id, e);
+                }
+            }
+
+            tokio::time::sleep(Duration::from_secs(5)).await;
+
             manager.health_check_loop().await;
         });
         Ok(())
@@ -507,16 +521,23 @@ impl ExecutorManager {
                 response.status,
                 response.status.len()
             );
-            let is_healthy = response.status == "healthy";
+            let is_healthy = response.status.trim() == "healthy";
             info!(
                 "Health check result for {}: is_healthy={}",
                 machine_id, is_healthy
             );
 
+            let was_healthy = executor_state.is_healthy;
             executor_state.is_healthy = is_healthy;
             executor_state.last_health_check = Some(Instant::now());
             executor_state.failed_checks = 0;
             executor_state.resources = self.parse_resources(&response.resource_status);
+
+            if !was_healthy && is_healthy {
+                info!("Executor {} became healthy", machine_id);
+            } else if was_healthy && !is_healthy {
+                warn!("Executor {} became unhealthy with status: '{}'", machine_id, response.status);
+            }
 
             self.db
                 .update_executor_health(machine_id, executor_state.is_healthy)
