@@ -6,12 +6,14 @@ use std::path::PathBuf;
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// List available GPU resources
+    #[command(alias = "list")]
     Ls {
         #[command(flatten)]
         filters: ListFilters,
     },
 
     /// Provision and start GPU instances
+    #[command(alias = "start")]
     Up {
         /// Target executor UID/HUID (optional)
         target: Option<String>,
@@ -42,6 +44,7 @@ pub enum Commands {
     },
 
     /// Terminate instance
+    #[command(alias = "stop")]
     Down {
         /// Rental UID/HUID to terminate (optional)
         target: Option<String>,
@@ -58,6 +61,7 @@ pub enum Commands {
     },
 
     /// SSH into instances
+    #[command(alias = "connect")]
     Ssh {
         /// Rental UID/HUID (optional)
         target: Option<String>,
