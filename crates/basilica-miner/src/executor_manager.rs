@@ -536,7 +536,10 @@ impl ExecutorManager {
             if !was_healthy && is_healthy {
                 info!("Executor {} became healthy", machine_id);
             } else if was_healthy && !is_healthy {
-                warn!("Executor {} became unhealthy with status: '{}'", machine_id, response.status);
+                warn!(
+                    "Executor {} became unhealthy with status: '{}'",
+                    machine_id, response.status
+                );
             }
 
             self.db
