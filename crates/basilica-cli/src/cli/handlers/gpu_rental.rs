@@ -17,6 +17,7 @@ use basilica_api::api::types::{
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
 use basilica_validator::rental::types::RentalState;
+use console::style;
 use reqwest::StatusCode;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -378,6 +379,8 @@ pub async fn handle_ps(
     } else {
         table_output::display_rental_items(&rentals_list.rentals[..])?;
         println!("\nTotal: {} active rentals", rentals_list.rentals.len());
+
+        display_ps_quick_start_commands();
     }
 
     Ok(())
@@ -967,4 +970,40 @@ fn display_rental_status(status: &RentalStatusResponse) {
     // if let Some(location) = &status.executor.location {
     //     println!("  Location: {location}");
     // }
+}
+
+/// Display quick start commands after ps output
+fn display_ps_quick_start_commands() {
+    println!();
+    println!("{}", style("Quick Commands:").cyan().bold());
+
+    println!(
+        "  {} {}",
+        style("basilica ssh").yellow().bold(),
+        style("- Connect to your rental").dim()
+    );
+
+    println!(
+        "  {} {}",
+        style("basilica exec").yellow().bold(),
+        style("- Run commands on your rental").dim()
+    );
+
+    println!(
+        "  {} {}",
+        style("basilica logs").yellow().bold(),
+        style("- Stream container logs").dim()
+    );
+
+    println!(
+        "  {} {}",
+        style("basilica status").yellow().bold(),
+        style("- Check detailed status").dim()
+    );
+
+    println!(
+        "  {} {}",
+        style("basilica down").yellow().bold(),
+        style("- Stop this rental").dim()
+    );
 }
