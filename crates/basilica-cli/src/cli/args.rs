@@ -33,9 +33,6 @@ NETWORK COMPONENTS:
   basilica miner                    # Run miner  
   basilica executor                 # Run executor
 
-CONFIGURATION:
-  basilica config show              # Show configuration
-
 AUTHENTICATION:
   basilica login                    # Log in to Basilica
   basilica login --device-code      # Log in using device flow
@@ -86,18 +83,13 @@ impl Args {
             let cfg = CliConfig::load_from_file(&expanded_path)?;
             (cfg, expanded_path)
         } else {
-            // Use the common loader which will check current dir and env vars
-            let cfg = CliConfig::load()?;
-            // For backward compatibility, get the default path for commands that need it
             let path = CliConfig::default_config_path()?;
+            let cfg = CliConfig::load_from_file(&path)?;
             (cfg, path)
         };
 
         match self.command {
             // Setup and configuration
-            Commands::Config { action } => {
-                handlers::config::handle_config(action, &config, &config_path).await
-            }
             Commands::Login { device_code } => {
                 handlers::auth::handle_login(device_code, &config, &config_path).await
             }

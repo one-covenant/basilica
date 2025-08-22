@@ -5,12 +5,6 @@ use std::path::PathBuf;
 /// Main CLI commands
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Manage CLI configuration
-    Config {
-        #[command(subcommand)]
-        action: ConfigAction,
-    },
-
     /// List available GPU resources
     Ls {
         #[command(flatten)]
@@ -121,31 +115,6 @@ pub enum Commands {
         #[arg(long)]
         api: bool,
     },
-}
-
-/// Configuration management actions
-#[derive(Subcommand, Debug)]
-pub enum ConfigAction {
-    /// Show current configuration
-    Show,
-
-    /// Set configuration value
-    Set {
-        /// Configuration key
-        key: String,
-
-        /// Configuration value
-        value: String,
-    },
-
-    /// Get configuration value
-    Get {
-        /// Configuration key
-        key: String,
-    },
-
-    /// Reset configuration to defaults
-    Reset,
 }
 
 /// Filters for listing GPUs
