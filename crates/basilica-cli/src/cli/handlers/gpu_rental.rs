@@ -733,14 +733,7 @@ pub async fn handle_ssh(
     // Use SSH client to handle connection with options
     let ssh_client = SshClient::new(&config.ssh)?;
 
-    // If a command is provided, execute it directly without opening interactive session
-    if !options.command.is_empty() {
-        let command = options.command.join(" ");
-        debug!("Executing SSH command: {}", command);
-        return ssh_client.execute_command(&ssh_access, &command).await;
-    }
-
-    // Otherwise, open interactive session with port forwarding options
+    // Open interactive session with port forwarding options
     ssh_client
         .interactive_session_with_options(&ssh_access, &options)
         .await

@@ -180,7 +180,7 @@ impl SshClient {
         Ok((port1, host, port2))
     }
 
-    /// Open interactive SSH session with port forwarding and command options
+    /// Open interactive SSH session with port forwarding options
     pub async fn interactive_session_with_options(
         &self,
         ssh_access: &SshAccess,
@@ -240,14 +240,6 @@ impl SshClient {
 
         // Add the target host
         cmd.arg(format!("{}@{}", details.username, details.host));
-
-        // If there's a command to execute, add it
-        if !options.command.is_empty() {
-            for arg in &options.command {
-                cmd.arg(arg);
-            }
-            debug!("Added SSH command: {:?}", options.command);
-        }
 
         let status = cmd
             .status()

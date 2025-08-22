@@ -13,7 +13,7 @@ pub enum Commands {
 
     /// Provision and start GPU instances
     Up {
-        /// Target executor UID/HUID (if not provided, will prompt for selection)
+        /// Target executor UID/HUID (optional)
         target: Option<String>,
 
         #[command(flatten)]
@@ -28,13 +28,13 @@ pub enum Commands {
 
     /// Check instance status
     Status {
-        /// Rental UID/HUID (if not provided, will prompt for selection)
+        /// Rental UID/HUID (optional)
         target: Option<String>,
     },
 
     /// View instance logs
     Logs {
-        /// Rental UID/HUID (if not provided, will prompt for selection)
+        /// Rental UID/HUID (optional)
         target: Option<String>,
 
         #[command(flatten)]
@@ -43,7 +43,7 @@ pub enum Commands {
 
     /// Terminate instance
     Down {
-        /// Rental UID/HUID to terminate (if not provided, will prompt for selection)
+        /// Rental UID/HUID to terminate (optional)
         target: Option<String>,
     },
 
@@ -52,14 +52,14 @@ pub enum Commands {
         /// Command to execute
         command: String,
 
-        /// Rental UID/HUID (if not provided, will prompt for selection)
+        /// Rental UID/HUID (optional)
         #[arg(long)]
         target: Option<String>,
     },
 
     /// SSH into instances
     Ssh {
-        /// Rental UID/HUID (if not provided, will prompt for selection)
+        /// Rental UID/HUID (optional)
         target: Option<String>,
 
         #[command(flatten)]
@@ -228,8 +228,4 @@ pub struct SshOptions {
     /// Remote port forwarding (remote_port:local_host:local_port)
     #[arg(short = 'R', long)]
     pub remote_forward: Vec<String>,
-
-    /// SSH command to run
-    #[arg(last = true)]
-    pub command: Vec<String>,
 }
