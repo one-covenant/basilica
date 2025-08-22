@@ -378,9 +378,7 @@ pub async fn ensure_ssh_keys_exist(config: &SshConfig) -> Result<()> {
     // Generate SSH keys using ssh-keygen
     let mut cmd = std::process::Command::new("ssh-keygen");
     cmd.arg("-t")
-        .arg("rsa")
-        .arg("-b")
-        .arg("4096")
+        .arg("ed25519")
         .arg("-f")
         .arg(private_key_path.display().to_string())
         .arg("-N")

@@ -105,7 +105,7 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
                 println!();
                 println!("⚠️  SSH keys could not be generated automatically.");
                 println!("   You can generate them manually with:");
-                println!("   ssh-keygen -t rsa -f ~/.ssh/basilica_rsa");
+                println!("   ssh-keygen -f ~/.ssh/basilica_rsa");
                 println!();
                 // Don't fail the login, just warn
             }

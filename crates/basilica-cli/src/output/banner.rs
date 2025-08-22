@@ -14,7 +14,6 @@ pub fn print_welcome_banner() {
               GPU Marketplace for AI/ML
  "#;
 
-    // Print banner in green
     for line in banner.lines() {
         println!("{}", style(line).red().bright());
     }
