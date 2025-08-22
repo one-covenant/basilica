@@ -9,7 +9,7 @@ use basilica_validator::api::types::RentalListItem;
 use basilica_validator::rental::types::RentalState;
 
 /// Resolve target rental ID - if not provided, fetch active rentals and prompt for selection
-/// 
+///
 /// # Arguments
 /// * `target` - Optional rental ID provided by user
 /// * `api_client` - Authenticated API client
@@ -53,8 +53,11 @@ pub async fn resolve_target_rental(
 
     if eligible_rentals.is_empty() {
         return if require_ssh {
-            Err(CliError::not_found("No rentals with SSH access found")
-                .with_context("SSH credentials are only available for rentals created in this session"))
+            Err(
+                CliError::not_found("No rentals with SSH access found").with_context(
+                    "SSH credentials are only available for rentals created in this session",
+                ),
+            )
         } else {
             Err(CliError::not_found("No active rentals found"))
         };
@@ -66,14 +69,11 @@ pub async fn resolve_target_rental(
 }
 
 /// Get SSH credentials from cache for a rental
-/// 
+///
 /// # Arguments
 /// * `target` - Rental ID to look up
 /// * `cache` - Rental cache instance
-pub fn get_ssh_credentials_from_cache(
-    target: &str,
-    cache: &RentalCache,
-) -> Result<String> {
+pub fn get_ssh_credentials_from_cache(target: &str, cache: &RentalCache) -> Result<String> {
     let cached_rental = cache.get_rental(target).ok_or_else(|| {
         CliError::rental_not_found(target)
             .with_context("SSH credentials are only available for rentals created in this session")
@@ -87,7 +87,7 @@ pub fn get_ssh_credentials_from_cache(
 }
 
 /// Filter rentals to only include those with SSH credentials in cache
-/// 
+///
 /// # Arguments
 /// * `rentals` - List of rentals to filter
 /// * `cache` - Rental cache instance

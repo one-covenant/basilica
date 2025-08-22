@@ -3,7 +3,8 @@
 use crate::error::{CliError, Result};
 use basilica_api::api::types::RentalStatusResponse;
 use basilica_validator::api::types::{AvailableExecutor, RentalListItem};
-use dialoguer::{theme::ColorfulTheme, MultiSelect, Select};
+use console::Term;
+use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};
 
 /// Interactive selector for CLI operations
 pub struct InteractiveSelector {
@@ -13,8 +14,21 @@ pub struct InteractiveSelector {
 impl InteractiveSelector {
     /// Create a new interactive selector
     pub fn new() -> Self {
-        Self {
-            theme: ColorfulTheme::default(),
+        // Create a customized theme for better display
+        let theme = ColorfulTheme::default();
+        // The theme already has good defaults, we can customize if needed
+        Self { theme }
+    }
+
+    /// Get GPU use case description based on GPU model
+    fn get_gpu_use_case(gpu_name: &str) -> &'static str {
+        match gpu_name {
+            name if name.contains("H100") => "High-end training & inference",
+            name if name.contains("H200") => "High-end training & inference",
+            name if name.contains("A100") => "Training & large model inference",
+            name if name.contains("RTX 4090") => "Development & prototyping",
+            name if name.contains("RTX 4080") => "Development & prototyping",
+            _ => "General GPU compute",
         }
     }
 
@@ -24,10 +38,11 @@ impl InteractiveSelector {
             return Err(CliError::not_found("No executors available"));
         }
 
-        let items: Vec<String> = executors
+        // First pass: collect GPU info strings to determine max width
+        let gpu_infos: Vec<String> = executors
             .iter()
             .map(|executor| {
-                let gpu_info = if executor.executor.gpu_specs.is_empty() {
+                if executor.executor.gpu_specs.is_empty() {
                     "No GPUs".to_string()
                 } else {
                     let gpu = &executor.executor.gpu_specs[0];
@@ -41,24 +56,72 @@ impl InteractiveSelector {
                     } else {
                         format!("{} ({}GB)", gpu.name, gpu.memory_gb)
                     }
-                };
+                }
+            })
+            .collect();
 
-                format!(
-                    "{} - {} - {} cores, {}GB RAM",
-                    gpu_info,
-                    executor.executor.id,
-                    executor.executor.cpu_specs.cores,
-                    executor.executor.cpu_specs.memory_gb
-                )
+        // Calculate the maximum width needed for proper alignment
+        let max_width = gpu_infos.iter().map(|s| s.len()).max().unwrap_or(30);
+        let padding = max_width + 3; // Add some padding for better visual separation
+
+        // Create items for the selector with GPU info and use cases
+        let selector_items: Vec<String> = executors
+            .iter()
+            .zip(gpu_infos.iter())
+            .map(|(executor, gpu_info)| {
+                if executor.executor.gpu_specs.is_empty() {
+                    format!("{:<width$} {}", gpu_info, "General GPU compute", width = padding)
+                } else {
+                    let gpu = &executor.executor.gpu_specs[0];
+                    let use_case = Self::get_gpu_use_case(&gpu.name);
+                    format!("{:<width$} {}", gpu_info, use_case, width = padding)
+                }
             })
             .collect();
 
         let selection = Select::with_theme(&self.theme)
-            .with_prompt("Select an executor")
-            .items(&items)
+            .with_prompt("Select GPU configuration")
+            .items(&selector_items)
             .default(0)
-            .interact()
+            .interact_opt()
             .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+
+        let selection = match selection {
+            Some(s) => s,
+            None => return Err(CliError::interactive("Selection cancelled")),
+        };
+
+        // Get the selected GPU info for confirmation
+        let selected_gpu = if executors[selection].executor.gpu_specs.is_empty() {
+            "No GPUs".to_string()
+        } else {
+            let gpu = &executors[selection].executor.gpu_specs[0];
+            if executors[selection].executor.gpu_specs.len() > 1 {
+                format!(
+                    "{}x {} ({}GB)",
+                    executors[selection].executor.gpu_specs.len(),
+                    gpu.name,
+                    gpu.memory_gb
+                )
+            } else {
+                format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+            }
+        };
+
+        // Use console crate to clear the previous line properly
+        let term = Term::stdout();
+        let _ = term.clear_last_lines(1); // Clear the selection prompt line
+
+        // Use dialoguer's Confirm with the same theme for consistency
+        let confirmed = Confirm::with_theme(&self.theme)
+            .with_prompt(&format!("Proceed with {}?", selected_gpu))
+            .default(true) // Default to yes for better UX
+            .interact()
+            .map_err(|e| CliError::interactive(format!("Confirmation failed: {e}")))?;
+
+        if !confirmed {
+            return Err(CliError::interactive("Selection cancelled"));
+        }
 
         let executor_id = executors[selection].executor.id.clone();
 
@@ -71,12 +134,12 @@ impl InteractiveSelector {
         Ok(executor_id)
     }
 
-    /// Let user select a single rental from active rentals
+    /// Let user select a single instance from active instances
     pub fn select_rental(&self, rentals: &[RentalListItem]) -> Result<String> {
         use crate::cache::RentalCache;
 
         if rentals.is_empty() {
-            return Err(CliError::not_found("No active rentals"));
+            return Err(CliError::not_found("No active instances"));
         }
 
         // Load cache to get GPU info
@@ -89,32 +152,39 @@ impl InteractiveSelector {
                 let gpu = cache
                     .get_rental(&rental.rental_id)
                     .and_then(|cached| cached.gpu_info.clone())
-                    .unwrap_or_else(|| "Unknown".to_string());
+                    .unwrap_or_else(|| "Unknown GPU".to_string());
 
-                format!(
-                    "{} - {} - {} - {}",
-                    gpu, rental.rental_id, rental.state, rental.container_image
-                )
+                // Format: "GPU Type    Container Image"
+                format!("{:<30} {}", gpu, rental.container_image)
             })
             .collect();
 
         let selection = Select::with_theme(&self.theme)
-            .with_prompt("Select a rental")
+            .with_prompt("Select instance")
             .items(&items)
             .default(0)
-            .interact()
+            .interact_opt()
             .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+
+        let selection = match selection {
+            Some(s) => s,
+            None => return Err(CliError::interactive("Selection cancelled")),
+        };
+
+        // Clear the selection prompt line
+        let term = Term::stdout();
+        let _ = term.clear_last_lines(1);
 
         Ok(rentals[selection].rental_id.clone())
     }
 
-    /// Let user select rentals for termination (legacy - for RentalStatusResponse)
+    /// Let user select instances for termination (legacy - for RentalStatusResponse)
     pub fn select_rentals_for_termination_legacy(
         &self,
         rentals: &[RentalStatusResponse],
     ) -> Result<Vec<String>> {
         if rentals.is_empty() {
-            return Err(CliError::not_found("No active rentals"));
+            return Err(CliError::not_found("No active instances"));
         }
 
         let items: Vec<String> = rentals
@@ -128,13 +198,13 @@ impl InteractiveSelector {
             .collect();
 
         let selections = MultiSelect::with_theme(&self.theme)
-            .with_prompt("Select rentals to terminate (Space to select, Enter to confirm)")
+            .with_prompt("Select instances to terminate (Space to select, Enter to confirm)")
             .items(&items)
             .interact()
             .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
 
         if selections.is_empty() {
-            return Err(CliError::interactive("No rentals selected"));
+            return Err(CliError::interactive("No instances selected"));
         }
 
         let selected_ids: Vec<String> = selections
@@ -145,7 +215,7 @@ impl InteractiveSelector {
         Ok(selected_ids)
     }
 
-    /// Let user select rental items for termination
+    /// Let user select instance items for termination
     pub fn select_rental_items_for_termination(
         &self,
         rentals: &[RentalListItem],
@@ -153,7 +223,7 @@ impl InteractiveSelector {
         use crate::cache::RentalCache;
 
         if rentals.is_empty() {
-            return Err(CliError::not_found("No active rentals"));
+            return Err(CliError::not_found("No active instances"));
         }
 
         // Load cache to get GPU info
@@ -166,23 +236,21 @@ impl InteractiveSelector {
                 let gpu = cache
                     .get_rental(&rental.rental_id)
                     .and_then(|cached| cached.gpu_info.clone())
-                    .unwrap_or_else(|| "Unknown".to_string());
+                    .unwrap_or_else(|| "Unknown GPU".to_string());
 
-                format!(
-                    "{} - {} - {} - {}",
-                    gpu, rental.rental_id, rental.state, rental.container_image
-                )
+                // Format consistently with select_rental
+                format!("{:<30} {}", gpu, rental.container_image)
             })
             .collect();
 
         let selections = MultiSelect::with_theme(&self.theme)
-            .with_prompt("Select rentals to terminate (Space to select, Enter to confirm)")
+            .with_prompt("Select instances to terminate (Space to select, Enter to confirm)")
             .items(&items)
             .interact()
             .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
 
         if selections.is_empty() {
-            return Err(CliError::interactive("No rentals selected"));
+            return Err(CliError::interactive("No instances selected"));
         }
 
         let selected_ids: Vec<String> = selections
