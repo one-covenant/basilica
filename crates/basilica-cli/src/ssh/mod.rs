@@ -126,8 +126,10 @@ impl SshClient {
             .status()
             .map_err(|e| CliError::ssh(format!("Failed to start SSH session: {}", e)))?;
 
-        if !status.success() {
-            return Err(CliError::ssh("SSH session terminated with error"));
+        // Only treat exit code 255 as an SSH error (SSH's own error code)
+        // Other exit codes are from the remote command
+        if status.code() == Some(255) {
+            return Err(CliError::ssh("SSH connection failed"));
         }
 
         Ok(())
@@ -245,8 +247,10 @@ impl SshClient {
             .status()
             .map_err(|e| CliError::ssh(format!("Failed to start SSH session: {}", e)))?;
 
-        if !status.success() {
-            return Err(CliError::ssh("SSH session terminated with error"));
+        // Only treat exit code 255 as an SSH error (SSH's own error code)
+        // Other exit codes are from the remote command and should be ignored
+        if status.code() == Some(255) {
+            return Err(CliError::ssh("SSH connection failed"));
         }
 
         Ok(())
