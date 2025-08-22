@@ -115,8 +115,8 @@ impl Args {
             Commands::Logs { target, options } => {
                 handlers::gpu_rental::handle_logs(target, options, &config, self.no_auth).await
             }
-            Commands::Down { targets } => {
-                handlers::gpu_rental::handle_down(targets, &config, self.no_auth).await
+            Commands::Down { target } => {
+                handlers::gpu_rental::handle_down(target, &config, self.no_auth).await
             }
             Commands::Exec { target, command } => {
                 handlers::gpu_rental::handle_exec(target, command, &config, self.no_auth).await

@@ -2,8 +2,8 @@
 
 use crate::error::{CliError, Result};
 use basilica_api::api::types::RentalStatusResponse;
-use basilica_validator::api::types::RentalListItem;
-use dialoguer::{theme::ColorfulTheme, MultiSelect};
+use basilica_validator::api::types::{AvailableExecutor, RentalListItem};
+use dialoguer::{theme::ColorfulTheme, MultiSelect, Select};
 
 /// Interactive selector for CLI operations
 pub struct InteractiveSelector {
@@ -18,7 +18,6 @@ impl InteractiveSelector {
         }
     }
 
-    /* Commented out - AvailableExecutor type removed
     /// Let user select an executor from available options
     pub fn select_executor(&self, executors: &[AvailableExecutor]) -> Result<String> {
         if executors.is_empty() {
@@ -28,34 +27,29 @@ impl InteractiveSelector {
         let items: Vec<String> = executors
             .iter()
             .map(|executor| {
-                // let gpu_info = if executor.gpu_specs.is_empty() {
-                //     "No GPUs".to_string()
-                // } else {
-                //     format!(
-                //         "{} x {} ({}GB each)",
-                //         executor.gpu_specs.len(),
-                //         executor.gpu_specs[0].name,
-                //         executor.gpu_specs[0].memory_gb
-                //     )
-                // };
+                let gpu_info = if executor.executor.gpu_specs.is_empty() {
+                    "No GPUs".to_string()
+                } else {
+                    let gpu = &executor.executor.gpu_specs[0];
+                    if executor.executor.gpu_specs.len() > 1 {
+                        format!(
+                            "{}x {} ({}GB)",
+                            executor.executor.gpu_specs.len(),
+                            gpu.name,
+                            gpu.memory_gb
+                        )
+                    } else {
+                        format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+                    }
+                };
 
                 format!(
-                    "{}{}{}",
-                    executor.executor_id,
-                    // gpu_info,
-                    // executor.cpu_specs.cores,
-                    // executor.cpu_specs.memory_gb,
-                    // executor.price_per_hour,
-                    executor
-                        .location
-                        .as_ref()
-                        .map(|l| format!(" - {l}"))
-                        .unwrap_or_default(),
-                    if executor.available {
-                        ""
-                    } else {
-                        " (Unavailable)"
-                    }
+                    "{} - {} - {} cores, {}GB RAM - Score: {:.2}",
+                    executor.executor.id,
+                    gpu_info,
+                    executor.executor.cpu_specs.cores,
+                    executor.executor.cpu_specs.memory_gb,
+                    executor.availability.verification_score
                 )
             })
             .collect();
@@ -67,9 +61,42 @@ impl InteractiveSelector {
             .interact()
             .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
 
-        Ok(executors[selection].executor_id.clone())
+        let executor_id = executors[selection].executor.id.clone();
+
+        // Remove miner prefix from executor ID if present
+        let executor_id = match executor_id.split_once("__") {
+            Some((_, second)) => second.to_string(),
+            None => executor_id,
+        };
+
+        Ok(executor_id)
     }
-    */
+
+    /// Let user select a single rental from active rentals
+    pub fn select_rental(&self, rentals: &[RentalListItem]) -> Result<String> {
+        if rentals.is_empty() {
+            return Err(CliError::not_found("No active rentals"));
+        }
+
+        let items: Vec<String> = rentals
+            .iter()
+            .map(|rental| {
+                format!(
+                    "{} - {} - {} - {}",
+                    rental.rental_id, rental.state, rental.executor_id, rental.container_image
+                )
+            })
+            .collect();
+
+        let selection = Select::with_theme(&self.theme)
+            .with_prompt("Select a rental")
+            .items(&items)
+            .default(0)
+            .interact()
+            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+
+        Ok(rentals[selection].rental_id.clone())
+    }
 
     /// Let user select rentals for termination (legacy - for RentalStatusResponse)
     pub fn select_rentals_for_termination_legacy(

@@ -13,8 +13,8 @@ pub enum Commands {
 
     /// Provision and start GPU instances
     Up {
-        /// Target executor UID/HUID
-        target: String,
+        /// Target executor UID/HUID (if not provided, will prompt for selection)
+        target: Option<String>,
 
         #[command(flatten)]
         options: UpOptions,
@@ -28,29 +28,29 @@ pub enum Commands {
 
     /// Check instance status
     Status {
-        /// Rental UID/HUID
-        target: String,
+        /// Rental UID/HUID (if not provided, will prompt for selection)
+        target: Option<String>,
     },
 
     /// View instance logs
     Logs {
-        /// Rental UID/HUID
-        target: String,
+        /// Rental UID/HUID (if not provided, will prompt for selection)
+        target: Option<String>,
 
         #[command(flatten)]
         options: LogsOptions,
     },
 
-    /// Terminate instances
+    /// Terminate instance
     Down {
-        /// Rental UID/HUID to terminate
-        targets: Vec<String>,
+        /// Rental UID/HUID to terminate (if not provided, will prompt for selection)
+        target: Option<String>,
     },
 
     /// Execute commands on instances
     Exec {
-        /// Rental UID/HUID
-        target: String,
+        /// Rental UID/HUID (if not provided, will prompt for selection)
+        target: Option<String>,
 
         /// Command to execute
         command: String,
@@ -58,8 +58,8 @@ pub enum Commands {
 
     /// SSH into instances
     Ssh {
-        /// Rental UID/HUID
-        target: String,
+        /// Rental UID/HUID (if not provided, will prompt for selection)
+        target: Option<String>,
 
         #[command(flatten)]
         options: SshOptions,
