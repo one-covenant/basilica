@@ -30,11 +30,11 @@ impl RentalCache {
     /// Load rental cache from default location
     pub async fn load() -> Result<Self> {
         let cache_path = CliConfig::rental_cache_path()?;
-        Self::load_from_path(&cache_path).await
+        Self::load_from_file(&cache_path).await
     }
 
     /// Load rental cache from specific path
-    pub async fn load_from_path(path: &Path) -> Result<Self> {
+    pub async fn load_from_file(path: &Path) -> Result<Self> {
         if !path.exists() {
             debug!(
                 "Rental cache not found at {}, creating new cache",

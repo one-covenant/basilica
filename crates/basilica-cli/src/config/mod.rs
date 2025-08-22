@@ -1,6 +1,7 @@
 //! Configuration management for the Basilica CLI
 
 use crate::error::{CliError, Result};
+use basilica_common::config::loader;
 use etcetera::{choose_base_strategy, BaseStrategy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -152,6 +153,38 @@ pub struct RegistrationCache {
 }
 
 impl CliConfig {
+    /// Load configuration using the common loader pattern
+    pub fn load() -> Result<Self> {
+        let mut config = loader::load_config::<Self>()
+            .map_err(|e| CliError::internal(format!("Failed to load config: {}", e)))?;
+        config.expand_paths();
+        Ok(config)
+    }
+
+    /// Load configuration from specific file using the common loader pattern
+    pub fn load_from_file(path: &Path) -> Result<Self> {
+        let mut config = loader::load_from_file::<Self>(path)
+            .map_err(|e| CliError::internal(format!("Failed to load config from file: {}", e)))?;
+        config.expand_paths();
+        Ok(config)
+    }
+
+    /// Expand tilde (~) in path fields
+    fn expand_paths(&mut self) {
+        if let Some(path_str) = self.ssh.key_path.to_str() {
+            let expanded = shellexpand::tilde(path_str);
+            self.ssh.key_path = PathBuf::from(expanded.as_ref());
+        }
+        if let Some(path_str) = self.ssh.private_key_path.to_str() {
+            let expanded = shellexpand::tilde(path_str);
+            self.ssh.private_key_path = PathBuf::from(expanded.as_ref());
+        }
+        if let Some(path_str) = self.wallet.base_wallet_path.to_str() {
+            let expanded = shellexpand::tilde(path_str);
+            self.wallet.base_wallet_path = PathBuf::from(expanded.as_ref());
+        }
+    }
+
     /// Compress paths by replacing home directory with tilde for serialization
     fn compress_paths(&self) -> Self {
         let home_dir = if let Ok(strategy) = choose_base_strategy() {
@@ -184,57 +217,6 @@ impl CliConfig {
             // Path is not under home directory, keep as-is
             path.to_path_buf()
         }
-    }
-
-    /// Load configuration from default location
-    pub async fn load_default() -> Result<Self> {
-        let config_dir = Self::config_dir()?;
-        let config_path = config_dir.join("config.toml");
-        Self::load_from_path(&config_path).await
-    }
-
-    /// Load configuration with auth configuration from default locations
-    pub async fn load_with_auth() -> Result<Self> {
-        // Just load the default config, auth is now built-in
-        Self::load_default().await
-    }
-
-    /// Load configuration from specific path
-    pub async fn load_from_path(path: &Path) -> Result<Self> {
-        debug!("Loading configuration from: {}", path.display());
-
-        if !path.exists() {
-            debug!(
-                "Configuration file not found, using defaults: {}",
-                path.display()
-            );
-            // Return default config without creating file
-            return Ok(Self::default());
-        }
-
-        let content = tokio::fs::read_to_string(path)
-            .await
-            .map_err(CliError::Io)?;
-
-        let mut config: Self = toml::from_str(&content)
-            .map_err(|e| CliError::internal(format!("Failed to parse config: {e}")))?;
-
-        // Expand paths with tilde and environment variables
-        if let Some(path_str) = config.wallet.base_wallet_path.to_str() {
-            let expanded = shellexpand::tilde(path_str);
-            config.wallet.base_wallet_path = PathBuf::from(expanded.as_ref());
-        }
-        if let Some(path_str) = config.ssh.key_path.to_str() {
-            let expanded = shellexpand::tilde(path_str);
-            config.ssh.key_path = PathBuf::from(expanded.as_ref());
-        }
-        if let Some(path_str) = config.ssh.private_key_path.to_str() {
-            let expanded = shellexpand::tilde(path_str);
-            config.ssh.private_key_path = PathBuf::from(expanded.as_ref());
-        }
-
-        debug!("Successfully loaded configuration");
-        Ok(config)
     }
 
     /// Save configuration to specific path
@@ -420,29 +402,17 @@ impl CliConfig {
         let path = Self::default_config_path()?;
         Ok(path.exists())
     }
-
-    /// Ensure config file exists at default location, creating it if necessary
-    pub async fn ensure_config_exists() -> Result<()> {
-        let path = Self::default_config_path()?;
-        if !path.exists() {
-            info!("Creating configuration file at {}", path.display());
-            let config = Self::default();
-            config.save_to_path(&path).await?;
-            info!("Configuration file created successfully");
-        }
-        Ok(())
-    }
 }
 
 impl CliCache {
     /// Load cache from default location
     pub async fn load() -> Result<Self> {
         let cache_path = CliConfig::cache_path()?;
-        Self::load_from_path(&cache_path).await
+        Self::load_from_file(&cache_path).await
     }
 
     /// Load cache from specific path
-    pub async fn load_from_path(path: &Path) -> Result<Self> {
+    pub async fn load_from_file(path: &Path) -> Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
         }

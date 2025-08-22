@@ -1,6 +1,6 @@
 use crate::cli::{commands::Commands, handlers};
 use crate::config::CliConfig;
-use crate::error::{CliError, Result};
+use crate::error::Result;
 use clap::Parser;
 use etcetera::{choose_base_strategy, BaseStrategy};
 use std::path::{Path, PathBuf};
@@ -80,33 +80,18 @@ impl Args {
             .with_target(false)
             .init();
 
-        // Check if config exists for commands that require it
-        match self.command {
-            Commands::Login { .. } | Commands::Logout => {
-                // Login/Logout command doesn't require existing config
-            }
-            _ => {
-                // Check if config exists for other commands
-                if CliConfig::config_exists().is_err() {
-                    return Err(CliError::config_not_initialized(
-                        "Unable to determine config directory",
-                    ));
-                }
-                if !CliConfig::config_exists()? {
-                    return Err(CliError::config_not_initialized(
-                        "Please run 'basilica login' to initialize.",
-                    ));
-                }
-            }
-        }
-
-        // Determine config path and load config once
-        let config_path = if let Some(path) = &self.config {
-            expand_tilde(path)
+        // Load config using the common loader pattern
+        let (config, config_path) = if let Some(path) = &self.config {
+            let expanded_path = expand_tilde(path);
+            let cfg = CliConfig::load_from_file(&expanded_path)?;
+            (cfg, expanded_path)
         } else {
-            CliConfig::default_config_path()?
+            // Use the common loader which will check current dir and env vars
+            let cfg = CliConfig::load()?;
+            // For backward compatibility, get the default path for commands that need it
+            let path = CliConfig::default_config_path()?;
+            (cfg, path)
         };
-        let config = CliConfig::load_from_path(&config_path).await?;
 
         match self.command {
             // Setup and configuration

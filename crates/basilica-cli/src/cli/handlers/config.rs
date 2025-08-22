@@ -40,7 +40,7 @@ async fn handle_config_set(
 ) -> Result<()> {
     debug!("Setting configuration: {} = {}", key, value);
 
-    let mut config = CliConfig::load_from_path(config_path.as_ref()).await?;
+    let mut config = CliConfig::load_from_file(config_path.as_ref())?;
     config.set(&key, &value)?;
     config.save_to_path(config_path.as_ref()).await?;
 
