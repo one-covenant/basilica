@@ -59,12 +59,10 @@ pub async fn handle_ls(
         // Format as table
         #[derive(Tabled)]
         struct ExecutorRow {
+            #[tabled(rename = "GPU")]
+            gpu_info: String,
             #[tabled(rename = "Executor ID")]
             id: String,
-            #[tabled(rename = "GPUs")]
-            gpu_count: String,
-            #[tabled(rename = "GPU Info")]
-            gpu_info: String,
             #[tabled(rename = "CPU")]
             cpu: String,
             #[tabled(rename = "RAM")]
@@ -79,19 +77,38 @@ pub async fn handle_ls(
             .available_executors
             .into_iter()
             .map(|executor| {
-                let (gpu_count, gpu_info) = if executor.executor.gpu_specs.is_empty() {
-                    ("0".to_string(), "No GPU".to_string())
+                let gpu_info = if executor.executor.gpu_specs.is_empty() {
+                    "No GPU".to_string()
+                } else if executor.executor.gpu_specs.len() == 1 {
+                    // Single GPU
+                    let gpu = &executor.executor.gpu_specs[0];
+                    format!("{} ({}GB)", gpu.name, gpu.memory_gb)
                 } else {
-                    let gpu_names: Vec<String> = executor
-                        .executor
-                        .gpu_specs
-                        .iter()
-                        .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
-                        .collect();
-                    (
-                        executor.executor.gpu_specs.len().to_string(),
-                        gpu_names.join(", "),
-                    )
+                    // Multiple GPUs - check if they're all the same model
+                    let first_gpu = &executor.executor.gpu_specs[0];
+                    let all_same =
+                        executor.executor.gpu_specs.iter().all(|g| {
+                            g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb
+                        });
+
+                    if all_same {
+                        // All GPUs are identical - use count prefix format
+                        format!(
+                            "{}x {} ({}GB)",
+                            executor.executor.gpu_specs.len(),
+                            first_gpu.name,
+                            first_gpu.memory_gb
+                        )
+                    } else {
+                        // Different GPU models - list them individually
+                        let gpu_names: Vec<String> = executor
+                            .executor
+                            .gpu_specs
+                            .iter()
+                            .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                            .collect();
+                        gpu_names.join(", ")
+                    }
                 };
 
                 // Remove miner prefix from executor ID if present
@@ -101,9 +118,8 @@ pub async fn handle_ls(
                 };
 
                 ExecutorRow {
-                    id: executor_id,
-                    gpu_count,
                     gpu_info,
+                    id: executor_id,
                     cpu: format!("{} cores", executor.executor.cpu_specs.cores),
                     ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
                     score: format!("{:.2}", executor.availability.verification_score),
