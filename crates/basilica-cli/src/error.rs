@@ -23,7 +23,7 @@ pub enum CliError {
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
-    #[error("Authentication failed: {message}")]
+    #[error("{message}")]
     Auth { message: String },
 
     #[error("Delegation component error: {message}")]
@@ -148,10 +148,20 @@ impl CliError {
             .with_suggestion("Check if the rental is still active and SSH port is exposed")
     }
 
+    /// Create rental failed error
+    pub fn rental_failed(message: impl Into<String>) -> Self {
+        Self::Internal(anyhow::anyhow!("Rental failed: {}", message.into()))
+    }
+
     /// Create authentication expired error with helpful suggestion
     pub fn auth_expired() -> Self {
         Self::auth("Authentication token has expired")
             .with_suggestion("Run 'basilica login' to refresh your credentials")
+    }
+
+    /// Create login required error with helpful suggestions
+    pub fn login_required() -> Self {
+        Self::auth("You are not logged in. Please run 'basilica login' to authenticate")
     }
 
     /// Create API request failed error with helpful suggestion

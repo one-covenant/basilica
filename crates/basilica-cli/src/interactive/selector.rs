@@ -114,7 +114,7 @@ impl InteractiveSelector {
 
         // Use dialoguer's Confirm with the same theme for consistency
         let confirmed = Confirm::with_theme(&self.theme)
-            .with_prompt(&format!("Proceed with {}?", selected_gpu))
+            .with_prompt(format!("Proceed with {}?", selected_gpu))
             .default(true) // Default to yes for better UX
             .interact()
             .map_err(|e| CliError::interactive(format!("Confirmation failed: {e}")))?;

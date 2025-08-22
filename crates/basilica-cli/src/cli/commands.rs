@@ -188,6 +188,10 @@ pub struct UpOptions {
     /// Disable SSH access (faster startup)
     #[arg(long)]
     pub no_ssh: bool,
+
+    /// Create rental in detached mode (don't auto-connect via SSH)
+    #[arg(short = 'd', long)]
+    pub detach: bool,
 }
 
 /// Filters for listing active rentals

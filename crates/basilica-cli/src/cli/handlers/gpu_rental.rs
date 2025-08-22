@@ -19,6 +19,7 @@ use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
 use basilica_validator::rental::types::RentalState;
 use reqwest::StatusCode;
 use std::path::PathBuf;
+use std::time::Duration;
 use tabled::{settings::Style, Table, Tabled};
 use tracing::debug;
 
@@ -286,16 +287,63 @@ pub async fn handle_up(
         response.rental_id
     ));
 
-    // Display SSH credentials only if SSH was expected to be enabled
-    if !options.no_ssh {
-        if let Some(ref ssh_creds) = response.ssh_credentials {
-            display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
-        } else {
-            // This shouldn't happen since we always add SSH mapping unless --no-ssh is specified
+    // Handle SSH based on options
+    if options.no_ssh {
+        // SSH disabled entirely, nothing to do
+        return Ok(());
+    }
+
+    // Check if we have SSH credentials
+    let ssh_creds = match response.ssh_credentials {
+        Some(ref creds) => creds,
+        None => {
             print_info("SSH access not available (unexpected error)");
+            return Ok(());
+        }
+    };
+
+    if options.detach {
+        // Detached mode: just show instructions and exit
+        display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+    } else {
+        // Auto-SSH mode: wait for rental to be active and connect
+        print_info("Waiting for rental to become active...");
+        
+        // Poll for rental to become active
+        let rental_active = poll_rental_status(&response.rental_id, &api_client).await?;
+        
+        if rental_active {
+            // Parse SSH credentials and connect
+            print_info("Connecting to rental...");
+            let (host, port, username) = parse_ssh_credentials(ssh_creds)?;
+            let ssh_access = SshAccess {
+                host,
+                port,
+                username,
+            };
+            
+            // Use SSH client to open interactive session
+            let ssh_client = SshClient::new(&config.ssh)?;
+            match ssh_client.interactive_session(&ssh_access).await {
+                Ok(_) => {
+                    // SSH session ended normally
+                    print_info("SSH session closed");
+                }
+                Err(e) => {
+                    print_error(&format!("SSH connection failed: {}", e));
+                    println!();
+                    print_info("You can manually connect using:");
+                    display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+                }
+            }
+        } else {
+            // Timeout or error - show manual instructions
+            print_info("Rental is taking longer than expected to become active");
+            println!();
+            print_info("You can manually connect once it's ready using:");
+            display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
         }
     }
-    // If no_ssh was specified, don't print anything about SSH - user knows what they asked for
 
     Ok(())
 }
@@ -680,6 +728,77 @@ pub async fn handle_cp(
 }
 
 // Helper functions
+
+/// Poll rental status until it becomes active or timeout
+async fn poll_rental_status(
+    rental_id: &str,
+    api_client: &basilica_api::client::BasilicaClient,
+) -> Result<bool> {
+    const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
+    const INITIAL_INTERVAL: Duration = Duration::from_secs(2);
+    const MAX_INTERVAL: Duration = Duration::from_secs(10);
+
+    let spinner = create_spinner("Waiting for rental to become active...");
+    let start_time = std::time::Instant::now();
+    let mut interval = INITIAL_INTERVAL;
+    let mut attempt = 0;
+
+    loop {
+        // Check if we've exceeded the maximum wait time
+        if start_time.elapsed() > MAX_WAIT_TIME {
+            complete_spinner_error(spinner, "Timeout waiting for rental to become active");
+            return Ok(false);
+        }
+
+        attempt += 1;
+        spinner.set_message(format!(
+            "Checking rental status... (attempt {})",
+            attempt
+        ));
+
+        // Check rental status
+        match api_client.get_rental_status(rental_id).await {
+            Ok(status) => {
+                match status.status {
+                    RentalStatus::Active => {
+                        complete_spinner_and_clear(spinner);
+                        return Ok(true);
+                    }
+                    RentalStatus::Failed => {
+                        complete_spinner_error(spinner, "Rental failed to start");
+                        return Err(CliError::rental_failed(
+                            "Rental failed during initialization"
+                        ));
+                    }
+                    RentalStatus::Terminated => {
+                        complete_spinner_error(spinner, "Rental was terminated");
+                        return Err(CliError::rental_failed(
+                            "Rental was terminated before becoming active"
+                        ));
+                    }
+                    RentalStatus::Pending => {
+                        // Still pending, continue polling
+                        spinner.set_message(format!(
+                            "Rental is pending... ({}s elapsed)",
+                            start_time.elapsed().as_secs()
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                // Log the error but continue polling
+                debug!("Error checking rental status: {}", e);
+                spinner.set_message("Retrying status check...");
+            }
+        }
+
+        // Wait before next check with exponential backoff
+        tokio::time::sleep(interval).await;
+        
+        // Increase interval up to maximum
+        interval = std::cmp::min(interval * 2, MAX_INTERVAL);
+    }
+}
 
 /// Display SSH connection instructions after rental creation
 fn display_ssh_connection_instructions(
