@@ -61,14 +61,14 @@ pub async fn handle_ls(
         struct ExecutorRow {
             #[tabled(rename = "Executor ID")]
             id: String,
-            // #[tabled(rename = "GPUs")]
-            // gpu_count: String,
-            // #[tabled(rename = "GPU Info")]
-            // gpu_info: String,
-            // #[tabled(rename = "CPU")]
-            // cpu: String,
-            // #[tabled(rename = "RAM")]
-            // ram: String,
+            #[tabled(rename = "GPUs")]
+            gpu_count: String,
+            #[tabled(rename = "GPU Info")]
+            gpu_info: String,
+            #[tabled(rename = "CPU")]
+            cpu: String,
+            #[tabled(rename = "RAM")]
+            ram: String,
             #[tabled(rename = "Score")]
             score: String,
             #[tabled(rename = "Uptime")]
@@ -79,20 +79,20 @@ pub async fn handle_ls(
             .available_executors
             .into_iter()
             .map(|executor| {
-                // let (gpu_count, gpu_info) = if executor.executor.gpu_specs.is_empty() {
-                //     ("0".to_string(), "No GPU".to_string())
-                // } else {
-                //     let gpu_names: Vec<String> = executor
-                //         .executor
-                //         .gpu_specs
-                //         .iter()
-                //         .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
-                //         .collect();
-                //     (
-                //         executor.executor.gpu_specs.len().to_string(),
-                //         gpu_names.join(", "),
-                //     )
-                // };
+                let (gpu_count, gpu_info) = if executor.executor.gpu_specs.is_empty() {
+                    ("0".to_string(), "No GPU".to_string())
+                } else {
+                    let gpu_names: Vec<String> = executor
+                        .executor
+                        .gpu_specs
+                        .iter()
+                        .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                        .collect();
+                    (
+                        executor.executor.gpu_specs.len().to_string(),
+                        gpu_names.join(", "),
+                    )
+                };
 
                 // Remove miner prefix from executor ID if present
                 let executor_id = match executor.executor.id.split_once("__") {
@@ -102,10 +102,10 @@ pub async fn handle_ls(
 
                 ExecutorRow {
                     id: executor_id,
-                    // gpu_count,
-                    // gpu_info,
-                    // cpu: format!("{} cores", executor.executor.cpu_specs.cores),
-                    // ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
+                    gpu_count,
+                    gpu_info,
+                    cpu: format!("{} cores", executor.executor.cpu_specs.cores),
+                    ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
                     score: format!("{:.2}", executor.availability.verification_score),
                     uptime: format!("{:.1}%", executor.availability.uptime_percentage),
                 }
@@ -131,8 +131,8 @@ pub async fn handle_up(
     let api_client = create_authenticated_client(config, no_auth).await?;
 
     // If no target provided, fetch available executors and prompt for selection
-    let target = if let Some(t) = target {
-        t
+    let (target, executor_details) = if let Some(t) = target {
+        (t, None)
     } else {
         let spinner = create_spinner("Fetching available executors...");
 
@@ -156,7 +156,23 @@ pub async fn handle_up(
 
         // Use interactive selector to choose an executor
         let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_executor(&response.available_executors)?
+        let selected_id = selector.select_executor(&response.available_executors)?;
+
+        // Find the selected executor details
+        let selected_executor = response
+            .available_executors
+            .iter()
+            .find(|e| {
+                // Strip miner prefix from executor ID before comparing
+                let executor_id = match e.executor.id.split_once("__") {
+                    Some((_, second)) => second.to_string(),
+                    None => e.executor.id.clone(),
+                };
+                executor_id == selected_id
+            })
+            .map(|e| e.executor.clone());
+
+        (selected_id, selected_executor)
     };
 
     let spinner = create_spinner("Preparing rental request...");
@@ -210,6 +226,26 @@ pub async fn handle_up(
     })?;
 
     spinner.set_message("Caching rental information...");
+
+    // Format GPU info if we have executor details
+    let gpu_info = executor_details.as_ref().and_then(|exec| {
+        if exec.gpu_specs.is_empty() {
+            None
+        } else {
+            let gpu = &exec.gpu_specs[0];
+            Some(if exec.gpu_specs.len() > 1 {
+                format!(
+                    "{}x {} ({}GB)",
+                    exec.gpu_specs.len(),
+                    gpu.name,
+                    gpu.memory_gb
+                )
+            } else {
+                format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+            })
+        }
+    });
+
     // Cache the rental information
     let mut cache = RentalCache::load().await.unwrap_or_default();
     cache.add_rental(CachedRental {
@@ -218,6 +254,7 @@ pub async fn handle_up(
         container_id: response.container_info.container_id.clone(),
         container_name: response.container_info.container_name.clone(),
         executor_id: target.clone(),
+        gpu_info,
         created_at: chrono::Utc::now(),
         cached_at: chrono::Utc::now(),
     });

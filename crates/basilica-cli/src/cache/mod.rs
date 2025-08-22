@@ -15,6 +15,7 @@ pub struct CachedRental {
     pub container_id: String,
     pub container_name: String,
     pub executor_id: String,
+    pub gpu_info: Option<String>, // e.g., "2x H100 (80GB)"
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub cached_at: chrono::DateTime<chrono::Utc>,
 }

@@ -44,12 +44,11 @@ impl InteractiveSelector {
                 };
 
                 format!(
-                    "{} - {} - {} cores, {}GB RAM - Score: {:.2}",
-                    executor.executor.id,
+                    "{} - {} - {} cores, {}GB RAM",
                     gpu_info,
+                    executor.executor.id,
                     executor.executor.cpu_specs.cores,
-                    executor.executor.cpu_specs.memory_gb,
-                    executor.availability.verification_score
+                    executor.executor.cpu_specs.memory_gb
                 )
             })
             .collect();
@@ -74,16 +73,27 @@ impl InteractiveSelector {
 
     /// Let user select a single rental from active rentals
     pub fn select_rental(&self, rentals: &[RentalListItem]) -> Result<String> {
+        use crate::cache::RentalCache;
+
         if rentals.is_empty() {
             return Err(CliError::not_found("No active rentals"));
         }
 
+        // Load cache to get GPU info
+        let cache = futures::executor::block_on(RentalCache::load()).unwrap_or_default();
+
         let items: Vec<String> = rentals
             .iter()
             .map(|rental| {
+                // Try to get GPU info from cache
+                let gpu = cache
+                    .get_rental(&rental.rental_id)
+                    .and_then(|cached| cached.gpu_info.clone())
+                    .unwrap_or_else(|| "Unknown".to_string());
+
                 format!(
                     "{} - {} - {} - {}",
-                    rental.rental_id, rental.state, rental.executor_id, rental.container_image
+                    gpu, rental.rental_id, rental.state, rental.container_image
                 )
             })
             .collect();
@@ -140,16 +150,27 @@ impl InteractiveSelector {
         &self,
         rentals: &[RentalListItem],
     ) -> Result<Vec<String>> {
+        use crate::cache::RentalCache;
+
         if rentals.is_empty() {
             return Err(CliError::not_found("No active rentals"));
         }
 
+        // Load cache to get GPU info
+        let cache = futures::executor::block_on(RentalCache::load()).unwrap_or_default();
+
         let items: Vec<String> = rentals
             .iter()
             .map(|rental| {
+                // Try to get GPU info from cache
+                let gpu = cache
+                    .get_rental(&rental.rental_id)
+                    .and_then(|cached| cached.gpu_info.clone())
+                    .unwrap_or_else(|| "Unknown".to_string());
+
                 format!(
                     "{} - {} - {} - {}",
-                    rental.rental_id, rental.state, rental.executor_id, rental.container_image
+                    gpu, rental.rental_id, rental.state, rental.container_image
                 )
             })
             .collect();
