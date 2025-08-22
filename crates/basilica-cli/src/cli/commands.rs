@@ -49,11 +49,12 @@ pub enum Commands {
 
     /// Execute commands on instances
     Exec {
-        /// Rental UID/HUID (if not provided, will prompt for selection)
-        target: Option<String>,
-
         /// Command to execute
         command: String,
+
+        /// Rental UID/HUID (if not provided, will prompt for selection)
+        #[arg(long)]
+        target: Option<String>,
     },
 
     /// SSH into instances
