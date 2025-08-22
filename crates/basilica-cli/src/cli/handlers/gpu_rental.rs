@@ -8,7 +8,7 @@ use crate::cli::handlers::gpu_rental_helpers::{
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
-use crate::output::{json_output, print_error, print_info, print_success, table_output};
+use crate::output::{compress_path, json_output, print_error, print_info, print_success, table_output};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
 use basilica_api::api::types::{
@@ -832,7 +832,7 @@ fn display_ssh_connection_instructions(
         "     {}",
         console::style(format!(
             "ssh -i {} -p {} {}@{}",
-            private_key_path.display(),
+            compress_path(private_key_path),
             port,
             username,
             host

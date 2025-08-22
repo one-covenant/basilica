@@ -3,7 +3,7 @@
 use crate::auth::{should_use_device_flow, CallbackServer, DeviceFlow, OAuthFlow, TokenStore};
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
-use crate::output::{banner, print_success};
+use crate::output::{banner, compress_path, print_success};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use tracing::{debug, warn};
 
@@ -96,7 +96,7 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
                 complete_spinner_and_clear(spinner);
                 // Show user where keys were generated
                 print_success("🔑 SSH keys generated successfully!");
-                println!("  Location: {}", config.ssh.key_path.display());
+                println!("  Location: {}", compress_path(&config.ssh.key_path));
                 println!();
             }
             Err(e) => {

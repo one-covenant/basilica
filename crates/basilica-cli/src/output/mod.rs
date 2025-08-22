@@ -38,3 +38,14 @@ pub fn print_link(label: &str, url: &str) {
 pub fn print_auth(message: &str) {
     println!("{} {}", style("🔐").cyan(), message);
 }
+
+/// Compress a path to use tilde notation for home directory
+pub fn compress_path(path: &std::path::Path) -> String {
+    if let Ok(home_dir) = std::env::var("HOME") {
+        let home_path = std::path::Path::new(&home_dir);
+        if let Ok(relative) = path.strip_prefix(home_path) {
+            return format!("~/{}", relative.display());
+        }
+    }
+    path.display().to_string()
+}
