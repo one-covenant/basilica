@@ -2,6 +2,9 @@
 
 use crate::cache::{CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
+use crate::cli::handlers::gpu_rental_helpers::{
+    get_ssh_credentials_from_cache, resolve_target_rental,
+};
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
@@ -341,30 +344,8 @@ pub async fn handle_status(
 ) -> Result<()> {
     let api_client = create_authenticated_client(config, no_auth).await?;
 
-    // If no target provided, fetch active rentals and prompt for selection
-    let target = if let Some(t) = target {
-        t
-    } else {
-        let spinner = create_spinner("Fetching active rentals...");
-
-        // Fetch active rentals
-        let query = Some(ListRentalsQuery {
-            status: Some(RentalState::Active),
-            gpu_type: None,
-            min_gpu_count: None,
-        });
-
-        let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to load rentals");
-            CliError::api_request_failed("list rentals", e.to_string())
-        })?;
-
-        complete_spinner_and_clear(spinner);
-
-        // Use interactive selector to choose a rental
-        let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_rental(&rentals_list.rentals)?
-    };
+    // Resolve target rental (fetch and prompt if not provided)
+    let target = resolve_target_rental(target, &api_client, false).await?;
 
     let spinner = create_spinner("Checking rental status...");
 
@@ -405,30 +386,8 @@ pub async fn handle_logs(
     // Create API client
     let api_client = create_authenticated_client(config, no_auth).await?;
 
-    // If no target provided, fetch active rentals and prompt for selection
-    let target = if let Some(t) = target {
-        t
-    } else {
-        let spinner = create_spinner("Fetching active rentals...");
-
-        // Fetch active rentals
-        let query = Some(ListRentalsQuery {
-            status: Some(RentalState::Active),
-            gpu_type: None,
-            min_gpu_count: None,
-        });
-
-        let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to load rentals");
-            CliError::api_request_failed("list rentals", e.to_string())
-        })?;
-
-        complete_spinner_and_clear(spinner);
-
-        // Use interactive selector to choose a rental
-        let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_rental(&rentals_list.rentals)?
-    };
+    // Resolve target rental (fetch and prompt if not provided)
+    let target = resolve_target_rental(target, &api_client, false).await?;
 
     let spinner = create_spinner("Connecting to log stream...");
 
@@ -525,30 +484,8 @@ pub async fn handle_logs(
 pub async fn handle_down(target: Option<String>, config: &CliConfig, no_auth: bool) -> Result<()> {
     let api_client = create_authenticated_client(config, no_auth).await?;
 
-    // If no target provided, fetch active rentals and prompt for selection
-    let rental_id = if let Some(t) = target {
-        t
-    } else {
-        let spinner = create_spinner("Fetching active rentals...");
-
-        // Fetch active rentals
-        let query = Some(ListRentalsQuery {
-            status: Some(RentalState::Active),
-            gpu_type: None,
-            min_gpu_count: None,
-        });
-
-        let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to load rentals");
-            CliError::api_request_failed("list rentals", e.to_string())
-        })?;
-
-        complete_spinner_and_clear(spinner);
-
-        // Use interactive selector to choose a rental
-        let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_rental(&rentals_list.rentals)?
-    };
+    // Resolve target rental (fetch and prompt if not provided)
+    let rental_id = resolve_target_rental(target, &api_client, false).await?;
 
     // Load rental cache
     let mut cache = RentalCache::load().await.unwrap_or_default();
@@ -591,80 +528,13 @@ pub async fn handle_exec(
     // Load rental cache first to see what's available for SSH
     let mut cache = RentalCache::load().await?;
 
-    // If no target provided, fetch rentals that have SSH access
-    let target = if let Some(t) = target {
-        t
-    } else {
-        let spinner = create_spinner("Fetching rentals with SSH access...");
-
-        // Get all cached rentals that have SSH credentials
-        let ssh_rentals: Vec<String> = cache
-            .list_rentals()
-            .into_iter()
-            .filter_map(|r| {
-                if r.ssh_credentials.is_some() {
-                    Some(r.rental_id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if ssh_rentals.is_empty() {
-            complete_spinner_error(spinner, "No rentals with SSH access found");
-            return Err(
-                CliError::not_found("No rentals with SSH access found").with_context(
-                    "SSH credentials are only available for rentals created in this session",
-                ),
-            );
-        }
-
-        // Fetch details for these rentals
-        let query = Some(ListRentalsQuery {
-            status: Some(RentalState::Active),
-            gpu_type: None,
-            min_gpu_count: None,
-        });
-
-        let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to load rentals");
-            CliError::api_request_failed("list rentals", e.to_string())
-        })?;
-
-        // Filter to only show rentals with SSH access
-        let ssh_eligible_rentals: Vec<_> = rentals_list
-            .rentals
-            .into_iter()
-            .filter(|r| ssh_rentals.contains(&r.rental_id))
-            .collect();
-
-        complete_spinner_and_clear(spinner);
-
-        if ssh_eligible_rentals.is_empty() {
-            return Err(CliError::not_found(
-                "No active rentals with SSH access found",
-            ));
-        }
-
-        // Use interactive selector to choose a rental
-        let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_rental(&ssh_eligible_rentals)?
-    };
+    // Resolve target rental with SSH requirement
+    let target = resolve_target_rental(target, &api_client, true).await?;
 
     debug!("Executing command on rental: {}", target);
 
     // Get SSH credentials from cache
-    let cached_rental = cache.get_rental(&target).ok_or_else(|| {
-        CliError::rental_not_found(&target)
-            .with_context("SSH credentials are only available for rentals created in this session")
-    })?;
-
-    // Clone SSH credentials before status check to avoid borrowing issues
-    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
-        CliError::not_supported(
-            "This rental does not have SSH access. Container was created without SSH port mapping.",
-        )
-    })?;
+    let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
 
     // Verify rental is still active before proceeding
     verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
@@ -695,80 +565,13 @@ pub async fn handle_ssh(
     // Load rental cache first to see what's available for SSH
     let mut cache = RentalCache::load().await?;
 
-    // If no target provided, fetch rentals that have SSH access
-    let target = if let Some(t) = target {
-        t
-    } else {
-        let spinner = create_spinner("Fetching rentals with SSH access...");
-
-        // Get all cached rentals that have SSH credentials
-        let ssh_rentals: Vec<String> = cache
-            .list_rentals()
-            .into_iter()
-            .filter_map(|r| {
-                if r.ssh_credentials.is_some() {
-                    Some(r.rental_id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if ssh_rentals.is_empty() {
-            complete_spinner_error(spinner, "No rentals with SSH access found");
-            return Err(
-                CliError::not_found("No rentals with SSH access found").with_context(
-                    "SSH credentials are only available for rentals created in this session",
-                ),
-            );
-        }
-
-        // Fetch details for these rentals
-        let query = Some(ListRentalsQuery {
-            status: Some(RentalState::Active),
-            gpu_type: None,
-            min_gpu_count: None,
-        });
-
-        let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to load rentals");
-            CliError::api_request_failed("list rentals", e.to_string())
-        })?;
-
-        // Filter to only show rentals with SSH access
-        let ssh_eligible_rentals: Vec<_> = rentals_list
-            .rentals
-            .into_iter()
-            .filter(|r| ssh_rentals.contains(&r.rental_id))
-            .collect();
-
-        complete_spinner_and_clear(spinner);
-
-        if ssh_eligible_rentals.is_empty() {
-            return Err(CliError::not_found(
-                "No active rentals with SSH access found",
-            ));
-        }
-
-        // Use interactive selector to choose a rental
-        let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_rental(&ssh_eligible_rentals)?
-    };
+    // Resolve target rental with SSH requirement
+    let target = resolve_target_rental(target, &api_client, true).await?;
 
     debug!("Opening SSH connection to rental: {}", target);
 
     // Get SSH credentials from cache
-    let cached_rental = cache.get_rental(&target).ok_or_else(|| {
-        CliError::rental_not_found(&target)
-            .with_context("SSH credentials are only available for rentals created in this session")
-    })?;
-
-    // Clone SSH credentials before status check to avoid borrowing issues
-    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
-        CliError::not_supported(
-            "This rental does not have SSH access. Container was created without SSH port mapping.",
-        )
-    })?;
+    let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
 
     // Verify rental is still active before proceeding
     verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
@@ -829,58 +632,9 @@ pub async fn handle_cp(
             // First determine if this looks like an upload or download based on path existence
             let source_exists = std::path::Path::new(&source).exists();
 
-            // Fetch rentals with SSH access for selection
-            let spinner = create_spinner("Fetching rentals with SSH access...");
-
-            let ssh_rentals: Vec<String> = cache
-                .list_rentals()
-                .into_iter()
-                .filter_map(|r| {
-                    if r.ssh_credentials.is_some() {
-                        Some(r.rental_id.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            if ssh_rentals.is_empty() {
-                complete_spinner_error(spinner, "No rentals with SSH access found");
-                return Err(CliError::not_found("No rentals with SSH access found")
-                    .with_context("SSH credentials are only available for rentals created in this session")
-                    .with_suggestion("Specify rental ID explicitly: 'basilica cp <rental_id>:<path> <local_path>' or vice versa"));
-            }
-
-            // Fetch details for these rentals
-            let query = Some(ListRentalsQuery {
-                status: Some(RentalState::Active),
-                gpu_type: None,
-                min_gpu_count: None,
-            });
-
-            let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
-                complete_spinner_error(spinner.clone(), "Failed to load rentals");
-                CliError::api_request_failed("list rentals", e.to_string())
-            })?;
-
-            // Filter to only show rentals with SSH access
-            let ssh_eligible_rentals: Vec<_> = rentals_list
-                .rentals
-                .into_iter()
-                .filter(|r| ssh_rentals.contains(&r.rental_id))
-                .collect();
-
-            complete_spinner_and_clear(spinner);
-
-            if ssh_eligible_rentals.is_empty() {
-                return Err(CliError::not_found(
-                    "No active rentals with SSH access found",
-                ));
-            }
-
-            // Use interactive selector to choose a rental
-            let selector = crate::interactive::InteractiveSelector::new();
-            let selected_rental = selector.select_rental(&ssh_eligible_rentals)?;
+            // Resolve target rental with SSH requirement
+            let selected_rental = resolve_target_rental(None, &api_client, true).await
+                .map_err(|e| e.with_suggestion("Specify rental ID explicitly: 'basilica cp <rental_id>:<path> <local_path>' or vice versa"))?;
 
             // Determine direction based on source file existence
             if source_exists {
@@ -894,18 +648,11 @@ pub async fn handle_cp(
     };
 
     // Get SSH credentials from cache
-    let cached_rental = cache.get_rental(&rental_id)
-        .ok_or_else(|| CliError::not_found(format!(
+    let ssh_credentials = get_ssh_credentials_from_cache(&rental_id, &cache)
+        .map_err(|_e| CliError::not_found(format!(
             "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
             rental_id
         )))?;
-
-    // Clone SSH credentials before status check to avoid borrowing issues
-    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
-        CliError::not_supported(
-            "This rental does not have SSH access. Container was created without SSH port mapping.",
-        )
-    })?;
 
     // Verify rental is still active before proceeding
     verify_rental_status_and_cleanup_cache(&rental_id, &api_client, &mut cache).await?;
