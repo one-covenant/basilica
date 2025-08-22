@@ -73,7 +73,7 @@ impl CliError {
         }
     }
 
-    /// Create a new network component error
+    /// Create a new delegation component error
     pub fn delegation_component(message: impl Into<String>) -> Self {
         Self::DelegationComponent {
             message: message.into(),
