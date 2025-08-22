@@ -407,11 +407,11 @@ pub async fn ensure_ssh_keys_exist(config: &SshConfig) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&private_key_path)
+        let mut perms = std::fs::metadata(private_key_path)
             .map_err(|e| CliError::internal(format!("Failed to get key metadata: {}", e)))?
             .permissions();
         perms.set_mode(0o600);
-        std::fs::set_permissions(&private_key_path, perms)
+        std::fs::set_permissions(private_key_path, perms)
             .map_err(|e| CliError::internal(format!("Failed to set key permissions: {}", e)))?;
     }
 
