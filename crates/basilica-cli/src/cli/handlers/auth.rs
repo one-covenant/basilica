@@ -5,18 +5,13 @@ use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::output::print_success;
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
-use std::path::Path;
 use tracing::{debug, warn};
 
 /// Service name for token storage
 const SERVICE_NAME: &str = "basilica-cli";
 
 /// Handle login command
-pub async fn handle_login(
-    device_code: bool,
-    _config: &CliConfig,
-    _config_path: impl AsRef<Path>,
-) -> Result<()> {
+pub async fn handle_login(device_code: bool, _config: &CliConfig) -> Result<()> {
     debug!("Starting login process, device_code: {}", device_code);
 
     // Determine which flow to use

@@ -78,29 +78,24 @@ impl Args {
             .init();
 
         // Load config using the common loader pattern
-        let (config, config_path) = if let Some(path) = &self.config {
+        let config = if let Some(path) = &self.config {
             let expanded_path = expand_tilde(path);
-            let cfg = CliConfig::load_from_file(&expanded_path)?;
-            (cfg, expanded_path)
+            CliConfig::load_from_file(&expanded_path)?
         } else {
-            let path = CliConfig::default_config_path()?;
-            let cfg = CliConfig::load_from_file(&path)?;
-            (cfg, path)
+            CliConfig::load()?
         };
 
         match self.command {
-            // Setup and configuration
             Commands::Login { device_code } => {
-                handlers::auth::handle_login(device_code, &config, &config_path).await
+                handlers::auth::handle_login(device_code, &config).await
             }
             Commands::Logout => handlers::auth::handle_logout(&config).await,
             #[cfg(debug_assertions)]
             Commands::TestAuth { api } => {
                 if api {
-                    handlers::test_auth::handle_test_api_auth(&config, &config_path, self.no_auth)
-                        .await
+                    handlers::test_auth::handle_test_api_auth(&config, self.no_auth).await
                 } else {
-                    handlers::test_auth::handle_test_auth(&config, &config_path, self.no_auth).await
+                    handlers::test_auth::handle_test_auth(&config, self.no_auth).await
                 }
             }
 

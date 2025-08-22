@@ -26,8 +26,8 @@ pub enum CliError {
     #[error("Authentication failed: {message}")]
     Auth { message: String },
 
-    #[error("Network component error: {message}")]
-    NetworkComponent { message: String },
+    #[error("Delegation component error: {message}")]
+    DelegationComponent { message: String },
 
     #[error("Invalid argument: {message}")]
     InvalidArgument { message: String },
@@ -74,8 +74,8 @@ impl CliError {
     }
 
     /// Create a new network component error
-    pub fn network_component(message: impl Into<String>) -> Self {
-        Self::NetworkComponent {
+    pub fn delegation_component(message: impl Into<String>) -> Self {
+        Self::DelegationComponent {
             message: message.into(),
         }
     }
