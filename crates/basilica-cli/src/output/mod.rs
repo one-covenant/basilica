@@ -1,5 +1,6 @@
 //! Output formatting utilities
 
+pub mod banner;
 pub mod table_output;
 
 use crate::error::Result;

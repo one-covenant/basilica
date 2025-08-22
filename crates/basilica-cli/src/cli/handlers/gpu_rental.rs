@@ -308,10 +308,10 @@ pub async fn handle_up(
     } else {
         // Auto-SSH mode: wait for rental to be active and connect
         print_info("Waiting for rental to become active...");
-        
+
         // Poll for rental to become active
         let rental_active = poll_rental_status(&response.rental_id, &api_client).await?;
-        
+
         if rental_active {
             // Parse SSH credentials and connect
             print_info("Connecting to rental...");
@@ -321,7 +321,7 @@ pub async fn handle_up(
                 port,
                 username,
             };
-            
+
             // Use SSH client to open interactive session
             let ssh_client = SshClient::new(&config.ssh)?;
             match ssh_client.interactive_session(&ssh_access).await {
@@ -751,10 +751,7 @@ async fn poll_rental_status(
         }
 
         attempt += 1;
-        spinner.set_message(format!(
-            "Checking rental status... (attempt {})",
-            attempt
-        ));
+        spinner.set_message(format!("Checking rental status... (attempt {})", attempt));
 
         // Check rental status
         match api_client.get_rental_status(rental_id).await {
@@ -767,13 +764,13 @@ async fn poll_rental_status(
                     RentalStatus::Failed => {
                         complete_spinner_error(spinner, "Rental failed to start");
                         return Err(CliError::rental_failed(
-                            "Rental failed during initialization"
+                            "Rental failed during initialization",
                         ));
                     }
                     RentalStatus::Terminated => {
                         complete_spinner_error(spinner, "Rental was terminated");
                         return Err(CliError::rental_failed(
-                            "Rental was terminated before becoming active"
+                            "Rental was terminated before becoming active",
                         ));
                     }
                     RentalStatus::Pending => {
@@ -794,7 +791,7 @@ async fn poll_rental_status(
 
         // Wait before next check with exponential backoff
         tokio::time::sleep(interval).await;
-        
+
         // Increase interval up to maximum
         interval = std::cmp::min(interval * 2, MAX_INTERVAL);
     }

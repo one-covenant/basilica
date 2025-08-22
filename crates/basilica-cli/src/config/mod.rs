@@ -74,6 +74,23 @@ impl Default for SshConfig {
     }
 }
 
+impl SshConfig {
+    /// Check if SSH keys exist at the configured paths
+    pub fn ssh_keys_exist(&self) -> bool {
+        self.key_path.exists() && self.private_key_path.exists()
+    }
+
+    /// Check if SSH keys are missing (neither exists)
+    pub fn ssh_keys_missing(&self) -> bool {
+        !self.key_path.exists() && !self.private_key_path.exists()
+    }
+
+    /// Check if SSH key pair is incomplete (only one exists)
+    pub fn ssh_keys_incomplete(&self) -> bool {
+        self.key_path.exists() != self.private_key_path.exists()
+    }
+}
+
 /// Docker image configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageConfig {

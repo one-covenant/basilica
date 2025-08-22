@@ -56,7 +56,9 @@ pub async fn create_authenticated_client(
         }
     }
 
-    builder.build().map_err(|e| CliError::internal(e.to_string()))
+    builder
+        .build()
+        .map_err(|e| CliError::internal(e.to_string()))
 }
 
 /// Gets a stored JWT token (without pre-emptive refresh)
@@ -72,7 +74,11 @@ async fn get_valid_jwt_token(_config: &CliConfig) -> anyhow::Result<String> {
         .retrieve("basilica-cli")
         .await
         .map_err(|e| anyhow::anyhow!("Failed to retrieve authentication tokens: {}", e))?
-        .ok_or_else(|| anyhow::anyhow!("No authentication tokens found. Please run 'basilica login' to authenticate"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No authentication tokens found. Please run 'basilica login' to authenticate"
+            )
+        })?;
 
     // Return the token as-is - the client will handle refresh if needed
     Ok(tokens.access_token)
@@ -160,6 +166,9 @@ pub async fn is_authenticated() -> bool {
 /// Clears stored authentication tokens
 pub async fn clear_authentication() -> Result<()> {
     let token_store = TokenStore::new().map_err(|e| CliError::internal(e.to_string()))?;
-    token_store.delete_tokens("basilica-cli").await.map_err(|e| CliError::internal(e.to_string()))?;
+    token_store
+        .delete_tokens("basilica-cli")
+        .await
+        .map_err(|e| CliError::internal(e.to_string()))?;
     Ok(())
 }

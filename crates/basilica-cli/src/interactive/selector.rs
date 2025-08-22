@@ -70,7 +70,12 @@ impl InteractiveSelector {
             .zip(gpu_infos.iter())
             .map(|(executor, gpu_info)| {
                 if executor.executor.gpu_specs.is_empty() {
-                    format!("{:<width$} {}", gpu_info, "General GPU compute", width = padding)
+                    format!(
+                        "{:<width$} {}",
+                        gpu_info,
+                        "General GPU compute",
+                        width = padding
+                    )
                 } else {
                     let gpu = &executor.executor.gpu_specs[0];
                     let use_case = Self::get_gpu_use_case(&gpu.name);

@@ -192,7 +192,7 @@ impl CliError {
     /// Create SSH key not found error with helpful suggestion
     pub fn ssh_key_not_found(path: impl Into<String>) -> Self {
         Self::invalid_argument(format!("SSH key not found at: {}", path.into()))
-            .with_suggestion("Generate SSH keys with 'ssh-keygen -t rsa -f ~/.ssh/basilica_rsa' or update the path in config")
+            .with_suggestion("SSH keys are automatically generated during login. Run 'basilica login' to create them, or generate manually with 'ssh-keygen -t rsa -f ~/.ssh/basilica_rsa'")
     }
 
     /// Create executor not available error with helpful suggestion

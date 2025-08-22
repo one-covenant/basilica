@@ -9,7 +9,7 @@ use basilica_common::ssh::{
 };
 use std::path::Path;
 use std::time::Duration;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// SSH client for rental operations
 pub struct SshClient {
@@ -346,4 +346,79 @@ pub fn parse_ssh_credentials(credentials: &str) -> Result<(String, u16, String)>
     };
 
     Ok((host, 22, user))
+}
+
+/// Ensure SSH keys exist at the configured paths, generating them if necessary
+pub async fn ensure_ssh_keys_exist(config: &SshConfig) -> Result<()> {
+    let private_key_path = &config.private_key_path;
+    let public_key_path = &config.key_path;
+
+    // Check if keys already exist
+    if private_key_path.exists() && public_key_path.exists() {
+        debug!("SSH keys already exist at configured paths");
+        return Ok(());
+    }
+
+    // If only one key exists, warn but don't regenerate
+    if private_key_path.exists() != public_key_path.exists() {
+        warn!(
+            "SSH key pair is incomplete. Private key exists: {}, Public key exists: {}",
+            private_key_path.exists(),
+            public_key_path.exists()
+        );
+        // Still generate missing keys
+    }
+
+    // Ensure the .ssh directory exists
+    if let Some(parent) = private_key_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| CliError::internal(format!("Failed to create SSH directory: {}", e)))?;
+    }
+
+    // Generate SSH keys using ssh-keygen
+    let mut cmd = std::process::Command::new("ssh-keygen");
+    cmd.arg("-t")
+        .arg("rsa")
+        .arg("-b")
+        .arg("4096")
+        .arg("-f")
+        .arg(private_key_path.display().to_string())
+        .arg("-N")
+        .arg("") // No passphrase
+        .arg("-C")
+        .arg("basilica-cli") // Comment
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let output = cmd
+        .output()
+        .map_err(|e| CliError::internal(format!("Failed to run ssh-keygen: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(CliError::internal(format!(
+            "Failed to generate SSH keys: {}",
+            stderr
+        )));
+    }
+
+    // Set appropriate permissions for the private key (600)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&private_key_path)
+            .map_err(|e| CliError::internal(format!("Failed to get key metadata: {}", e)))?
+            .permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(&private_key_path, perms)
+            .map_err(|e| CliError::internal(format!("Failed to set key permissions: {}", e)))?;
+    }
+
+    info!(
+        "SSH keys generated successfully at {}",
+        public_key_path.display()
+    );
+
+    Ok(())
 }
