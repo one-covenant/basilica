@@ -5,9 +5,7 @@ use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
-use crate::output::{
-    json_output, print_error, print_info, print_link, print_success, table_output,
-};
+use crate::output::{json_output, print_error, print_info, print_success, table_output};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
 use basilica_api::api::types::{
@@ -235,7 +233,7 @@ pub async fn handle_up(
     // Display SSH credentials only if SSH was expected to be enabled
     if !options.no_ssh {
         if let Some(ref ssh_creds) = response.ssh_credentials {
-            print_link("SSH", ssh_creds);
+            display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
         } else {
             // This shouldn't happen since we always add SSH mapping unless --no-ssh is specified
             print_info("SSH access not available (unexpected error)");
@@ -883,6 +881,50 @@ pub async fn handle_cp(
 
 // Helper functions
 
+/// Display SSH connection instructions after rental creation
+fn display_ssh_connection_instructions(
+    rental_id: &str,
+    ssh_credentials: &str,
+    config: &CliConfig,
+) -> Result<()> {
+    // Parse SSH credentials to get components
+    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+
+    // Get the private key path from config
+    let private_key_path = &config.ssh.private_key_path;
+
+    println!();
+    print_info("SSH connection options:");
+    println!();
+
+    // Option 1: Using basilica CLI (simplest)
+    println!("  1. Using Basilica CLI:");
+    println!(
+        "     {}",
+        console::style(format!("basilica ssh {}", rental_id))
+            .cyan()
+            .bold()
+    );
+    println!();
+
+    // Option 2: Using standard SSH command
+    println!("  2. Using standard SSH:");
+    println!(
+        "     {}",
+        console::style(format!(
+            "ssh -i {} -p {} {}@{}",
+            private_key_path.display(),
+            port,
+            username,
+            host
+        ))
+        .cyan()
+        .bold()
+    );
+
+    Ok(())
+}
+
 /// Verify rental is still active and clean up cache if not
 async fn verify_rental_status_and_cleanup_cache(
     rental_id: &str,
@@ -972,29 +1014,6 @@ fn parse_port_mappings(
     }
 
     Ok(mappings)
-}
-
-fn parse_copy_paths(source: &str, destination: &str) -> Result<(String, bool, String, String)> {
-    // Format: <rental_id>:<path> or just <path>
-    let (source_rental, source_path) = split_remote_path(source);
-    let (dest_rental, dest_path) = split_remote_path(destination);
-
-    match (source_rental, dest_rental) {
-        (Some(rental_id), None) => {
-            // Download: remote -> local
-            Ok((rental_id, false, dest_path, source_path))
-        }
-        (None, Some(rental_id)) => {
-            // Upload: local -> remote
-            Ok((rental_id, true, source_path, dest_path))
-        }
-        (Some(_), Some(_)) => Err(CliError::not_supported(
-            "Remote-to-remote copy not supported",
-        )),
-        (None, None) => Err(CliError::invalid_argument(
-            "At least one path must be remote (format: <rental_id>:<path>)",
-        )),
-    }
 }
 
 fn split_remote_path(path: &str) -> (Option<String>, String) {
