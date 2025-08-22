@@ -121,3 +121,6 @@ scripts/localnet/keys
 terraform.tfstate
 *.tfstate
 CLAUDE.md
+
+scripts/web/basilica-linux-amd64
+scripts/web/basilica-macos-arm64
