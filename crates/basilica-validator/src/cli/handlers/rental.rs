@@ -91,8 +91,7 @@ pub async fn create_rental_manager(
     let ssh_key_manager = Arc::new(ssh_key_manager);
 
     // Create rental manager
-    let rental_manager =
-        RentalManager::with_ssh_key_manager(miner_client, persistence, ssh_key_manager);
+    let rental_manager = RentalManager::new(miner_client, persistence, ssh_key_manager);
 
     Ok(rental_manager)
 }

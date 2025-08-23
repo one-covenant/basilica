@@ -53,36 +53,32 @@ fn parse_ssh_host(credentials: &str) -> Result<&str> {
     Ok(host)
 }
 impl RentalManager {
-    /// Create a new rental manager
-    pub fn new(miner_client: Arc<MinerClient>, persistence: Arc<SimplePersistence>) -> Self {
-        let deployment_manager = Arc::new(DeploymentManager::new());
-        let log_streamer = Arc::new(LogStreamer::new());
+    /// Helper function to create a ContainerClient with SSH credentials
+    fn create_container_client(&self, ssh_credentials: &str) -> Result<ContainerClient> {
+        let private_key_path = self
+            .ssh_key_manager
+            .as_ref()
+            .and_then(|km| km.get_persistent_key())
+            .map(|(_, path)| path.clone());
 
-        Self {
-            persistence,
-            deployment_manager: deployment_manager.clone(),
-            log_streamer: log_streamer.clone(),
-            _health_monitor: None,
-            miner_client,
-            ssh_key_manager: None,
-        }
+        ContainerClient::new(ssh_credentials.to_string(), private_key_path)
     }
 
     /// Create a new rental manager with SSH key manager
-    pub fn with_ssh_key_manager(
+    pub fn new(
         miner_client: Arc<MinerClient>,
         persistence: Arc<SimplePersistence>,
         ssh_key_manager: Arc<ValidatorSshKeyManager>,
     ) -> Self {
         let deployment_manager = Arc::new(DeploymentManager::new());
         let log_streamer = Arc::new(LogStreamer::new());
-        
+
         // Create health monitor with SSH key manager
         let health_monitor = Arc::new(DatabaseHealthMonitor::new(
             persistence.clone(),
             ssh_key_manager.clone(),
         ));
-        
+
         // Start the monitoring loop
         health_monitor.clone().start_monitoring_loop();
 
@@ -105,7 +101,7 @@ impl RentalManager {
         // Generate rental ID
         let rental_id = format!("rental-{}", Uuid::new_v4());
 
-        let (validator_public_key, validator_private_key_path) = self
+        let (validator_public_key, _validator_private_key_path) = self
             .ssh_key_manager
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("SSH key manager is required for rentals"))?
@@ -127,11 +123,7 @@ impl RentalManager {
             )
             .await?;
 
-        // Create container client with SSH credentials and validator's private key
-        let container_client = ContainerClient::new(
-            ssh_session.access_credentials.clone(),
-            Some(validator_private_key_path),
-        )?;
+        let container_client = self.create_container_client(&ssh_session.access_credentials)?;
 
         // Deploy container with end-user's SSH public key
         let container_info = match self
@@ -236,13 +228,7 @@ impl RentalManager {
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
         // Get container status using validator SSH credentials
-        let container_client = ContainerClient::new(
-            rental_info.ssh_credentials.clone(),
-            self.ssh_key_manager
-                .as_ref()
-                .and_then(|km| km.get_persistent_key())
-                .map(|(_, path)| path.clone()),
-        )?;
+        let container_client = self.create_container_client(&rental_info.ssh_credentials)?;
 
         let container_status = container_client
             .get_container_status(&rental_info.container_id)
@@ -271,13 +257,7 @@ impl RentalManager {
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
         // Stop container using validator SSH credentials
-        let container_client = ContainerClient::new(
-            rental_info.ssh_credentials.clone(),
-            self.ssh_key_manager
-                .as_ref()
-                .and_then(|km| km.get_persistent_key())
-                .map(|(_, path)| path.clone()),
-        )?;
+        let container_client = self.create_container_client(&rental_info.ssh_credentials)?;
 
         self.deployment_manager
             .stop_container(&container_client, &rental_info.container_id, force)
@@ -315,13 +295,7 @@ impl RentalManager {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
-        let container_client = ContainerClient::new(
-            rental_info.ssh_credentials.clone(),
-            self.ssh_key_manager
-                .as_ref()
-                .and_then(|km| km.get_persistent_key())
-                .map(|(_, path)| path.clone()),
-        )?;
+        let container_client = self.create_container_client(&rental_info.ssh_credentials)?;
 
         self.log_streamer
             .stream_logs(
