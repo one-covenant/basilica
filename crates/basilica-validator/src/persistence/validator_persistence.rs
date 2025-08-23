@@ -18,6 +18,9 @@ pub trait ValidatorPersistence: Send + Sync {
 
     /// List all rentals for a validator
     async fn list_validator_rentals(&self, validator_hotkey: &str) -> Result<Vec<RentalInfo>>;
+    
+    /// Query all rentals that are not in terminal states (not Stopped or Failed)
+    async fn query_non_terminal_rentals(&self) -> Result<Vec<RentalInfo>>;
 
     /// Delete rental
     async fn delete_rental(&self, rental_id: &str) -> Result<()>;

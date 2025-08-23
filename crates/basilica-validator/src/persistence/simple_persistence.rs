@@ -1598,6 +1598,47 @@ impl ValidatorPersistence for SimplePersistence {
         Ok(rentals)
     }
 
+    async fn query_non_terminal_rentals(&self) -> anyhow::Result<Vec<RentalInfo>> {
+        let rows = sqlx::query(
+            "SELECT * FROM rentals WHERE state NOT IN ('Stopped', 'Failed') ORDER BY created_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut rentals = Vec::new();
+        for row in rows {
+            let state_str: String = row.get("state");
+            let created_at_str: String = row.get("created_at");
+            let container_spec_str: String = row.get("container_spec");
+            let rental_id: String = row.get("id");
+
+            let state = match state_str.as_str() {
+                "Provisioning" => RentalState::Provisioning,
+                "Active" => RentalState::Active,
+                "Stopping" => RentalState::Stopping,
+                "Stopped" => RentalState::Stopped,
+                "Failed" => RentalState::Failed,
+                _ => RentalState::Failed,
+            };
+
+            rentals.push(RentalInfo {
+                rental_id,
+                validator_hotkey: row.get("validator_hotkey"),
+                executor_id: row.get("executor_id"),
+                container_id: row.get("container_id"),
+                ssh_session_id: row.get("ssh_session_id"),
+                ssh_credentials: row.get("ssh_credentials"),
+                state,
+                created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
+                container_spec: serde_json::from_str(&container_spec_str)?,
+                miner_id: row.get::<String, _>("miner_id"),
+                executor_details: None, // Will be populated lazily when needed
+            });
+        }
+
+        Ok(rentals)
+    }
+
     async fn delete_rental(&self, rental_id: &str) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM rentals WHERE id = ?")
             .bind(rental_id)

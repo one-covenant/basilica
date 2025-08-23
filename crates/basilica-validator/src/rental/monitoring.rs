@@ -5,28 +5,28 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::container_client::ContainerClient;
-use super::types::LogEntry;
+use super::types::{LogEntry, RentalInfo, RentalState};
+use crate::persistence::{SimplePersistence, ValidatorPersistence};
+use crate::ssh::ValidatorSshKeyManager;
 
-/// Type alias for monitoring task with cancellation token
-type MonitoringTask = (tokio::task::JoinHandle<()>, CancellationToken);
-
-/// Health monitor for containers
-pub struct HealthMonitor {
-    /// Active monitoring tasks with cancellation tokens
-    pub monitoring_tasks: Arc<RwLock<HashMap<String, MonitoringTask>>>,
+/// Database-driven health monitor for containers
+pub struct DatabaseHealthMonitor {
+    /// Persistence layer for database operations
+    persistence: Arc<SimplePersistence>,
+    /// SSH key manager for validator keys
+    ssh_key_manager: Arc<ValidatorSshKeyManager>,
     /// Health check configuration
     config: HealthCheckConfig,
-    /// Channel to send unhealthy events
-    unhealthy_sender: mpsc::Sender<String>,
+    /// Cancellation token for the monitoring loop
+    cancellation_token: CancellationToken,
 }
 
 /// Health check configuration
@@ -47,121 +47,179 @@ impl Default for HealthCheckConfig {
     }
 }
 
-impl HealthMonitor {
-    /// Create a new health monitor
-    pub fn new(tx: mpsc::Sender<String>) -> Self {
+impl DatabaseHealthMonitor {
+    /// Create a new database-driven health monitor
+    pub fn new(
+        persistence: Arc<SimplePersistence>,
+        ssh_key_manager: Arc<ValidatorSshKeyManager>,
+    ) -> Self {
         Self {
-            monitoring_tasks: Arc::new(RwLock::new(HashMap::new())),
-            unhealthy_sender: tx,
+            persistence,
+            ssh_key_manager,
             config: HealthCheckConfig::default(),
+            cancellation_token: CancellationToken::new(),
         }
     }
 
     /// Create with custom configuration
-    pub fn with_config(config: HealthCheckConfig, tx: mpsc::Sender<String>) -> Self {
+    pub fn with_config(
+        persistence: Arc<SimplePersistence>,
+        ssh_key_manager: Arc<ValidatorSshKeyManager>,
+        config: HealthCheckConfig,
+    ) -> Self {
         Self {
-            monitoring_tasks: Arc::new(RwLock::new(HashMap::new())),
-            unhealthy_sender: tx,
+            persistence,
+            ssh_key_manager,
             config,
+            cancellation_token: CancellationToken::new(),
         }
     }
 
-    /// Start monitoring a container
-    pub async fn start_monitoring(
-        &self,
-        rental_id: &str,
-        client: &ContainerClient,
-        container_id: String,
-    ) -> Result<()> {
-        let rental_id_str = rental_id.to_string();
-        let client = client.clone();
-        let config = self.config.clone();
-        let cancellation_token = CancellationToken::new();
-        let task_token = cancellation_token.clone();
-        let unhealthy_sender = self.unhealthy_sender.clone();
-
-        // Spawn monitoring task
-        let task = tokio::spawn(async move {
-            let mut check_interval = interval(config.check_interval);
-
-            loop {
-                tokio::select! {
-                    _ = task_token.cancelled() => {
-                        info!("Health monitoring for container {} cancelled", rental_id_str);
-                        break;
-                    }
-                    _ = check_interval.tick() => {
-                        // Perform health check
-                        match Self::perform_health_check(&client, &container_id).await {
-                            Ok(healthy) => {
-                                if healthy {
-                                    debug!("Container {} is healthy", rental_id_str);
-                                } else {
-                                    error!("Container {} marked as unhealthy", rental_id_str);
-                                    // Trigger unhealthy event notification
-                                    unhealthy_sender.send(rental_id_str.clone()).await.expect("Failed to send unhealthy event");
-                                    info!("Unhealthy event notification sent for rental {}", rental_id_str);
-                                    // Exit monitoring loop after sending notification
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                error!("Health check error for container {}: {}", rental_id_str, e);
-                                error!("Container {} marked as unhealthy", rental_id_str);
-                                // Trigger unhealthy event notification
-                                unhealthy_sender
-                                    .send(rental_id_str.clone())
-                                    .await
-                                    .expect("Failed to send unhealthy event");
-                                info!("Unhealthy event notification sent for rental {}", rental_id_str);
-                                // Exit monitoring loop after sending notification
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+    /// Start the monitoring loop
+    pub fn start_monitoring_loop(self: Arc<Self>) {
+        let monitor = self.clone();
+        tokio::spawn(async move {
+            monitor.monitoring_loop().await;
         });
-
-        // Store task handle with cancellation token
-        let mut tasks = self.monitoring_tasks.write().await;
-        tasks.insert(rental_id.to_string(), (task, cancellation_token));
-
-        info!("Started health monitoring for rental {}", rental_id);
-        Ok(())
     }
 
-    /// Stop monitoring a container
-    pub async fn stop_monitoring(&self, rental_id: &str) -> Result<()> {
-        let mut tasks = self.monitoring_tasks.write().await;
+    /// Stop the monitoring loop
+    pub fn stop(&self) {
+        self.cancellation_token.cancel();
+    }
 
-        if let Some((task, cancellation_token)) = tasks.remove(rental_id) {
-            // Signal cancellation
-            cancellation_token.cancel();
+    /// Main monitoring loop
+    async fn monitoring_loop(&self) {
+        let mut check_interval = interval(self.config.check_interval);
+        info!("Database health monitor started");
 
-            // Wait for task to finish gracefully
-            match tokio::time::timeout(Duration::from_secs(5), task).await {
-                Ok(Ok(())) => info!(
-                    "Health monitoring for rental {} stopped gracefully",
-                    rental_id
-                ),
-                Ok(Err(e)) => warn!(
-                    "Health monitoring task for rental {} failed: {}",
-                    rental_id, e
-                ),
-                Err(_) => {
-                    warn!(
-                        "Health monitoring task for rental {} did not stop within timeout",
-                        rental_id
-                    );
+        loop {
+            tokio::select! {
+                _ = self.cancellation_token.cancelled() => {
+                    info!("Database health monitor stopped");
+                    break;
                 }
+                _ = check_interval.tick() => {
+                    if let Err(e) = self.check_all_rentals().await {
+                        error!("Error checking rental health: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check health status of all non-terminal rentals
+    async fn check_all_rentals(&self) -> Result<()> {
+        // Query all rentals that are not in terminal states
+        let rentals = self
+            .persistence
+            .query_non_terminal_rentals()
+            .await
+            .context("Failed to query non-terminal rentals")?;
+
+        debug!("Checking health for {} rentals", rentals.len());
+
+        for rental in rentals {
+            if let Err(e) = self.check_rental_health(&rental).await {
+                error!(
+                    "Failed to check health for rental {}: {}",
+                    rental.rental_id, e
+                );
+                // Continue checking other rentals even if one fails
             }
         }
 
         Ok(())
     }
 
-    /// Perform a health check
+    /// Check health of a single rental
+    async fn check_rental_health(&self, rental: &RentalInfo) -> Result<()> {
+        debug!("Checking health for rental {}", rental.rental_id);
+
+        // Get validator's private key path
+        let validator_private_key_path = self
+            .ssh_key_manager
+            .get_persistent_key()
+            .ok_or_else(|| anyhow::anyhow!("No persistent validator SSH key available"))?
+            .1
+            .clone();
+
+        // Create container client with SSH credentials
+        let container_client = ContainerClient::new(
+            rental.ssh_credentials.clone(),
+            Some(validator_private_key_path),
+        )?;
+
+        // Perform health check
+        let health_result = tokio::time::timeout(
+            self.config.check_timeout,
+            Self::perform_health_check(&container_client, &rental.container_id),
+        )
+        .await;
+
+        // Determine new state based on current state and health result
+        let new_state = match (rental.state.clone(), health_result) {
+            // Timeout or error during health check
+            (_, Err(_)) => {
+                warn!(
+                    "Health check timeout for rental {} in state {:?}",
+                    rental.rental_id, rental.state
+                );
+                Some(RentalState::Failed)
+            }
+            // Health check returned an error
+            (current_state, Ok(Err(e))) => {
+                error!(
+                    "Health check error for rental {} in state {:?}: {}",
+                    rental.rental_id, current_state, e
+                );
+                match current_state {
+                    RentalState::Provisioning => Some(RentalState::Failed),
+                    RentalState::Active => Some(RentalState::Stopped),
+                    RentalState::Stopping => Some(RentalState::Stopped),
+                    _ => None,
+                }
+            }
+            // Health check succeeded
+            (current_state, Ok(Ok(healthy))) => {
+                if healthy {
+                    debug!("Rental {} is healthy", rental.rental_id);
+                    None // No state change needed
+                } else {
+                    warn!(
+                        "Rental {} is unhealthy in state {:?}",
+                        rental.rental_id, current_state
+                    );
+                    match current_state {
+                        RentalState::Provisioning => Some(RentalState::Failed),
+                        RentalState::Active => Some(RentalState::Stopped),
+                        RentalState::Stopping => Some(RentalState::Stopped),
+                        _ => None,
+                    }
+                }
+            }
+        };
+
+        // Update rental state if needed
+        if let Some(new_state) = new_state {
+            info!(
+                "Updating rental {} state from {:?} to {:?}",
+                rental.rental_id, rental.state, new_state
+            );
+
+            let mut updated_rental = rental.clone();
+            updated_rental.state = new_state;
+
+            self.persistence
+                .save_rental(&updated_rental)
+                .await
+                .context("Failed to update rental state")?;
+        }
+
+        Ok(())
+    }
+
+    /// Perform a health check on a container
     async fn perform_health_check(client: &ContainerClient, container_id: &str) -> Result<bool> {
         // Get container status
         let status = client.get_container_status(container_id).await?;
