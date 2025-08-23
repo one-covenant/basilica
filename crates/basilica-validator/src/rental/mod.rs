@@ -31,7 +31,7 @@ pub struct RentalManager {
     /// Log streamer
     log_streamer: Arc<LogStreamer>,
     /// Health monitor
-    _health_monitor: Option<Arc<DatabaseHealthMonitor>>,
+    health_monitor: Option<Arc<DatabaseHealthMonitor>>,
     /// Miner client for reconnections
     miner_client: Arc<MinerClient>,
     /// SSH key manager for validator keys
@@ -86,7 +86,7 @@ impl RentalManager {
             persistence,
             deployment_manager: deployment_manager.clone(),
             log_streamer: log_streamer.clone(),
-            _health_monitor: Some(health_monitor),
+            health_monitor: Some(health_monitor),
             miner_client,
             ssh_key_manager: Some(ssh_key_manager),
         }
@@ -345,6 +345,15 @@ impl RentalManager {
         self.persistence
             .list_validator_rentals(validator_hotkey)
             .await
+    }
+}
+
+impl Drop for RentalManager {
+    fn drop(&mut self) {
+        if let Some(monitor) = &self.health_monitor {
+            monitor.stop();
+            tracing::debug!("Stopped health monitor for RentalManager");
+        }
     }
 }
 
