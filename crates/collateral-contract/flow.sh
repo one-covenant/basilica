@@ -66,6 +66,6 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx sl
 --url-content-md5-checksum 269ff519d1140a175941ea4b00ccbe0d
 
 # scan the events
-collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" events scan \ 
+collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" events scan \
 --from-block 0 \
 --to-block 1000
