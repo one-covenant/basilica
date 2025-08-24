@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sqlx::{Row, SqlitePool};
+use sqlx::{QueryBuilder, Row, SqlitePool};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -20,7 +20,17 @@ fn extract_gpu_memory_gb(gpu_name: &str) -> u32 {
     }
 }
 
+/// Filter criteria for querying rentals
+#[derive(Default)]
+pub struct RentalFilter {
+    pub rental_id: Option<String>,
+    pub validator_hotkey: Option<String>,
+    pub exclude_states: Option<Vec<RentalState>>,
+    pub order_by_created_desc: bool,
+}
+
 /// Simplified persistence implementation for quick testing
+#[derive(Debug, Clone)]
 pub struct SimplePersistence {
     pool: SqlitePool,
 }
@@ -861,6 +871,84 @@ impl SimplePersistence {
         }
     }
 
+    /// Helper function to parse a rental row from the database
+    fn parse_rental_row(&self, row: sqlx::sqlite::SqliteRow) -> Result<RentalInfo, anyhow::Error> {
+        let state_str: String = row.get("state");
+        let created_at_str: String = row.get("created_at");
+        let container_spec_str: String = row.get("container_spec");
+        let rental_id: String = row.get("id");
+
+        // Use existing parse_rental_state for consistency
+        let state = Self::parse_rental_state(&state_str, &rental_id);
+
+        Ok(RentalInfo {
+            rental_id,
+            validator_hotkey: row.get("validator_hotkey"),
+            executor_id: row.get("executor_id"),
+            container_id: row.get("container_id"),
+            ssh_session_id: row.get("ssh_session_id"),
+            ssh_credentials: row.get("ssh_credentials"),
+            state,
+            created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
+            container_spec: serde_json::from_str(&container_spec_str)?,
+            miner_id: row.get::<String, _>("miner_id"),
+            executor_details: None, // Will be populated lazily when needed
+        })
+    }
+
+    /// Query rentals with flexible filtering criteria
+    async fn query_rentals(&self, filter: RentalFilter) -> Result<Vec<RentalInfo>, anyhow::Error> {
+        let mut builder = QueryBuilder::new("SELECT * FROM rentals");
+        let mut has_where = false;
+
+        // Build WHERE clause dynamically
+        if let Some(rental_id) = filter.rental_id {
+            builder.push(" WHERE id = ");
+            builder.push_bind(rental_id);
+            has_where = true;
+        }
+
+        if let Some(validator_hotkey) = filter.validator_hotkey {
+            builder.push(if has_where { " AND " } else { " WHERE " });
+            builder.push("validator_hotkey = ");
+            builder.push_bind(validator_hotkey);
+            has_where = true;
+        }
+
+        if let Some(exclude_states) = filter.exclude_states {
+            if !exclude_states.is_empty() {
+                builder.push(if has_where { " AND " } else { " WHERE " });
+                builder.push("state NOT IN (");
+                for (i, state) in exclude_states.iter().enumerate() {
+                    if i > 0 {
+                        builder.push(", ");
+                    }
+                    // IMPORTANT: Convert to lowercase for database
+                    builder.push_bind(match state {
+                        RentalState::Provisioning => "provisioning",
+                        RentalState::Active => "active",
+                        RentalState::Stopping => "stopping",
+                        RentalState::Stopped => "stopped",
+                        RentalState::Failed => "failed",
+                    });
+                }
+                builder.push(")");
+            }
+        }
+
+        if filter.order_by_created_desc {
+            builder.push(" ORDER BY created_at DESC");
+        }
+
+        let query = builder.build();
+        let rows = query.fetch_all(&self.pool).await?;
+
+        // Parse all rows using helper
+        rows.into_iter()
+            .map(|row| self.parse_rental_row(row))
+            .collect()
+    }
+
     /// Helper function to convert database row to Rental
     fn row_to_rental(&self, row: sqlx::sqlite::SqliteRow) -> Result<Rental, anyhow::Error> {
         let id_str: String = row.get("id");
@@ -1525,77 +1613,34 @@ impl ValidatorPersistence for SimplePersistence {
     }
 
     async fn load_rental(&self, rental_id: &str) -> anyhow::Result<Option<RentalInfo>> {
-        let row = sqlx::query("SELECT * FROM rentals WHERE id = ?")
-            .bind(rental_id)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        if let Some(row) = row {
-            let state_str: String = row.get("state");
-            let created_at_str: String = row.get("created_at");
-            let container_spec_str: String = row.get("container_spec");
-            let rental_id: String = row.get("id");
-
-            let state = Self::parse_rental_state(&state_str, &rental_id);
-
-            let ssh_creds: String = row.get("ssh_credentials");
-
-            Ok(Some(RentalInfo {
-                rental_id,
-                validator_hotkey: row.get("validator_hotkey"),
-                executor_id: row.get("executor_id"),
-                container_id: row.get("container_id"),
-                ssh_session_id: row.get("ssh_session_id"),
-                ssh_credentials: ssh_creds,
-                state,
-                created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
-                container_spec: serde_json::from_str(&container_spec_str)?,
-                miner_id: row.get::<String, _>("miner_id"),
-                executor_details: None, // Will be populated lazily when needed
-            }))
-        } else {
-            Ok(None)
-        }
+        let filter = RentalFilter {
+            rental_id: Some(rental_id.to_string()),
+            ..Default::default()
+        };
+        self.query_rentals(filter)
+            .await
+            .map(|mut rentals| rentals.pop())
     }
 
     async fn list_validator_rentals(
         &self,
         validator_hotkey: &str,
     ) -> anyhow::Result<Vec<RentalInfo>> {
-        let rows = sqlx::query(
-            "SELECT * FROM rentals WHERE validator_hotkey = ? ORDER BY created_at DESC",
-        )
-        .bind(validator_hotkey)
-        .fetch_all(&self.pool)
-        .await?;
+        let filter = RentalFilter {
+            validator_hotkey: Some(validator_hotkey.to_string()),
+            order_by_created_desc: true,
+            ..Default::default()
+        };
+        self.query_rentals(filter).await
+    }
 
-        let mut rentals = Vec::new();
-        for row in rows {
-            let state_str: String = row.get("state");
-            let created_at_str: String = row.get("created_at");
-            let container_spec_str: String = row.get("container_spec");
-            let rental_id: String = row.get("id");
-
-            let state = Self::parse_rental_state(&state_str, &rental_id);
-
-            let ssh_creds: String = row.get("ssh_credentials");
-
-            rentals.push(RentalInfo {
-                rental_id,
-                validator_hotkey: row.get("validator_hotkey"),
-                executor_id: row.get("executor_id"),
-                container_id: row.get("container_id"),
-                ssh_session_id: row.get("ssh_session_id"),
-                ssh_credentials: ssh_creds,
-                state,
-                created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
-                container_spec: serde_json::from_str(&container_spec_str)?,
-                miner_id: row.get::<String, _>("miner_id"),
-                executor_details: None, // Will be populated lazily when needed
-            });
-        }
-
-        Ok(rentals)
+    async fn query_non_terminal_rentals(&self) -> anyhow::Result<Vec<RentalInfo>> {
+        let filter = RentalFilter {
+            exclude_states: Some(vec![RentalState::Stopped, RentalState::Failed]),
+            order_by_created_desc: true,
+            ..Default::default()
+        };
+        self.query_rentals(filter).await
     }
 
     async fn delete_rental(&self, rental_id: &str) -> anyhow::Result<()> {
