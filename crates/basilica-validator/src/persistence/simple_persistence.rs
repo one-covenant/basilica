@@ -30,6 +30,7 @@ pub struct RentalFilter {
 }
 
 /// Simplified persistence implementation for quick testing
+#[derive(Debug, Clone)]
 pub struct SimplePersistence {
     pool: SqlitePool,
 }

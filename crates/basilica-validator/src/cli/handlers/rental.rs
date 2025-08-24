@@ -92,6 +92,7 @@ pub async fn create_rental_manager(
 
     // Create rental manager
     let rental_manager = RentalManager::new(miner_client, persistence, ssh_key_manager);
+    rental_manager.start_monitor();
 
     Ok(rental_manager)
 }

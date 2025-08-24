@@ -18,6 +18,7 @@ use crate::persistence::{SimplePersistence, ValidatorPersistence};
 use crate::ssh::ValidatorSshKeyManager;
 
 /// Database-driven health monitor for containers
+#[derive(Debug, Clone)]
 pub struct DatabaseHealthMonitor {
     /// Persistence layer for database operations
     persistence: Arc<SimplePersistence>,
@@ -76,7 +77,7 @@ impl DatabaseHealthMonitor {
     }
 
     /// Start the monitoring loop
-    pub fn start_monitoring_loop(self: Arc<Self>) {
+    pub fn start_monitoring_loop(&self) {
         let monitor = self.clone();
         tokio::spawn(async move {
             monitor.monitoring_loop().await;
@@ -119,6 +120,7 @@ impl DatabaseHealthMonitor {
 
         debug!("Checking health for {} rentals", rentals.len());
 
+        // TODO: this can be done in parallel
         for rental in rentals {
             if let Err(e) = self.check_rental_health(&rental).await {
                 error!(
