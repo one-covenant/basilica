@@ -8,7 +8,6 @@ use super::types::MinerInfo;
 use super::verification::VerificationEngine;
 use crate::config::VerificationConfig;
 use anyhow::Result;
-use basilica_common::identity::MinerUid;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,7 +19,6 @@ use uuid::Uuid;
 
 pub struct VerificationScheduler {
     config: VerificationConfig,
-    active_verifications: HashMap<MinerUid, tokio::task::JoinHandle<()>>,
     /// For tracking verification tasks by UUID
     verification_handles:
         Arc<RwLock<HashMap<Uuid, JoinHandle<Result<super::verification::VerificationResult>>>>>,
@@ -32,7 +30,6 @@ impl VerificationScheduler {
     pub fn new(config: VerificationConfig) -> Self {
         Self {
             config,
-            active_verifications: HashMap::new(),
             verification_handles: Arc::new(RwLock::new(HashMap::new())),
             active_verification_tasks: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -60,7 +57,7 @@ impl VerificationScheduler {
                     if let Err(e) = self.run_verification(&discovery, &verification).await {
                         error!("Verification cycle failed: {}", e);
                     }
-                    self.cleanup_completed_verifications().await;
+                    self.cleanup_completed_verification_handles().await;
                 }
                 _ = cleanup_interval.tick() => {
                     info!("Running scheduled executor cleanup for failed executors");
@@ -97,11 +94,11 @@ impl VerificationScheduler {
             task_id
         );
         {
-            let mut active_verifications = self.active_verification_tasks.write().await;
-            active_verifications.insert(task_id, task.clone());
+            let mut tasks_map = self.active_verification_tasks.write().await;
+            tasks_map.insert(task_id, task.clone());
             info!(
                 "[EVAL_FLOW] Active verification tasks count: {}",
-                active_verifications.len()
+                tasks_map.len()
             );
         }
 
@@ -276,43 +273,48 @@ impl VerificationScheduler {
     }
 
     fn can_schedule_verification(&self, miner: &MinerInfo) -> bool {
-        if self.active_verifications.contains_key(&miner.uid) {
-            debug!("Miner {} already being verified", miner.uid.as_u16());
-            return false;
+        if let Ok(tasks_map) = self.active_verification_tasks.try_read() {
+            if tasks_map
+                .values()
+                .any(|t| t.miner_uid == miner.uid.as_u16())
+            {
+                debug!(
+                    "Miner {} already has an active verification task",
+                    miner.uid.as_u16()
+                );
+                return false;
+            }
         }
 
         true
     }
 
-    async fn cleanup_completed_verifications(&mut self) {
-        let completed: Vec<MinerUid> = self
-            .active_verifications
-            .iter()
-            .filter_map(|(uid, handle)| {
+    pub async fn cleanup_completed_verification_handles(&mut self) {
+        let mut to_remove: Vec<uuid::Uuid> = Vec::new();
+        {
+            let handles = self.verification_handles.read().await;
+            for (id, handle) in handles.iter() {
                 if handle.is_finished() {
-                    Some(*uid)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let num_completed = completed.len();
-
-        for uid in completed {
-            if let Some(handle) = self.active_verifications.remove(&uid) {
-                if let Err(e) = handle.await {
-                    error!(
-                        "Verification task for miner {} panicked: {}",
-                        uid.as_u16(),
-                        e
-                    );
+                    to_remove.push(*id);
                 }
             }
         }
-
-        if num_completed > 0 {
-            debug!("Cleaned up {} completed verification tasks", num_completed);
+        if !to_remove.is_empty() {
+            let mut handles = self.verification_handles.write().await;
+            let mut tasks = self.active_verification_tasks.write().await;
+            for id in to_remove.iter() {
+                if let Some(h) = handles.remove(id) {
+                    // Await to avoid task leaks and to surface panics here
+                    if let Err(e) = h.await {
+                        tracing::error!("[EVAL_FLOW] Verification task {} panicked: {}", id, e);
+                    }
+                }
+                tasks.remove(id);
+            }
+            tracing::debug!(
+                "[EVAL_FLOW] Cleaned up {} completed verification tasks",
+                to_remove.len()
+            );
         }
     }
 }
