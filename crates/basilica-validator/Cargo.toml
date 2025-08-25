@@ -40,11 +40,15 @@ tower-http = { workspace = true, features = ["limit"] }
 
 # Additional dependencies for validator
 futures = "0.3"
+futures-util = { version = "0.3", optional = true }
+bytes = "1.5"
 async-trait = "0.1"
 toml = "0.8"
 url = "2.5"
 prost-types = { workspace = true }
 async-stream = "0.3"
+eventsource-stream = "0.2"
+regex = "1.10"
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
@@ -57,7 +61,7 @@ collateral-contract = { path = "../collateral-contract" }
 # bittensor-rs = "0.1"
 
 # HTTP client for external communications
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
 
 # Temporary file handling
 tempfile = "3.8"
@@ -81,6 +85,9 @@ sysinfo = "0.30"
 # SSH key management
 ssh-key = { version = "0.6", features = ["ed25519", "std"] }
 
+# OpenAPI documentation support (optional)
+utoipa = { version = "4.1", features = ["chrono", "uuid"], optional = true }
+
 [dev-dependencies]
 tempfile = "3.8"
 serial_test = "3.0"
@@ -88,7 +95,13 @@ mockall = "0.11"
 
 [features]
 default = []
+# Enable HTTP client for external services
+client = ["futures-util"]
 # Enable test utilities
 test-utils = []
 # Enable development mode with additional debugging
 dev-mode = ["tracing-subscriber/env-filter"]
+# Enable OpenAPI schema generation support
+openapi = ["utoipa"]
+# Enable CLI support with clap derives
+cli = []

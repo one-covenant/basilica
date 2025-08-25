@@ -44,8 +44,7 @@ bind_address = "0.0.0.0:8000"
 network = "finney"
 netuid = 39
 
-[auth]
-allow_anonymous = true  # Set to false to require API keys
+# Note: Auth0 JWT authentication is required for protected endpoints
 ```
 
 ## API Endpoints
@@ -63,9 +62,9 @@ allow_anonymous = true  # Set to false to require API keys
 # List executors
 curl http://localhost:8000/api/v1/executors
 
-# Rent GPU (with API key)
+# Rent GPU (requires Auth0 JWT token)
 curl -X POST http://localhost:8000/api/v1/rentals \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer <YOUR_AUTH0_JWT_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
     "gpu_requirements": {"min_memory_gb": 40, "gpu_count": 1},
@@ -79,5 +78,6 @@ curl -X POST http://localhost:8000/api/v1/rentals \
 - Auto-discovers validators via Bittensor
 - Load balances requests across validators
 - Caches responses for better performance
-- Rate limiting with API key tiers
+- Auth0 JWT-based authentication
+- Rate limiting per user
 - Real-time log streaming

@@ -1,12 +1,14 @@
 //! API module for the Basilica API Gateway
 
+pub mod auth;
+pub mod extractors;
 pub mod middleware;
 pub mod routes;
 pub mod types;
 
 use crate::server::AppState;
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use utoipa::OpenApi;
@@ -14,43 +16,35 @@ use utoipa_swagger_ui::SwaggerUi;
 
 /// Create all API routes
 pub fn routes(state: AppState) -> Router<AppState> {
-    let router = Router::new()
-        // Rental endpoints
-        .route("/rentals", post(routes::rentals::rent_capacity))
-        .route(
-            "/rentals/:rental_id",
-            get(routes::rentals::get_rental_status),
-        )
-        .route(
-            "/rentals/:rental_id/terminate",
-            post(routes::rentals::terminate_rental),
-        )
-        // Log endpoints
-        .route(
-            "/rentals/:rental_id/logs",
-            get(routes::logs::stream_rental_logs),
-        )
-        // Executor endpoints
-        .route("/executors", get(routes::executors::list_executors))
-        .route(
-            "/executors/:executor_id",
-            get(routes::executors::get_executor),
-        )
-        // Validator endpoints
-        .route("/validators", get(routes::validators::list_validators))
-        .route(
-            "/validators/:validator_id",
-            get(routes::validators::get_validator),
-        )
-        // Miner endpoints
-        .route("/miners", get(routes::miners::list_miners))
-        .route("/miners/:miner_id", get(routes::miners::get_miner))
-        // Health and telemetry
+    // Protected routes with Auth0 authentication and scope validation
+    let protected_routes = Router::new()
+        // Health endpoint
         .route("/health", get(routes::health::health_check))
-        .route("/telemetry", get(routes::telemetry::get_telemetry))
+        .route("/rentals", get(routes::rentals::list_rentals_validator))
+        .route("/rentals", post(routes::rentals::start_rental))
+        .route("/rentals/:id", get(routes::rentals::get_rental_status))
+        .route("/rentals/:id", delete(routes::rentals::stop_rental))
+        .route(
+            "/rentals/:id/logs",
+            get(routes::rentals::stream_rental_logs),
+        )
+        .route("/executors", get(routes::rentals::list_available_executors))
+        // Apply scope validation AFTER auth0 middleware
+        .layer(axum::middleware::from_fn(
+            middleware::scope_validation_middleware,
+        ))
+        // Apply auth0 authentication first
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::auth0_middleware,
+        ));
+
+    // Build the router with all protected routes
+    let router = Router::new()
+        .merge(protected_routes)
         .with_state(state.clone());
 
-    // Apply middleware
+    // Apply general middleware
     middleware::apply_middleware(router, state)
 }
 
@@ -64,44 +58,38 @@ pub fn docs_routes() -> Router<AppState> {
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        routes::rentals::rent_capacity,
-        routes::rentals::get_rental_status,
-        routes::rentals::terminate_rental,
-        routes::logs::stream_rental_logs,
-        routes::executors::list_executors,
-        routes::executors::get_executor,
-        routes::validators::list_validators,
-        routes::validators::get_validator,
-        routes::miners::list_miners,
-        routes::miners::get_miner,
+        // Health and monitoring
         routes::health::health_check,
-        routes::telemetry::get_telemetry,
     ),
     components(schemas(
-        types::RentCapacityRequest,
-        types::RentCapacityResponse,
+        // Rental types
         types::RentalStatusResponse,
-        types::TerminateRentalRequest,
-        types::TerminateRentalResponse,
+        types::LogStreamQuery,
+        types::PortMappingRequest,
+        types::ResourceRequirementsRequest,
+        types::VolumeMountRequest,
+
+        // Common types
+        types::GpuSpec,
+        types::CpuSpec,
+        types::SshAccess,
+        types::RentalStatus,
         types::ExecutorDetails,
-        types::ValidatorDetails,
-        types::MinerDetails,
+
+        // Health types
         types::HealthCheckResponse,
-        types::TelemetryResponse,
+
+        // Error response
         crate::error::ErrorResponse,
     )),
     tags(
         (name = "rentals", description = "GPU rental management"),
-        (name = "logs", description = "Log streaming"),
-        (name = "executors", description = "Executor information"),
-        (name = "validators", description = "Validator information"),
-        (name = "miners", description = "Miner information"),
         (name = "health", description = "Health and monitoring"),
     ),
     info(
         title = "Basilica API",
         version = "1.0.0",
-        description = "API Gateway for the Basilica validator network",
+        description = "API service for the Basilica GPU network",
         contact(
             name = "Basilica Team",
             email = "support@tplr.ai",
@@ -111,7 +99,8 @@ pub fn docs_routes() -> Router<AppState> {
         ),
     ),
     servers(
-        (url = "http://localhost:8000", description = "Local development"),
+        (url = "http://localhost:8080", description = "Local development"),
+        (url = "https://api.basilica.ai", description = "Production"),
     ),
 )]
 struct ApiDoc;

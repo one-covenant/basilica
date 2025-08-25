@@ -5,6 +5,7 @@ mod tests {
     use crate::persistence::SimplePersistence;
     use basilica_common::identity::MinerUid;
     use chrono::Utc;
+
     use std::collections::HashMap;
     use std::sync::Arc;
 

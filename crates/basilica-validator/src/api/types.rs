@@ -2,11 +2,16 @@
 //!
 //! All request/response types, enums, and shared data structures for the validator API
 
+use crate::rental::RentalState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[cfg(feature = "openapi")]
+use utoipa::ToSchema;
+
 /// Request to rent GPU capacity
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentCapacityRequest {
     pub gpu_requirements: GpuRequirements,
     pub ssh_public_key: String,
@@ -15,7 +20,8 @@ pub struct RentCapacityRequest {
     pub max_duration_hours: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct GpuRequirements {
     pub min_memory_gb: u32,
     pub gpu_type: Option<String>,
@@ -23,15 +29,16 @@ pub struct GpuRequirements {
 }
 
 /// Response for capacity rental request
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentCapacityResponse {
     pub rental_id: String,
     pub executor: ExecutorDetails,
     pub ssh_access: SshAccess,
-    pub cost_per_hour: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ExecutorDetails {
     pub id: String,
     pub gpu_specs: Vec<GpuSpec>,
@@ -40,6 +47,7 @@ pub struct ExecutorDetails {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct GpuSpec {
     pub name: String,
     pub memory_gb: u32,
@@ -47,13 +55,15 @@ pub struct GpuSpec {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CpuSpec {
     pub cores: u32,
     pub model: String,
     pub memory_gb: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SshAccess {
     pub host: String,
     pub port: u16,
@@ -61,30 +71,26 @@ pub struct SshAccess {
 }
 
 /// Request to terminate a rental
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct TerminateRentalRequest {
     pub reason: Option<String>,
 }
 
-/// Response for rental termination
-#[derive(Debug, Serialize)]
-pub struct TerminateRentalResponse {
-    pub success: bool,
-    pub message: String,
-}
-
 /// Rental status information
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentalStatusResponse {
     pub rental_id: String,
     pub status: RentalStatus,
     pub executor: ExecutorDetails,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
-    pub cost_incurred: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+#[serde(rename_all = "lowercase")]
 pub enum RentalStatus {
     Pending,
     Active,
@@ -92,38 +98,47 @@ pub enum RentalStatus {
     Failed,
 }
 
-/// Available capacity listing
-#[derive(Debug, Serialize)]
-pub struct ListCapacityResponse {
+/// Available executors listing
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ListAvailableExecutorsResponse {
     pub available_executors: Vec<AvailableExecutor>,
     pub total_count: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct AvailableExecutor {
     pub executor: ExecutorDetails,
     pub availability: AvailabilityInfo,
-    pub cost_per_hour: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct AvailabilityInfo {
     pub available_until: Option<chrono::DateTime<chrono::Utc>>,
     pub verification_score: f64,
     pub uptime_percentage: f64,
 }
 
-/// Query parameters for capacity listing
-#[derive(Debug, Deserialize)]
-pub struct ListCapacityQuery {
+/// Query parameters for listing available executors
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ListAvailableExecutorsQuery {
+    /// Filter for available executors only (default: true for /executors endpoint)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_memory: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_count: Option<u32>,
-    pub max_cost_per_hour: Option<f64>,
 }
 
 /// Log streaming query parameters
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct LogQuery {
     pub follow: Option<bool>,
     pub tail: Option<u32>,
@@ -275,6 +290,26 @@ pub struct CategoryWeightSummary {
     pub total_weight: u64,
     pub miner_count: u32,
     pub average_score: f64,
+}
+
+/// Rental list item for API response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RentalListItem {
+    pub rental_id: String,
+    pub executor_id: String,
+    pub container_id: String,
+    pub state: RentalState,
+    pub created_at: String,
+    pub miner_id: String,
+    pub container_image: String,
+}
+
+/// Response for listing rentals
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ListRentalsResponse {
+    pub rentals: Vec<RentalListItem>,
+    pub total_count: usize,
 }
 
 /// API error type

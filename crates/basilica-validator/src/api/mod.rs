@@ -3,6 +3,9 @@
 //! Clean, modular HTTP/REST API server for external services to interact with the Validator.
 //! Follows SOLID principles with separation of concerns.
 
+#[cfg(feature = "client")]
+pub mod client;
+
 pub mod rental_routes;
 pub mod routes;
 pub mod types;
@@ -129,16 +132,12 @@ impl ApiHandler {
     /// Follows Open/Closed Principle - easy to extend with new routes
     fn create_router(&self) -> Router {
         Router::new()
-            .route("/capacity/available", get(routes::list_available_capacity))
-            .route("/rentals", post(routes::rent_capacity))
-            .route("/rentals/:rental_id", delete(routes::terminate_rental))
-            .route("/rentals/:rental_id/status", get(routes::get_rental_status))
-            .route("/rentals/:rental_id/logs", get(routes::stream_rental_logs))
-            // New rental routes
-            .route("/rental/start", post(rental_routes::start_rental))
-            .route("/rental/status/:id", get(rental_routes::get_rental_status))
-            .route("/rental/logs/:id", get(rental_routes::stream_rental_logs))
-            .route("/rental/stop/:id", post(rental_routes::stop_rental))
+            .route("/rentals", get(rental_routes::list_rentals))
+            .route("/rentals", post(rental_routes::start_rental))
+            .route("/rentals/:id", get(rental_routes::get_rental_status))
+            .route("/rentals/:id", delete(rental_routes::stop_rental))
+            .route("/rentals/:id/logs", get(rental_routes::stream_rental_logs))
+            .route("/executors", get(routes::list_available_executors))
             // Existing miner routes
             .route("/miners", get(routes::list_miners))
             .route("/miners/register", post(routes::register_miner))
