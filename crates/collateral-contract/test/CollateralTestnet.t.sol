@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.22;
 
 import {Test, console, Vm} from "forge-std/Test.sol";
 import {Collateral} from "../src/Collateral.sol";
