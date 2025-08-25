@@ -2971,11 +2971,17 @@ dependencies = [
  "alloy-sol-types 1.3.0",
  "anyhow",
  "bittensor",
+ "clap",
+ "hex",
+ "serde",
+ "serde_json",
  "subxt",
  "subxt-signer",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
