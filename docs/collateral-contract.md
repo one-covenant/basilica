@@ -74,7 +74,7 @@ This contract creates a **trust-minimized interaction** between miners and valid
 > - We recommend associating your H160 wallet with your **SS58 hotkey** to help validators reliably identify miners.
 > - Converting an H160 to an SS58 representation does not grant control of funds or keys; it is a mapping for identification. To formally link identities, use the Subtensor extrinsic `associate_evm_key` (see the Subtensor source: [associate_evm_key](https://github.com/opentensor/subtensor/blob/main/pallets/subtensor/src/macros/dispatches.rs#L2001)).
 
-> - The mapped SS58 address of H160 is generated automatically. However, nobody has the private key and do any transaction. So associated EVM account feature can help to prove the subtensor account also hold the H160 account. Everyone knows the subtensor account info via querying the H160 address. The extrinsic is https://github.com/opentensor/subtensor/blob/main/pallets/subtensor/src/macros/dispatches.rs#L2001 associate_evm_key.
+> - Note: deriving an SS58 from an H160 does not imply key control. To assert linkage on-chain, use `associate_evm_key` as referenced above.
 
 > **Transaction Fees**
 >
