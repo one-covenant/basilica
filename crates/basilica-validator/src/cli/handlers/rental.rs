@@ -17,6 +17,7 @@ use crate::cli::commands::RentalAction;
 use crate::config::ValidatorConfig;
 use crate::rental::types::RentalState;
 use crate::rental::RentalManager;
+use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 
 /// Create rental manager for API server initialization
 /// This is used by the service handler to set up the API with rental capabilities
@@ -64,95 +65,27 @@ pub async fn create_rental_manager(
 /// Create a ValidatorClient from configuration
 #[cfg(feature = "client")]
 fn create_api_client(config: &ValidatorConfig, api_url: Option<String>) -> Result<ValidatorClient> {
-    // Use provided API URL or default from config
-    let base_url = api_url.unwrap_or_else(|| format!("http://{}", config.api.bind_address));
+    // Use provided API URL or construct from bind address
+    let base_url = api_url.unwrap_or_else(|| {
+        // Parse the bind address to check for wildcards
+        let bind_str = &config.api.bind_address;
+        if let Some(colon_pos) = bind_str.rfind(':') {
+            let host = &bind_str[..colon_pos];
+            let port = &bind_str[colon_pos + 1..];
+
+            // Replace wildcard addresses with loopback
+            if host == "0.0.0.0" || host == "*" {
+                format!("http://127.0.0.1:{}", port)
+            } else {
+                format!("http://{}", config.api.bind_address)
+            }
+        } else {
+            format!("http://{}", config.api.bind_address)
+        }
+    });
 
     // Create client with 30 second timeout
     ValidatorClient::new(base_url, Duration::from_secs(30)).context("Failed to create API client")
-}
-
-/// Parse port mapping strings (format: "host:container:protocol")
-fn parse_port_mappings(ports: &[String]) -> Result<Vec<PortMappingRequest>> {
-    let mut mappings = Vec::new();
-
-    for port_str in ports {
-        let parts: Vec<&str> = port_str.split(':').collect();
-        if parts.len() < 2 || parts.len() > 3 {
-            return Err(anyhow::anyhow!(
-                "Invalid port mapping format: {}. Use host:container or host:container:protocol",
-                port_str
-            ));
-        }
-
-        let host_port = parts[0].parse::<u32>().with_context(|| {
-            format!(
-                "Invalid host port number '{}' in mapping '{}'",
-                parts[0], port_str
-            )
-        })?;
-        let container_port = parts[1].parse::<u32>().with_context(|| {
-            format!(
-                "Invalid container port number '{}' in mapping '{}'",
-                parts[1], port_str
-            )
-        })?;
-
-        if host_port == 0 || host_port > 65535 {
-            return Err(anyhow::anyhow!(
-                "Host port {} is out of valid range (1-65535) in mapping '{}'",
-                host_port,
-                port_str
-            ));
-        }
-        if container_port == 0 || container_port > 65535 {
-            return Err(anyhow::anyhow!(
-                "Container port {} is out of valid range (1-65535) in mapping '{}'",
-                container_port,
-                port_str
-            ));
-        }
-
-        let protocol = match parts.get(2) {
-            Some(p) if p.to_lowercase() == "tcp" => "tcp".to_string(),
-            Some(p) if p.to_lowercase() == "udp" => "udp".to_string(),
-            Some(p) => {
-                return Err(anyhow::anyhow!(
-                    "Invalid protocol '{}'. Only 'tcp' and 'udp' are supported",
-                    p
-                ));
-            }
-            None => "tcp".to_string(), // Default to tcp
-        };
-
-        mappings.push(PortMappingRequest {
-            host_port,
-            container_port,
-            protocol,
-        });
-    }
-
-    Ok(mappings)
-}
-
-/// Parse environment variable strings (format: "KEY=VALUE")
-fn parse_environment_variables(
-    env: &[String],
-) -> Result<std::collections::HashMap<String, String>> {
-    let mut environment = std::collections::HashMap::new();
-
-    for env_str in env {
-        let parts: Vec<&str> = env_str.splitn(2, '=').collect();
-        if parts.len() != 2 {
-            return Err(anyhow::anyhow!(
-                "Invalid environment variable format: {}. Use KEY=VALUE",
-                env_str
-            ));
-        }
-
-        environment.insert(parts[0].to_string(), parts[1].to_string());
-    }
-
-    Ok(environment)
 }
 
 /// Handle rental commands via the Validator API
@@ -227,8 +160,11 @@ async fn handle_start_rental(
     info!("Starting rental on executor {}", executor);
 
     // Parse port mappings and environment variables
-    let port_mappings = parse_port_mappings(&ports)?;
-    let environment = parse_environment_variables(&env)?;
+    let port_mappings: Vec<PortMappingRequest> = parse_port_mappings(&ports)?
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    let environment = parse_env_vars(&env)?;
 
     // Build API request
     let request = StartRentalRequest {

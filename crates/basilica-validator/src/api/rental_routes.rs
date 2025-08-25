@@ -57,6 +57,26 @@ fn default_protocol() -> String {
     "tcp".to_string()
 }
 
+impl From<basilica_common::utils::PortMapping> for PortMappingRequest {
+    fn from(mapping: basilica_common::utils::PortMapping) -> Self {
+        Self {
+            container_port: mapping.container_port,
+            host_port: mapping.host_port,
+            protocol: mapping.protocol,
+        }
+    }
+}
+
+impl From<PortMappingRequest> for crate::rental::PortMapping {
+    fn from(request: PortMappingRequest) -> Self {
+        Self {
+            container_port: request.container_port,
+            host_port: request.host_port,
+            protocol: request.protocol,
+        }
+    }
+}
+
 /// Resource requirements request
 #[derive(Debug, Default, Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -69,6 +89,18 @@ pub struct ResourceRequirementsRequest {
     pub gpu_types: Vec<String>,
 }
 
+impl From<ResourceRequirementsRequest> for crate::rental::ResourceRequirements {
+    fn from(request: ResourceRequirementsRequest) -> Self {
+        Self {
+            cpu_cores: request.cpu_cores,
+            memory_mb: request.memory_mb,
+            storage_mb: request.storage_mb,
+            gpu_count: request.gpu_count,
+            gpu_types: request.gpu_types,
+        }
+    }
+}
+
 /// Volume mount request
 #[derive(Debug, Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -77,6 +109,16 @@ pub struct VolumeMountRequest {
     pub container_path: String,
     #[serde(default)]
     pub read_only: bool,
+}
+
+impl From<VolumeMountRequest> for crate::rental::VolumeMount {
+    fn from(request: VolumeMountRequest) -> Self {
+        Self {
+            host_path: request.host_path,
+            container_path: request.container_path,
+            read_only: request.read_only,
+        }
+    }
 }
 
 /// Rental status query parameters
@@ -237,11 +279,7 @@ pub async fn start_rental(
         .ports
         .into_iter()
         .filter(|p| p.container_port != 22) // Remove any SSH port mappings
-        .map(|p| crate::rental::PortMapping {
-            container_port: p.container_port,
-            host_port: p.host_port,
-            protocol: p.protocol,
-        })
+        .map(Into::into)
         .collect();
 
     // Only add SSH port mapping if no_ssh is false (SSH is enabled by default)
@@ -262,24 +300,14 @@ pub async fn start_rental(
             image: request.container_image,
             environment: request.environment,
             ports: port_mappings,
-            resources: crate::rental::ResourceRequirements {
-                cpu_cores: request.resources.cpu_cores,
-                memory_mb: request.resources.memory_mb,
-                storage_mb: request.resources.storage_mb,
-                gpu_count: request.resources.gpu_count,
-                gpu_types: request.resources.gpu_types,
-            },
+            resources: request.resources.into(),
             entrypoint: Vec::new(), // API currently doesn't support custom entrypoint
             command: request.command,
             volumes: request
                 .volumes
                 .into_iter()
                 .filter(|v| !v.host_path.contains("..") && !v.container_path.contains(".."))
-                .map(|v| crate::rental::VolumeMount {
-                    host_path: v.host_path,
-                    container_path: v.container_path,
-                    read_only: v.read_only,
-                })
+                .map(Into::into)
                 .collect(),
             labels: std::collections::HashMap::new(),
             capabilities: Vec::new(),
