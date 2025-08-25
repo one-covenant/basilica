@@ -114,6 +114,10 @@ pub enum Command {
     Rental {
         #[command(subcommand)]
         action: RentalAction,
+
+        /// API URL override (default: from config)
+        #[arg(long, global = true)]
+        api_url: Option<String>,
     },
 }
 
@@ -139,22 +143,6 @@ pub enum DatabaseAction {
 pub enum RentalAction {
     /// Start a new container rental
     Start {
-        /// Miner UID (e.g., 123)
-        #[arg(
-            long,
-            conflicts_with = "miner_endpoint",
-            required_unless_present = "miner_endpoint"
-        )]
-        miner_uid: Option<u16>,
-
-        /// Miner endpoint (e.g., http://192.168.1.1:8080)
-        #[arg(
-            long,
-            conflicts_with = "miner_uid",
-            required_unless_present = "miner_uid"
-        )]
-        miner_endpoint: Option<String>,
-
         /// Executor ID
         #[arg(long)]
         executor: String,
@@ -178,10 +166,6 @@ pub enum RentalAction {
         /// Command to run in container
         #[arg(long, num_args = 0..)]
         command: Vec<String>,
-
-        /// Entrypoint for the container (Docker ENTRYPOINT)
-        #[arg(long, num_args = 0..)]
-        entrypoint: Vec<String>,
 
         /// CPU cores
         #[arg(long)]
@@ -233,8 +217,23 @@ pub enum RentalAction {
         force: bool,
     },
 
-    /// List all rentals
-    List {
+    /// List available executors for rental
+    Ls {
+        /// Filter by minimum GPU memory in GB
+        #[arg(long)]
+        memory_min: Option<u32>,
+
+        /// Filter by GPU type (e.g., A100, H100, RTX4090)
+        #[arg(long)]
+        gpu_type: Option<String>,
+
+        /// Filter by minimum GPU count
+        #[arg(long)]
+        gpu_min: Option<u32>,
+    },
+
+    /// List active rentals
+    Ps {
         /// Filter by state (active, stopped, all)
         #[arg(long, default_value = "all")]
         state: String,

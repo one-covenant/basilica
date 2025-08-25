@@ -94,7 +94,7 @@ serial_test = "3.0"
 mockall = "0.11"
 
 [features]
-default = []
+default = ["client"]
 # Enable HTTP client for external services
 client = ["futures-util"]
 # Enable test utilities
