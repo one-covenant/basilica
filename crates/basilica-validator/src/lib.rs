@@ -15,7 +15,6 @@ pub mod miner_prover;
 pub mod persistence;
 pub mod rental;
 pub mod ssh;
-pub mod validation;
 
 // Main public API exports
 #[cfg(feature = "client")]
@@ -29,6 +28,7 @@ pub use metrics::{
     ValidatorApiMetrics, ValidatorBusinessMetrics, ValidatorMetrics, ValidatorPrometheusMetrics,
 };
 // Journal functionality temporarily disabled for testing
+pub use miner_prover::types::ValidationError;
 pub use miner_prover::{
     types::{ExecutorInfo, MinerInfo},
     MinerProver,
@@ -40,7 +40,6 @@ pub use persistence::entities::{
 pub use persistence::SimplePersistence;
 pub use rental::{RentalInfo, RentalManager, RentalRequest, RentalResponse};
 pub use ssh::{ExecutorSshDetails, ValidatorSshClient};
-pub use validation::types::{ValidationConfig, ValidationError};
 
 /// Re-export common error types
 pub use basilica_common::error::{BasilcaError, BasilcaResult};

@@ -4,25 +4,25 @@
 //! Implements Single Responsibility Principle by focusing only on verification logic.
 
 use super::miner_client::{MinerClient, MinerClientConfig};
-use super::types::{ExecutorInfo, MinerInfo};
+use super::types::MinerInfo;
+use super::types::{
+    BinaryCpuInfo, BinaryMemoryInfo, BinaryNetworkInfo, CompressedMatrix, ExecutorResult,
+    ExecutorVerificationResult, GpuInfo, SmUtilizationStats, ValidationDetails,
+    ValidatorBinaryOutput,
+};
 use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::{entities::VerificationLog, SimplePersistence};
-use crate::ssh::{ExecutorSshDetails, ValidatorSshClient, ValidatorSshKeyManager};
-use crate::validation::types::ExecutorVerificationResult;
+use crate::ssh::{ValidatorSshClient, ValidatorSshKeyManager};
 use anyhow::{Context, Result};
-use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
+use basilica_common::identity::{Hotkey, MinerUid};
 use basilica_common::ssh::SshConnectionDetails;
-use basilica_protocol::miner_discovery::{
-    CloseSshSessionRequest, InitiateSshSessionRequest, SshSessionStatus,
-};
 use sqlx::Row;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -38,8 +38,6 @@ pub struct VerificationEngine {
     use_dynamic_discovery: bool,
     /// SSH key path for executor access (fallback)
     ssh_key_path: Option<PathBuf>,
-    /// Cache of miner endpoints for reconnection
-    miner_endpoints: Arc<RwLock<HashMap<MinerUid, String>>>,
     /// Optional Bittensor service for signing
     bittensor_service: Option<Arc<bittensor::Service>>,
     /// SSH key manager for session keys
@@ -83,14 +81,8 @@ impl VerificationEngine {
         false
     }
 
-    /// Check if this verification engine supports batch processing
-    pub fn supports_batch_processing(&self) -> bool {
-        // Automated SSH verification supports batch processing when properly configured
-        self.use_dynamic_discovery && self.ssh_key_manager.is_some()
-    }
-
     /// Execute complete automated verification workflow with SSH session management (specs-compliant)
-    pub async fn execute_automated_verification_workflow(
+    pub async fn execute_verification_workflow(
         &self,
         task: &super::scheduler::VerificationTask,
     ) -> Result<VerificationResult> {
@@ -138,7 +130,7 @@ impl VerificationEngine {
             );
 
             match self
-                .verify_executor_with_ssh_automation_enhanced(&task.miner_endpoint, &executor_info)
+                .verify_executor(&task.miner_endpoint, &executor_info)
                 .await
             {
                 Ok(result) => {
@@ -217,6 +209,7 @@ impl VerificationEngine {
         });
 
         info!(
+            miner_uid = task.miner_uid,
             "Automated verification workflow completed for miner {} in {:?}, score: {:.2}",
             task.miner_uid,
             workflow_start.elapsed(),
@@ -364,6 +357,41 @@ impl VerificationEngine {
         Ok(executors)
     }
 
+    /// Clean up GPU assignments for an executor
+    async fn cleanup_gpu_assignments(
+        &self,
+        executor_id: &str,
+        miner_id: &str,
+        tx: Option<&mut sqlx::Transaction<'_, sqlx::Sqlite>>,
+    ) -> Result<u64> {
+        let query = "DELETE FROM gpu_uuid_assignments WHERE executor_id = ? AND miner_id = ?";
+
+        let rows_affected = if let Some(transaction) = tx {
+            sqlx::query(query)
+                .bind(executor_id)
+                .bind(miner_id)
+                .execute(&mut **transaction)
+                .await?
+                .rows_affected()
+        } else {
+            sqlx::query(query)
+                .bind(executor_id)
+                .bind(miner_id)
+                .execute(self.persistence.pool())
+                .await?
+                .rows_affected()
+        };
+
+        if rows_affected > 0 {
+            info!(
+                "Cleaned up {} GPU assignments for executor {} (miner: {})",
+                rows_affected, executor_id, miner_id
+            );
+        }
+
+        Ok(rows_affected)
+    }
+
     /// Helper function to clean up active SSH session for an executor
     async fn cleanup_active_session(&self, executor_id: &str) {
         let mut active_sessions = self.active_ssh_sessions.lock().await;
@@ -504,22 +532,8 @@ impl VerificationEngine {
                 verification_log.executor_id
             );
 
-            let gpu_cleanup = sqlx::query(
-                "DELETE FROM gpu_uuid_assignments
-                 WHERE executor_id = ? AND miner_id = ?",
-            )
-            .bind(&verification_log.executor_id)
-            .bind(&miner_id)
-            .execute(&mut *tx)
-            .await?;
-
-            if gpu_cleanup.rows_affected() > 0 {
-                info!(
-                    "Cleaned up {} GPU assignments for offline executor {}",
-                    gpu_cleanup.rows_affected(),
-                    verification_log.executor_id
-                );
-            }
+            self.cleanup_gpu_assignments(&verification_log.executor_id, &miner_id, Some(&mut tx))
+                .await?;
         }
 
         tx.commit().await?;
@@ -747,16 +761,14 @@ impl VerificationEngine {
                         })?;
 
                     // Also clean up associated GPU assignments for the duplicate
-                    sqlx::query(
-                        "DELETE FROM gpu_uuid_assignments WHERE executor_id = ? AND miner_id = ?",
-                    )
-                    .bind(&dup_executor_id)
-                    .bind(&miner_id)
-                    .execute(self.persistence.pool())
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to clean up GPU assignments for duplicate: {}", e)
-                    })?;
+                    self.cleanup_gpu_assignments(&dup_executor_id, &miner_id, None)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Failed to clean up GPU assignments for duplicate: {}",
+                                e
+                            )
+                        })?;
                 }
 
                 info!(
@@ -774,7 +786,7 @@ impl VerificationEngine {
         &self,
         miner_uid: u16,
         executor_id: &str,
-        gpu_infos: &[crate::validation::types::GpuInfo],
+        gpu_infos: &[GpuInfo],
     ) -> Result<()> {
         let miner_id = format!("miner_{miner_uid}");
         let now = chrono::Utc::now().to_rfc3339();
@@ -818,20 +830,14 @@ impl VerificationEngine {
             }
         } else {
             // No GPUs reported - clean up all assignments for this executor
-            let deleted = sqlx::query(
-                "DELETE FROM gpu_uuid_assignments WHERE miner_id = ? AND executor_id = ?",
-            )
-            .bind(&miner_id)
-            .bind(executor_id)
-            .execute(self.persistence.pool())
-            .await?;
+            let deleted_rows = self
+                .cleanup_gpu_assignments(executor_id, &miner_id, None)
+                .await?;
 
-            if deleted.rows_affected() > 0 {
+            if deleted_rows > 0 {
                 info!(
                     "Cleaned up {} GPU assignments for {}/{} (no GPUs reported)",
-                    deleted.rows_affected(),
-                    miner_id,
-                    executor_id
+                    deleted_rows, miner_id, executor_id
                 );
             }
         }
@@ -1471,378 +1477,6 @@ impl VerificationEngine {
         Ok(())
     }
 
-    /// Verify all executors for a specific miner
-    pub async fn verify_miner(&self, miner: MinerInfo) -> Result<f64> {
-        info!(
-            "Starting executor verification for miner {}",
-            miner.uid.as_u16()
-        );
-
-        self.connect_to_miner(&miner).await?;
-
-        // Cache the miner endpoint for later use
-        {
-            let mut endpoints = self.miner_endpoints.write().await;
-            endpoints.insert(miner.uid, miner.endpoint.clone());
-        }
-
-        let executors = self.request_executor_lease(&miner).await?;
-
-        if executors.is_empty() {
-            warn!("No executors available from miner {}", miner.uid.as_u16());
-            return Ok(0.0);
-        }
-
-        let scores = self.verify_executors(&executors).await;
-        let final_score = self.calculate_final_score(&scores);
-
-        info!(
-            "Miner {} final verification score: {:.4} (from {} executors)",
-            miner.uid.as_u16(),
-            final_score,
-            scores.len()
-        );
-
-        Ok(final_score)
-    }
-
-    async fn connect_to_miner(&self, miner: &MinerInfo) -> Result<()> {
-        if !self.use_dynamic_discovery {
-            info!(
-                "Dynamic discovery disabled, using static configuration for miner {}",
-                miner.uid.as_u16()
-            );
-            return Ok(());
-        }
-
-        info!(
-            "Attempting to connect to miner {} at axon endpoint {}",
-            miner.uid.as_u16(),
-            miner.endpoint
-        );
-
-        // Create miner client with proper signer if available
-        let client = if let Some(ref bittensor_service) = self.bittensor_service {
-            let signer = Box::new(super::miner_client::BittensorServiceSigner::new(
-                bittensor_service.clone(),
-            ));
-            MinerClient::with_signer(
-                self.miner_client_config.clone(),
-                self.validator_hotkey.clone(),
-                signer,
-            )
-        } else {
-            MinerClient::new(
-                self.miner_client_config.clone(),
-                self.validator_hotkey.clone(),
-            )
-        };
-
-        // Test connection by attempting authentication
-        match client.connect_and_authenticate(&miner.endpoint).await {
-            Ok(_conn) => {
-                info!(
-                    "Successfully connected and authenticated with miner {} at {}",
-                    miner.uid.as_u16(),
-                    miner.endpoint
-                );
-                Ok(())
-            }
-            Err(e) => {
-                if self.config.fallback_to_static {
-                    warn!(
-                        "Failed to connect to miner {} at {}: {}. Falling back to static config",
-                        miner.uid.as_u16(),
-                        miner.endpoint,
-                        e
-                    );
-                    Ok(())
-                } else {
-                    Err(e).context(format!(
-                        "Failed to connect to miner {} at {}",
-                        miner.uid.as_u16(),
-                        miner.endpoint
-                    ))
-                }
-            }
-        }
-    }
-
-    async fn request_executor_lease(&self, miner: &MinerInfo) -> Result<Vec<ExecutorInfo>> {
-        if !self.use_dynamic_discovery {
-            // Fallback to static configuration
-            return self.get_static_executor_info(miner).await;
-        }
-
-        info!(
-            "Requesting executor lease from miner {} via dynamic discovery",
-            miner.uid.as_u16()
-        );
-
-        // Create miner client with proper signer if available
-        let client = if let Some(ref bittensor_service) = self.bittensor_service {
-            let signer = Box::new(super::miner_client::BittensorServiceSigner::new(
-                bittensor_service.clone(),
-            ));
-            MinerClient::with_signer(
-                self.miner_client_config.clone(),
-                self.validator_hotkey.clone(),
-                signer,
-            )
-        } else {
-            MinerClient::new(
-                self.miner_client_config.clone(),
-                self.validator_hotkey.clone(),
-            )
-        };
-
-        // Connect and authenticate
-        let mut connection = match client.connect_and_authenticate(&miner.endpoint).await {
-            Ok(conn) => conn,
-            Err(e) => {
-                if self.config.fallback_to_static {
-                    warn!(
-                        "Failed to connect for executor discovery: {}. Using static config",
-                        e
-                    );
-                    return self.get_static_executor_info(miner).await;
-                } else {
-                    return Err(e).context("Failed to connect to miner for executor discovery");
-                }
-            }
-        };
-
-        // Request executors with requirements
-        let requirements = basilica_protocol::common::ResourceLimits {
-            max_cpu_cores: 4,
-            max_memory_mb: 8192,
-            max_storage_mb: 10240,
-            max_containers: 1,
-            max_bandwidth_mbps: 100.0,
-            max_gpus: 1,
-        };
-
-        let lease_duration = Duration::from_secs(3600); // 1 hour lease
-
-        match connection
-            .request_executors(Some(requirements), lease_duration)
-            .await
-        {
-            Ok(executor_details) => {
-                let executors: Vec<ExecutorInfo> = executor_details
-                    .into_iter()
-                    .map(|details| ExecutorInfo {
-                        id: ExecutorId::from_str(&details.executor_id)
-                            .unwrap_or_else(|_| ExecutorId::new()),
-                        miner_uid: miner.uid,
-                        grpc_endpoint: details.grpc_endpoint,
-                    })
-                    .collect();
-
-                info!(
-                    "Received {} executors from miner {}",
-                    executors.len(),
-                    miner.uid.as_u16()
-                );
-                Ok(executors)
-            }
-            Err(e) => {
-                if self.config.fallback_to_static {
-                    warn!("Failed to request executors: {}. Using static config", e);
-                    self.get_static_executor_info(miner).await
-                } else {
-                    Err(e).context("Failed to request executors from miner")
-                }
-            }
-        }
-    }
-
-    /// Get static executor info (fallback method)
-    async fn get_static_executor_info(&self, miner: &MinerInfo) -> Result<Vec<ExecutorInfo>> {
-        // This would normally load from configuration or database
-        // For now, return empty to indicate no static config available
-        warn!(
-            "No static executor configuration available for miner {}",
-            miner.uid.as_u16()
-        );
-        Ok(vec![])
-    }
-
-    async fn verify_executors(&self, executors: &[ExecutorInfo]) -> Vec<f64> {
-        let mut scores = Vec::new();
-
-        for executor in executors {
-            match self.verify_single_executor(executor).await {
-                Ok(score) => {
-                    scores.push(score);
-                    info!("Executor {} verified with score: {:.4}", executor.id, score);
-                }
-                Err(e) => {
-                    scores.push(0.0);
-                    warn!("Executor {} verification failed: {}", executor.id, e);
-                }
-            }
-        }
-
-        scores
-    }
-
-    async fn verify_single_executor(&self, executor: &ExecutorInfo) -> Result<f64> {
-        info!("Verifying executor {}", executor.id);
-
-        self.verify_executor_dynamic(executor).await
-    }
-
-    /// Verify executor using dynamic SSH discovery
-    async fn verify_executor_dynamic(&self, executor: &ExecutorInfo) -> Result<f64> {
-        info!(
-            "Using dynamic discovery to verify executor {} from miner {}",
-            executor.id,
-            executor.miner_uid.as_u16()
-        );
-
-        // Step 1: Use persistent SSH key if we have key manager
-        let (_session_id, public_key_openssh, key_path) =
-            if let Some(ref key_manager) = self.ssh_key_manager {
-                let session_id = Uuid::new_v4().to_string();
-                let (public_key_openssh, key_path) = match key_manager.get_persistent_key() {
-                    Some((public_key, private_key_path)) => {
-                        info!(
-                            "Using persistent SSH key for executor {} dynamic verification",
-                            executor.id
-                        );
-                        (public_key.clone(), private_key_path.clone())
-                    }
-                    None => {
-                        error!(
-                            "No persistent SSH key available for executor {} dynamic verification",
-                            executor.id
-                        );
-                        return Err(anyhow::anyhow!("No persistent SSH key available"));
-                    }
-                };
-
-                (session_id, public_key_openssh, key_path)
-            } else {
-                // Fallback to legacy mode without key generation
-                warn!("No SSH key manager available, using legacy SSH session mode");
-                let session_id = Uuid::new_v4().to_string();
-                let fallback_key_path = self
-                    .ssh_key_path
-                    .clone()
-                    .unwrap_or_else(|| PathBuf::from("/tmp/validator_key"));
-                (session_id, String::new(), fallback_key_path)
-            };
-
-        // Get miner endpoint from cache
-        let miner_endpoint = self.get_miner_endpoint(&executor.miner_uid).await?;
-
-        // Create miner client with proper signer if available
-        let client = self.create_authenticated_client()?;
-
-        // Connect and authenticate
-        let mut connection = client
-            .connect_and_authenticate(&miner_endpoint)
-            .await
-            .context("Failed to reconnect to miner for SSH session")?;
-
-        // Step 3: Request SSH session with public key
-        let session_request = InitiateSshSessionRequest {
-            validator_hotkey: self.validator_hotkey.to_string(),
-            executor_id: executor.id.to_string(),
-            purpose: "hardware_attestation".to_string(),
-            validator_public_key: public_key_openssh.clone(),
-            session_duration_secs: 300, // 5 minutes
-            session_metadata: serde_json::json!({
-                "validator_version": env!("CARGO_PKG_VERSION"),
-                "verification_type": "hardware_attestation"
-            })
-            .to_string(),
-            rental_mode: false,
-            rental_id: String::new(),
-        };
-
-        let session_info = connection
-            .initiate_ssh_session(session_request)
-            .await
-            .context("Failed to initiate SSH session")?;
-
-        // Check if session was successfully created
-        if session_info.status() != SshSessionStatus::Active {
-            error!(
-                "SSH session creation failed for executor {}: status={:?}",
-                executor.id, session_info.status
-            );
-            return Ok(0.0);
-        }
-
-        info!(
-            "SSH session created for executor {}: session_id={}, expires_at={}",
-            executor.id, session_info.session_id, session_info.expires_at
-        );
-
-        // Step 4: Parse SSH credentials and create connection details
-        let ssh_details =
-            self.parse_ssh_credentials(&session_info.access_credentials, Some(key_path.clone()))?;
-        let executor_ssh_details = ExecutorSshDetails::new(
-            executor.id.clone(),
-            ssh_details.host,
-            ssh_details.username,
-            ssh_details.port,
-            key_path.clone(),
-            Some(self.config.challenge_timeout),
-        );
-
-        // Step 5: Perform SSH connection test
-        let verification_result = match self
-            .ssh_client
-            .test_connection(&executor_ssh_details.connection)
-            .await
-        {
-            Ok(_) => {
-                info!(
-                    "SSH connection test successful for executor {}",
-                    executor.id
-                );
-                0.8 // Score for successful connection
-            }
-            Err(e) => {
-                error!(
-                    "SSH connection test failed for executor {}: {}",
-                    executor.id, e
-                );
-                0.0
-            }
-        };
-
-        // Step 6: Close SSH session
-        let close_request = CloseSshSessionRequest {
-            session_id: session_info.session_id.clone(),
-            validator_hotkey: self.validator_hotkey.to_string(),
-            reason: "verification_complete".to_string(),
-        };
-
-        if let Err(e) = connection.close_ssh_session(close_request).await {
-            warn!(
-                "Failed to close SSH session {}: {}",
-                session_info.session_id, e
-            );
-        }
-
-        Ok(verification_result)
-    }
-
-    /// Get miner endpoint from cache or error
-    async fn get_miner_endpoint(&self, miner_uid: &MinerUid) -> Result<String> {
-        let endpoints = self.miner_endpoints.read().await;
-        endpoints.get(miner_uid).cloned().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Miner endpoint not found in cache for miner {}",
-                miner_uid.as_u16()
-            )
-        })
-    }
-
     /// Create authenticated miner client
     fn create_authenticated_client(&self) -> Result<MinerClient> {
         Ok(
@@ -1905,14 +1539,6 @@ impl VerificationEngine {
         })
     }
 
-    fn calculate_final_score(&self, scores: &[f64]) -> f64 {
-        if scores.is_empty() {
-            return 0.0;
-        }
-
-        scores.iter().sum::<f64>() / scores.len() as f64
-    }
-
     /// Get whether dynamic discovery is enabled
     pub fn use_dynamic_discovery(&self) -> bool {
         self.use_dynamic_discovery
@@ -1961,7 +1587,6 @@ impl VerificationEngine {
             persistence,
             use_dynamic_discovery,
             ssh_key_path: None, // Not used when SSH key manager is available
-            miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service,
             ssh_key_manager,
             active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
@@ -2037,15 +1662,10 @@ impl VerificationEngine {
                 gpu_count, executor_id, miner_id
             );
 
-            let cleanup_result = sqlx::query(
-                "DELETE FROM gpu_uuid_assignments WHERE executor_id = ? AND miner_id = ?",
-            )
-            .bind(&executor_id)
-            .bind(&miner_id)
-            .execute(self.persistence.pool())
-            .await?;
-
-            gpu_assignments_cleaned += cleanup_result.rows_affected();
+            let rows_cleaned = self
+                .cleanup_gpu_assignments(&executor_id, &miner_id, None)
+                .await?;
+            gpu_assignments_cleaned += rows_cleaned;
         }
 
         // Step 1b: Clean up executors with mismatched GPU counts
@@ -2176,10 +1796,7 @@ impl VerificationEngine {
             let mut tx = self.persistence.pool().begin().await?;
 
             // Clean up any remaining GPU assignments
-            sqlx::query("DELETE FROM gpu_uuid_assignments WHERE executor_id = ? AND miner_id = ?")
-                .bind(&executor_id)
-                .bind(&miner_id)
-                .execute(&mut *tx)
+            self.cleanup_gpu_assignments(&executor_id, &miner_id, Some(&mut tx))
                 .await?;
 
             // Delete the executor record
@@ -2326,7 +1943,7 @@ impl VerificationEngine {
         &self,
         ssh_details: &SshConnectionDetails,
         _session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
-    ) -> Result<crate::validation::types::ValidatorBinaryOutput> {
+    ) -> Result<ValidatorBinaryOutput> {
         info!(
             ssh_host = %ssh_details.host,
             ssh_port = ssh_details.port,
@@ -2355,7 +1972,7 @@ impl VerificationEngine {
         // Calculate validation score
         let validation_score = self.calculate_binary_validation_score(&validation_result)?;
 
-        Ok(crate::validation::types::ValidatorBinaryOutput {
+        Ok(ValidatorBinaryOutput {
             success: validation_result.success,
             executor_result: validation_result.executor_result,
             error_message: validation_result.error_message,
@@ -2498,10 +2115,7 @@ impl VerificationEngine {
     }
 
     /// Parse validator binary output
-    fn parse_validator_binary_output(
-        &self,
-        output: &[u8],
-    ) -> Result<crate::validation::types::ValidatorBinaryOutput> {
+    fn parse_validator_binary_output(&self, output: &[u8]) -> Result<ValidatorBinaryOutput> {
         if output.is_empty() {
             error!("[EVAL_FLOW] Validator binary output is empty");
             return Err(anyhow::anyhow!("Validator binary produced no output"));
@@ -2770,10 +2384,7 @@ impl VerificationEngine {
     }
 
     /// Parse and convert raw validator binary JSON to expected format
-    fn parse_and_convert_validator_output(
-        &self,
-        json_str: &str,
-    ) -> Result<crate::validation::types::ValidatorBinaryOutput> {
+    fn parse_and_convert_validator_output(&self, json_str: &str) -> Result<ValidatorBinaryOutput> {
         info!("[EVAL_FLOW] Converting raw validator binary JSON to expected format");
 
         // Parse raw JSON into a generic Value first
@@ -2826,7 +2437,7 @@ impl VerificationEngine {
         info!("[EVAL_FLOW] Converted to ValidatorBinaryOutput - validation_score: {:.3}, has_executor_result: {}, gpu_count: {}",
               validation_score, executor_result.is_some(), gpu_count);
 
-        Ok(crate::validation::types::ValidatorBinaryOutput {
+        Ok(ValidatorBinaryOutput {
             success,
             executor_result,
             error_message,
@@ -2926,7 +2537,7 @@ impl VerificationEngine {
     fn convert_gpu_results_to_executor_result(
         &self,
         raw_json: &serde_json::Value,
-    ) -> Result<Option<crate::validation::types::ExecutorResult>> {
+    ) -> Result<Option<ExecutorResult>> {
         let gpu_results = raw_json
             .get("gpu_results")
             .and_then(|v| v.as_array())
@@ -2972,14 +2583,14 @@ impl VerificationEngine {
                 let max_util = sm_util.get("max").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let avg_util = sm_util.get("avg").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
-                crate::validation::types::SmUtilizationStats {
+                SmUtilizationStats {
                     min_utilization: min_util,
                     max_utilization: max_util,
                     avg_utilization: avg_util,
                     per_sm_stats: vec![],
                 }
             } else {
-                crate::validation::types::SmUtilizationStats {
+                SmUtilizationStats {
                     min_utilization: 0.0,
                     max_utilization: 0.0,
                     avg_utilization: 0.0,
@@ -2999,7 +2610,7 @@ impl VerificationEngine {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0) as u32;
 
-            gpu_infos.push(crate::validation::types::GpuInfo {
+            gpu_infos.push(GpuInfo {
                 index: index as u32,
                 gpu_name,
                 gpu_uuid,
@@ -3052,22 +2663,22 @@ impl VerificationEngine {
             .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
             .unwrap_or(0);
 
-        let executor_result = crate::validation::types::ExecutorResult {
+        let executor_result = ExecutorResult {
             gpu_name,
             gpu_uuid,
             gpu_infos,
-            cpu_info: crate::validation::types::BinaryCpuInfo {
+            cpu_info: BinaryCpuInfo {
                 model: "Unknown".to_string(),
                 cores: 0,
                 threads: 0,
                 frequency_mhz: 0,
             },
-            memory_info: crate::validation::types::BinaryMemoryInfo {
+            memory_info: BinaryMemoryInfo {
                 total_gb: 0.0,
                 available_gb: 0.0,
             },
-            network_info: crate::validation::types::BinaryNetworkInfo { interfaces: vec![] },
-            matrix_c: crate::validation::types::CompressedMatrix {
+            network_info: BinaryNetworkInfo { interfaces: vec![] },
+            matrix_c: CompressedMatrix {
                 rows: 0,
                 cols: 0,
                 data: vec![],
@@ -3092,7 +2703,7 @@ impl VerificationEngine {
     /// Calculate binary validation score based on executor result
     fn calculate_binary_validation_score(
         &self,
-        validation_result: &crate::validation::types::ValidatorBinaryOutput,
+        validation_result: &ValidatorBinaryOutput,
     ) -> Result<f64> {
         info!("[EVAL_FLOW] Starting binary validation score calculation");
 
@@ -3354,7 +2965,7 @@ impl VerificationEngine {
     }
 
     /// Enhanced verify executor with SSH automation and binary validation
-    async fn verify_executor_with_ssh_automation_enhanced(
+    async fn verify_executor(
         &self,
         miner_endpoint: &str,
         executor_info: &ExecutorInfoDetailed,
@@ -3366,7 +2977,7 @@ impl VerificationEngine {
         );
 
         let total_start = std::time::Instant::now();
-        let mut validation_details = crate::validation::types::ValidationDetails {
+        let mut validation_details = ValidationDetails {
             ssh_test_duration: Duration::from_secs(0),
             binary_upload_duration: Duration::from_secs(0),
             binary_execution_duration: Duration::from_secs(0),
