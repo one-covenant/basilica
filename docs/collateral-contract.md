@@ -1,6 +1,6 @@
 # Collateral Contract
 
-The contract is original from the https://github.com/Datura-ai/celium-collateral-contracts/. Basilica also use the contract to ask miner to make sure their service by deposit collateral to the contract.
+This contract is derived from the upstream project at [Datura-ai/celium-collateral-contracts](https://github.com/Datura-ai/celium-collateral-contracts/) and adapted for Basilica. It enables subnet owners to require miners to lock collateral as assurance of service quality.
 
 > **Purpose**: Manage miner collaterals in the Bittensor ecosystem, allowing validators to slash misbehaving miners. Currently, the slash is controled by subnet owner or contract deployer. It will be decentralized via contract upgrade in the future.
 >
@@ -66,12 +66,14 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
   Defines a minimum stake requirement and a strict timeline for validator responses.
 
-> **Important Notice on Addressing**
+> **Important notice on addressing**
 >
-> This contract uses **H160 (Ethereum) addresses** for both miner and validator identities.
+> This contract uses **H160 (Ethereum) addresses** for miner and validator identities.
 >
-> - Before interacting with the contract (depositing, slashing, reclaiming, etc.), **all parties must have an Ethereum wallet** (including a plain text private key) to sign the required transactions.
-> - An association between these H160 wallet addresses and the respective **SS58 hotkeys** (used in Bittensor) is **strongly recommended** so validators can reliably identify miners.
+> - Before interacting with the contract, participants must control an Ethereum-compatible wallet (H160) to sign transactions.
+> - We recommend associating your H160 wallet with your **SS58 hotkey** to help validators reliably identify miners.
+> - Converting an H160 to an SS58 representation does not grant control of funds or keys; it is a mapping for identification. To formally link identities, use the Subtensor extrinsic `associate_evm_key` (see the Subtensor source: [associate_evm_key](https://github.com/opentensor/subtensor/blob/main/pallets/subtensor/src/macros/dispatches.rs#L2001)).
+
 > - The mapped SS58 address of H160 is generated automatically. However, nobody has the private key and do any transaction. So associated EVM account feature can help to prove the subtensor account also hold the H160 account. Everyone knows the subtensor account info via querying the H160 address. The extrinsic is https://github.com/opentensor/subtensor/blob/main/pallets/subtensor/src/macros/dispatches.rs#L2001 associate_evm_key.
 
 > **Transaction Fees**
@@ -132,8 +134,8 @@ You need replace the variable with the correct value like contract address.
   - Verify that code deployed at the address is indeed the collateral smart contract, the trustee and netuid kept inside are as expected - see [`query.sh`](/crates/collateral-contract/query.sh).
 
   ```shell
-    +#!/usr/bin/env bash
-    +set -euo pipefail
+    #!/usr/bin/env bash
+    set -euo pipefail
 
     # basic query to verify the contract is deployed and initialized
     export CONTRACT_ADDRESS=0x
@@ -156,6 +158,7 @@ You need replace the variable with the correct value like contract address.
   export CONTRACT_ADDRESS=0x
   export HOTKEY=0x
   export EXECUTOR_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  # WARNING: never commit or paste real keys in scripts
   export PRIVATE_KEY=0x
   # deposit
   collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx deposit \
@@ -226,14 +229,15 @@ The validators won't evaluate or list the miners' executors as available, if the
 - Compile and deploy the contract, use [`deploy.sh`](/crates/collateral-contract/deploy.sh) with your details as arguments.
 
 ```shell
-+#!/usr/bin/env bash
-+set -euo pipefail
+#!/usr/bin/env bash
+set -euo pipefail
 
 export NETUID=39
 export TRUSTEE_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
 export MIN_COLLATERAL=1
 export DECISION_TIMEOUT=1
 export ADMIN_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
+# WARNING: never commit or paste real keys in scripts
 export PRIVATE_KEY=0x
 # export RPC_URL=https://lite.chain.opentensor.ai:443
 # export RPC_URL=https://test.finney.opentensor.ai
