@@ -1,27 +1,30 @@
 # Collateral Contract
 
-The contract is original from the https://github.com/Datura-ai/celium-collateral-contracts/. Basilica also deploy the contract to ask miner to make sure their service by deposit collateral to the contract.
+The contract is original from the https://github.com/Datura-ai/celium-collateral-contracts/. Basilica also use the contract to ask miner to make sure their service by deposit collateral to the contract.
 
-> **Purpose**: Manage miner collaterals in the Bittensor ecosystem, allowing validators to slash misbehaving miners.
+> **Purpose**: Manage miner collaterals in the Bittensor ecosystem, allowing validators to slash misbehaving miners. Currently, the slash is controled by subnet owner or contract deployer. It will be decentralized via contract upgrade in the future.
 >
-> **Design**: One collateral contract per validator and subnet.
+> **Design**: One collateral contract per one subnet.
 
 This smart contract is **generic** and works with **any Bittensor subnet**.
+
+We provide the CLI to interact with collateral contract, the details could be found in [`README.md`](/crates/collateral-contract/README.md)
 
 ## ⚖️ A Note on Slashing Philosophy
 
 The power to slash collateral carries weight — it protects subnet quality, but also risks abuse if unchecked.  
 This contract encourages **automated enforcement** wherever possible, ensuring consistency and fairness across validators.
 
-Manual slashing is supported for edge cases where misbehavior is clear but not yet detectable by automated logic.
-However, validators should approach this capability **with restraint and responsibility**.  
+Manual slashing is supported for now where misbehavior is clear. For slash transaction, there is a link to explain why it is slashed. It is clear and transparent.
+
+However, subnet owner should approach this capability **with restraint and responsibility**.  
 Every manual slash must be:
 
 - **Justified** — supported by strong evidence (logs, signatures, links).
 - **Transparent** — the justification URL and content hash are stored on-chain.
 - **Proportional** — reflecting the severity and intent of the violation.
 
-Whenever possible, validators are encouraged to **automate detection and slashing logic** so that actions are data-driven and reproducible.
+Whenever possible in the future, validators are encouraged to **automate detection and slashing logic** so that actions are data-driven and reproducible.
 Automation helps ensure miners are treated consistently across validators — and enables **retroactive enforcement** without requiring on-the-spot judgment.
 
 Slashing is a **last-resort accountability tool**, not a convenience.  
@@ -44,7 +47,7 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
 - **Arbitrary Slashing**
 
-  Validators can penalize a misbehaving miner by slashing all of the miner's collateral.
+  Subnet owner can penalize a misbehaving miner by slashing all of the miner's collateral.
 
 - **Automatic Release**
 
@@ -69,15 +72,15 @@ This contract creates a **trust-minimized interaction** between miners and valid
 >
 > - Before interacting with the contract (depositing, slashing, reclaiming, etc.), **all parties must have an Ethereum wallet** (including a plain text private key) to sign the required transactions.
 > - An association between these H160 wallet addresses and the respective **SS58 hotkeys** (used in Bittensor) is **strongly recommended** so validators can reliably identify miners.
-> - Best practices for managing and verifying these address associations are still under development within the broader Bittensor ecosystem, but Subtensor is now able to [associate H160 with an UID](https://github.com/opentensor/subtensor/pull/1487)
+> - The mapped SS58 address of H160 is generated automatically. However, nobody has the private key and do any transaction. So associated EVM account feature can help to prove the subtensor account also hold the H160 account. Everyone knows the subtensor account info via querying the H160 address. The extrinsic is https://github.com/opentensor/subtensor/blob/main/pallets/subtensor/src/macros/dispatches.rs#L2001 associate_evm_key.
 
 > **Transaction Fees**
 >
 > All on-chain actions (deposits, slashes, reclaims, etc.) consume gas, so **both miners and validators must hold enough TAO in their Ethereum (H160) wallets** to cover transaction fees.
 >
 > - Make sure to keep a sufficient balance to handle any deposits, reclaims, or slashes you need to perform.
-> - Convert H160 to SS58 ([`celium_collateral_contracts/h160_to_ss58.py`](/celium_collateral_contracts/h160_to_ss58.py) to transfer TAO to it.
-> - You can transfer TAO back to your SS58 wallet when no more contract interactions are required. See [`scripts/celium_collateral_contracts.py`](/celium_collateral_contracts/celium_collateral_contracts.py).
+> - Convert H160 to SS58 [`convertH160ToSS58`](https://github.com/opentensor/subtensor/blob/main/evm-tests/src/address-utils.ts#L14) to transfer TAO to it.
+> - You can transfer TAO back to your SS58 wallet when no more contract interactions are required. See [`transfer token from EVM to Substrate`](https://github.com/opentensor/subtensor/blob/main/evm-tests/test/eth.substrate-transfer.test.ts#L78).
 
 ## Demo
 
@@ -102,8 +105,9 @@ Below is a typical sequence for integrating and using this collateral contract w
   - Each miner **creates an Ethereum (H160) wallet**, links it to their hotkey, and funds it with enough TAO for transaction fees.
   - Miners **retrieve** the owner's contract address from the chain or another trusted source.
   - Upon confirmation, miners **deposit** collateral by calling the contract's `deposit(executorUuid)` function, specifying the **executor UUID** to associate the collateral with specific executors.
-  - Confirm on-chain that your collateral has been successfully locked for that miner - [`celium_collateral_contracts/get_miners_collateral.py`](/celium_collateral_contracts/get_miners_collateral.py)
-  - Confirm on-chain that your collateral has been successfully locked for that your executor - [`celium_collateral_contracts/get_miners_collateral.py`](/celium_collateral_contracts/get_executor_collateral.py)
+  - Confirm on-chain that your collateral has been successfully locked for that miner
+
+  - Confirm on-chain that your collateral has been successfully locked for that your executor
 
 - **Slashing Misbehaving Miners**
 
@@ -116,7 +120,8 @@ Below is a typical sequence for integrating and using this collateral contract w
 ## Usage Guides
 
 Below are step-by-step instructions tailored to **miners**, **validators**, and **subnet owners**.
-Refer to the repository's [`celium_collateral_contracts/`](/celium_collateral_contracts/) folder for sample implementations and helper scripts.
+Refer to the repository's [`collateral_contract/`](/crates/collateral-contract/) folder for sample implementations and helper scripts.
+You need replace the variable with the correct value like contract address.
 
 ## As a Miner, you can:
 
@@ -124,15 +129,71 @@ Refer to the repository's [`celium_collateral_contracts/`](/celium_collateral_co
   If you plan to stake for multiple validators, simply repeat these steps for each one:
 
   - Obtain the validator's contract address (usually via tools provided by the subnet owner).
-  - Verify that code deployed at the address is indeed the collateral smart contract, the trustee and netuid kept inside are as expected - see [`celium_collateral_contracts/verify_contract.py`](/celium_collateral_contracts/verify_contract.py).
-  - Run [`celium_collateral_contracts/deposit_collateral.py`](/celium_collateral_contracts/deposit_collateral.py) to initiate the deposit transaction with your specified amount of $TAO.
-  - Confirm on-chain that your collateral has been successfully locked for that validator - [`celium_collateral_contracts/get_miners_collateral.py`](/celium_collateral_contracts/get_miners_collateral.py)
+  - Verify that code deployed at the address is indeed the collateral smart contract, the trustee and netuid kept inside are as expected - see [`query.sh`](/crates/collateral-contract/query.sh).
+
+  ```shell
+    +#!/usr/bin/env bash
+    +set -euo pipefail
+
+    # basic query to verify the contract is deployed and initialized
+    export CONTRACT_ADDRESS=0x
+    export NETWORK=mainnet
+
+    collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query trustee
+    collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query min-collateral-increase
+    collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query decision-timeout
+    collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query netuid
+  ```
+
+  - Run deposit command to initiate the deposit transaction with your specified amount of $TAO. running `collateral-cli tx deposit`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+
+  ```shell
+  +#!/usr/bin/env bash
+  +set -euo pipefail
+
+  # the whole collateral flow to verify everything
+  export NETWORK=local
+  export CONTRACT_ADDRESS=0x
+  export HOTKEY=0x
+  export EXECUTOR_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  export PRIVATE_KEY=0x
+  # deposit
+  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx deposit \
+  --private-key "$PRIVATE_KEY" \
+  --hotkey "$HOTKEY" \
+  --amount 10 \
+  --executor-id "$EXECUTOR_ID"
+  ```
+
+  - Confirm on-chain that your collateral has been successfully locked for that validator. running `collateral-cli query executor-to-miner` and `collateral-cli query collaterals`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh)
+
+  ```shell
+  +#!/usr/bin/env bash
+  +set -euo pipefail
+  export NETWORK=local
+  export CONTRACT_ADDRESS=0x
+  export HOTKEY=0x
+  export EXECUTOR_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+
+
+  # check the executor to miner, miner is not zero if deposit is successful
+
+  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query executor-to-miner \
+  --hotkey "$HOTKEY" \
+  --executor-id "$EXECUTOR_ID"
+
+  # check the collaterals should be amount you deposit
+
+  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query collaterals \
+  --hotkey "$HOTKEY" \
+  --executor-id "$EXECUTOR_ID"
+  ```
 
 - **Reclaim Collateral**
-  - Initiate the reclaim process by running [`celium_collateral_contracts/reclaim_collateral.py`](/scripts/reclaim_collateral.py) with your desired withdrawal amount.
-  - Wait for the validator's response or for the configured inactivity timeout to pass.
-  - If the validator does not deny your request by the deadline, run [`celium_collateral_contracts/finalize_reclaim.py`](/celium_collateral_contracts/finalize_reclaim.py) to unlock and retrieve your collateral.
-  - Verify on-chain that your balance has been updated accordingly.
+- Initiate the reclaim process by running `collateral-cli tx reclaim-collateral`. reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+- Wait for the validator's response or for the configured inactivity timeout to pass.
+- If the validator does not deny your request by the deadline, running `collateral-cli tx finalize-reclaim`. reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+- Verify on-chain that your balance has been updated accordingly.
 
 ### As a validator.
 
@@ -141,176 +202,49 @@ The validators won't evaluate or list the miners' executors as available, if the
 ### As a Owner, you can:
 
 - **Deploy the Contract**
-
-  - Install [Foundry](https://book.getfoundry.sh/).
-    ```bash
-    # Install Forge
-    curl -L https://foundry.paradigm.xyz | bash
-    source /home/ubuntu/.bashrc  # Or start a new terminal session
-    foundryup
-    forge --version
-    ```
-  - Clone this repository.
-  - Install project dependencies:
-    ```bash
-    cargo build --release
-    ```
-  - Compile and deploy the contract, use [`deploy.sh`](/deploy.sh) with your details as arguments.
-  - Record the deployed contract address and publish it via a subnet-owner-provided tool so that miners can discover and verify it.
-
-  ***
-
-  ## UUPS Proxy Deployment (Upgradeability)
-
-  This contract uses the **UUPS (Universal Upgradeable Proxy Standard) proxy pattern** to enable seamless upgrades without losing contract state.  
+  This contract uses the **UUPS (Universal Upgradeable Proxy Standard) proxy pattern** to enable seamless upgrades without losing contract state.
   With UUPS, the proxy contract holds all storage and delegates logic to an implementation contract. When you upgrade, you deploy a new implementation and point the proxy to it—**all balances and mappings are preserved**.
 
-  ### Deployment Steps
-
-  1. **Install dependencies:**
-
-     ```bash
-     npm install
-     ```
-
-  2. **Deploy or upgrade the contract:**
-
-  ## Deploy on localnet
-
-      ```bash
-      bash build.sh
-      rm -rf deployments.json
-      export RPC_URL="http://127.0.0.1:9944"
-      export PRIVATE_KEY="434469242ece0d04889fdfa54470c3685ac226fb3756f5eaf5ddb6991e1698a3"
-      export MIN_COLLATERAL_INCREASE=1000000000000000
-      export DENY_TIMEOUT=3600
-      export NET_UID=1
-      bash deploy.sh
-      ```
-
-  ## Deploy on testnet
-
-      ```bash
-      bash build.sh
-      rm -rf deployments.json
-      export RPC_URL="https://test.finney.opentensor.ai"
-      export PRIVATE_KEY="434469242ece0d04889fdfa54470c3685ac226fb3756f5eaf5ddb6991e1698a3"
-      export MIN_COLLATERAL_INCREASE=1000000000000000
-      export DENY_TIMEOUT=3600
-      export NET_UID=1
-      bash deploy.sh
-      ```
-
-  ## Deploy on mainnet
-
-      ```bash
-      bash build.sh
-      rm -rf deployments.json
-      export RPC_URL="https://lite.chain.opentensor.ai"
-      export PRIVATE_KEY="434469242ece0d04889fdfa54470c3685ac226fb3756f5eaf5ddb6991e1698a3"
-      export MIN_COLLATERAL_INCREASE=1000000000000000
-      export DENY_TIMEOUT=3600
-      export NET_UID=1
-      bash deploy.sh
-      ```
-
-  ### Result
-
-  ```bash
-    New Collateral implementation deployed at: 0x25AA43D78bB3F6EE3bBB906554033358E5D0a3af
-    Owner check before upgrade: Proxy owner = 0xE1A07A44ac6f8423bA3b734F0cAfC6F87fd385Fc, Wallet = 0xE1A07A44ac6f8423bA3b734F0cAfC6F87fd385Fc
-    Attempting to upgrade proxy...
-    Proxy at 0x91d1b1BF9539Cd535402FDE0FC30417CaF8CC631 upgraded to new implementation: 0x25AA43D78bB3F6EE3bBB906554033358E5D0a3af
-    Contract Address: 0x91d1b1BF9539Cd535402FDE0FC30417CaF8CC631
-    Proxy owner after upgrade: 0xE1A07A44ac6f8423bA3b734F0cAfC6F87fd385Fc
-    Proxy NETUID value: 1
+- Install [Foundry](https://book.getfoundry.sh/).
+  ```shell
+  # Install Forge
+  curl -L https://foundry.paradigm.xyz | bash
+  source /home/ubuntu/.bashrc  # Or start a new terminal session
+  foundryup
+  forge --version
+  forge init
+  # Add upgradeable proxy dependencies
+  forge install OpenZeppelin/openzeppelin-contracts
+  forge install OpenZeppelin/openzeppelin-contracts-upgradeable
+  forge build
   ```
+- Clone this repository.
+- Install project dependencies:
+  ```shell
+  cargo build --release
+  ```
+- Compile and deploy the contract, use [`deploy.sh`](/crates/collateral-contract/deploy.sh) with your details as arguments.
 
-  Final contract address is 0x91d1b1BF9539Cd535402FDE0FC30417CaF8CC631
+```shell
++#!/usr/bin/env bash
++set -euo pipefail
 
-  This script will:
+export NETUID=39
+export TRUSTEE_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
+export MIN_COLLATERAL=1
+export DECISION_TIMEOUT=1
+export ADMIN_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
+export PRIVATE_KEY=0x
+# export RPC_URL=https://lite.chain.opentensor.ai:443
+# export RPC_URL=https://test.finney.opentensor.ai
+export RPC_URL=http://localhost:9944
+forge script script/DeployUpgradeable.s.sol \
+ --rpc-url "$RPC_URL" \
+ --private-key "$PRIVATE_KEY" \
+ --broadcast
+```
 
-  - Deploy the implementation contract if needed.
-  - Deploy the proxy contract (if not already deployed) or upgrade it to the latest implementation.
-  - Save deployment addresses to `deployments.json`.
-
-  **Always interact with the proxy address for all contract calls.**
-
-  ***
-
-- **Enable Regular Operation**
-
-  - Enable the deployed contract address in your owner's code (provided by the subnet owner), so that
-    - task assignment prioritizes miners with higher collateral balances.
-    - misbehaviour checks causing slashing are automated.
-
-- **Monitor Activity**
-
-  - Use Ethereum JSON-RPC API or a blockchain explorer to view events (`Deposit`, `ReclaimProcessStarted`, `Slashed`, `Reclaimed`).
-  - Query contract mappings (`collaterals`, `reclaims`) to check staked amounts and pending reclaim requests.
-  - Maintain a local script or UI to stay updated on changes in miner collateral.
-
-  - Cli in validator side.
-
-- **Manually Deny a Reclaim**
-
-  - Identify the relevant `reclaimRequestId` (from `ReclaimProcessStarted` event, for example).
-  - Use [`scripts/deny_reclaim.py`](/scripts/deny_reclaim.py) (calling the contract's `denyReclaim(reclaimRequestId)`) before the deadline.
-  - Verify on-chain that the reclaim request is removed and the miner's `hasPendingReclaim` is reset to `false`.
-    - Cli in validator side.
-
-- **Manually Slash Collateral**
-
-  - Confirm miner misconduct based on subnetwork rules (e.g., invalid blocks, spam, protocol violations).
-  - Use [`scripts/slash_collateral.py`](/scripts/slash_collateral.py) (calling the contract's `slashCollateral(miner, slashAmount, executorUuid)`) to penalize the miner by reducing their staked amount.
-  - Verify the transaction on-chain and confirm the miner's `collaterals[miner]` value has changed.
-
-  - Cli in validator side.
-
-### As a Subnet Owner, you can
-
-- **Provide Deployment Tools for contract owner**
-
-  Offer a script <!--(e.g. built on top of [`scripts/deploy.sh`](todo-link))--> to help contract owner:
-
-  - Create H160 wallet & assosiate it with their SS58.
-  - Transfer Tao.
-  - Deploy the contract.
-  - Publish the resulting contract address (e.g., as a knowledge commitment) so miners can easily verify and deposit collateral.
-
-  - Need to implement the tool.
-
-- **Provide Tools for Miners**
-
-  Offer a script that retrieves a list of active validator contract addresses from your on-chain registry or other trusted source.
-  This helps miners discover the correct contract for depositing collateral.
-
-  - TO implement a registeration contract to record all the deployed collateral contract. and maintain a mapping from the validator to collateral contract address.
-
-- **Track Miner Collateral Usage**
-
-  - Query each validator's contract (using, for example, a script based on [`scripts/get_collaterals.py`](/scripts/get_collaterals.py)) to see how much collateral is staked by each miner.
-  - Aggregate this data into a subnet-wide dashboard for real-time oversight of miner participation.
-    <!-- - Check out the [ComputeHorde Grafana chart](https://grafana.bactensor.io/d/subnet/metagraph-subnet?var-subnet=12) for a real-world example.-->
-
-    - TO be added in the cli. to query all add deposit events.
-
-- **Facilitate Result-Based Slashing**
-
-  Provide validators with automated checks that periodically verify a small subset (e.g., 1–2%) of the miner's submissions.
-  If a miner's responses fall below the desired quality threshold, the code should call `slashCollateral()` to penalize substandard performance.
-  For example, in the [ComputeHorde SDK](https://sdk.computehorde.io/), slashing is triggered via the [`report_cheated_job()`](https://sdk.computehorde.io/master/api/client.html#compute_horde_sdk.v1.ComputeHordeClient.report_cheated_job) method.
-
-  - TO be added in the validator. to call slash in the backend process after verify miner's misbehavior
-
-- **Facilitate Collateral Verification**
-
-  Provide validator code that checks each miner's staked amount before assigning tasks. This code can:
-
-  - Prioritize miners who have staked more collateral.
-  - Reject miners who do not meet a minimum collateral requirement.
-
-  TO be added in the cli. to query each miner's collateral based on contract address.
+- Record the deployed contract address and publish it.
 
 ## FAQ
 
@@ -320,7 +254,7 @@ Depositing collateral not only demonstrates a miner's commitment to the network 
 
 ### When will a miner's deposit be slashed?
 
-Validator will slash when miner stop rental container. so customer lost SSH access to the rental container;
+Subnet owner will slash when miner stop rental container. so customer lost SSH access to the rental container. In the future, all validators will take the responsibility and priviledge to slash.
 
 ### When will a miner's reclaim request be declined?
 
