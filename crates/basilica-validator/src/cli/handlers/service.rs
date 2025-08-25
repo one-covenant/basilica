@@ -388,15 +388,22 @@ async fn start_validator_services(
     );
 
     let rental_manager = if let Some(ref bittensor_service) = bittensor_service {
-        Some(
-            create_rental_manager(
-                &config,
-                validator_hotkey.clone(),
-                persistence_arc.clone(),
-                bittensor_service.clone(),
+        // Only create rental manager if metrics are enabled
+        if let Some(ref metrics) = validator_metrics {
+            Some(
+                create_rental_manager(
+                    &config,
+                    validator_hotkey.clone(),
+                    persistence_arc.clone(),
+                    bittensor_service.clone(),
+                    metrics.prometheus(), // Pass prometheus metrics
+                )
+                .await?,
             )
-            .await?,
-        )
+        } else {
+            tracing::warn!("Rental manager disabled: metrics must be enabled for rentals");
+            None
+        }
     } else {
         None
     };

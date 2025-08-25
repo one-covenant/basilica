@@ -1792,7 +1792,7 @@ impl ValidatorPersistence for SimplePersistence {
         self.query_rentals(filter).await
     }
 
-    async fn query_non_terminal_rentals(&self) -> anyhow::Result<Vec<RentalInfo>> {
+    async fn query_non_terminated_rentals(&self) -> anyhow::Result<Vec<RentalInfo>> {
         let filter = RentalFilter {
             exclude_states: Some(vec![RentalState::Stopped, RentalState::Failed]),
             order_by_created_desc: true,

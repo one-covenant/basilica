@@ -14,16 +14,19 @@ use tracing::{debug, error, info, warn};
 
 use super::container_client::ContainerClient;
 use super::types::{LogEntry, RentalInfo, RentalState};
+use crate::metrics::ValidatorPrometheusMetrics;
 use crate::persistence::{SimplePersistence, ValidatorPersistence};
 use crate::ssh::ValidatorSshKeyManager;
 
 /// Database-driven health monitor for containers
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DatabaseHealthMonitor {
     /// Persistence layer for database operations
     persistence: Arc<SimplePersistence>,
     /// SSH key manager for validator keys
     ssh_key_manager: Arc<ValidatorSshKeyManager>,
+    /// Metrics for tracking rental status (required)
+    metrics: Arc<ValidatorPrometheusMetrics>,
     /// Health check configuration
     config: HealthCheckConfig,
     /// Cancellation token for the monitoring loop
@@ -53,10 +56,12 @@ impl DatabaseHealthMonitor {
     pub fn new(
         persistence: Arc<SimplePersistence>,
         ssh_key_manager: Arc<ValidatorSshKeyManager>,
+        metrics: Arc<ValidatorPrometheusMetrics>,
     ) -> Self {
         Self {
             persistence,
             ssh_key_manager,
+            metrics,
             config: HealthCheckConfig::default(),
             cancellation_token: CancellationToken::new(),
         }
@@ -66,11 +71,13 @@ impl DatabaseHealthMonitor {
     pub fn with_config(
         persistence: Arc<SimplePersistence>,
         ssh_key_manager: Arc<ValidatorSshKeyManager>,
+        metrics: Arc<ValidatorPrometheusMetrics>,
         config: HealthCheckConfig,
     ) -> Self {
         Self {
             persistence,
             ssh_key_manager,
+            metrics,
             config,
             cancellation_token: CancellationToken::new(),
         }
@@ -114,7 +121,7 @@ impl DatabaseHealthMonitor {
         // Query all rentals that are not in terminal states
         let rentals = self
             .persistence
-            .query_non_terminal_rentals()
+            .query_non_terminated_rentals()
             .await
             .context("Failed to query non-terminal rentals")?;
 
@@ -210,12 +217,32 @@ impl DatabaseHealthMonitor {
             );
 
             let mut updated_rental = rental.clone();
-            updated_rental.state = new_state;
+            updated_rental.state = new_state.clone();
 
             self.persistence
                 .save_rental(&updated_rental)
                 .await
                 .context("Failed to update rental state")?;
+
+            // Update metrics when state changes to terminal states
+            if matches!(new_state, RentalState::Stopped | RentalState::Failed) {
+                if let Some(miner_uid) = super::extract_miner_uid(&rental.executor_id) {
+                    let gpu_type = super::get_gpu_type(&rental.executor_details);
+                    self.metrics.record_executor_rental_status(
+                        &rental.executor_id,
+                        miner_uid,
+                        &gpu_type,
+                        false, // is_rented = false for stopped/failed states
+                    );
+                    debug!(
+                        "Health monitor cleared rental metric for executor {} (state: {:?}, miner_uid: {}, gpu_type: {})",
+                        rental.executor_id,
+                        new_state,
+                        miner_uid,
+                        gpu_type
+                    );
+                }
+            }
         }
 
         Ok(())
