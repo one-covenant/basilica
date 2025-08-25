@@ -60,6 +60,45 @@ done
 
 cd "$PROJECT_ROOT"
 
+# Check if uv is installed, install if missing
+if ! command -v uv &> /dev/null; then
+    echo "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    source $HOME/.cargo/env
+fi
+
+# Create wallet directory and wallet if it doesn't exist
+WALLET_PATH="./scripts/api/service-wallet"
+if [[ ! -f "$WALLET_PATH/default/coldkey" ]]; then
+    echo "Creating Bittensor wallet for API service..."
+    mkdir -p "$WALLET_PATH"
+
+    # Create coldkey
+    echo "Creating coldkey..."
+    uvx --from bittensor-cli btcli wallet new-coldkey \
+        --name default \
+        --wallet_path="$WALLET_PATH" \
+        --n-words=24 \
+        --no-use-password \
+        --no-overwrite \
+        --quiet
+
+    # Create hotkey
+    echo "Creating hotkey..."
+    uvx --from bittensor-cli btcli wallet new-hotkey \
+        --name=default \
+        --wallet_path="$WALLET_PATH" \
+        --hotkey=default \
+        --n-words=24 \
+        --no-use-password \
+        --no-overwrite \
+        --quiet
+
+    echo "Bittensor wallet created successfully"
+else
+    echo "Bittensor wallet already exists, skipping creation"
+fi
+
 BUILD_ARGS=""
 if [[ "$RELEASE_MODE" == "true" ]]; then
     BUILD_ARGS="--build-arg BUILD_MODE=release"

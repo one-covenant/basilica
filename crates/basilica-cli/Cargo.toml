@@ -56,14 +56,11 @@ tower-http = { workspace = true, features = ["cors"] }
 rand = { workspace = true }
 base64 = "0.21"
 sha2 = "0.10"
-keyring = "2.0"
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "linux-native"] }
 directories = "5.0"
 webbrowser = "0.8"
 url = "2.4"
 
-# Wallet management
-bittensor_wallet = { git = "https://github.com/opentensor/btwallet", tag = "v3.1.0", default-features = false }
-sp-core = "34.0.0"
 
 # Internal crate dependencies
 basilica-common = { path = "../basilica-common" }

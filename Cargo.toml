@@ -1,15 +1,17 @@
 [workspace]
 members = [
-    "crates/basilica-common",
-    "crates/basilica-protocol",
-    "crates/basilica-executor",
-    "crates/basilica-miner",
-    "crates/basilica-validator",
-    "crates/bittensor",
-    "crates/basilica-api",
-    "crates/basilica-cli",
-    "crates/integration-tests",
-    "crates/collateral-contract",
+  "crates/basilica-common",
+  "crates/basilica-protocol",
+  "crates/basilica-executor",
+  "crates/basilica-miner",
+  "crates/basilica-validator",
+  "crates/basilica-billing",
+  "crates/basilica-payments",
+  "crates/bittensor",
+  "crates/basilica-api",
+  "crates/basilica-cli",
+  "crates/integration-tests",
+  "crates/collateral-contract",
 ]
 resolver = "2"
 
@@ -49,15 +51,15 @@ figment = { version = "0.10", features = ["toml", "env"] }
 
 # Database
 sqlx = { version = "0.7", features = [
-    "runtime-tokio-rustls",
-    "sqlite",
-    "uuid",
-    "chrono",
-    "json",
+  "runtime-tokio-rustls",
+  "sqlite",
+  "uuid",
+  "chrono",
+  "json",
 ] }
 
 # gRPC and networking
-tonic = "0.10"
+tonic = { version = "0.10", features = ["tls"] }
 tonic-build = "0.10"
 prost = "0.12"
 prost-types = "0.12"

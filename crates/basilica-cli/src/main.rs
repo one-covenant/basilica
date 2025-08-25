@@ -8,7 +8,8 @@ async fn main() {
     let args = Args::parse();
 
     if let Err(e) = args.run().await {
-        eprintln!("Error: {e}");
+        // Display message directly without "Error:" prefix
+        eprintln!("{}", e);
         std::process::exit(1);
     }
 }

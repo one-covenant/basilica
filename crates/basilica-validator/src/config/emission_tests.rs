@@ -7,32 +7,24 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
-    fn test_default_config_is_valid() {
+    fn test_default_config_is_invalid() {
         let config = EmissionConfig::default();
-        assert!(config.validate().is_ok());
+        assert!(config.validate().is_err()); // Default is intentionally empty
 
         // Verify default values
         assert_eq!(config.burn_percentage, 0.0);
         assert_eq!(config.burn_uid, DEFAULT_BURN_UID);
         assert_eq!(config.weight_set_interval_blocks, 360);
 
-        // Verify default GPU allocations
-        assert_eq!(config.gpu_allocations.len(), 2);
-        assert_eq!(config.gpu_allocations.get("H100"), Some(&40.0));
-        assert_eq!(config.gpu_allocations.get("H200"), Some(&60.0));
-
-        // Verify they sum to 100
-        let total: f64 = config.gpu_allocations.values().sum();
-        assert!((total - 100.0).abs() < 0.01);
+        // Verify default GPU allocations are empty (requires explicit config)
+        assert_eq!(config.gpu_allocations.len(), 0);
     }
 
     #[test]
     fn test_burn_percentage_validation() {
-        // Test valid ranges
-        let mut config = EmissionConfig {
-            burn_percentage: 0.0,
-            ..Default::default()
-        };
+        // Test valid ranges - use for_testing which has valid GPU allocations
+        let mut config = EmissionConfig::for_testing();
+        config.burn_percentage = 0.0;
         assert!(config.validate().is_ok());
 
         config.burn_percentage = 50.0;
@@ -101,11 +93,9 @@ mod tests {
 
     #[test]
     fn test_weight_interval_validation() {
-        // Test valid intervals
-        let mut config = EmissionConfig {
-            weight_set_interval_blocks: 1,
-            ..Default::default()
-        };
+        // Test valid intervals - use for_testing which has valid GPU allocations
+        let mut config = EmissionConfig::for_testing();
+        config.weight_set_interval_blocks = 1;
         assert!(config.validate().is_ok());
 
         config.weight_set_interval_blocks = 360;
@@ -121,7 +111,7 @@ mod tests {
 
     #[test]
     fn test_config_serialization() {
-        let config = EmissionConfig::default();
+        let config = EmissionConfig::for_testing(); // Use valid config for serialization test
 
         // Test TOML serialization/deserialization
         let toml_str = toml::to_string(&config).expect("Failed to serialize to TOML");
@@ -210,7 +200,7 @@ H200 = 30.0
         assert_eq!(merged.burn_percentage, 20.0); // Preserved
         assert_eq!(merged.burn_uid, 456); // Preserved
         assert_eq!(merged.weight_set_interval_blocks, 360); // Default
-        assert_eq!(merged.gpu_allocations.len(), 2); // Default GPU allocations
+        assert_eq!(merged.gpu_allocations.len(), 0); // Default GPU allocations (empty)
 
         // Test complete config override (no merging needed)
         let complete_config = EmissionConfig::for_testing();
@@ -221,12 +211,10 @@ H200 = 30.0
     #[test]
     fn test_edge_cases() {
         // Test extreme values - maximum values
-        let mut config = EmissionConfig {
-            burn_percentage: 100.0,
-            burn_uid: u16::MAX,
-            weight_set_interval_blocks: u64::MAX,
-            ..Default::default()
-        };
+        let mut config = EmissionConfig::for_testing();
+        config.burn_percentage = 100.0;
+        config.burn_uid = u16::MAX;
+        config.weight_set_interval_blocks = u64::MAX;
         assert!(config.validate().is_ok());
 
         // Test unicode in GPU model names
@@ -253,20 +241,23 @@ H200 = 30.0
 
     #[test]
     fn test_gpu_allocation_methods() {
-        let mut config = EmissionConfig::default();
+        let mut config = EmissionConfig::for_testing(); // Use testing config which has allocations
 
         // Test has_gpu_model
         assert!(config.has_gpu_model("H100"));
         assert!(config.has_gpu_model("H200"));
+        assert!(config.has_gpu_model("B200"));
         assert!(!config.has_gpu_model("A100"));
 
         // Test get_gpu_allocation
-        assert_eq!(config.get_gpu_allocation("H100"), Some(40.0));
-        assert_eq!(config.get_gpu_allocation("H200"), Some(60.0));
+        assert_eq!(config.get_gpu_allocation("H100"), Some(8.0));
+        assert_eq!(config.get_gpu_allocation("H200"), Some(12.0));
+        assert_eq!(config.get_gpu_allocation("B200"), Some(80.0));
         assert_eq!(config.get_gpu_allocation("A100"), None);
 
         // Test set_gpu_allocation with valid values
-        // First adjust existing allocations to make room
+        // Clear and set allocations that sum to 100%
+        config.gpu_allocations.clear();
         config.set_gpu_allocation("H100".to_string(), 30.0).unwrap();
         config.set_gpu_allocation("H200".to_string(), 50.0).unwrap();
         assert!(config.set_gpu_allocation("A100".to_string(), 20.0).is_ok());
@@ -318,7 +309,7 @@ H200 = 30.0
         assert_eq!(config.burn_percentage, 10.0);
         assert_eq!(config.burn_uid, 999);
         assert_eq!(config.weight_set_interval_blocks, 360);
-        assert_eq!(config.gpu_allocations.len(), 2);
+        assert_eq!(config.gpu_allocations.len(), 3);
 
         let total: f64 = config.gpu_allocations.values().sum();
         assert!((total - 100.0).abs() < 0.01);

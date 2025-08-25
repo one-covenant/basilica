@@ -103,8 +103,9 @@ impl EmissionConfig {
     /// Create a configuration for testing with custom values
     pub fn for_testing() -> Self {
         let mut gpu_allocations = HashMap::new();
-        gpu_allocations.insert("H100".to_string(), 50.0);
-        gpu_allocations.insert("H200".to_string(), 50.0);
+        gpu_allocations.insert("H100".to_string(), 8.0);
+        gpu_allocations.insert("H200".to_string(), 12.0);
+        gpu_allocations.insert("B200".to_string(), 80.0);
 
         Self {
             burn_percentage: 10.0,
@@ -164,9 +165,7 @@ impl EmissionConfig {
 
 impl Default for EmissionConfig {
     fn default() -> Self {
-        let mut gpu_allocations = HashMap::new();
-        gpu_allocations.insert("H100".to_string(), 40.0);
-        gpu_allocations.insert("H200".to_string(), 60.0);
+        let gpu_allocations = HashMap::new();
 
         Self {
             burn_percentage: 0.0,

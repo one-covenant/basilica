@@ -7,20 +7,6 @@ use chrono::{DateTime, Local};
 use std::collections::HashMap;
 use tabled::{settings::Style, Table, Tabled};
 
-/// Truncate container ID to first N characters for display (similar to Docker)
-fn truncate_container_id(container_id: &str) -> String {
-    const CONTAINER_ID_DISPLAY_LENGTH: usize = 12;
-
-    if container_id.len() <= CONTAINER_ID_DISPLAY_LENGTH {
-        container_id.to_string()
-    } else {
-        container_id
-            .chars()
-            .take(CONTAINER_ID_DISPLAY_LENGTH)
-            .collect()
-    }
-}
-
 /// Format RFC3339 timestamp to YY-MM-DD HH:MM:SS format
 fn format_timestamp(timestamp: &str) -> String {
     DateTime::parse_from_rfc3339(timestamp)
@@ -115,31 +101,41 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
 
 /// Display rental items in table format
 pub fn display_rental_items(rentals: &[RentalListItem]) -> Result<()> {
+    use crate::cache::RentalCache;
+
     #[derive(Tabled)]
     struct RentalRow {
+        #[tabled(rename = "GPU")]
+        gpu: String,
         #[tabled(rename = "Rental ID")]
         rental_id: String,
         #[tabled(rename = "State")]
         state: String,
-        #[tabled(rename = "Executor")]
-        executor: String,
-        #[tabled(rename = "Container")]
-        container: String,
         #[tabled(rename = "Image")]
         image: String,
         #[tabled(rename = "Created")]
         created: String,
     }
 
+    // Load cache to get GPU info
+    let cache = futures::executor::block_on(RentalCache::load()).unwrap_or_default();
+
     let rows: Vec<RentalRow> = rentals
         .iter()
-        .map(|rental| RentalRow {
-            rental_id: rental.rental_id.clone(),
-            state: rental.state.to_string(),
-            executor: rental.executor_id.clone(),
-            container: truncate_container_id(&rental.container_id),
-            image: rental.container_image.clone(),
-            created: format_timestamp(&rental.created_at),
+        .map(|rental| {
+            // Try to get GPU info from cache
+            let gpu = cache
+                .get_rental(&rental.rental_id)
+                .and_then(|cached| cached.gpu_info.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            RentalRow {
+                gpu,
+                rental_id: rental.rental_id.clone(),
+                state: rental.state.to_string(),
+                image: rental.container_image.clone(),
+                created: format_timestamp(&rental.created_at),
+            }
         })
         .collect();
 

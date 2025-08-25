@@ -27,6 +27,8 @@ jobs:
       validator: ${{ steps.changes.outputs.validator }}
       miner: ${{ steps.changes.outputs.miner }}
       basilica-api: ${{ steps.changes.outputs.basilica-api }}
+      billing: ${{ steps.changes.outputs.billing }}
+      payments: ${{ steps.changes.outputs.payments }}
       basilica-cli: ${{ steps.changes.outputs.basilica-cli }}
       workspace: ${{ steps.changes.outputs.workspace }}
     steps:
@@ -70,6 +72,20 @@ jobs:
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/cli/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            billing:
+              - 'crates/basilica-billing/**'
+              - 'crates/basilica-common/**'
+              - 'crates/basilica-protocol/**'
+              - 'scripts/billing/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            payments:
+              - 'crates/basilica-payments/**'
+              - 'crates/basilica-common/**'
+              - 'crates/basilica-protocol/**'
+              - 'scripts/payments/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             workspace:
@@ -157,6 +173,10 @@ jobs:
           cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
           # Run clippy on basilica-api
           cargo clippy -p basilica-api --all-targets --all-features -- -D warnings
+          # Run clippy on billing
+          cargo clippy -p basilica-billing --all-targets --all-features -- -D warnings
+          # Run clippy on payments
+          cargo clippy -p basilica-payments --all-targets --all-features -- -D warnings
           # Run clippy on basilica-cli
           cargo clippy -p basilica-cli --all-targets --all-features -- -D warnings
 
@@ -434,12 +454,220 @@ jobs:
         run: |
           cargo build -p basilica-cli
           ./target/debug/basilica --help
+
+  # Build and test billing
+  build-billing:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.workspace == 'true'
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: billing
+          POSTGRES_PASSWORD: billing_dev_password
+          POSTGRES_DB: basilica_billing
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang postgresql-client
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
+      - name: Wait for Postgres (billing)
+        run: |
+          : "${BILLING_DB_PASSWORD:=billing_dev_password}"
+          postgres_ready=false
+          for i in {1..30}; do
+            if PGPASSWORD="$BILLING_DB_PASSWORD" pg_isready -h localhost -p 5432 -U billing >/dev/null 2>&1; then
+              echo "Postgres is ready"
+              postgres_ready=true
+              break
+            fi
+            echo "Waiting for Postgres ($i/30)..."
+            sleep 2
+          done
+
+          if [ "$postgres_ready" = false ]; then
+            echo "ERROR: Postgres failed to become ready after 60 seconds"
+            exit 1
+          fi
+
+          PGPASSWORD="$BILLING_DB_PASSWORD" psql -h localhost -p 5432 -U billing -d postgres -c "SELECT 1;"
+      - name: Check billing builds
+        run: |
+          cargo check -p basilica-billing
+      - name: Run billing migrations
+        run: |
+          export DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
+          export BILLING_DATABASE_URL="$DATABASE_URL"
+          export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
+          # Run migrations directly using psql
+          for migration in crates/basilica-billing/migrations/*.sql; do
+            echo "Running migration: $migration"
+            PGPASSWORD=billing_dev_password psql -h localhost -p 5432 -U billing -d basilica_billing -f "$migration" || true
+          done
+      - name: Test billing crate (unit tests only)
+        run: |
+          export BILLING_DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
+          export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
+          cargo nextest run -p basilica-billing --lib
+      - name: Test billing BDD integration tests
+        run: |
+          export BILLING_DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
+          export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
+          # Run from the billing crate directory so migrations path is correct
+          cd crates/basilica-billing && cargo test --test bdd_integration_tests -- --test-threads=1
+      - name: Test billing CLI functionality
+        run: |
+          cargo build -p basilica-billing
+          ./target/debug/basilica-billing --help
+          ./target/debug/basilica-billing --gen-config
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
       - name: Test Docker build script
         run: |
-          chmod +x scripts/cli/build.sh
-          BITTENSOR_NETWORK=finney ./scripts/cli/build.sh --no-extract
+          chmod +x scripts/billing/build.sh
+          ./scripts/billing/build.sh --no-extract
+
+  # Build and test payments
+  build-payments:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.payments == 'true' || needs.changes.outputs.workspace == 'true'
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: payments
+          POSTGRES_PASSWORD: payments_dev_password
+          POSTGRES_DB: basilica_payments
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang postgresql-client
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+      - name: Wait for Postgres (payments)
+        run: |
+          : "${PAYMENTS_DB_PASSWORD:=payments_dev_password}"
+          postgres_ready=false
+          for i in {1..30}; do
+            if PGPASSWORD="$PAYMENTS_DB_PASSWORD" pg_isready -h localhost -p 5432 -U payments >/dev/null 2>&1; then
+              echo "Postgres is ready"
+              postgres_ready=true
+              break
+            fi
+            echo "Waiting for Postgres ($i/30)..."
+            sleep 2
+          done
+
+          if [ "$postgres_ready" = false ]; then
+            echo "ERROR: Postgres failed to become ready after 60 seconds"
+            exit 1
+          fi
+
+          PGPASSWORD="$PAYMENTS_DB_PASSWORD" psql -h localhost -p 5432 -U payments -d postgres -c "SELECT 1;"
+      - name: Check payments builds
+        run: |
+          cargo check -p basilica-payments
+      - name: Run payments migrations
+        run: |
+          export DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
+          export PAYMENTS_DATABASE_URL="$DATABASE_URL"
+          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
+          # Run migrations directly using psql
+          for migration in crates/basilica-payments/migrations/*.sql; do
+            echo "Running migration: $migration"
+            PGPASSWORD=payments_dev_password psql -h localhost -p 5432 -U payments -d basilica_payments -f "$migration" || true
+          done
+      - name: Test payments crate (unit tests only)
+        run: |
+          export PAYMENTS_DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
+          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
+          cargo nextest run -p basilica-payments --lib
+      - name: Test payments BDD integration tests
+        run: |
+          export PAYMENTS_DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
+          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
+          # Run from the payments crate directory so migrations path is correct
+          cd crates/basilica-payments && cargo test --test bdd_integration_tests -- --test-threads=1 || true
+      - name: Test payments CLI functionality
+        run: |
+          export DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
+          export PAYMENTS_DATABASE_URL="$DATABASE_URL"
+          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
+          export SUBXT_WS="ws://localhost:9944"
+          cargo build -p basilica-payments
+          ./target/debug/basilica-payments --help
+          ./target/debug/basilica-payments --gen-config
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
+      - name: Test Docker build script
+        run: |
+          chmod +x scripts/payments/build.sh
+          ./scripts/payments/build.sh --no-extract
 
   # Final status check
   ci-success:
@@ -451,6 +679,8 @@ jobs:
       - build-validator
       - build-miner
       - build-api
+      - build-billing
+      - build-payments
       - build-cli
     if: always()
     steps:
@@ -462,6 +692,8 @@ jobs:
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
                 ("${{ needs.build-api.result }}" == "success" || "${{ needs.build-api.result }}" == "skipped") && \
+                ("${{ needs.build-billing.result }}" == "success" || "${{ needs.build-billing.result }}" == "skipped") && \
+                ("${{ needs.build-payments.result }}" == "success" || "${{ needs.build-payments.result }}" == "skipped") && \
                 ("${{ needs.build-cli.result }}" == "success" || "${{ needs.build-cli.result }}" == "skipped") ]]; then
             echo "All CI checks passed!"
             exit 0

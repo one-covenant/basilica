@@ -63,16 +63,52 @@ async fn run_server_mode(config: basilica_executor::cli::args::ServerConfig) -> 
         config.config_path.display()
     );
 
-    if config.metrics_enabled {
+    let metrics_recorder = if config.metrics_enabled {
         init_metrics(config.metrics_addr).await?;
         info!("Metrics server started on: {}", config.metrics_addr);
-    }
+        Some(std::sync::Arc::new(
+            basilica_executor::metrics_recorder::PrometheusMetricsRecorder::new(),
+        )
+            as std::sync::Arc<
+                dyn basilica_common::metrics::traits::MetricsRecorder,
+            >)
+    } else {
+        None
+    };
 
     let state = ExecutorState::new(executor_config).await?;
 
     if let Err(e) = state.health_check().await {
         error!("Initial health check failed: {}", e);
         return Err(e);
+    }
+
+    // Start telemetry collection if configured
+    if let Some(telemetry_config) = state.config.system.telemetry.clone() {
+        if state.config.system.telemetry_monitor.enabled {
+            info!("Starting telemetry collection");
+
+            // Get executor ID from state or config
+            let executor_id = state
+                .config
+                .executor_id
+                .clone()
+                .unwrap_or_else(|| state.id.to_string());
+
+            // Get docker socket path and convert to docker_host format
+            let docker_host = format!("unix://{}", state.config.docker.socket_path);
+
+            let monitor_cfg = state.config.system.telemetry_monitor.clone();
+
+            // Start monitoring (spawns tasks internally)
+            basilica_executor::system_monitor::spawn_monitoring(
+                executor_id,
+                docker_host,
+                monitor_cfg,
+                telemetry_config,
+                metrics_recorder.clone(),
+            );
+        }
     }
 
     let listen_addr = SocketAddr::new(state.config.server.host.parse()?, state.config.server.port);

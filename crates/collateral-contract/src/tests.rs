@@ -1,6 +1,7 @@
 // The unit tests are for testing against local network
 // Just can be executed if local subtensor node is running
 use super::*;
+use crate::config::LOCAL_CHAIN_ID;
 use alloy::hex::FromHex;
 use alloy_primitives::Bytes;
 use alloy_sol_types::{sol, SolCall};
@@ -9,7 +10,7 @@ use proxy::Proxy;
 use subxt::{OnlineClient, PolkadotConfig};
 use subxt_signer::sr25519::dev;
 
-use config::{LOCAL_CHAIN_ID, LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
+use config::{LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
 
 // function to initialize the contract
 sol! {

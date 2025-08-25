@@ -15,6 +15,7 @@ pub struct CachedRental {
     pub container_id: String,
     pub container_name: String,
     pub executor_id: String,
+    pub gpu_info: Option<String>, // e.g., "2x H100 (80GB)"
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub cached_at: chrono::DateTime<chrono::Utc>,
 }
@@ -30,11 +31,11 @@ impl RentalCache {
     /// Load rental cache from default location
     pub async fn load() -> Result<Self> {
         let cache_path = CliConfig::rental_cache_path()?;
-        Self::load_from_path(&cache_path).await
+        Self::load_from_file(&cache_path).await
     }
 
     /// Load rental cache from specific path
-    pub async fn load_from_path(path: &Path) -> Result<Self> {
+    pub async fn load_from_file(path: &Path) -> Result<Self> {
         if !path.exists() {
             debug!(
                 "Rental cache not found at {}, creating new cache",

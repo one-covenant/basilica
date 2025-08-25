@@ -1,5 +1,6 @@
 //! System monitoring configuration
 
+use super::types::{TelemetryConfig, TelemetryMonitorConfig};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -38,6 +39,14 @@ pub struct SystemConfig {
 
     /// Enable metrics recording
     pub enable_metrics_recording: bool,
+
+    /// Telemetry service configuration
+    #[serde(default)]
+    pub telemetry: Option<TelemetryConfig>,
+
+    /// Telemetry monitor configuration
+    #[serde(default)]
+    pub telemetry_monitor: TelemetryMonitorConfig,
 }
 
 impl Default for SystemConfig {
@@ -53,6 +62,8 @@ impl Default for SystemConfig {
             max_gpu_memory_usage: 90.0,
             min_disk_space_gb: 10,
             enable_metrics_recording: true,
+            telemetry: None,
+            telemetry_monitor: TelemetryMonitorConfig::default(),
         }
     }
 }

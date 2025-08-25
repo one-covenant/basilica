@@ -59,6 +59,11 @@ fs_extra = "1.3"
 num_cpus = "1.16"
 # TOML configuration
 toml = "0.8"
+# Billing telemetry dependencies
+flume = { version = "0.11", features = ["async"] }
+regex = "1.10"
+once_cell = "1.19"
+http = "0.2"
 
 
 [dev-dependencies]

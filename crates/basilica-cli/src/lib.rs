@@ -21,11 +21,10 @@ pub mod cli;
 pub mod client;
 pub mod config;
 pub mod error;
-// pub mod interactive; // Temporarily disabled - will re-enable with proper interactive selection
+pub mod interactive;
 pub mod output;
 pub mod progress;
 pub mod ssh;
-pub mod wallet;
 
 pub use cli::*;
 pub use error::*;

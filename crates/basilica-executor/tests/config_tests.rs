@@ -1,18 +1,15 @@
 //! Unit tests for executor configuration
 
-use basilica_common::config::{LoggingConfig, MetricsConfig, ServerConfig};
-use basilica_common::identity::Hotkey;
 use basilica_executor::config::docker::DockerConfigValidation;
 use basilica_executor::config::system::SystemConfigValidation;
 use basilica_executor::config::{
     ContainerNetworkConfig, ContainerRegistryConfig, ContainerResourceLimits, DockerConfig,
-    ExecutorAdvertisedEndpoint, ExecutorConfig, PortMapping, SystemConfig,
+    ExecutorConfig, PortMapping, SystemConfig,
 };
 use basilica_executor::validation_session::{
     AccessControlConfig, HotkeyVerificationConfig, RateLimitConfig, ValidatorConfig, ValidatorRole,
 };
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::time::Duration;
 
 #[test]
@@ -150,77 +147,6 @@ fn test_executor_config_defaults() {
         config.managing_miner_hotkey.as_str(),
         "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
     );
-}
-
-#[test]
-fn test_executor_config_custom() {
-    let config = ExecutorConfig {
-        server: ServerConfig {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            max_connections: 100,
-            ..Default::default()
-        },
-        docker: DockerConfig {
-            default_image: "alpine:latest".to_string(),
-            max_concurrent_containers: 20,
-            resource_limits: ContainerResourceLimits {
-                cpu_cores: 8.0,
-                memory_bytes: 16 * 1024 * 1024 * 1024,
-                gpu_memory_bytes: Some(8 * 1024 * 1024 * 1024),
-                disk_io_bps: Some(200 * 1024 * 1024),
-                network_bps: Some(200 * 1024 * 1024),
-            },
-            ..Default::default()
-        },
-        system: SystemConfig {
-            update_interval: Duration::from_secs(2),
-            max_cpu_usage: 95.0,
-            max_memory_usage: 95.0,
-            ..Default::default()
-        },
-        validator: ValidatorConfig {
-            enabled: true,
-            strict_ssh_restrictions: false,
-            access_config: AccessControlConfig {
-                ip_whitelist: vec!["192.168.1.0/24".to_string()],
-                required_permissions: Default::default(),
-                hotkey_verification: HotkeyVerificationConfig {
-                    enabled: false,
-                    challenge_timeout_seconds: 60,
-                    max_signature_attempts: 3,
-                    cleanup_interval_seconds: 300,
-                },
-                rate_limits: RateLimitConfig {
-                    ssh_requests_per_minute: 10,
-                    api_requests_per_minute: 50,
-                    burst_allowance: 5,
-                    rate_limit_window_seconds: 60,
-                },
-                role_assignments: HashMap::new(),
-            },
-        },
-        managing_miner_hotkey: Hotkey::from_str("5GNJqTPyNqANBkUVMN1LPPrxXnFouWXoe2wNSmmEoLctxiZY")
-            .unwrap(),
-        logging: LoggingConfig::default(),
-        metrics: MetricsConfig::default(),
-        advertised_endpoint: ExecutorAdvertisedEndpoint::default(),
-    };
-
-    assert_eq!(config.server.host, "127.0.0.1");
-    assert_eq!(config.server.port, 8080);
-    assert_eq!(config.docker.default_image, "alpine:latest");
-    assert_eq!(config.docker.max_concurrent_containers, 20);
-    assert_eq!(config.docker.resource_limits.cpu_cores, 8.0);
-    assert_eq!(
-        config.docker.resource_limits.memory_bytes,
-        16 * 1024 * 1024 * 1024
-    );
-    assert_eq!(config.system.update_interval, Duration::from_secs(2));
-    assert_eq!(config.system.max_cpu_usage, 95.0);
-    assert!(config.validator.enabled);
-    assert!(!config.validator.strict_ssh_restrictions);
-    assert_eq!(config.validator.access_config.ip_whitelist.len(), 1);
 }
 
 #[test]

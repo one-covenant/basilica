@@ -9,7 +9,6 @@ use base64::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::Path;
 use tracing::{debug, info};
 
 /// Auth0 userinfo response
@@ -182,11 +181,7 @@ fn decode_jwt_scopes(token: &str) -> Option<Vec<String>> {
 }
 
 /// Test the authentication token by calling Auth0's /userinfo endpoint
-pub async fn handle_test_auth(
-    config: &CliConfig,
-    _config_path: impl AsRef<Path>,
-    no_auth: bool,
-) -> Result<()> {
+pub async fn handle_test_auth(config: &CliConfig, no_auth: bool) -> Result<()> {
     println!("Testing authentication token...\n");
 
     // Get the authenticated client
@@ -282,11 +277,7 @@ pub async fn handle_test_auth(
 }
 
 /// Test API authentication by making a request to your Basilica API
-pub async fn handle_test_api_auth(
-    config: &CliConfig,
-    _config_path: impl AsRef<Path>,
-    no_auth: bool,
-) -> Result<()> {
+pub async fn handle_test_api_auth(config: &CliConfig, no_auth: bool) -> Result<()> {
     println!("Testing Basilica API authentication...\n");
 
     // Create authenticated client

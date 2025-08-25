@@ -74,9 +74,9 @@ pub struct BasilicaClient {
 
 impl BasilicaClient {
     /// Create a new client with default configuration
-    pub fn new(base_url: impl Into<String>) -> Result<Self> {
+    pub fn new(base_url: impl Into<String>, timeout: Duration) -> Result<Self> {
         let http_client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(timeout)
             .build()
             .map_err(Error::HttpClient)?;
 
@@ -88,29 +88,9 @@ impl BasilicaClient {
         })
     }
 
-    /// Create a new client using the builder pattern
-    pub fn builder() -> ClientBuilder {
-        ClientBuilder::default()
-    }
-
-    /// Set a new bearer token at runtime
-    pub async fn set_bearer_token(&self, token: impl Into<String>) {
-        *self.bearer_token.write().await = Some(token.into());
-    }
-
-    /// Clear the current bearer token
-    pub async fn clear_bearer_token(&self) {
-        *self.bearer_token.write().await = None;
-    }
-
     /// Get the current bearer token (if any)
     pub async fn get_bearer_token(&self) -> Option<String> {
         self.bearer_token.read().await.clone()
-    }
-
-    /// Check if the client has any authentication configured
-    pub async fn has_auth(&self) -> bool {
-        self.bearer_token.read().await.is_some()
     }
 
     // ===== Rentals =====
@@ -536,7 +516,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = BasilicaClient::new(mock_server.uri()).unwrap();
+        let client = BasilicaClient::new(mock_server.uri(), Duration::from_secs(30)).unwrap();
         let health = client.health_check().await.unwrap();
 
         assert_eq!(health.status, "healthy");
@@ -587,7 +567,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = BasilicaClient::new(mock_server.uri()).unwrap();
+        let client = BasilicaClient::new(mock_server.uri(), Duration::from_secs(30)).unwrap();
         let result = client.health_check().await;
 
         assert!(result.is_err());

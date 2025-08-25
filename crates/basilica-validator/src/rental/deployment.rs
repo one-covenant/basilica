@@ -353,7 +353,7 @@ impl DeploymentManager {
             }
 
             // Validate port range
-            if port.host_port == 0 || port.host_port > 65535 {
+            if port.host_port > 65535 {
                 return Err(anyhow::anyhow!("Invalid host port {}", port.host_port));
             }
 

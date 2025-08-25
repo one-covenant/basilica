@@ -96,6 +96,7 @@ pub async fn start_rental(
         resources: request.resources,
         command: request.command,
         volumes: request.volumes,
+        no_ssh: request.no_ssh,
     };
 
     let validator_response = state

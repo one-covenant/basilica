@@ -1,6 +1,6 @@
 use crate::cli::{commands::Commands, handlers};
 use crate::config::CliConfig;
-use crate::error::{CliError, Result};
+use crate::error::Result;
 use clap::Parser;
 use etcetera::{choose_base_strategy, BaseStrategy};
 use std::path::{Path, PathBuf};
@@ -32,10 +32,6 @@ NETWORK COMPONENTS:
   basilica validator                # Run validator
   basilica miner                    # Run miner  
   basilica executor                 # Run executor
-
-CONFIGURATION:
-  basilica config show              # Show configuration
-  basilica wallet                   # Show wallet info
 
 AUTHENTICATION:
   basilica login                    # Log in to Basilica
@@ -81,51 +77,25 @@ impl Args {
             .with_target(false)
             .init();
 
-        // Check if config exists for commands that require it
-        match self.command {
-            Commands::Login { .. } | Commands::Logout => {
-                // Login/Logout command doesn't require existing config
-            }
-            _ => {
-                // Check if config exists for other commands
-                if CliConfig::config_exists().is_err() {
-                    return Err(CliError::config_not_initialized(
-                        "Unable to determine config directory",
-                    ));
-                }
-                if !CliConfig::config_exists()? {
-                    return Err(CliError::config_not_initialized(
-                        "Please run 'basilica login' to initialize.",
-                    ));
-                }
-            }
-        }
-
-        // Determine config path and load config once
-        let config_path = if let Some(path) = &self.config {
-            expand_tilde(path)
+        // Load config using the common loader pattern
+        let config = if let Some(path) = &self.config {
+            let expanded_path = expand_tilde(path);
+            CliConfig::load_from_file(&expanded_path)?
         } else {
-            CliConfig::default_config_path()?
+            CliConfig::load()?
         };
-        let config = CliConfig::load_from_path(&config_path).await?;
 
         match self.command {
-            // Setup and configuration
-            Commands::Config { action } => {
-                handlers::config::handle_config(action, &config, &config_path).await
-            }
-            Commands::Wallet { name } => handlers::wallet::handle_wallet(&config, name).await,
             Commands::Login { device_code } => {
-                handlers::auth::handle_login(device_code, &config, &config_path).await
+                handlers::auth::handle_login(device_code, &config).await
             }
             Commands::Logout => handlers::auth::handle_logout(&config).await,
             #[cfg(debug_assertions)]
             Commands::TestAuth { api } => {
                 if api {
-                    handlers::test_auth::handle_test_api_auth(&config, &config_path, self.no_auth)
-                        .await
+                    handlers::test_auth::handle_test_api_auth(&config, self.no_auth).await
                 } else {
-                    handlers::test_auth::handle_test_auth(&config, &config_path, self.no_auth).await
+                    handlers::test_auth::handle_test_auth(&config, self.no_auth).await
                 }
             }
 
@@ -145,10 +115,10 @@ impl Args {
             Commands::Logs { target, options } => {
                 handlers::gpu_rental::handle_logs(target, options, &config, self.no_auth).await
             }
-            Commands::Down { targets } => {
-                handlers::gpu_rental::handle_down(targets, &config, self.no_auth).await
+            Commands::Down { target } => {
+                handlers::gpu_rental::handle_down(target, &config, self.no_auth).await
             }
-            Commands::Exec { target, command } => {
+            Commands::Exec { command, target } => {
                 handlers::gpu_rental::handle_exec(target, command, &config, self.no_auth).await
             }
             Commands::Ssh { target, options } => {

@@ -114,15 +114,56 @@ curl http://localhost:8080/metrics
 - `basilica_cpu_usage_percent` - CPU utilization
 - `basilica_memory_usage_bytes` - Memory usage  
 - `basilica_gpu_utilization_percent` - GPU utilization (executor only)
+- `basilica_network_bandwidth_mbps` - Network bandwidth usage (executor)
+- `basilica_disk_usage_percent` - Disk usage percentage
+
+### GPU Metrics (Executor Only)
+- `basilica_gpu_memory_used_bytes` - GPU memory usage
+- `basilica_gpu_temperature_celsius` - GPU temperature
+- `basilica_gpu_power_watts` - GPU power consumption
+- `basilica_gpu_clock_mhz` - GPU clock speed
 
 ### Service Performance
 - `basilica_validator_validations_total` - Total validations performed
 - `basilica_miner_executor_health_checks_total` - Executor health checks
 - `basilica_executor_grpc_requests_total` - gRPC requests handled
+- `basilica_executor_containers_running` - Active Docker containers
 
 ### Network Activity
 - `basilica_validator_ssh_connections_total` - SSH connections
 - `basilica_miner_ssh_sessions_active` - Active SSH sessions
+
+## Telemetry Streaming
+
+The executor can optionally stream telemetry data to a billing service for usage tracking:
+
+### Configuration
+
+```toml
+# In executor.toml
+[system.telemetry]
+url = "https://billing-service.example.com:50051"
+api_key = "optional-api-key"  # Not currently enforced
+api_key_header = "x-api-key"
+
+[system.telemetry_monitor]
+enabled = true  # Opt-in telemetry streaming
+host_interval_secs = 5
+container_sample_secs = 2
+```
+
+### Telemetry Data Includes
+
+- **Resource Utilization**: CPU, memory, disk, network bandwidth
+- **GPU Metrics**: Full NVIDIA GPU telemetry
+- **Container Metrics**: Per-container resource usage
+- **Lifecycle Events**: Container start/stop events
+
+The telemetry system features:
+- Automatic reconnection with exponential backoff
+- Buffered metric collection
+- Real-time network bandwidth calculation
+- Per-container resource tracking
 
 ## Production Monitoring
 

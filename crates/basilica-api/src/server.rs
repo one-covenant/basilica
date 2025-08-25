@@ -110,11 +110,13 @@ impl Server {
         );
 
         // Create validator client
-        let validator_client = Arc::new(ValidatorClient::new(&validator_endpoint).map_err(
-            |e| Error::Internal {
-                message: format!("Failed to create validator client: {e}"),
-            },
-        )?);
+        let validator_client = Arc::new(
+            ValidatorClient::new(&validator_endpoint, config.request_timeout()).map_err(|e| {
+                Error::Internal {
+                    message: format!("Failed to create validator client: {e}"),
+                }
+            })?,
+        );
 
         // Create HTTP client for validator communication
         let http_client = reqwest::Client::builder()

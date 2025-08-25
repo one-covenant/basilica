@@ -10,10 +10,12 @@
 mod core;
 
 // Public submodules
+pub mod aead;
 pub mod ed25519;
 pub mod kdf;
 pub mod keys;
 pub mod p256;
+pub mod wallet;
 
 // Re-export core hashing and symmetric encryption from core module
 pub use core::{
@@ -24,7 +26,9 @@ pub use core::{
 };
 
 // Re-export commonly used types and functions
+pub use aead::Aead;
 pub use ed25519::{Ed25519KeyPair, Ed25519PrivateKey, Ed25519PublicKey};
 pub use kdf::{argon2_derive_key, pbkdf2_derive_key, KdfParams};
 pub use keys::{generate_ed25519_keypair, generate_p256_keypair, generate_p256_keypair_formatted};
 pub use p256::{verify_p256_signature, P256KeyPair, P256PrivateKey, P256PublicKey, P256Signature};
+pub use wallet::{generate_sr25519_wallet, Sr25519Wallet};

@@ -4,6 +4,7 @@
 //! Provides high-level interface for wallet management, transaction submission,
 //! and chain state queries.
 
+pub mod chain_monitor;
 pub mod discovery;
 pub mod error;
 pub mod registration;

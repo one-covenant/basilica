@@ -239,6 +239,38 @@ ssh_requests_per_minute = 10
 api_requests_per_minute = 100
 ```
 
+### Telemetry Configuration
+
+Configure telemetry streaming to billing service (opt-in):
+
+```toml
+[system.telemetry]
+# Billing service endpoint for telemetry streaming
+url = "https://billing-service.example.com:50051"
+# Optional API key for authentication (not currently enforced by billing service)
+api_key = "your-api-key"
+# Header name for API key
+api_key_header = "x-api-key"
+
+[system.telemetry_monitor]
+# Enable telemetry collection and streaming (opt-in, default: false)
+enabled = false
+# Host metrics collection interval in seconds
+host_interval_secs = 5
+# Queue capacity for telemetry buffering
+queue_capacity = 4096
+# Container metrics sampling interval in seconds
+container_sample_secs = 2
+# Update lifecycle status to billing service
+update_lifecycle_status = true
+```
+
+When enabled, the executor streams real-time telemetry data including:
+- **System Metrics**: CPU, memory, disk, network bandwidth usage
+- **GPU Metrics**: GPU utilization, memory, temperature, power usage
+- **Container Metrics**: Per-container resource usage for running tasks
+- **Network Bandwidth**: Real-time network throughput calculation
+
 ### Network Configuration
 
 Configure container network isolation:
@@ -266,6 +298,38 @@ grpcurl -plaintext localhost:50051 health.v1.Health/Check
 # View system metrics
 curl http://localhost:9090/metrics
 ```
+
+### System Monitoring
+
+The executor includes a comprehensive system monitoring module that tracks:
+
+- **CPU Metrics**: Usage percentage, load average
+- **Memory Metrics**: Used/available memory, swap usage
+- **Disk Metrics**: Disk usage, available space
+- **Network Metrics**: Real-time bandwidth calculation using time-delta approach
+- **GPU Metrics** (NVIDIA only): 
+  - Utilization percentage
+  - Memory usage (used/total)
+  - Temperature
+  - Power draw
+  - Clock speeds
+
+### Telemetry Streaming
+
+When telemetry is enabled, the executor streams metrics to a billing service using gRPC:
+
+```bash
+# Check if telemetry is active (when enabled in config)
+docker logs basilica-executor | grep "opening data ingest stream"
+
+# Monitor telemetry stream status
+docker logs basilica-executor | grep "stream closed"
+```
+
+The telemetry stream includes:
+- Automatic reconnection with exponential backoff
+- Buffered metric collection to handle network interruptions
+- Lifecycle status updates (e.g., container started/stopped)
 
 ### GPU Monitoring
 

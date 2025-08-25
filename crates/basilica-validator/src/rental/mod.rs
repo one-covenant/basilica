@@ -14,7 +14,7 @@ pub mod types;
 
 pub use container_client::ContainerClient;
 pub use deployment::DeploymentManager;
-pub use monitoring::{HealthMonitor, LogStreamer};
+pub use monitoring::{DatabaseHealthMonitor, LogStreamer};
 pub use types::*;
 
 use crate::miner_prover::miner_client::{AuthenticatedMinerConnection, MinerClient};
@@ -31,7 +31,7 @@ pub struct RentalManager {
     /// Log streamer
     log_streamer: Arc<LogStreamer>,
     /// Health monitor
-    health_monitor: Arc<HealthMonitor>,
+    health_monitor: Arc<DatabaseHealthMonitor>,
     /// Miner client for reconnections
     miner_client: Arc<MinerClient>,
     /// SSH key manager for validator keys
@@ -53,31 +53,45 @@ fn parse_ssh_host(credentials: &str) -> Result<&str> {
     Ok(host)
 }
 impl RentalManager {
-    /// Create a new rental manager
-    pub fn new(miner_client: Arc<MinerClient>, persistence: Arc<SimplePersistence>) -> Self {
+    /// Helper function to create a ContainerClient with SSH credentials
+    fn create_container_client(&self, ssh_credentials: &str) -> Result<ContainerClient> {
+        let private_key_path = self
+            .ssh_key_manager
+            .as_ref()
+            .and_then(|km| km.get_persistent_key())
+            .map(|(_, path)| path.clone());
+
+        ContainerClient::new(ssh_credentials.to_string(), private_key_path)
+    }
+
+    /// Create a new rental manager with SSH key manager
+    pub fn new(
+        miner_client: Arc<MinerClient>,
+        persistence: Arc<SimplePersistence>,
+        ssh_key_manager: Arc<ValidatorSshKeyManager>,
+    ) -> Self {
         let deployment_manager = Arc::new(DeploymentManager::new());
         let log_streamer = Arc::new(LogStreamer::new());
-        let health_monitor = Arc::new(HealthMonitor::new());
+
+        // Create health monitor with SSH key manager
+        let health_monitor = Arc::new(DatabaseHealthMonitor::new(
+            persistence.clone(),
+            ssh_key_manager.clone(),
+        ));
 
         Self {
             persistence,
             deployment_manager: deployment_manager.clone(),
             log_streamer: log_streamer.clone(),
-            health_monitor: health_monitor.clone(),
+            health_monitor,
             miner_client,
-            ssh_key_manager: None,
+            ssh_key_manager: Some(ssh_key_manager),
         }
     }
 
-    /// Create a new rental manager with SSH key manager
-    pub fn with_ssh_key_manager(
-        miner_client: Arc<MinerClient>,
-        persistence: Arc<SimplePersistence>,
-        ssh_key_manager: Arc<ValidatorSshKeyManager>,
-    ) -> Self {
-        let mut manager = Self::new(miner_client, persistence);
-        manager.ssh_key_manager = Some(ssh_key_manager);
-        manager
+    // Start the monitoring loop
+    pub fn start_monitor(&self) {
+        self.health_monitor.start_monitoring_loop();
     }
 
     /// Start a new rental
@@ -89,7 +103,7 @@ impl RentalManager {
         // Generate rental ID
         let rental_id = format!("rental-{}", Uuid::new_v4());
 
-        let (validator_public_key, validator_private_key_path) = self
+        let (validator_public_key, _validator_private_key_path) = self
             .ssh_key_manager
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("SSH key manager is required for rentals"))?
@@ -111,11 +125,7 @@ impl RentalManager {
             )
             .await?;
 
-        // Create container client with SSH credentials and validator's private key
-        let container_client = ContainerClient::new(
-            ssh_session.access_credentials.clone(),
-            Some(validator_private_key_path),
-        )?;
+        let container_client = self.create_container_client(&ssh_session.access_credentials)?;
 
         // Deploy container with end-user's SSH public key
         let container_info = match self
@@ -202,15 +212,7 @@ impl RentalManager {
         // Save to persistence
         self.persistence.save_rental(&rental_info).await?;
 
-        // Start health monitoring
-        if let Err(e) = self
-            .health_monitor
-            .start_monitoring(&rental_id, &container_client)
-            .await
-        {
-            let _ = self.persistence.delete_rental(&rental_id).await;
-            return Err(e);
-        }
+        // Health monitoring happens automatically via the database monitor loop
 
         Ok(RentalResponse {
             rental_id,
@@ -228,13 +230,7 @@ impl RentalManager {
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
         // Get container status using validator SSH credentials
-        let container_client = ContainerClient::new(
-            rental_info.ssh_credentials.clone(),
-            self.ssh_key_manager
-                .as_ref()
-                .and_then(|km| km.get_persistent_key())
-                .map(|(_, path)| path.clone()),
-        )?;
+        let container_client = self.create_container_client(&rental_info.ssh_credentials)?;
 
         let container_status = container_client
             .get_container_status(&rental_info.container_id)
@@ -262,17 +258,8 @@ impl RentalManager {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
-        // Stop health monitoring
-        self.health_monitor.stop_monitoring(rental_id).await?;
-
         // Stop container using validator SSH credentials
-        let container_client = ContainerClient::new(
-            rental_info.ssh_credentials.clone(),
-            self.ssh_key_manager
-                .as_ref()
-                .and_then(|km| km.get_persistent_key())
-                .map(|(_, path)| path.clone()),
-        )?;
+        let container_client = self.create_container_client(&rental_info.ssh_credentials)?;
 
         self.deployment_manager
             .stop_container(&container_client, &rental_info.container_id, force)
@@ -310,13 +297,7 @@ impl RentalManager {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Rental not found"))?;
 
-        let container_client = ContainerClient::new(
-            rental_info.ssh_credentials.clone(),
-            self.ssh_key_manager
-                .as_ref()
-                .and_then(|km| km.get_persistent_key())
-                .map(|(_, path)| path.clone()),
-        )?;
+        let container_client = self.create_container_client(&rental_info.ssh_credentials)?;
 
         self.log_streamer
             .stream_logs(
@@ -366,6 +347,13 @@ impl RentalManager {
         self.persistence
             .list_validator_rentals(validator_hotkey)
             .await
+    }
+}
+
+impl Drop for RentalManager {
+    fn drop(&mut self) {
+        self.health_monitor.stop();
+        tracing::debug!("Stopped health monitor for RentalManager");
     }
 }
 

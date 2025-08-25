@@ -2,15 +2,16 @@
 
 use crate::cache::{CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
+use crate::cli::handlers::gpu_rental_helpers::{
+    get_ssh_credentials_from_cache, resolve_target_rental,
+};
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::output::{
-    json_output, print_error, print_info, print_link, print_success, table_output,
+    compress_path, json_output, print_error, print_info, print_success, table_output,
 };
-use crate::progress::{
-    complete_spinner_and_clear, complete_spinner_error, create_progress_bar, create_spinner,
-};
+use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
 use basilica_api::api::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
@@ -18,8 +19,10 @@ use basilica_api::api::types::{
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
 use basilica_validator::rental::types::RentalState;
+use console::style;
 use reqwest::StatusCode;
 use std::path::PathBuf;
+use std::time::Duration;
 use tabled::{settings::Style, Table, Tabled};
 use tracing::debug;
 
@@ -63,16 +66,14 @@ pub async fn handle_ls(
         // Format as table
         #[derive(Tabled)]
         struct ExecutorRow {
+            #[tabled(rename = "GPU")]
+            gpu_info: String,
             #[tabled(rename = "Executor ID")]
             id: String,
-            // #[tabled(rename = "GPUs")]
-            // gpu_count: String,
-            // #[tabled(rename = "GPU Info")]
-            // gpu_info: String,
-            // #[tabled(rename = "CPU")]
-            // cpu: String,
-            // #[tabled(rename = "RAM")]
-            // ram: String,
+            #[tabled(rename = "CPU")]
+            cpu: String,
+            #[tabled(rename = "RAM")]
+            ram: String,
             #[tabled(rename = "Score")]
             score: String,
             #[tabled(rename = "Uptime")]
@@ -83,20 +84,39 @@ pub async fn handle_ls(
             .available_executors
             .into_iter()
             .map(|executor| {
-                // let (gpu_count, gpu_info) = if executor.executor.gpu_specs.is_empty() {
-                //     ("0".to_string(), "No GPU".to_string())
-                // } else {
-                //     let gpu_names: Vec<String> = executor
-                //         .executor
-                //         .gpu_specs
-                //         .iter()
-                //         .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
-                //         .collect();
-                //     (
-                //         executor.executor.gpu_specs.len().to_string(),
-                //         gpu_names.join(", "),
-                //     )
-                // };
+                let gpu_info = if executor.executor.gpu_specs.is_empty() {
+                    "No GPU".to_string()
+                } else if executor.executor.gpu_specs.len() == 1 {
+                    // Single GPU
+                    let gpu = &executor.executor.gpu_specs[0];
+                    format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+                } else {
+                    // Multiple GPUs - check if they're all the same model
+                    let first_gpu = &executor.executor.gpu_specs[0];
+                    let all_same =
+                        executor.executor.gpu_specs.iter().all(|g| {
+                            g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb
+                        });
+
+                    if all_same {
+                        // All GPUs are identical - use count prefix format
+                        format!(
+                            "{}x {} ({}GB)",
+                            executor.executor.gpu_specs.len(),
+                            first_gpu.name,
+                            first_gpu.memory_gb
+                        )
+                    } else {
+                        // Different GPU models - list them individually
+                        let gpu_names: Vec<String> = executor
+                            .executor
+                            .gpu_specs
+                            .iter()
+                            .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                            .collect();
+                        gpu_names.join(", ")
+                    }
+                };
 
                 // Remove miner prefix from executor ID if present
                 let executor_id = match executor.executor.id.split_once("__") {
@@ -105,11 +125,10 @@ pub async fn handle_ls(
                 };
 
                 ExecutorRow {
+                    gpu_info,
                     id: executor_id,
-                    // gpu_count,
-                    // gpu_info,
-                    // cpu: format!("{} cores", executor.executor.cpu_specs.cores),
-                    // ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
+                    cpu: format!("{} cores", executor.executor.cpu_specs.cores),
+                    ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
                     score: format!("{:.2}", executor.availability.verification_score),
                     uptime: format!("{:.1}%", executor.availability.uptime_percentage),
                 }
@@ -127,12 +146,57 @@ pub async fn handle_ls(
 
 /// Handle the `up` command - provision GPU instances
 pub async fn handle_up(
-    target: String,
+    target: Option<String>,
     options: UpOptions,
     config: &CliConfig,
     no_auth: bool,
 ) -> Result<()> {
     let api_client = create_authenticated_client(config, no_auth).await?;
+
+    // If no target provided, fetch available executors and prompt for selection
+    let (target, executor_details) = if let Some(t) = target {
+        (t, None)
+    } else {
+        let spinner = create_spinner("Fetching available executors...");
+
+        // Build query from options
+        let query = ListAvailableExecutorsQuery {
+            available: Some(true),
+            min_gpu_memory: None,
+            gpu_type: options.gpu_type.clone(),
+            min_gpu_count: options.gpu_min,
+        };
+
+        let response = api_client
+            .list_available_executors(Some(query))
+            .await
+            .map_err(|e| {
+                complete_spinner_error(spinner.clone(), "Failed to fetch executors");
+                CliError::api_request_failed("list available executors", e.to_string())
+            })?;
+
+        complete_spinner_and_clear(spinner);
+
+        // Use interactive selector to choose an executor
+        let selector = crate::interactive::InteractiveSelector::new();
+        let selected_id = selector.select_executor(&response.available_executors)?;
+
+        // Find the selected executor details
+        let selected_executor = response
+            .available_executors
+            .iter()
+            .find(|e| {
+                // Strip miner prefix from executor ID before comparing
+                let executor_id = match e.executor.id.split_once("__") {
+                    Some((_, second)) => second.to_string(),
+                    None => e.executor.id.clone(),
+                };
+                executor_id == selected_id
+            })
+            .map(|e| e.executor.clone());
+
+        (selected_id, selected_executor)
+    };
 
     let spinner = create_spinner("Preparing rental request...");
 
@@ -153,8 +217,14 @@ pub async fn handle_up(
         complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
     })?;
 
+    let command = if options.command.is_empty() {
+        vec!["/bin/bash".to_string()]
+    } else {
+        options.command
+    };
+
     let request = StartRentalRequest {
-        executor_id: target.clone(), // Optional - None means system will select
+        executor_id: target.clone(),
         container_image,
         ssh_public_key,
         environment: env_vars,
@@ -166,8 +236,9 @@ pub async fn handle_up(
             gpu_count: options.gpu_min.unwrap_or(0),
             gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
         },
-        command: options.command,
+        command,
         volumes: vec![],
+        no_ssh: options.no_ssh,
     };
 
     spinner.set_message("Creating rental...");
@@ -178,6 +249,26 @@ pub async fn handle_up(
     })?;
 
     spinner.set_message("Caching rental information...");
+
+    // Format GPU info if we have executor details
+    let gpu_info = executor_details.as_ref().and_then(|exec| {
+        if exec.gpu_specs.is_empty() {
+            None
+        } else {
+            let gpu = &exec.gpu_specs[0];
+            Some(if exec.gpu_specs.len() > 1 {
+                format!(
+                    "{}x {} ({}GB)",
+                    exec.gpu_specs.len(),
+                    gpu.name,
+                    gpu.memory_gb
+                )
+            } else {
+                format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+            })
+        }
+    });
+
     // Cache the rental information
     let mut cache = RentalCache::load().await.unwrap_or_default();
     cache.add_rental(CachedRental {
@@ -186,6 +277,7 @@ pub async fn handle_up(
         container_id: response.container_info.container_id.clone(),
         container_name: response.container_info.container_name.clone(),
         executor_id: target.clone(),
+        gpu_info,
         created_at: chrono::Utc::now(),
         cached_at: chrono::Utc::now(),
     });
@@ -198,11 +290,62 @@ pub async fn handle_up(
         response.rental_id
     ));
 
-    // Display SSH credentials if available
-    if let Some(ref ssh_creds) = response.ssh_credentials {
-        print_link("SSH", ssh_creds);
+    // Handle SSH based on options
+    if options.no_ssh {
+        // SSH disabled entirely, nothing to do
+        return Ok(());
+    }
+
+    // Check if we have SSH credentials
+    let ssh_creds = match response.ssh_credentials {
+        Some(ref creds) => creds,
+        None => {
+            print_info("SSH access not available (unexpected error)");
+            return Ok(());
+        }
+    };
+
+    if options.detach {
+        // Detached mode: just show instructions and exit
+        display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
     } else {
-        print_info("No SSH access configured for this container (port 22 not mapped)");
+        // Auto-SSH mode: wait for rental to be active and connect
+        print_info("Waiting for rental to become active...");
+
+        // Poll for rental to become active
+        let rental_active = poll_rental_status(&response.rental_id, &api_client).await?;
+
+        if rental_active {
+            // Parse SSH credentials and connect
+            print_info("Connecting to rental...");
+            let (host, port, username) = parse_ssh_credentials(ssh_creds)?;
+            let ssh_access = SshAccess {
+                host,
+                port,
+                username,
+            };
+
+            // Use SSH client to open interactive session
+            let ssh_client = SshClient::new(&config.ssh)?;
+            match ssh_client.interactive_session(&ssh_access).await {
+                Ok(_) => {
+                    // SSH session ended normally
+                    print_info("SSH session closed");
+                }
+                Err(e) => {
+                    print_error(&format!("SSH connection failed: {}", e));
+                    println!();
+                    print_info("You can manually connect using:");
+                    display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+                }
+            }
+        } else {
+            // Timeout or error - show manual instructions
+            print_info("Rental is taking longer than expected to become active");
+            println!();
+            print_info("You can manually connect once it's ready using:");
+            display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+        }
     }
 
     Ok(())
@@ -238,6 +381,8 @@ pub async fn handle_ps(
     } else {
         table_output::display_rental_items(&rentals_list.rentals[..])?;
         println!("\nTotal: {} active rentals", rentals_list.rentals.len());
+
+        display_ps_quick_start_commands();
     }
 
     Ok(())
@@ -245,12 +390,15 @@ pub async fn handle_ps(
 
 /// Handle the `status` command - check rental status
 pub async fn handle_status(
-    target: String,
+    target: Option<String>,
     json: bool,
     config: &CliConfig,
     no_auth: bool,
 ) -> Result<()> {
     let api_client = create_authenticated_client(config, no_auth).await?;
+
+    // Resolve target rental (fetch and prompt if not provided)
+    let target = resolve_target_rental(target, &api_client, false).await?;
 
     let spinner = create_spinner("Checking rental status...");
 
@@ -283,13 +431,16 @@ pub async fn handle_status(
 
 /// Handle the `logs` command - view rental logs
 pub async fn handle_logs(
-    target: String,
+    target: Option<String>,
     options: LogsOptions,
     config: &CliConfig,
     no_auth: bool,
 ) -> Result<()> {
     // Create API client
     let api_client = create_authenticated_client(config, no_auth).await?;
+
+    // Resolve target rental (fetch and prompt if not provided)
+    let target = resolve_target_rental(target, &api_client, false).await?;
 
     let spinner = create_spinner("Connecting to log stream...");
 
@@ -382,62 +533,33 @@ pub async fn handle_logs(
     Ok(())
 }
 
-/// Handle the `down` command - terminate rentals
-pub async fn handle_down(targets: Vec<String>, config: &CliConfig, no_auth: bool) -> Result<()> {
+/// Handle the `down` command - terminate rental
+pub async fn handle_down(target: Option<String>, config: &CliConfig, no_auth: bool) -> Result<()> {
     let api_client = create_authenticated_client(config, no_auth).await?;
 
-    let rental_ids = if targets.is_empty() {
-        return Err(CliError::invalid_argument("No rental IDs specified")
-            .with_suggestion("Provide rental IDs: 'basilica down <rental-id> [...]'"));
-    } else {
-        targets
-    };
+    // Resolve target rental (fetch and prompt if not provided)
+    let rental_id = resolve_target_rental(target, &api_client, false).await?;
 
     // Load rental cache
     let mut cache = RentalCache::load().await.unwrap_or_default();
 
-    if rental_ids.len() == 1 {
-        // Single rental - use spinner
-        let spinner = create_spinner(&format!("Terminating rental: {}", rental_ids[0]));
+    // Single rental - use spinner
+    let spinner = create_spinner(&format!("Terminating rental: {}", rental_id));
 
-        match api_client
-            .stop_rental(&rental_ids[0])
-            .await
-            .map_err(|e| CliError::api_request_failed("stop rental", e.to_string()))
-        {
-            Ok(_) => {
-                complete_spinner_and_clear(spinner);
-                print_success(&format!("Successfully stopped rental: {}", rental_ids[0]));
-                cache.remove_rental(&rental_ids[0]);
-            }
-            Err(e) => {
-                complete_spinner_error(spinner, "Failed to terminate rental");
-                print_error(&format!("Failed to stop rental {}: {e}", rental_ids[0]));
-            }
+    match api_client
+        .stop_rental(&rental_id)
+        .await
+        .map_err(|e| CliError::api_request_failed("stop rental", e.to_string()))
+    {
+        Ok(_) => {
+            complete_spinner_and_clear(spinner);
+            print_success(&format!("Successfully stopped rental: {}", rental_id));
+            cache.remove_rental(&rental_id);
         }
-    } else {
-        // Multiple rentals - use progress bar
-        let pb = create_progress_bar(rental_ids.len() as u64, "Terminating rentals");
-
-        for rental_id in &rental_ids {
-            pb.set_message(format!("Stopping {}", rental_id));
-
-            match api_client
-                .stop_rental(rental_id)
-                .await
-                .map_err(|e| CliError::api_request_failed("stop rental", e.to_string()))
-            {
-                Ok(_) => {
-                    print_success(&format!("Successfully stopped rental: {rental_id}"));
-                    cache.remove_rental(rental_id);
-                }
-                Err(e) => print_error(&format!("Failed to stop rental {rental_id}: {e}")),
-            }
-
-            pb.inc(1);
+        Err(e) => {
+            complete_spinner_error(spinner, "Failed to terminate rental");
+            print_error(&format!("Failed to stop rental {}: {e}", rental_id));
         }
-
-        pb.finish_with_message("✓ All rental termination requests completed");
     }
 
     // Save updated cache
@@ -448,29 +570,24 @@ pub async fn handle_down(targets: Vec<String>, config: &CliConfig, no_auth: bool
 
 /// Handle the `exec` command - execute commands via SSH
 pub async fn handle_exec(
-    target: String,
+    target: Option<String>,
     command: String,
     config: &CliConfig,
     no_auth: bool,
 ) -> Result<()> {
-    debug!("Executing command on rental: {}", target);
-
     // Create API client to verify rental status
     let api_client = create_authenticated_client(config, no_auth).await?;
 
-    // Load rental cache and get SSH credentials
+    // Load rental cache first to see what's available for SSH
     let mut cache = RentalCache::load().await?;
-    let cached_rental = cache.get_rental(&target).ok_or_else(|| {
-        CliError::rental_not_found(&target)
-            .with_context("SSH credentials are only available for rentals created in this session")
-    })?;
 
-    // Clone SSH credentials before status check to avoid borrowing issues
-    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
-        CliError::not_supported(
-            "This rental does not have SSH access. Container was created without SSH port mapping.",
-        )
-    })?;
+    // Resolve target rental with SSH requirement
+    let target = resolve_target_rental(target, &api_client, true).await?;
+
+    debug!("Executing command on rental: {}", target);
+
+    // Get SSH credentials from cache
+    let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
 
     // Verify rental is still active before proceeding
     verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
@@ -490,29 +607,24 @@ pub async fn handle_exec(
 
 /// Handle the `ssh` command - SSH into instances
 pub async fn handle_ssh(
-    target: String,
+    target: Option<String>,
     options: crate::cli::commands::SshOptions,
     config: &CliConfig,
     no_auth: bool,
 ) -> Result<()> {
-    debug!("Opening SSH connection to rental: {}", target);
-
     // Create API client to verify rental status
     let api_client = create_authenticated_client(config, no_auth).await?;
 
-    // Load rental cache and get SSH credentials
+    // Load rental cache first to see what's available for SSH
     let mut cache = RentalCache::load().await?;
-    let cached_rental = cache.get_rental(&target).ok_or_else(|| {
-        CliError::rental_not_found(&target)
-            .with_context("SSH credentials are only available for rentals created in this session")
-    })?;
 
-    // Clone SSH credentials before status check to avoid borrowing issues
-    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
-        CliError::not_supported(
-            "This rental does not have SSH access. Container was created without SSH port mapping.",
-        )
-    })?;
+    // Resolve target rental with SSH requirement
+    let target = resolve_target_rental(target, &api_client, true).await?;
+
+    debug!("Opening SSH connection to rental: {}", target);
+
+    // Get SSH credentials from cache
+    let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
 
     // Verify rental is still active before proceeding
     verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
@@ -528,14 +640,7 @@ pub async fn handle_ssh(
     // Use SSH client to handle connection with options
     let ssh_client = SshClient::new(&config.ssh)?;
 
-    // If a command is provided, execute it directly without opening interactive session
-    if !options.command.is_empty() {
-        let command = options.command.join(" ");
-        debug!("Executing SSH command: {}", command);
-        return ssh_client.execute_command(&ssh_access, &command).await;
-    }
-
-    // Otherwise, open interactive session with port forwarding options
+    // Open interactive session with port forwarding options
     ssh_client
         .interactive_session_with_options(&ssh_access, &options)
         .await
@@ -550,26 +655,57 @@ pub async fn handle_cp(
 ) -> Result<()> {
     debug!("Copying files from {} to {}", source, destination);
 
-    // Parse source and destination to determine which is remote
-    let (rental_id, is_upload, local_path, remote_path) = parse_copy_paths(&source, &destination)?;
-
-    // Create API client to verify rental status
+    // Create API client
     let api_client = create_authenticated_client(config, no_auth).await?;
 
-    // Load rental cache and get SSH credentials
+    // Load rental cache
     let mut cache = RentalCache::load().await?;
-    let cached_rental = cache.get_rental(&rental_id)
-        .ok_or_else(|| CliError::not_found(format!(
+
+    // Parse source and destination to check if rental ID is provided
+    let (source_rental, source_path) = split_remote_path(&source);
+    let (dest_rental, dest_path) = split_remote_path(&destination);
+
+    // Determine rental_id, handling interactive selection if needed
+    let (rental_id, is_upload, local_path, remote_path) = match (source_rental, dest_rental) {
+        (Some(rental), None) => {
+            // Download: remote -> local
+            (rental, false, dest_path, source_path)
+        }
+        (None, Some(rental)) => {
+            // Upload: local -> remote
+            (rental, true, source_path, dest_path)
+        }
+        (Some(_), Some(_)) => {
+            return Err(CliError::not_supported(
+                "Remote-to-remote copy not supported",
+            ));
+        }
+        (None, None) => {
+            // No rental ID provided, need to prompt user
+            // First determine if this looks like an upload or download based on path existence
+            let source_exists = std::path::Path::new(&source).exists();
+
+            // Resolve target rental with SSH requirement
+            let selected_rental = resolve_target_rental(None, &api_client, true).await
+                .map_err(|e| e.with_suggestion("Specify rental ID explicitly: 'basilica cp <rental_id>:<path> <local_path>' or vice versa"))?;
+
+            // Determine direction based on source file existence
+            if source_exists {
+                // Upload: local file exists, so source is local
+                (selected_rental, true, source, destination)
+            } else {
+                // Download: assume source is remote path
+                (selected_rental, false, destination, source)
+            }
+        }
+    };
+
+    // Get SSH credentials from cache
+    let ssh_credentials = get_ssh_credentials_from_cache(&rental_id, &cache)
+        .map_err(|_e| CliError::not_found(format!(
             "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
             rental_id
         )))?;
-
-    // Clone SSH credentials before status check to avoid borrowing issues
-    let ssh_credentials = cached_rental.ssh_credentials.clone().ok_or_else(|| {
-        CliError::not_supported(
-            "This rental does not have SSH access. Container was created without SSH port mapping.",
-        )
-    })?;
 
     // Verify rental is still active before proceeding
     verify_rental_status_and_cleanup_cache(&rental_id, &api_client, &mut cache).await?;
@@ -597,6 +733,118 @@ pub async fn handle_cp(
 }
 
 // Helper functions
+
+/// Poll rental status until it becomes active or timeout
+async fn poll_rental_status(
+    rental_id: &str,
+    api_client: &basilica_api::client::BasilicaClient,
+) -> Result<bool> {
+    const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
+    const INITIAL_INTERVAL: Duration = Duration::from_secs(2);
+    const MAX_INTERVAL: Duration = Duration::from_secs(10);
+
+    let spinner = create_spinner("Waiting for rental to become active...");
+    let start_time = std::time::Instant::now();
+    let mut interval = INITIAL_INTERVAL;
+    let mut attempt = 0;
+
+    loop {
+        // Check if we've exceeded the maximum wait time
+        if start_time.elapsed() > MAX_WAIT_TIME {
+            complete_spinner_error(spinner, "Timeout waiting for rental to become active");
+            return Ok(false);
+        }
+
+        attempt += 1;
+        spinner.set_message(format!("Checking rental status... (attempt {})", attempt));
+
+        // Check rental status
+        match api_client.get_rental_status(rental_id).await {
+            Ok(status) => {
+                match status.status {
+                    RentalStatus::Active => {
+                        complete_spinner_and_clear(spinner);
+                        return Ok(true);
+                    }
+                    RentalStatus::Failed => {
+                        complete_spinner_error(spinner, "Rental failed to start");
+                        return Err(CliError::rental_failed(
+                            "Rental failed during initialization",
+                        ));
+                    }
+                    RentalStatus::Terminated => {
+                        complete_spinner_error(spinner, "Rental was terminated");
+                        return Err(CliError::rental_failed(
+                            "Rental was terminated before becoming active",
+                        ));
+                    }
+                    RentalStatus::Pending => {
+                        // Still pending, continue polling
+                        spinner.set_message(format!(
+                            "Rental is pending... ({}s elapsed)",
+                            start_time.elapsed().as_secs()
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                // Log the error but continue polling
+                debug!("Error checking rental status: {}", e);
+                spinner.set_message("Retrying status check...");
+            }
+        }
+
+        // Wait before next check with exponential backoff
+        tokio::time::sleep(interval).await;
+
+        // Increase interval up to maximum
+        interval = std::cmp::min(interval * 2, MAX_INTERVAL);
+    }
+}
+
+/// Display SSH connection instructions after rental creation
+fn display_ssh_connection_instructions(
+    rental_id: &str,
+    ssh_credentials: &str,
+    config: &CliConfig,
+) -> Result<()> {
+    // Parse SSH credentials to get components
+    let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
+
+    // Get the private key path from config
+    let private_key_path = &config.ssh.private_key_path;
+
+    println!();
+    print_info("SSH connection options:");
+    println!();
+
+    // Option 1: Using basilica CLI (simplest)
+    println!("  1. Using Basilica CLI:");
+    println!(
+        "     {}",
+        console::style(format!("basilica ssh {}", rental_id))
+            .cyan()
+            .bold()
+    );
+    println!();
+
+    // Option 2: Using standard SSH command
+    println!("  2. Using standard SSH:");
+    println!(
+        "     {}",
+        console::style(format!(
+            "ssh -i {} -p {} {}@{}",
+            compress_path(private_key_path),
+            port,
+            username,
+            host
+        ))
+        .cyan()
+        .bold()
+    );
+
+    Ok(())
+}
 
 /// Verify rental is still active and clean up cache if not
 async fn verify_rental_status_and_cleanup_cache(
@@ -689,29 +937,6 @@ fn parse_port_mappings(
     Ok(mappings)
 }
 
-fn parse_copy_paths(source: &str, destination: &str) -> Result<(String, bool, String, String)> {
-    // Format: <rental_id>:<path> or just <path>
-    let (source_rental, source_path) = split_remote_path(source);
-    let (dest_rental, dest_path) = split_remote_path(destination);
-
-    match (source_rental, dest_rental) {
-        (Some(rental_id), None) => {
-            // Download: remote -> local
-            Ok((rental_id, false, dest_path, source_path))
-        }
-        (None, Some(rental_id)) => {
-            // Upload: local -> remote
-            Ok((rental_id, true, source_path, dest_path))
-        }
-        (Some(_), Some(_)) => Err(CliError::not_supported(
-            "Remote-to-remote copy not supported",
-        )),
-        (None, None) => Err(CliError::invalid_argument(
-            "At least one path must be remote (format: <rental_id>:<path>)",
-        )),
-    }
-}
-
 fn split_remote_path(path: &str) -> (Option<String>, String) {
     if let Some((rental_id, remote_path)) = path.split_once(':') {
         (Some(rental_id.to_string()), remote_path.to_string())
@@ -747,4 +972,40 @@ fn display_rental_status(status: &RentalStatusResponse) {
     // if let Some(location) = &status.executor.location {
     //     println!("  Location: {location}");
     // }
+}
+
+/// Display quick start commands after ps output
+fn display_ps_quick_start_commands() {
+    println!();
+    println!("{}", style("Quick Commands:").cyan().bold());
+
+    println!(
+        "  {} {}",
+        style("basilica ssh").yellow().bold(),
+        style("- Connect to your rental").dim()
+    );
+
+    println!(
+        "  {} {}",
+        style("basilica exec").yellow().bold(),
+        style("- Run commands on your rental").dim()
+    );
+
+    println!(
+        "  {} {}",
+        style("basilica logs").yellow().bold(),
+        style("- Stream container logs").dim()
+    );
+
+    println!(
+        "  {} {}",
+        style("basilica status").yellow().bold(),
+        style("- Check detailed status").dim()
+    );
+
+    println!(
+        "  {} {}",
+        style("basilica down").yellow().bold(),
+        style("- Stop this rental").dim()
+    );
 }

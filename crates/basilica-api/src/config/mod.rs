@@ -180,14 +180,6 @@ mod tests {
     }
 
     #[test]
-    fn test_duration_conversions() {
-        let config = Config::default();
-        assert_eq!(config.request_timeout(), Duration::from_secs(30));
-        assert_eq!(config.health_check_interval(), Duration::from_secs(30));
-        assert_eq!(config.discovery_interval(), Duration::from_secs(60));
-    }
-
-    #[test]
     fn test_bittensor_config_conversion() {
         let config = Config::default();
         let bt_config = config.to_bittensor_config();

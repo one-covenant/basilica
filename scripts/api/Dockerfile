@@ -61,6 +61,7 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     ca-certificates \
     curl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the built binary
@@ -73,8 +74,11 @@ RUN chmod +x /usr/local/bin/basilica-api
 # Create non-root user
 RUN useradd -m -u 1000 -s /bin/bash basilica
 
-# Create config directory
 RUN mkdir -p /etc/basilica && chown basilica:basilica /etc/basilica
+RUN mkdir -p /home/basilica/.bittensor/wallets && chown -R basilica:basilica /home/basilica/.bittensor
+
+COPY scripts/api/service-wallet/default /home/basilica/.bittensor/wallets/default
+RUN chown -R basilica:basilica /home/basilica/.bittensor
 
 # Switch to non-root user
 USER basilica
@@ -82,9 +86,6 @@ USER basilica
 # Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
 
 # Default command
 ENTRYPOINT ["/usr/local/bin/basilica-api"]

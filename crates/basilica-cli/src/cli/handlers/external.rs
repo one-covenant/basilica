@@ -83,7 +83,7 @@ fn delegate_to_binary_impl(
     let error = Command::new(&binary_path).args(&args).exec(); // This replaces the current process
 
     // If we reach this point, exec() failed
-    Err(CliError::network_component(format!(
+    Err(CliError::delegation_component(format!(
         "Failed to execute {}: {}. Make sure {} is installed in the same directory as basilica or in PATH.",
         binary_path.display(),
         error,
@@ -102,7 +102,7 @@ fn delegate_to_binary_impl(
         .args(&args)
         .spawn()
         .map_err(|error| {
-            CliError::network_component(format!(
+            CliError::delegation_component(format!(
                 "Failed to execute {}: {}. Make sure {} is installed in the same directory as basilica or in PATH.",
                 binary_path.display(),
                 error,
@@ -112,7 +112,7 @@ fn delegate_to_binary_impl(
 
     // Wait for the child process to complete and get its exit status
     let exit_status = child.wait().map_err(|error| {
-        CliError::network_component(format!(
+        CliError::delegation_component(format!(
             "Failed to wait for {} completion: {}",
             binary_name, error
         ))
@@ -132,7 +132,7 @@ mod tests {
         let result = handle_validator(vec!["--help".to_string()]);
         assert!(result.is_err());
 
-        if let Err(CliError::NetworkComponent { message }) = result {
+        if let Err(CliError::DelegationComponent { message }) = result {
             assert!(message.contains("basilica-validator"));
         } else {
             panic!("Expected NetworkComponent error");

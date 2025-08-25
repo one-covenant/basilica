@@ -39,6 +39,8 @@ pub struct StartRentalRequest {
     pub command: Vec<String>,
     #[serde(default)]
     pub volumes: Vec<VolumeMountRequest>,
+    #[serde(default)]
+    pub no_ssh: bool,
 }
 
 /// Port mapping request
@@ -230,6 +232,27 @@ pub async fn start_rental(
             StatusCode::BAD_GATEWAY
         })?;
 
+    // Filter out any user-specified SSH port mappings and prepare port list
+    let mut port_mappings: Vec<crate::rental::PortMapping> = request
+        .ports
+        .into_iter()
+        .filter(|p| p.container_port != 22) // Remove any SSH port mappings
+        .map(|p| crate::rental::PortMapping {
+            container_port: p.container_port,
+            host_port: p.host_port,
+            protocol: p.protocol,
+        })
+        .collect();
+
+    // Only add SSH port mapping if no_ssh is false (SSH is enabled by default)
+    if !request.no_ssh {
+        port_mappings.push(crate::rental::PortMapping {
+            container_port: 22,
+            host_port: 0, // Docker will automatically allocate an available port
+            protocol: "tcp".to_string(),
+        });
+    }
+
     // Convert request to internal rental request
     let rental_request = RentalRequest {
         validator_hotkey: state.validator_hotkey.to_string(),
@@ -238,15 +261,7 @@ pub async fn start_rental(
         container_spec: crate::rental::ContainerSpec {
             image: request.container_image,
             environment: request.environment,
-            ports: request
-                .ports
-                .into_iter()
-                .map(|p| crate::rental::PortMapping {
-                    container_port: p.container_port,
-                    host_port: p.host_port,
-                    protocol: p.protocol,
-                })
-                .collect(),
+            ports: port_mappings,
             resources: crate::rental::ResourceRequirements {
                 cpu_cores: request.resources.cpu_cores,
                 memory_mb: request.resources.memory_mb,
