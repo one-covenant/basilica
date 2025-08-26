@@ -1,6 +1,6 @@
 //! Rate limiting middleware
 
-use crate::{error::Error, server::AppState};
+use crate::{error::ApiError, server::AppState};
 use axum::{
     extract::{ConnectInfo, Request},
     http::StatusCode,
@@ -98,7 +98,7 @@ impl RateLimitStorage {
     }
 
     /// Check rate limit
-    pub async fn check_limit(&self, key: RateLimitKey) -> Result<(), Error> {
+    pub async fn check_limit(&self, key: RateLimitKey) -> Result<(), ApiError> {
         let limiter = match &key {
             RateLimitKey::Ip(ip) if self.config.per_ip_limiting => self.get_ip_limiter(ip),
             RateLimitKey::ApiKey(api_key) => self.get_api_key_limiter(api_key),
@@ -107,7 +107,7 @@ impl RateLimitStorage {
 
         match limiter.check() {
             Ok(_) => Ok(()),
-            Err(_) => Err(Error::RateLimitExceeded),
+            Err(_) => Err(ApiError::RateLimitExceeded),
         }
     }
 

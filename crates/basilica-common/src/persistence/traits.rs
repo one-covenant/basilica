@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 // HashMap import removed as unused in this file
 use std::fmt::Debug;
 
-use crate::error::BasilcaError;
+use crate::error::BasilicaError;
 
 /// Generic repository trait for CRUD operations
 #[async_trait]
@@ -16,7 +16,7 @@ where
     T: Send + Sync,
     K: Send + Sync,
 {
-    type Error: BasilcaError;
+    type Error: BasilicaError;
 
     /// Create a new entity
     async fn create(&self, entity: &T) -> Result<(), Self::Error>;
@@ -126,7 +126,7 @@ where
     T: Send + Sync,
     F: Send + Sync,
 {
-    type Error: BasilcaError;
+    type Error: BasilicaError;
 
     /// Apply filter to query
     fn filter(self, filter: F) -> Self;
@@ -148,7 +148,7 @@ where
 #[async_trait]
 pub trait Transactional {
     type Transaction;
-    type Error: BasilcaError;
+    type Error: BasilicaError;
 
     /// Start a new transaction
     async fn begin_transaction(&self) -> Result<Self::Transaction, Self::Error>;

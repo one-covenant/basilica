@@ -23,7 +23,7 @@ pub mod client;
 
 // Re-export commonly used types
 pub use config::Config;
-pub use error::{Error, Result};
+pub use error::{ApiError, Result};
 pub use server::Server;
 
 // Re-export client types when client feature is enabled

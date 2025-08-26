@@ -45,7 +45,7 @@
 
 use crate::{
     api::types::{HealthCheckResponse, ListRentalsQuery, RentalStatusResponse},
-    error::{Error, ErrorResponse, Result},
+    error::{ApiError, ErrorResponse, Result},
 };
 use basilica_validator::api::{
     rental_routes::StartRentalRequest,
@@ -78,7 +78,7 @@ impl BasilicaClient {
         let http_client = reqwest::Client::builder()
             .timeout(timeout)
             .build()
-            .map_err(Error::HttpClient)?;
+            .map_err(ApiError::HttpClient)?;
 
         Ok(Self {
             http_client,
@@ -114,7 +114,7 @@ impl BasilicaClient {
         if response.status() == StatusCode::NO_CONTENT {
             Ok(())
         } else {
-            Err(Error::Internal {
+            Err(ApiError::Internal {
                 message: format!("Unexpected status code: {}", response.status()),
             })
         }
@@ -143,7 +143,7 @@ impl BasilicaClient {
         }
 
         let request = self.apply_auth(request).await;
-        let response = request.send().await.map_err(Error::HttpClient)?;
+        let response = request.send().await.map_err(ApiError::HttpClient)?;
 
         // Handle 401 with token refresh for streaming endpoints
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -172,7 +172,7 @@ impl BasilicaClient {
         }
 
         let request = self.apply_auth(request).await;
-        let response = request.send().await.map_err(Error::HttpClient)?;
+        let response = request.send().await.map_err(ApiError::HttpClient)?;
 
         // Handle 401 with token refresh
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -202,7 +202,7 @@ impl BasilicaClient {
         }
 
         let request = self.apply_auth(request).await;
-        let response = request.send().await.map_err(Error::HttpClient)?;
+        let response = request.send().await.map_err(ApiError::HttpClient)?;
 
         // Handle 401 with token refresh
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -259,13 +259,13 @@ impl BasilicaClient {
                         let retry_request = original_request
                             .header("Authorization", format!("Bearer {}", new_token));
 
-                        retry_request.send().await.map_err(Error::HttpClient)
+                        retry_request.send().await.map_err(ApiError::HttpClient)
                     }
                     Err(refresh_error) => {
                         tracing::error!("Token refresh failed: {}", refresh_error);
                         // Clear token if refresh failed due to invalid token
                         *self.bearer_token.write().await = None;
-                        Err(Error::Authentication {
+                        Err(ApiError::Authentication {
                             message: "Token expired and refresh failed".to_string(),
                         })
                     }
@@ -273,7 +273,7 @@ impl BasilicaClient {
             } else {
                 // Empty token - no point in trying to refresh
                 tracing::debug!("No token to refresh (empty token)");
-                Err(Error::MissingAuthentication {
+                Err(ApiError::MissingAuthentication {
                     message: "No authentication token provided".to_string(),
                 })
             }
@@ -281,12 +281,12 @@ impl BasilicaClient {
             // No token refresher or no token
             if current_token.is_none() {
                 tracing::debug!("No token to refresh (no token configured)");
-                Err(Error::MissingAuthentication {
+                Err(ApiError::MissingAuthentication {
                     message: "No authentication token provided".to_string(),
                 })
             } else {
                 tracing::debug!("No token refresher configured");
-                Err(Error::Authentication {
+                Err(ApiError::Authentication {
                     message: "Token expired and no refresh capability configured".to_string(),
                 })
             }
@@ -299,7 +299,7 @@ impl BasilicaClient {
         let request = self.http_client.get(&url);
         let request = self.apply_auth(request).await;
 
-        let response = request.send().await.map_err(Error::HttpClient)?;
+        let response = request.send().await.map_err(ApiError::HttpClient)?;
 
         // Handle 401 with token refresh
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -317,7 +317,7 @@ impl BasilicaClient {
         let request = self.http_client.post(&url).json(body);
         let request = self.apply_auth(request).await;
 
-        let response = request.send().await.map_err(Error::HttpClient)?;
+        let response = request.send().await.map_err(ApiError::HttpClient)?;
 
         // Handle 401 with token refresh
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -335,7 +335,7 @@ impl BasilicaClient {
         let request = self.http_client.delete(&url);
         let request = self.apply_auth(request).await;
 
-        let response = request.send().await.map_err(Error::HttpClient)?;
+        let response = request.send().await.map_err(ApiError::HttpClient)?;
 
         // Handle 401 with token refresh
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -349,7 +349,7 @@ impl BasilicaClient {
     /// Handle successful response
     async fn handle_response<T: DeserializeOwned>(&self, response: Response) -> Result<T> {
         if response.status().is_success() {
-            response.json().await.map_err(Error::HttpClient)
+            response.json().await.map_err(ApiError::HttpClient)
         } else {
             self.handle_error_response(response).await
         }
@@ -366,45 +366,45 @@ impl BasilicaClient {
                 StatusCode::UNAUTHORIZED => {
                     // Distinguish between missing auth and expired/invalid auth based on error code
                     match error_response.error.code.as_str() {
-                        "BASILICA_API_AUTH_MISSING" => Err(Error::MissingAuthentication {
+                        "BASILICA_API_AUTH_MISSING" => Err(ApiError::MissingAuthentication {
                             message: error_response.error.message,
                         }),
-                        _ => Err(Error::Authentication {
+                        _ => Err(ApiError::Authentication {
                             message: error_response.error.message,
                         }),
                     }
                 }
-                StatusCode::FORBIDDEN => Err(Error::Authorization {
+                StatusCode::FORBIDDEN => Err(ApiError::Authorization {
                     message: error_response.error.message,
                 }),
-                StatusCode::TOO_MANY_REQUESTS => Err(Error::RateLimitExceeded),
-                StatusCode::NOT_FOUND => Err(Error::NotFound {
+                StatusCode::TOO_MANY_REQUESTS => Err(ApiError::RateLimitExceeded),
+                StatusCode::NOT_FOUND => Err(ApiError::NotFound {
                     resource: error_response.error.message,
                 }),
-                StatusCode::BAD_REQUEST => Err(Error::BadRequest {
+                StatusCode::BAD_REQUEST => Err(ApiError::BadRequest {
                     message: error_response.error.message,
                 }),
-                _ => Err(Error::Internal {
+                _ => Err(ApiError::Internal {
                     message: error_response.error.message,
                 }),
             }
         } else {
             // Fallback if we can't parse the error
             match status {
-                StatusCode::UNAUTHORIZED => Err(Error::Authentication {
+                StatusCode::UNAUTHORIZED => Err(ApiError::Authentication {
                     message: "Authentication failed".into(),
                 }),
-                StatusCode::FORBIDDEN => Err(Error::Authorization {
+                StatusCode::FORBIDDEN => Err(ApiError::Authorization {
                     message: "Access forbidden".into(),
                 }),
-                StatusCode::TOO_MANY_REQUESTS => Err(Error::RateLimitExceeded),
-                StatusCode::NOT_FOUND => Err(Error::NotFound {
+                StatusCode::TOO_MANY_REQUESTS => Err(ApiError::RateLimitExceeded),
+                StatusCode::NOT_FOUND => Err(ApiError::NotFound {
                     resource: "Resource not found".into(),
                 }),
-                StatusCode::BAD_REQUEST => Err(Error::BadRequest {
+                StatusCode::BAD_REQUEST => Err(ApiError::BadRequest {
                     message: error_text,
                 }),
-                _ => Err(Error::Internal {
+                _ => Err(ApiError::Internal {
                     message: format!("Request failed with status {status}: {error_text}"),
                 }),
             }
@@ -462,7 +462,7 @@ impl ClientBuilder {
 
     /// Build the client
     pub fn build(self) -> Result<BasilicaClient> {
-        let base_url = self.base_url.ok_or_else(|| Error::InvalidRequest {
+        let base_url = self.base_url.ok_or_else(|| ApiError::InvalidRequest {
             message: "base_url is required".into(),
         })?;
 
@@ -482,7 +482,7 @@ impl ClientBuilder {
             client_builder = client_builder.pool_max_idle_per_host(max);
         }
 
-        let http_client = client_builder.build().map_err(Error::HttpClient)?;
+        let http_client = client_builder.build().map_err(ApiError::HttpClient)?;
 
         Ok(BasilicaClient {
             http_client,
@@ -573,7 +573,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            Error::MissingAuthentication { .. }
+            ApiError::MissingAuthentication { .. }
         ));
     }
 

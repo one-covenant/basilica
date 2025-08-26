@@ -18,7 +18,7 @@ use crate::{
     api::auth::jwt_validator::{
         fetch_jwks, validate_jwt_with_options, verify_audience, verify_issuer,
     },
-    error::Error,
+    error::ApiError,
     server::AppState,
 };
 
@@ -101,7 +101,7 @@ pub async fn auth0_middleware(
             warn!("Auth0 middleware: No bearer token found in Authorization header");
             return Err((
                 StatusCode::UNAUTHORIZED,
-                Error::Authentication {
+                ApiError::Authentication {
                     message: "No authentication token provided. Please include a valid JWT token in the Authorization header".to_string(),
                 },
             ).into_response());
@@ -115,7 +115,7 @@ pub async fn auth0_middleware(
             warn!("Auth0 middleware: Failed to fetch JWKS: {}", e);
             return Err((
                 StatusCode::SERVICE_UNAVAILABLE,
-                Error::Internal {
+                ApiError::Internal {
                     message: "Authentication service temporarily unavailable".to_string(),
                 },
             )
@@ -130,7 +130,7 @@ pub async fn auth0_middleware(
             warn!("Auth0 middleware: JWT validation failed: {}", e);
             return Err((
                 StatusCode::UNAUTHORIZED,
-                Error::Authentication {
+                ApiError::Authentication {
                     message: "Invalid authentication token".to_string(),
                 },
             )
@@ -143,7 +143,7 @@ pub async fn auth0_middleware(
         warn!("Auth0 middleware: Audience verification failed: {}", e);
         return Err((
             StatusCode::UNAUTHORIZED,
-            Error::Authentication {
+            ApiError::Authentication {
                 message: "Token not authorized for this API".to_string(),
             },
         )
@@ -155,7 +155,7 @@ pub async fn auth0_middleware(
         warn!("Auth0 middleware: Issuer verification failed: {}", e);
         return Err((
             StatusCode::UNAUTHORIZED,
-            Error::Authentication {
+            ApiError::Authentication {
                 message: "Token issued by unauthorized provider".to_string(),
             },
         )
