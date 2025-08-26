@@ -171,8 +171,8 @@ You need replace the variable with the correct value like contract address.
   - Confirm on-chain that your collateral has been successfully locked for that validator. running `collateral-cli query executor-to-miner` and `collateral-cli query collaterals`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh)
 
   ```shell
-  +#!/usr/bin/env bash
-  +set -euo pipefail
+  #!/usr/bin/env bash
+  set -euo pipefail
   export NETWORK=local
   export CONTRACT_ADDRESS=0x
   export HOTKEY=0x
