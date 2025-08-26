@@ -27,8 +27,7 @@ Every manual slash must be:
 Whenever possible in the future, validators are encouraged to **automate detection and slashing logic** so that actions are data-driven and reproducible.
 Automation helps ensure miners are treated consistently across validators — and enables **retroactive enforcement** without requiring on-the-spot judgment.
 
-Slashing is a **last-resort accountability tool**, not a convenience.  
-Validators who use it impulsively risk undermining miner trust — and their own reputation.
+Slashing is a **last-resort accountability tool**, not a convenience.
 
 This model is designed for **trust-minimized collaboration**, not permissionless aggression.  
 Use slashing to **protect the network**, not to punish disagreement.
@@ -64,7 +63,7 @@ The subnet owner (contract admin) can penalize a misbehaving miner by slashing s
 
 - **Configurable Minimum Bond & Decision Deadline**
 
-  Defines a minimum stake requirement and a strict timeline for validator responses.
+  Defines a minimum stake requirement and a strict timeline for subnet owner responses.
 
 > **Important notice on addressing**
 >
@@ -113,7 +112,7 @@ Below is a typical sequence for integrating and using this collateral contract w
 
 - **Slashing Misbehaving Miners**
 
-  - If a miner is found violating subnet rules (e.g., returning invalid responses), the validator **calls** `slashCollateral()` with the `miner`, `slashAmount`, `executorUuid`, and other details to penalize the miner by reducing their staked amount.
+  - If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner **calls** `slashCollateral()` with the `miner`, `slashAmount`, `executorUuid`, and other details to penalize the miner by reducing their staked amount.
 
 - **Reclaiming Collateral**
   - When miners wish to withdraw their stake, they **initiate a reclaim** by calling `reclaimCollateral()`, specifying the **executor UUID** associated with the collateral.
