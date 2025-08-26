@@ -4,10 +4,7 @@
 //! validation history, and configuration settings. Also handles the execution
 //! of different validation strategies (lightweight vs full validation).
 
-use super::miner_client::MinerClient;
-use super::types::{
-    ExecutorInfoDetailed, ExecutorVerificationResult, ValidationDetails, ValidatorBinaryOutput,
-};
+use super::types::{ExecutorInfoDetailed, ExecutorVerificationResult, ValidationDetails};
 use super::validation_binary::BinaryValidator;
 use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
@@ -184,7 +181,10 @@ impl ValidationStrategySelector {
             WHERE executor_id = ?
               AND success = 1
               AND verification_type = 'ssh_automation'
-              AND json_extract(details, '$.binary_validation_successful') = 'true'
+              AND (
+                json_extract(details, '$.binary_validation_successful') = 1
+                OR json_extract(details, '$.binary_validation_successful') = 'true'
+              )
             ORDER BY timestamp DESC
             LIMIT 1
         "#;
@@ -211,7 +211,10 @@ impl ValidationStrategySelector {
 
 impl ValidationExecutor {
     /// Create a new validation executor
-    pub fn new(ssh_client: Arc<ValidatorSshClient>, metrics: Option<Arc<ValidatorMetrics>>) -> Self {
+    pub fn new(
+        ssh_client: Arc<ValidatorSshClient>,
+        metrics: Option<Arc<ValidatorMetrics>>,
+    ) -> Self {
         let binary_validator = BinaryValidator::new(ssh_client.clone());
         Self {
             ssh_client,
@@ -224,11 +227,11 @@ impl ValidationExecutor {
     pub async fn execute_lightweight_validation(
         &self,
         executor_info: &ExecutorInfoDetailed,
-        miner_endpoint: &str,
+        ssh_details: &SshConnectionDetails,
+        _session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         previous_score: f64,
-        miner_client: &MinerClient,
-        validator_hotkey: &Hotkey,
-        config: &crate::config::VerificationConfig,
+        _validator_hotkey: &Hotkey,
+        _config: &crate::config::VerificationConfig,
     ) -> Result<ExecutorVerificationResult> {
         info!(
             executor_id = %executor_info.id,
@@ -238,19 +241,16 @@ impl ValidationExecutor {
 
         let total_start = Instant::now();
 
-        let connectivity_successful = match self
-            .perform_lightweight_evaluation(
-                executor_info,
-                miner_endpoint,
-                miner_client,
-                validator_hotkey,
-                config,
-            )
-            .await
-        {
-            Ok(success) => success,
+        let connectivity_successful = match self.ssh_client.test_connection(ssh_details).await {
+            Ok(_) => {
+                info!(
+                    executor_id = %executor_info.id,
+                    "[EVAL_FLOW] Lightweight connectivity check successful"
+                );
+                true
+            }
             Err(e) => {
-                error!(
+                warn!(
                     executor_id = %executor_info.id,
                     error = %e,
                     "[EVAL_FLOW] Lightweight connectivity check failed"
@@ -289,11 +289,11 @@ impl ValidationExecutor {
             metrics
                 .business()
                 .record_attestation_verification(
-                    &executor_info.id,
+                    &executor_info.id.to_string(),
                     "connectivity_check",
                     connectivity_successful,
                     connectivity_successful, // signature_valid - connectivity successful
-                    false, // no hardware attestation in lightweight mode
+                    false,                   // no hardware attestation in lightweight mode
                 )
                 .await;
         }
@@ -316,14 +316,14 @@ impl ValidationExecutor {
         })
     }
 
-    /// Execute full validation (SSH connection + binary validation)
+    /// Execute full validation
     pub async fn execute_full_validation(
         &self,
         executor_info: &ExecutorInfoDetailed,
         ssh_details: &SshConnectionDetails,
         session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         binary_config: &crate::config::BinaryValidationConfig,
-        validator_hotkey: &Hotkey,
+        _validator_hotkey: &Hotkey,
     ) -> Result<ExecutorVerificationResult> {
         info!(
             executor_id = %executor_info.id,
@@ -343,23 +343,24 @@ impl ValidationExecutor {
 
         // Phase 1: SSH Connection Test
         let ssh_test_start = Instant::now();
-        let ssh_connection_successful = match self.ssh_client.test_connection(ssh_details).await {
-            Ok(_) => {
-                info!(
-                    executor_id = %executor_info.id,
-                    "[EVAL_FLOW] SSH connection test successful"
-                );
-                true
-            }
-            Err(e) => {
-                error!(
-                    executor_id = %executor_info.id,
-                    error = %e,
-                    "[EVAL_FLOW] SSH connection test failed"
-                );
-                false
-            }
-        };
+        let ssh_connection_successful: bool =
+            match self.ssh_client.test_connection(ssh_details).await {
+                Ok(_) => {
+                    info!(
+                        executor_id = %executor_info.id,
+                        "[EVAL_FLOW] SSH connection test successful"
+                    );
+                    true
+                }
+                Err(e) => {
+                    error!(
+                        executor_id = %executor_info.id,
+                        error = %e,
+                        "[EVAL_FLOW] SSH connection test failed"
+                    );
+                    false
+                }
+            };
 
         validation_details.ssh_test_duration = ssh_test_start.elapsed();
         validation_details.ssh_score = if ssh_connection_successful { 0.8 } else { 0.0 };
@@ -388,7 +389,7 @@ impl ValidationExecutor {
                         metrics
                             .business()
                             .record_attestation_verification(
-                                &executor_info.id,
+                                &executor_info.id.to_string(),
                                 "hardware_attestation",
                                 binary_validation_successful,
                                 true, // signature_valid - binary executed successfully
@@ -408,7 +409,7 @@ impl ValidationExecutor {
                         metrics
                             .business()
                             .record_attestation_verification(
-                                &executor_info.id,
+                                &executor_info.id.to_string(),
                                 "hardware_attestation",
                                 false,
                                 false,
@@ -436,10 +437,6 @@ impl ValidationExecutor {
         validation_details.binary_score = binary_score;
         validation_details.total_validation_duration = total_start.elapsed();
 
-        // Cleanup SSH session
-        crate::ssh::session::SshSessionHelper::cleanup_ssh_session(session_info, validator_hotkey)
-            .await;
-
         Ok(ExecutorVerificationResult {
             executor_id: executor_info.id.clone(),
             grpc_endpoint: executor_info.grpc_endpoint.clone(),
@@ -452,132 +449,6 @@ impl ValidationExecutor {
             validation_details,
             gpu_count,
         })
-    }
-
-    /// Perform lightweight connectivity evaluation
-    async fn perform_lightweight_evaluation(
-        &self,
-        executor_info: &ExecutorInfoDetailed,
-        miner_endpoint: &str,
-        miner_client: &MinerClient,
-        validator_hotkey: &Hotkey,
-        config: &crate::config::VerificationConfig,
-    ) -> Result<bool> {
-        debug!(
-            executor_id = %executor_info.id,
-            miner_endpoint = %miner_endpoint,
-            "[EVAL_FLOW] Starting lightweight connectivity check"
-        );
-
-        // Connect to miner
-        let mut connection = match miner_client.connect_and_authenticate(miner_endpoint).await {
-            Ok(conn) => conn,
-            Err(e) => {
-                debug!(
-                    executor_id = %executor_info.id,
-                    error = %e,
-                    "[EVAL_FLOW] Failed to connect to miner for connectivity check"
-                );
-                return Ok(false);
-            }
-        };
-
-        // Create SSH session request
-        let ssh_request = basilica_protocol::miner_discovery::InitiateSshSessionRequest {
-            validator_hotkey: validator_hotkey.to_string(),
-            executor_id: executor_info.id.clone(),
-            purpose: "connectivity_check".to_string(),
-            validator_public_key: "dummy_key".to_string(), // Not needed for connectivity check
-            session_duration_secs: 60,                     // Short duration for connectivity check
-            session_metadata: "connectivity_check".to_string(),
-            rental_mode: false,
-            rental_id: String::new(),
-        };
-
-        // Request SSH session details
-        let session_info = match connection.initiate_ssh_session(ssh_request).await {
-            Ok(info) => info,
-            Err(e) => {
-                debug!(
-                    executor_id = %executor_info.id,
-                    error = %e,
-                    "[EVAL_FLOW] Failed to get SSH session info for connectivity check"
-                );
-                return Ok(false);
-            }
-        };
-
-        // Parse SSH credentials
-        let ssh_details = match crate::ssh::session::SshSessionHelper::parse_ssh_credentials(
-            &session_info.access_credentials,
-            None,
-            None, // No fallback key path for connectivity check
-            config.challenge_timeout,
-        ) {
-            Ok(details) => details,
-            Err(e) => {
-                debug!(
-                    executor_id = %executor_info.id,
-                    error = %e,
-                    "[EVAL_FLOW] Failed to parse SSH credentials for connectivity check"
-                );
-                return Ok(false);
-            }
-        };
-
-        // Perform simple SSH connectivity test
-        let connectivity_result = self.ssh_client.test_connection(&ssh_details).await;
-
-        match connectivity_result {
-            Ok(_) => {
-                info!(
-                    executor_id = %executor_info.id,
-                    ssh_host = %ssh_details.host,
-                    ssh_port = ssh_details.port,
-                    "[EVAL_FLOW] Lightweight connectivity check successful"
-                );
-                Ok(true)
-            }
-            Err(e) => {
-                warn!(
-                    executor_id = %executor_info.id,
-                    ssh_host = %ssh_details.host,
-                    ssh_port = ssh_details.port,
-                    error = %e,
-                    "[EVAL_FLOW] Lightweight connectivity check failed"
-                );
-                Ok(false)
-            }
-        }
-    }
-
-    /// Calculate validation score from binary validation results
-    fn calculate_binary_validation_score(&self, parsed_output: &ValidatorBinaryOutput) -> f64 {
-        if !parsed_output.success {
-            return 0.0;
-        }
-
-        let mut base_score: f64 = 0.5;
-
-        if parsed_output.gpu_count > 0 {
-            base_score += 0.3;
-        }
-
-        if let Some(ref executor_result) = parsed_output.executor_result {
-            if !executor_result.gpu_infos.is_empty() {
-                base_score += 0.1;
-            }
-
-            if executor_result.cpu_info.cores > 0 {
-                base_score += 0.05;
-            }
-
-            if executor_result.memory_info.total_gb > 16.0 {
-                base_score += 0.05;
-            }
-        }
-
-        base_score.min(1.0).max(0.0)
     }
 
     /// Calculate validation score from raw GPU results

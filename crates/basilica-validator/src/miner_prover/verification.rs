@@ -5,9 +5,7 @@
 
 use super::miner_client::{MinerClient, MinerClientConfig};
 use super::types::MinerInfo;
-use super::types::{
-    ExecutorInfoDetailed, ExecutorVerificationResult, GpuInfo, ValidationDetails,
-};
+use super::types::{ExecutorInfoDetailed, ExecutorVerificationResult, GpuInfo};
 use super::validation_strategy::{
     ValidationExecutor, ValidationStrategy, ValidationStrategySelector,
 };
@@ -16,9 +14,10 @@ use crate::metrics::ValidatorMetrics;
 use crate::persistence::{entities::VerificationLog, SimplePersistence};
 use crate::ssh::{SshSessionManager, ValidatorSshClient, ValidatorSshKeyManager};
 use anyhow::{Context, Result};
-use basilica_common::identity::{Hotkey, MinerUid};
+use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
 use sqlx::Row;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -28,7 +27,6 @@ pub struct VerificationEngine {
     config: VerificationConfig,
     miner_client_config: MinerClientConfig,
     validator_hotkey: Hotkey,
-    ssh_client: Arc<ValidatorSshClient>,
     /// Database persistence for storing verification results
     persistence: Arc<SimplePersistence>,
     /// Whether to use dynamic discovery or fall back to static config
@@ -45,8 +43,6 @@ pub struct VerificationEngine {
     validation_strategy_selector: Arc<ValidationStrategySelector>,
     /// Validation executor for running validation strategies
     validation_executor: Arc<ValidationExecutor>,
-    /// Metrics system for recording verification events
-    metrics: Option<Arc<ValidatorMetrics>>,
 }
 
 impl VerificationEngine {
@@ -339,15 +335,19 @@ impl VerificationEngine {
         let executor_count = executor_details.len();
         let executors: Vec<ExecutorInfoDetailed> = executor_details
             .into_iter()
-            .map(|details| ExecutorInfoDetailed {
-                id: details.executor_id,
-                host: "unknown".to_string(), // Will be filled from SSH credentials
-                port: 22,
-                status: "available".to_string(),
-                capabilities: vec!["gpu".to_string()],
-                grpc_endpoint: details.grpc_endpoint,
+            .map(|details| -> Result<ExecutorInfoDetailed> {
+                Ok(ExecutorInfoDetailed {
+                    id: ExecutorId::from_str(&details.executor_id).map_err(|e| {
+                        anyhow::anyhow!("Invalid executor ID '{}': {}", details.executor_id, e)
+                    })?,
+                    host: "unknown".to_string(), // Will be filled from SSH credentials
+                    port: 22,
+                    status: "available".to_string(),
+                    capabilities: vec!["gpu".to_string()],
+                    grpc_endpoint: details.grpc_endpoint,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         info!(
             "[EVAL_FLOW] Executor discovery completed: {} executors mapped from {} details",
@@ -1531,7 +1531,6 @@ impl VerificationEngine {
             config: config.clone(),
             miner_client_config,
             validator_hotkey,
-            ssh_client: ssh_client.clone(),
             persistence: persistence.clone(),
             use_dynamic_discovery,
             ssh_key_path: None, // Not used when SSH key manager is available
@@ -1542,8 +1541,7 @@ impl VerificationEngine {
                 config,
                 persistence,
             )),
-            validation_executor: Arc::new(ValidationExecutor::new(ssh_client, metrics.clone())),
-            metrics,
+            validation_executor: Arc::new(ValidationExecutor::new(ssh_client, metrics)),
         })
     }
 
@@ -1901,37 +1899,42 @@ impl VerificationEngine {
         );
 
         // Step 1: Acquire session lock
-        if let Err(e) = self
-            .ssh_session_manager
-            .acquire_session(&executor_info.id)
+        self.ssh_session_manager
+            .acquire_session(&executor_info.id.to_string())
             .await
-        {
-            return Ok(ExecutorVerificationResult {
-                executor_id: executor_info.id.clone(),
-                grpc_endpoint: executor_info.grpc_endpoint.clone(),
-                verification_score: 0.0,
-                ssh_connection_successful: false,
-                binary_validation_successful: false,
-                executor_result: None,
-                error: Some(e.to_string()),
-                execution_time: Duration::from_secs(0),
-                validation_details: ValidationDetails {
-                    ssh_test_duration: Duration::from_secs(0),
-                    binary_upload_duration: Duration::from_secs(0),
-                    binary_execution_duration: Duration::from_secs(0),
-                    total_validation_duration: Duration::from_secs(0),
-                    ssh_score: 0.0,
-                    binary_score: 0.0,
-                    combined_score: 0.0,
-                },
-                gpu_count: 0,
-            });
-        }
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to acquire SSH session for executor {}: {}",
+                    executor_info.id,
+                    e
+                )
+            })?;
 
-        // Step 2: Determine validation strategy
+        // Step 2: Establish connection and SSH session
+        let client = self.create_authenticated_client()?;
+        let mut connection = client.connect_and_authenticate(miner_endpoint).await?;
+
+        let (ssh_details, session_info) = if let Some(ref key_manager) = self.ssh_key_manager {
+            let key_provider = crate::ssh::session::ValidatorSshKeyProvider::new(key_manager);
+            crate::ssh::session::SshSessionHelper::establish_ssh_session(
+                &mut connection,
+                &executor_info.id.to_string(),
+                &self.validator_hotkey,
+                &key_provider,
+                None,
+            )
+            .await?
+        } else {
+            self.ssh_session_manager
+                .release_session(&executor_info.id.to_string())
+                .await;
+            return Err(anyhow::anyhow!("SSH key manager not available"));
+        };
+
+        // Step 3: Determine validation strategy
         let strategy = match self
             .validation_strategy_selector
-            .determine_validation_strategy(&executor_info.id, miner_uid)
+            .determine_validation_strategy(&executor_info.id.to_string(), miner_uid)
             .await
         {
             Ok(s) => s,
@@ -1945,44 +1948,22 @@ impl VerificationEngine {
             }
         };
 
-        // Step 3: Execute validation based on strategy
+        // Step 4: Execute validation based on strategy
         let result = match strategy {
             ValidationStrategy::Lightweight { previous_score } => {
-                let miner_client = self.create_authenticated_client()?;
                 self.validation_executor
                     .execute_lightweight_validation(
                         executor_info,
-                        miner_endpoint,
+                        &ssh_details,
+                        &session_info,
                         previous_score,
-                        &miner_client,
                         &self.validator_hotkey,
                         &self.config,
                     )
                     .await
             }
             ValidationStrategy::Full => {
-                // Establish SSH session for full binary validation
-                // Create authenticated client
-                let client = self.create_authenticated_client()?;
-                let mut connection = client.connect_and_authenticate(miner_endpoint).await?;
-
-                // Establish SSH session using the session helper
-                let (ssh_details, session_info) =
-                    if let Some(ref key_manager) = self.ssh_key_manager {
-                        crate::ssh::session::SshSessionHelper::establish_ssh_session(
-                            &mut connection,
-                            &executor_info.id,
-                            &self.validator_hotkey,
-                            key_manager,
-                        )
-                        .await?
-                    } else {
-                        return Err(anyhow::anyhow!("SSH key manager not available"));
-                    };
-
-                // Get the real binary configuration
                 let binary_config = &self.config.binary_validation;
-
                 self.validation_executor
                     .execute_full_validation(
                         executor_info,
@@ -1995,12 +1976,19 @@ impl VerificationEngine {
             }
         };
 
-        // Step 4: Release session lock
+        // Step 5: Cleanup SSH session
+        crate::ssh::session::SshSessionHelper::cleanup_ssh_session(
+            &mut connection,
+            &session_info,
+            &self.validator_hotkey,
+        )
+        .await;
+
+        // Step 6: Release session lock
         self.ssh_session_manager
-            .release_session(&executor_info.id)
+            .release_session(&executor_info.id.to_string())
             .await;
 
-        // Return result
         result
     }
 }

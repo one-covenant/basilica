@@ -64,7 +64,7 @@ pub type ValidationResult<T> = Result<T, ValidationError>;
 /// Enhanced executor verification result
 #[derive(Debug, Clone)]
 pub struct ExecutorVerificationResult {
-    pub executor_id: String,
+    pub executor_id: ExecutorId,
     pub grpc_endpoint: String,
     pub verification_score: f64,
     pub ssh_connection_successful: bool,
@@ -181,7 +181,7 @@ pub struct SmStat {
 /// Detailed executor information for verification processes
 #[derive(Debug, Clone)]
 pub struct ExecutorInfoDetailed {
-    pub id: String,
+    pub id: ExecutorId,
     pub host: String,
     pub port: u16,
     pub status: String,

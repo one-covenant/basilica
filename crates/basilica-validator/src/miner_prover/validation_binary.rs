@@ -5,22 +5,20 @@
 
 use super::types::{
     BinaryCpuInfo, BinaryMemoryInfo, BinaryNetworkInfo, CompressedMatrix, ExecutorResult, GpuInfo,
-    NetworkInterface, SmUtilizationStats, ValidatorBinaryOutput,
+    SmUtilizationStats, ValidatorBinaryOutput,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use basilica_common::ssh::SshConnectionDetails;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 /// Binary validation executor for running and parsing validator binaries
-pub struct BinaryValidator {
-    ssh_client: Arc<crate::ssh::ValidatorSshClient>,
-}
+pub struct BinaryValidator {}
 
 impl BinaryValidator {
     /// Create a new binary validator
-    pub fn new(ssh_client: Arc<crate::ssh::ValidatorSshClient>) -> Self {
-        Self { ssh_client }
+    pub fn new(_ssh_client: Arc<crate::ssh::ValidatorSshClient>) -> Self {
+        Self {}
     }
 
     /// Execute validator-binary locally with SSH parameters
@@ -576,240 +574,6 @@ impl BinaryValidator {
         Ok(average_score)
     }
 
-    /// Parse executor result from JSON
-    fn parse_executor_result(&self, parsed: &serde_json::Value) -> Result<Option<ExecutorResult>> {
-        let executor_data = parsed
-            .get("executor_result")
-            .ok_or(anyhow::anyhow!("No executor_result field"))?;
-
-        let gpu_name = executor_data
-            .get("gpu_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let gpu_uuid = executor_data
-            .get("gpu_uuid")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        let gpu_infos = self.parse_gpu_infos(executor_data)?;
-        let cpu_info = self.parse_cpu_info(executor_data)?;
-        let memory_info = self.parse_memory_info(executor_data)?;
-        let network_info = self.parse_network_info(executor_data)?;
-        let matrix_c = self.parse_matrix(executor_data)?;
-
-        let computation_time_ns = executor_data
-            .get("computation_time_ns")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-
-        let checksum = [0u8; 32]; // Default checksum
-        let sm_utilization = self.parse_sm_utilization(executor_data)?;
-
-        let active_sms = executor_data
-            .get("active_sms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-
-        let total_sms = executor_data
-            .get("total_sms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-
-        let memory_bandwidth_gbps = executor_data
-            .get("memory_bandwidth_gbps")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
-
-        let anti_debug_passed = executor_data
-            .get("anti_debug_passed")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        let timing_fingerprint = executor_data
-            .get("timing_fingerprint")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-
-        Ok(Some(ExecutorResult {
-            gpu_name,
-            gpu_uuid,
-            gpu_infos,
-            cpu_info,
-            memory_info,
-            network_info,
-            matrix_c,
-            computation_time_ns,
-            checksum,
-            sm_utilization,
-            active_sms,
-            total_sms,
-            memory_bandwidth_gbps,
-            anti_debug_passed,
-            timing_fingerprint,
-        }))
-    }
-
-    /// Parse GPU infos from JSON
-    fn parse_gpu_infos(&self, data: &serde_json::Value) -> Result<Vec<GpuInfo>> {
-        let empty_vec = Vec::new();
-        let gpus = data
-            .get("gpu_infos")
-            .and_then(|v| v.as_array())
-            .unwrap_or(&empty_vec);
-
-        let gpu_infos = gpus
-            .iter()
-            .enumerate()
-            .map(|(index, gpu)| GpuInfo {
-                index: index as u32,
-                gpu_name: gpu
-                    .get("gpu_name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown")
-                    .to_string(),
-                gpu_uuid: gpu
-                    .get("gpu_uuid")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                computation_time_ns: gpu
-                    .get("computation_time_ns")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0),
-                memory_bandwidth_gbps: gpu
-                    .get("memory_bandwidth_gbps")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                sm_utilization: SmUtilizationStats {
-                    min_utilization: 0.0,
-                    max_utilization: 0.0,
-                    avg_utilization: 0.0,
-                    per_sm_stats: Vec::new(),
-                },
-                active_sms: gpu.get("active_sms").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                total_sms: gpu.get("total_sms").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                anti_debug_passed: gpu
-                    .get("anti_debug_passed")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false),
-            })
-            .collect();
-
-        Ok(gpu_infos)
-    }
-
-    /// Parse CPU info from JSON
-    fn parse_cpu_info(&self, data: &serde_json::Value) -> Result<BinaryCpuInfo> {
-        let cpu = data.get("cpu_info").unwrap_or(&serde_json::Value::Null);
-
-        Ok(BinaryCpuInfo {
-            model: cpu
-                .get("model")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown")
-                .to_string(),
-            cores: cpu.get("cores").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            threads: cpu.get("threads").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            frequency_mhz: cpu
-                .get("frequency_mhz")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as u32,
-        })
-    }
-
-    /// Parse memory info from JSON
-    fn parse_memory_info(&self, data: &serde_json::Value) -> Result<BinaryMemoryInfo> {
-        let memory = data.get("memory_info").unwrap_or(&serde_json::Value::Null);
-
-        Ok(BinaryMemoryInfo {
-            total_gb: memory
-                .get("total_gb")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-            available_gb: memory
-                .get("available_gb")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-        })
-    }
-
-    /// Parse network info from JSON
-    fn parse_network_info(&self, data: &serde_json::Value) -> Result<BinaryNetworkInfo> {
-        let network = data.get("network_info").unwrap_or(&serde_json::Value::Null);
-        let interfaces = network
-            .get("interfaces")
-            .and_then(|v| v.as_array())
-            .unwrap_or(&Vec::new())
-            .iter()
-            .filter_map(|iface| {
-                Some(NetworkInterface {
-                    name: iface
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    mac_address: iface
-                        .get("mac_address")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    ip_addresses: iface
-                        .get("ip_addresses")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|ip| ip.as_str().map(|s| s.to_string()))
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                })
-            })
-            .collect();
-
-        Ok(BinaryNetworkInfo { interfaces })
-    }
-
-    /// Parse matrix from JSON
-    fn parse_matrix(&self, data: &serde_json::Value) -> Result<CompressedMatrix> {
-        let matrix = data.get("matrix_c").unwrap_or(&serde_json::Value::Null);
-
-        Ok(CompressedMatrix {
-            rows: matrix.get("rows").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            cols: matrix.get("cols").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            data: matrix
-                .get("data")
-                .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|val| val.as_f64()).collect())
-                .unwrap_or_default(),
-        })
-    }
-
-    /// Parse SM utilization from JSON
-    fn parse_sm_utilization(&self, data: &serde_json::Value) -> Result<SmUtilizationStats> {
-        let sm_util = data
-            .get("sm_utilization")
-            .unwrap_or(&serde_json::Value::Null);
-
-        Ok(SmUtilizationStats {
-            min_utilization: sm_util
-                .get("min_utilization")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-            max_utilization: sm_util
-                .get("max_utilization")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-            avg_utilization: sm_util
-                .get("avg_utilization")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-            per_sm_stats: Vec::new(), // Simplified for now
-        })
-    }
-
     /// Convert GPU results to ExecutorResult format
     pub fn convert_gpu_results_to_executor_result(
         &self,
@@ -1104,7 +868,7 @@ impl BinaryValidator {
     pub async fn execute_binary_validation(
         &self,
         ssh_details: &SshConnectionDetails,
-        session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
+        _session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         binary_config: &crate::config::BinaryValidationConfig,
     ) -> Result<ValidatorBinaryOutput> {
         info!(
