@@ -35,9 +35,11 @@ pub mod automation_components;
 pub mod dynamic_discovery_controller;
 pub mod key_manager;
 pub mod key_manager_builder;
+pub mod session;
 
 pub use automation_components::SshAutomationComponents;
 pub use key_manager::ValidatorSshKeyManager;
+pub use session::SshSessionManager;
 
 #[cfg(test)]
 mod tests;

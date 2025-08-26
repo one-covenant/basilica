@@ -7,6 +7,8 @@ pub mod discovery;
 pub mod miner_client;
 pub mod scheduler;
 pub mod types;
+pub mod validation_binary;
+pub mod validation_strategy;
 pub mod verification;
 pub mod verification_engine_builder;
 

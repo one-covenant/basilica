@@ -290,7 +290,7 @@ impl VerificationScheduler {
     }
 
     pub async fn cleanup_completed_verification_handles(&mut self) {
-        let mut to_remove: Vec<uuid::Uuid> = Vec::new();
+        let mut to_remove: Vec<Uuid> = Vec::new();
         {
             let handles = self.verification_handles.read().await;
             for (id, handle) in handles.iter() {
@@ -300,16 +300,22 @@ impl VerificationScheduler {
             }
         }
         if !to_remove.is_empty() {
-            let mut handles = self.verification_handles.write().await;
-            let mut tasks = self.active_verification_tasks.write().await;
-            for id in to_remove.iter() {
-                if let Some(h) = handles.remove(id) {
-                    // Await to avoid task leaks and to surface panics here
-                    if let Err(e) = h.await {
-                        tracing::error!("[EVAL_FLOW] Verification task {} panicked: {}", id, e);
+            let mut to_await = Vec::new();
+            {
+                let mut tasks = self.active_verification_tasks.write().await;
+                let mut handles = self.verification_handles.write().await;
+                for id in &to_remove {
+                    if let Some(h) = handles.remove(id) {
+                        to_await.push((*id, h));
                     }
+                    tasks.remove(id);
                 }
-                tasks.remove(id);
+            }
+
+            for (id, h) in to_await {
+                if let Err(e) = h.await {
+                    tracing::error!("[EVAL_FLOW] Verification task {} panicked: {}", id, e);
+                }
             }
             tracing::debug!(
                 "[EVAL_FLOW] Cleaned up {} completed verification tasks",

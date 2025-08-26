@@ -178,6 +178,17 @@ pub struct SmStat {
     pub max_warps: u32,
 }
 
+/// Detailed executor information for verification processes
+#[derive(Debug, Clone)]
+pub struct ExecutorInfoDetailed {
+    pub id: String,
+    pub host: String,
+    pub port: u16,
+    pub status: String,
+    pub capabilities: Vec<String>,
+    pub grpc_endpoint: String,
+}
+
 /// Output from validator binary execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorBinaryOutput {

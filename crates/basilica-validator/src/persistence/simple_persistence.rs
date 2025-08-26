@@ -388,6 +388,7 @@ impl SimplePersistence {
         }
 
         self.create_collateral_scanned_blocks_table().await?;
+        self.add_binary_validation_columns().await?;
 
         Ok(())
     }
@@ -600,7 +601,7 @@ impl SimplePersistence {
         // Build the base query with LEFT JOIN to find executors without active rentals
         // Also join with gpu_uuid_assignments to get actual GPU data
         let mut query_str = String::from(
-            "SELECT 
+            "SELECT
                 me.executor_id,
                 me.miner_id,
                 me.gpu_specs,
@@ -1429,10 +1430,10 @@ impl SimplePersistence {
     ) -> Result<Option<crate::api::types::ExecutorDetails>, anyhow::Error> {
         // First get the executor basic info with GPU data from gpu_uuid_assignments
         let row = sqlx::query(
-            "SELECT 
-                me.executor_id, 
-                me.gpu_specs, 
-                me.cpu_specs, 
+            "SELECT
+                me.executor_id,
+                me.gpu_specs,
+                me.cpu_specs,
                 me.location,
                 GROUP_CONCAT(gua.gpu_name) as gpu_names
              FROM miner_executors me
@@ -1572,6 +1573,44 @@ impl SimplePersistence {
         .await?;
 
         Ok(count as u32)
+    }
+
+    /// Add binary validation tracking columns to verification_logs table
+    async fn add_binary_validation_columns(&self) -> Result<(), anyhow::Error> {
+        let column_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('verification_logs')
+            WHERE name = 'last_binary_validation'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !column_exists {
+            sqlx::query(
+                r#"
+                ALTER TABLE verification_logs
+                ADD COLUMN last_binary_validation TEXT;
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+
+            sqlx::query(
+                r#"
+                ALTER TABLE verification_logs
+                ADD COLUMN last_binary_validation_score REAL;
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+
+            info!("Added binary validation tracking columns to verification_logs table");
+        }
+
+        Ok(())
     }
 }
 

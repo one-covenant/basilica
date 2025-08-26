@@ -198,6 +198,7 @@ mod tests {
             grpc_port_offset: Some(1000),
             binary_validation: crate::config::BinaryValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
+            executor_validation_interval: Duration::from_secs(12 * 3600),
         };
 
         let automatic_verification_config = AutomaticVerificationConfig {
@@ -349,6 +350,7 @@ mod tests {
             grpc_port_offset: Some(1000),
             binary_validation: crate::config::BinaryValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
+            executor_validation_interval: Duration::from_secs(12 * 3600),
         };
 
         let miner_client_config = MinerClientConfig::default();
