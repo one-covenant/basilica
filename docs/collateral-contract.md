@@ -2,8 +2,8 @@
 
 This contract is derived from the upstream project at [Datura-ai/celium-collateral-contracts](https://github.com/Datura-ai/celium-collateral-contracts/) and adapted for Basilica. It enables subnet owners to require miners to lock collateral as assurance of service quality.
 
-> **Purpose**: Manage miner collaterals in the Bittensor ecosystem, allowing validators to slash misbehaving miners. Currently, the slash is controled by subnet owner or contract deployer. It will be decentralized via contract upgrade in the future.
->
+> **Purpose**: Manage miner collateral in the Bittensor ecosystem and enable the subnet owner (contract admin)—or an explicitly authorized slasher—to penalize misbehavior. Slashing authority is currently centralized to the admin; future upgrades may delegate or decentralize this capability.
+
 > **Design**: One collateral contract per one subnet.
 
 This smart contract is **generic** and works with **any Bittensor subnet**.
@@ -45,8 +45,7 @@ This contract creates a **trust-minimized interaction** between miners and valid
   Validators may choose to favor miners with higher collateral when assigning tasks, incentivizing greater stakes for reliable performance.
 
 - **Admin Slashing**
-
-The subnet owner (contract admin) can penalize a misbehaving miner by slashing some or all of the miner's collateral.
+  The subnet owner (contract admin) or an explicitly authorized slasher can penalize a misbehaving miner by slashing some or all of the miner's collateral.
 
 - **Automatic Release**
 
@@ -62,8 +61,7 @@ The subnet owner (contract admin) can penalize a misbehaving miner by slashing s
   explanations or evidence for each action, ensuring decisions are transparent and auditable.
 
 - **Configurable Minimum Bond & Decision Deadline**
-
-  Defines a minimum stake requirement and a strict timeline for subnet owner responses.
+  Defines a minimum stake requirement and a strict timeline for admin/slasher responses.
 
 > **Important notice on addressing**
 >
@@ -111,8 +109,7 @@ Below is a typical sequence for integrating and using this collateral contract w
   - Confirm on-chain that your collateral has been successfully locked for that your executor
 
 - **Slashing Misbehaving Miners**
-
-  - If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner **calls** `slashCollateral()` with the `miner`, `slashAmount`, `executorUuid`, and other details to penalize the miner by reducing their staked amount.
+  If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` with the `miner`, `slashAmount`, `executorUuid`, and justification details to reduce the miner’s collateral.
 
 - **Reclaiming Collateral**
   - When miners wish to withdraw their stake, they **initiate a reclaim** by calling `reclaimCollateral()`, specifying the **executor UUID** associated with the collateral.
