@@ -23,11 +23,12 @@ anyhow = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
+clap-verbosity-flag = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
+basilica-common = { path = "../basilica-common" }
 
 [dev-dependencies]
 subxt = { workspace = true }

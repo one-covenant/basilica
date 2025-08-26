@@ -2,6 +2,7 @@
 
 use basilica_api::{config::Config, server::Server, Result};
 use clap::Parser;
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use std::path::PathBuf;
 use tracing::{error, info};
 
@@ -16,27 +17,16 @@ struct Args {
     #[arg(long)]
     gen_config: bool,
 
-    /// Enable debug logging
-    #[arg(short, long)]
-    debug: bool,
+    #[command(flatten)]
+    verbosity: Verbosity<InfoLevel>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Initialize logging
-    let log_level = if args.debug { "debug" } else { "info" };
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level));
-
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(true)
-        .with_thread_ids(true)
-        .with_file(true)
-        .with_line_number(true)
-        .init();
+    // Initialize logging using the unified system
+    basilica_common::logging::init_logging(&args.verbosity, "basilica_api=info")?;
 
     info!("Starting Basilica API Gateway v{}", basilica_api::VERSION);
 

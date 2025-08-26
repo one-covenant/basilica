@@ -3,6 +3,7 @@ use crate::cli::{
     Command,
 };
 use clap::Parser;
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use std::{path::PathBuf, sync::Arc};
 
 #[derive(Parser, Debug)]
@@ -16,8 +17,8 @@ pub struct Args {
     #[arg(short, long, global = true, default_value = "validator.toml")]
     pub config: PathBuf,
 
-    #[arg(short, long, global = true)]
-    pub verbose: bool,
+    #[command(flatten)]
+    pub verbosity: Verbosity<InfoLevel>,
 
     #[arg(long, global = true)]
     pub dry_run: bool,

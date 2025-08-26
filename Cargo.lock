@@ -2101,6 +2101,7 @@ dependencies = [
  "bs58",
  "chrono",
  "clap",
+ "clap-verbosity-flag",
  "criterion",
  "dashmap 5.5.3",
  "figment",
@@ -2155,6 +2156,7 @@ dependencies = [
  "basilica-protocol",
  "chrono",
  "clap",
+ "clap-verbosity-flag",
  "deadpool-postgres",
  "figment",
  "futures",
@@ -2208,6 +2210,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "clap-verbosity-flag",
  "console",
  "dialoguer",
  "directories",
@@ -2252,6 +2255,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "chrono",
+ "clap-verbosity-flag",
  "crabtensor",
  "data-encoding",
  "dotenvy",
@@ -2298,6 +2302,7 @@ dependencies = [
  "bollard",
  "chrono",
  "clap",
+ "clap-verbosity-flag",
  "figment",
  "flume",
  "fs_extra",
@@ -2348,6 +2353,7 @@ dependencies = [
  "blake3",
  "chrono",
  "clap",
+ "clap-verbosity-flag",
  "collateral-contract",
  "cron",
  "deadpool 0.10.0",
@@ -2393,6 +2399,7 @@ dependencies = [
  "bittensor",
  "chrono",
  "clap",
+ "clap-verbosity-flag",
  "data-encoding",
  "figment",
  "futures",
@@ -2451,6 +2458,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "clap-verbosity-flag",
  "collateral-contract",
  "eventsource-stream",
  "fastrand 2.3.0",
@@ -3368,6 +3376,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap-verbosity-flag"
+version = "2.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34c77f67047557f62582784fd7482884697731b2932c7d37ced54bce2312e1e2"
+dependencies = [
+ "clap",
+ "log",
+]
+
+[[package]]
 name = "clap_builder"
 version = "4.5.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3428,8 +3446,10 @@ dependencies = [
  "alloy-provider",
  "alloy-sol-types 1.3.1",
  "anyhow",
+ "basilica-common",
  "bittensor",
  "clap",
+ "clap-verbosity-flag",
  "hex",
  "serde",
  "serde_json",
@@ -3438,7 +3458,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uuid",
 ]
 

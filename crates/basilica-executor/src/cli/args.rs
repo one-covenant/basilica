@@ -8,6 +8,7 @@
 use super::Commands;
 use anyhow::Result;
 use clap::Parser;
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -19,9 +20,8 @@ pub struct ExecutorArgs {
     #[arg(short, long, default_value = "executor.toml")]
     pub config: PathBuf,
 
-    /// Log level (trace, debug, info, warn, error)
-    #[arg(short, long, default_value = "info")]
-    pub log_level: String,
+    #[command(flatten)]
+    pub verbosity: Verbosity<InfoLevel>,
 
     /// Enable prometheus metrics endpoint
     #[arg(long)]
@@ -66,7 +66,7 @@ impl ExecutorArgs {
     /// Get server configuration from arguments
     pub fn get_server_config(&self) -> ServerConfig {
         ServerConfig {
-            log_level: self.log_level.clone(),
+            verbosity: self.verbosity.clone(),
             config_path: self.config.clone(),
             metrics_enabled: self.metrics,
             metrics_addr: self.metrics_addr,
@@ -78,6 +78,7 @@ impl ExecutorArgs {
         CliConfig {
             config_path: self.config.clone(),
             command: self.command.clone(),
+            verbosity: self.verbosity.clone(),
         }
     }
 
@@ -105,7 +106,7 @@ pub enum ApplicationMode {
 /// Server mode configuration
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    pub log_level: String,
+    pub verbosity: Verbosity<InfoLevel>,
     pub config_path: PathBuf,
     pub metrics_enabled: bool,
     pub metrics_addr: SocketAddr,
@@ -116,6 +117,7 @@ pub struct ServerConfig {
 pub struct CliConfig {
     pub config_path: PathBuf,
     pub command: Option<Commands>,
+    pub verbosity: Verbosity<InfoLevel>,
 }
 
 /// Configuration generation settings
@@ -178,10 +180,11 @@ impl AppConfig {
         }
     }
 
-    /// Get log level if applicable
-    pub fn log_level(&self) -> Option<&str> {
+    /// Get verbosity if applicable
+    pub fn verbosity(&self) -> Option<&Verbosity<InfoLevel>> {
         match self {
-            AppConfig::Server(config) => Some(&config.log_level),
+            AppConfig::Server(config) => Some(&config.verbosity),
+            AppConfig::Cli(config) => Some(&config.verbosity),
             _ => None,
         }
     }
@@ -205,7 +208,7 @@ mod tests {
     fn test_application_mode_detection() {
         let args = ExecutorArgs {
             config: "test.toml".into(),
-            log_level: "debug".to_string(),
+            verbosity: Verbosity::new(0, 0),
             metrics: false,
             metrics_addr: "127.0.0.1:9090".parse().unwrap(),
             gen_config: true,
@@ -229,7 +232,7 @@ mod tests {
     fn test_config_resolution() {
         let args = ExecutorArgs {
             config: "test.toml".into(),
-            log_level: "debug".to_string(),
+            verbosity: Verbosity::new(0, 0),
             metrics: true,
             metrics_addr: "127.0.0.1:9090".parse().unwrap(),
             gen_config: false,
@@ -240,6 +243,6 @@ mod tests {
         let config = AppConfigResolver::resolve(&args).unwrap();
         assert!(matches!(config, AppConfig::Server(_)));
         assert!(config.metrics_enabled());
-        assert_eq!(config.log_level(), Some("debug"));
+        assert!(config.verbosity().is_some());
     }
 }

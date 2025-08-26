@@ -45,6 +45,7 @@ bittensor = { path = "../bittensor" }
 
 # Additional required dependencies
 clap = { version = "4.4", features = ["derive"] }
+clap-verbosity-flag = { workspace = true }
 futures-util = "0.3"
 async-trait = "0.1"
 tokio-stream = "0.1"

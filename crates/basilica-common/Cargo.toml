@@ -19,6 +19,7 @@ tracing-subscriber = { workspace = true }
 tracing-journald = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
+clap-verbosity-flag = { workspace = true }
 tokio = { workspace = true }
 figment = { workspace = true }
 toml = "0.8"

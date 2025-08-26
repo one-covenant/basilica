@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::signal;
 use tracing::{error, info, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 mod auth;
 mod bittensor_core;
@@ -396,8 +395,8 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Initialize logging
-    init_logging(&args.log_level)?;
+    // Initialize logging using the unified system
+    basilica_common::logging::init_logging(&args.verbosity, "basilica_miner=info")?;
 
     // Load configuration
     let config = load_config(&args.config)?;
@@ -545,25 +544,6 @@ async fn handle_deploy_executors(
             );
         }
     }
-
-    Ok(())
-}
-
-/// Initialize structured logging
-fn init_logging(level: &str) -> Result<()> {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
-
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .with_thread_ids(true)
-                .with_file(true)
-                .with_line_number(true)
-                .compact(),
-        )
-        .init();
 
     Ok(())
 }
