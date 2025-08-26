@@ -263,29 +263,6 @@ pub enum ExportFormat {
     Csv,
 }
 
-/// Service metrics collection
-pub trait ServiceMetrics {
-    /// Record service start event
-    fn record_start(&self, service_name: &str);
-
-    /// Record service stop event
-    fn record_stop(&self, service_name: &str);
-
-    /// Record service error
-    fn record_error(&self, service_name: &str, error: &str);
-
-    /// Record health check result
-    fn record_health_check(
-        &self,
-        service_name: &str,
-        status: crate::services::HealthState,
-        duration: Duration,
-    );
-
-    /// Record service restart
-    fn record_restart(&self, service_name: &str);
-}
-
 /// Common metric names used across Basilca components
 pub mod metric_names {
     // System metrics
