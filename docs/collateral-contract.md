@@ -45,13 +45,13 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
   Validators may choose to favor miners with higher collateral when assigning tasks, incentivizing greater stakes for reliable performance.
 
-- **Arbitrary Slashing**
+- **Admin Slashing**
 
-  Subnet owner can penalize a misbehaving miner by slashing all of the miner's collateral.
+The subnet owner (contract admin) can penalize a misbehaving miner by slashing some or all of the miner's collateral.
 
 - **Automatic Release**
 
-  If a validator does not respond to a miner's reclaim request within a configured deadline, the miner can reclaim their stake, preventing indefinite lock-ups.
+  If the authorized slasher/admin does not respond to a miner's reclaim request within a configured deadline, the miner can reclaim their stake, preventing indefinite lock-ups.
 
 - **Trustless & Auditable**
 
