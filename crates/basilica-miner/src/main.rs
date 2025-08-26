@@ -396,8 +396,9 @@ async fn main() -> Result<()> {
     }
 
     // Initialize logging using the unified system
-    let log_filter = format!("{}=info", env!("CARGO_BIN_NAME").replace("-", "_"));
-    basilica_common::logging::init_logging(&args.verbosity, &log_filter)?;
+    let binary_name = env!("CARGO_BIN_NAME").replace("-", "_");
+    let default_filter = format!("{}=info", binary_name);
+    basilica_common::logging::init_logging(&args.verbosity, &binary_name, &default_filter)?;
 
     // Load configuration
     let config = load_config(&args.config)?;

@@ -2,7 +2,7 @@ use crate::cli::{commands::Commands, handlers};
 use crate::config::CliConfig;
 use crate::error::Result;
 use clap::Parser;
-use clap_verbosity_flag::{InfoLevel, Verbosity};
+use clap_verbosity_flag::Verbosity;
 use etcetera::{choose_base_strategy, BaseStrategy};
 use std::path::{Path, PathBuf};
 
@@ -45,7 +45,7 @@ pub struct Args {
     pub config: Option<PathBuf>,
 
     #[command(flatten)]
-    pub verbosity: Verbosity<InfoLevel>,
+    pub verbosity: Verbosity,
 
     /// Output format as JSON
     #[arg(long, global = true)]
@@ -69,10 +69,6 @@ pub struct Args {
 impl Args {
     /// Execute the CLI command
     pub async fn run(self) -> Result<()> {
-        // Only initialize logging if explicitly requested (for debugging CLI itself)
-        // Normal CLI output is handled via println!/eprintln!
-        basilica_common::logging::init_cli_logging(&self.verbosity, "basilica_cli=warn")?;
-
         // Load config using the common loader pattern
         let config = if let Some(path) = &self.config {
             let expanded_path = expand_tilde(path);

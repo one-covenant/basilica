@@ -14,6 +14,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 /// # Arguments
 ///
 /// * `verbosity` - The verbosity flags from clap (-v/-q)
+/// * `base_filter` - The base filter string to scope verbose flags to (e.g., "basilica_protocol=info,basilica_miner")
 /// * `default_filter` - The default filter string if no CLI flags or RUST_LOG are set
 ///
 /// # Example
@@ -30,13 +31,18 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 /// }
 ///
 /// let args = Args::parse();
-/// logging::init_logging(&args.verbosity, "basilica_miner=info").unwrap();
+/// let binary_name = env!("CARGO_BIN_NAME").replace("-", "_");
+/// logging::init_logging(&args.verbosity, &binary_name, "basilica_miner=info").unwrap();
 /// ```
-pub fn init_logging<L: LogLevel>(verbosity: &Verbosity<L>, default_filter: &str) -> Result<()> {
+pub fn init_logging<L: LogLevel>(
+    verbosity: &Verbosity<L>,
+    base_filter: &str,
+    default_filter: &str,
+) -> Result<()> {
     // Check if verbosity flags were explicitly used
     let filter = if let Some(log_level) = verbosity.log_level() {
-        // CLI flags take priority
-        EnvFilter::try_new(format!("{}", log_level))?
+        // CLI flags take priority - scope to specific binary
+        EnvFilter::try_new(format!("{}={}", base_filter, log_level))?
     } else {
         // Fall back to RUST_LOG, then default
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter))
@@ -54,31 +60,4 @@ pub fn init_logging<L: LogLevel>(verbosity: &Verbosity<L>, default_filter: &str)
         .init();
 
     Ok(())
-}
-
-/// Initialize logging for CLI tools that should have minimal output by default
-///
-/// This is specifically for user-facing CLIs like `basilica-cli` that should
-/// only enable logging when explicitly requested via flags or RUST_LOG.
-///
-/// # Arguments
-///
-/// * `verbosity` - The verbosity flags from clap (-v/-q)
-/// * `default_filter` - The default filter string if logging is enabled
-///
-/// # Returns
-///
-/// * `true` if logging was initialized
-/// * `false` if logging was not initialized (no flags and no RUST_LOG)
-pub fn init_cli_logging<L: LogLevel>(
-    verbosity: &Verbosity<L>,
-    default_filter: &str,
-) -> Result<bool> {
-    // Only init logging for debugging the CLI itself
-    if verbosity.log_level().is_some() || std::env::var("RUST_LOG").is_ok() {
-        init_logging(verbosity, default_filter)?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
 }
