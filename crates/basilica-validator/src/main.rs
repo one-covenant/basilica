@@ -27,8 +27,9 @@ use cli::Args;
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Initialize logging using the unified system
-    basilica_common::logging::init_logging(&args.verbosity, "basilica_validator=info")?;
+    // Initialize logging using the unified system with dynamic binary name
+    let log_filter = format!("{}=info", env!("CARGO_BIN_NAME").replace("-", "_"));
+    basilica_common::logging::init_logging(&args.verbosity, &log_filter)?;
 
     args.run().await
 }

@@ -180,10 +180,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Initialize logging using the unified system
-    basilica_common::logging::init_logging(
-        &cli.verbosity,
-        "basilica_collateral_contract=info,basilica_protocol=info",
-    )?;
+    let log_filter = format!(
+        "{}=info,basilica_protocol=info",
+        env!("CARGO_BIN_NAME").replace("-", "_")
+    );
+    basilica_common::logging::init_logging(&cli.verbosity, &log_filter)?;
     let network_config = CollateralNetworkConfig::from_network(&cli.network, cli.contract_address)?;
 
     println!("Using network: {:?}", cli.network);

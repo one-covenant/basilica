@@ -30,10 +30,11 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize logging using the unified system
-    basilica_common::logging::init_logging(
-        &args.verbosity,
-        "basilica_billing=info,basilica_protocol=info",
-    )?;
+    let log_filter = format!(
+        "{}=info,basilica_protocol=info",
+        env!("CARGO_BIN_NAME").replace("-", "_")
+    );
+    basilica_common::logging::init_logging(&args.verbosity, &log_filter)?;
 
     if args.gen_config {
         let config = BillingConfig::default();

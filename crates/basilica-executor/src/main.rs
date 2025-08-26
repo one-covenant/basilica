@@ -55,7 +55,8 @@ async fn run_config_generation(
 
 async fn run_server_mode(config: basilica_executor::cli::args::ServerConfig) -> Result<()> {
     // Initialize logging using the unified system
-    basilica_common::logging::init_logging(&config.verbosity, "basilica_executor=info")?;
+    let log_filter = format!("{}=info", env!("CARGO_BIN_NAME").replace("-", "_"));
+    basilica_common::logging::init_logging(&config.verbosity, &log_filter)?;
 
     let executor_config = load_config(&config.config_path)?;
     info!(
@@ -185,7 +186,8 @@ async fn register_with_miner(config: &ExecutorConfig) -> Result<()> {
 
 async fn run_cli_mode(config: basilica_executor::cli::args::CliConfig) -> Result<()> {
     // Initialize logging using the unified system
-    basilica_common::logging::init_logging(&config.verbosity, "basilica_executor=info")?;
+    let log_filter = format!("{}=info", env!("CARGO_BIN_NAME").replace("-", "_"));
+    basilica_common::logging::init_logging(&config.verbosity, &log_filter)?;
 
     if let Some(command) = config.command {
         let context = CliContext::new(config.config_path.to_string_lossy().to_string());
