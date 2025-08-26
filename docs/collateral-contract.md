@@ -150,8 +150,8 @@ You need replace the variable with the correct value like contract address.
   - Run deposit command to initiate the deposit transaction with your specified amount of $TAO. running `collateral-cli tx deposit`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
 
   ```shell
-  +#!/usr/bin/env bash
-  +set -euo pipefail
+  #!/usr/bin/env bash
+  set -euo pipefail
 
   # the whole collateral flow to verify everything
   export NETWORK=local
