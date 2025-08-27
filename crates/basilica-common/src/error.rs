@@ -1,7 +1,7 @@
-//! Error handling for Basilca
+//! Error handling for Basilica
 //!
 //! This module defines the core error handling infrastructure used throughout
-//! the Basilca system. It provides:
+//! the Basilica system. It provides:
 //! - `BasilicaError` trait for consistent error handling
 //! - Specific error types for different domains (Network, Crypto, Config, etc.)
 //! - Integration with `thiserror` for ergonomic error handling
@@ -14,9 +14,9 @@
 
 use thiserror::Error;
 
-/// Base trait for all Basilca-specific errors
+/// Base trait for all Basilica-specific errors
 ///
-/// This trait ensures all Basilca errors are:
+/// This trait ensures all Basilica errors are:
 /// - Thread-safe (Send + Sync)
 /// - Static lifetime (no borrowed data)
 /// - Implement standard Error trait
@@ -331,9 +331,6 @@ pub enum VerificationError {
 
 impl BasilicaError for VerificationError {}
 
-/// Result type alias for common Basilca operations
-pub type BasilcaResult<T, E = Box<dyn BasilicaError>> = Result<T, E>;
-
 /// Utility functions for error handling
 impl NetworkError {
     /// Create a connection failed error from any error type
@@ -405,15 +402,15 @@ mod tests {
     }
 
     #[test]
-    fn test_basilca_error_trait() {
-        fn test_basilca_error(_: impl BasilicaError) {}
+    fn test_basilica_error_trait() {
+        fn test_basilica_error(_: impl BasilicaError) {}
 
         // These should compile, proving they implement BasilicaError
-        test_basilca_error(NetworkError::ConnectionLost {
+        test_basilica_error(NetworkError::ConnectionLost {
             endpoint: "test".to_string(),
         });
-        test_basilca_error(CryptoError::RandomGenerationFailed);
-        test_basilca_error(ConfigurationError::ValidationFailed {
+        test_basilica_error(CryptoError::RandomGenerationFailed);
+        test_basilica_error(ConfigurationError::ValidationFailed {
             details: "test".to_string(),
         });
     }

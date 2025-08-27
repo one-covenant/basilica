@@ -1,7 +1,7 @@
-//! # Common Basilca
+//! # Common Basilica
 //!
-//! Core shared types, error definitions, and cryptographic utilities for the Basilca .
-//! This crate provides the fundamental building blocks that all other Basilca crates depend on.
+//! Core shared types, error definitions, and cryptographic utilities for the Basilica .
+//! This crate provides the fundamental building blocks that all other Basilica crates depend on.
 //!
 //! ## Key Features
 //! - Identity types (Hotkey, ExecutorId, ValidatorUid, MinerUid)
