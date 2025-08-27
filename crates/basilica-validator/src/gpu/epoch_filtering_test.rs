@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::config::emission::EmissionConfig;
     use crate::gpu::{GpuScoringEngine, MinerGpuProfile};
     use crate::persistence::{gpu_profile_repository::GpuProfileRepository, SimplePersistence};
-    use crate::config::emission::EmissionConfig;
     use basilica_common::identity::MinerUid;
     use chrono::Utc;
 

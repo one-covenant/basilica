@@ -17,7 +17,10 @@ pub struct GpuScoringEngine {
 }
 
 impl GpuScoringEngine {
-    pub fn new(gpu_profile_repo: Arc<GpuProfileRepository>, emission_config: EmissionConfig) -> Self {
+    pub fn new(
+        gpu_profile_repo: Arc<GpuProfileRepository>,
+        emission_config: EmissionConfig,
+    ) -> Self {
         Self {
             gpu_profile_repo,
             metrics: None,
@@ -127,7 +130,9 @@ impl GpuScoringEngine {
     /// Check if a GPU model is configured for rewards based on emission config
     fn is_gpu_model_rewardable(&self, gpu_model: &str) -> bool {
         let normalized_model = GpuCategorizer::normalize_gpu_model(gpu_model);
-        self.emission_config.gpu_allocations.contains_key(&normalized_model)
+        self.emission_config
+            .gpu_allocations
+            .contains_key(&normalized_model)
     }
 
     /// Calculate verification score from executor results
@@ -956,7 +961,10 @@ mod tests {
 
         // Test category statistics include B200
         let stats = engine.get_category_statistics().await.unwrap();
-        assert!(stats.contains_key("B200"), "B200 should be included in category statistics");
+        assert!(
+            stats.contains_key("B200"),
+            "B200 should be included in category statistics"
+        );
 
         let b200_stats = stats.get("B200").unwrap();
         assert_eq!(b200_stats.miner_count, 1);
@@ -1039,7 +1047,10 @@ mod tests {
         assert_eq!(stats.len(), 2, "Should only have 2 categories (H100, B200)");
         assert!(stats.contains_key("H100"), "Should include H100");
         assert!(stats.contains_key("B200"), "Should include B200");
-        assert!(!stats.contains_key("H200"), "Should NOT include H200 (not in emission config)");
+        assert!(
+            !stats.contains_key("H200"),
+            "Should NOT include H200 (not in emission config)"
+        );
 
         // Verify correct stats
         assert_eq!(stats.get("H100").unwrap().miner_count, 1);
