@@ -310,13 +310,24 @@ impl ValidationExecutor {
 
         let total_start = Instant::now();
 
-        let connectivity_successful = match self.ssh_client.test_connection(ssh_details).await {
-            Ok(_) => {
+        let connectivity_successful = match self
+            .ssh_client
+            .execute_command(
+                ssh_details,
+                "nvidia-smi --query-gpu=uuid --format=csv,noheader",
+                true,
+            )
+            .await
+        {
+            Ok(output) => {
+                let gpu_present =
+                    !output.trim().is_empty() && !output.contains("No devices were found");
                 info!(
                     executor_id = %executor_info.id,
-                    "[EVAL_FLOW] Lightweight connectivity check successful"
+                    gpu_present = gpu_present,
+                    "[EVAL_FLOW] GPU availability check completed"
                 );
-                true
+                gpu_present
             }
             Err(e) => {
                 warn!(
@@ -350,6 +361,7 @@ impl ValidationExecutor {
             executor_id = %executor_info.id,
             score = verification_score,
             duration_ms = total_duration.as_millis(),
+            node_available = connectivity_successful,
             "[EVAL_FLOW] Lightweight validation completed"
         );
 
