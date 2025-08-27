@@ -14,7 +14,7 @@ pub type SharedExecutorState = Arc<ExecutorState>;
 /// Error conversion trait for gRPC errors
 pub trait GrpcErrorHandler {
     // TODO: Uncomment when gRPC service is implemented
-    // fn to_grpc_error<E: BasilcaError>(error: E) -> Status {
+    // fn to_grpc_error<E: BasilicaError>(error: E) -> Status {
     //     error!("gRPC error: {}", error);
     //     Status::internal(error.to_string())
     // }

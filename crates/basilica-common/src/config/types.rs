@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::error::{BasilcaError, ConfigurationError};
+use crate::error::{BasilicaError, ConfigurationError};
 
 /// Bittensor network configuration shared across validator and miner
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -335,7 +335,7 @@ impl Default for PrometheusConfig {
 
 /// Common configuration validation trait
 pub trait ConfigValidation {
-    type Error: BasilcaError;
+    type Error: BasilicaError;
 
     /// Validate the configuration
     fn validate(&self) -> Result<(), Self::Error>;

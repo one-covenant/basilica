@@ -3,7 +3,7 @@
 use crate::{
     api,
     config::Config,
-    error::{Error, Result},
+    error::{ApiError, Result},
 };
 use axum::Router;
 use basilica_validator::ValidatorClient;
@@ -58,7 +58,7 @@ impl Server {
 
         // Validate configuration
         if config.bittensor.validator_hotkey.is_empty() {
-            return Err(Error::ConfigError(
+            return Err(ApiError::ConfigError(
                 "validator_hotkey must be configured in bittensor section".to_string(),
             ));
         }
@@ -82,7 +82,7 @@ impl Server {
         let validator_info = discovery
             .find_neuron_by_hotkey(&config.bittensor.validator_hotkey)
             .ok_or_else(|| {
-                Error::ConfigError(format!(
+                ApiError::ConfigError(format!(
                     "Validator with hotkey {} not found in subnet {}",
                     config.bittensor.validator_hotkey, config.bittensor.netuid
                 ))
@@ -90,7 +90,7 @@ impl Server {
 
         // Verify it's actually a validator (has validator_permit)
         if !validator_info.is_validator {
-            return Err(Error::ConfigError(format!(
+            return Err(ApiError::ConfigError(format!(
                 "Hotkey {} exists but does not have validator permit in subnet {}",
                 config.bittensor.validator_hotkey, config.bittensor.netuid
             )));
@@ -100,7 +100,7 @@ impl Server {
 
         // Get axon info from the validator info
         let axon_info = validator_info.axon_info.ok_or_else(|| {
-            Error::ConfigError(format!("No axon info found for validator {validator_uid}"))
+            ApiError::ConfigError(format!("No axon info found for validator {validator_uid}"))
         })?;
 
         let validator_endpoint = format!("http://{}:{}", axon_info.ip, axon_info.port);
@@ -112,7 +112,7 @@ impl Server {
         // Create validator client
         let validator_client = Arc::new(
             ValidatorClient::new(&validator_endpoint, config.request_timeout()).map_err(|e| {
-                Error::Internal {
+                ApiError::Internal {
                     message: format!("Failed to create validator client: {e}"),
                 }
             })?,
@@ -124,7 +124,7 @@ impl Server {
             .connect_timeout(config.connection_timeout())
             .pool_max_idle_per_host(10)
             .build()
-            .map_err(Error::HttpClient)?;
+            .map_err(ApiError::HttpClient)?;
 
         // Initialize database connection
         info!("Initializing database connection");
@@ -133,7 +133,7 @@ impl Server {
             .max_connections(config.database.max_connections)
             .connect(&config.database.url)
             .await
-            .map_err(|e| Error::Internal {
+            .map_err(|e| ApiError::Internal {
                 message: format!("Failed to connect to database: {}", e),
             })?;
 
@@ -142,7 +142,7 @@ impl Server {
         sqlx::migrate!("./migrations")
             .run(&db)
             .await
-            .map_err(|e| Error::Internal {
+            .map_err(|e| ApiError::Internal {
                 message: format!("Failed to run migrations: {}", e),
             })?;
 
@@ -220,18 +220,19 @@ impl Server {
 
         info!("Starting HTTP server on {}", addr);
 
-        let listener = tokio::net::TcpListener::bind(addr)
-            .await
-            .map_err(|e| Error::Internal {
-                message: format!("Failed to bind to address {addr}: {e}"),
-            })?;
+        let listener =
+            tokio::net::TcpListener::bind(addr)
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: format!("Failed to bind to address {addr}: {e}"),
+                })?;
 
         info!("Basilica API Gateway listening on {}", addr);
 
         axum::serve(listener, self.app)
             .with_graceful_shutdown(shutdown_signal())
             .await
-            .map_err(|e| Error::Internal {
+            .map_err(|e| ApiError::Internal {
                 message: format!("Server error: {e}"),
             })?;
 

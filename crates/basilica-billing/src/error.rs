@@ -1,4 +1,4 @@
-use basilica_common::error::BasilcaError;
+use basilica_common::error::BasilicaError;
 use rust_decimal::Decimal;
 use thiserror::Error;
 
@@ -96,7 +96,7 @@ pub enum BillingError {
     SerializationError(#[from] serde_json::Error),
 }
 
-impl BasilcaError for BillingError {}
+impl BasilicaError for BillingError {}
 
 impl From<sqlx::Error> for BillingError {
     fn from(err: sqlx::Error) -> Self {

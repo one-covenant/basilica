@@ -1,7 +1,7 @@
 //! # Configuration Abstractions
 //!
 //! Common configuration patterns and database configuration shared across
-//! all Basilca components.
+//! all Basilcia components.
 
 pub mod loader;
 pub mod traits;
