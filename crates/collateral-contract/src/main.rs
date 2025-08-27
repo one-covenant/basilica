@@ -1,6 +1,7 @@
 use alloy_primitives::U256;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use collateral_contract::{
     config::{CollateralNetworkConfig, Network},
     CollateralEvent,
@@ -22,6 +23,9 @@ struct Cli {
     /// Contract address to use
     #[arg(long)]
     contract_address: Option<String>,
+
+    #[command(flatten)]
+    verbosity: Verbosity<InfoLevel>,
 
     #[command(subcommand)]
     command: Commands,
@@ -173,9 +177,13 @@ enum EventCommands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
-
     let cli = Cli::parse();
+
+    // Initialize logging using the unified system
+    let binary_name = env!("CARGO_BIN_NAME").replace("-", "_");
+    let base_filter = format!("basilica_protocol=info,{}", binary_name);
+    let default_filter = format!("basilica_protocol=info,{}=info", binary_name);
+    basilica_common::logging::init_logging(&cli.verbosity, &base_filter, &default_filter)?;
     let network_config = CollateralNetworkConfig::from_network(&cli.network, cli.contract_address)?;
 
     println!("Using network: {:?}", cli.network);

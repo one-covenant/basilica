@@ -9,7 +9,6 @@ use std::net::SocketAddr;
 use std::path::Path;
 use tokio::signal;
 use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use basilica_executor::cli::{
     execute_command, AppConfig, AppConfigResolver, CliContext, ExecutorArgs,
@@ -55,7 +54,10 @@ async fn run_config_generation(
 }
 
 async fn run_server_mode(config: basilica_executor::cli::args::ServerConfig) -> Result<()> {
-    init_logging(&config.log_level)?;
+    // Initialize logging using the unified system
+    let base_filter = env!("CARGO_BIN_NAME").replace("-", "_");
+    let default_filter = format!("{}=info", base_filter);
+    basilica_common::logging::init_logging(&config.verbosity, &base_filter, &default_filter)?;
 
     let executor_config = load_config(&config.config_path)?;
     info!(
@@ -184,7 +186,10 @@ async fn register_with_miner(config: &ExecutorConfig) -> Result<()> {
 }
 
 async fn run_cli_mode(config: basilica_executor::cli::args::CliConfig) -> Result<()> {
-    init_logging("info")?;
+    // Initialize logging using the unified system
+    let binary_name = env!("CARGO_BIN_NAME").replace("-", "_");
+    let default_filter = format!("{}=info", binary_name);
+    basilica_common::logging::init_logging(&config.verbosity, &binary_name, &default_filter)?;
 
     if let Some(command) = config.command {
         let context = CliContext::new(config.config_path.to_string_lossy().to_string());
@@ -197,24 +202,6 @@ async fn run_cli_mode(config: basilica_executor::cli::args::CliConfig) -> Result
 
 async fn run_help_mode() -> Result<()> {
     eprintln!("Use --help for available commands");
-    Ok(())
-}
-
-fn init_logging(level: &str) -> Result<()> {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
-
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .with_thread_ids(true)
-                .with_file(true)
-                .with_line_number(true)
-                .compact(),
-        )
-        .init();
-
     Ok(())
 }
 

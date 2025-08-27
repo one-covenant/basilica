@@ -14,12 +14,12 @@ use basilica_common::crypto::Aead;
 use anyhow::{Context, Result};
 use basilica_protocol::payments::payments_service_server::PaymentsServiceServer;
 use clap::Parser;
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use sqlx::postgres::PgPoolOptions;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::signal;
 use tonic::transport::Server;
 use tracing::{info, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -36,19 +36,20 @@ struct Args {
 
     #[arg(long, help = "Dry run mode (validate config without starting)")]
     dry_run: bool,
+
+    #[command(flatten)]
+    verbosity: Verbosity<InfoLevel>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "basilica_payments=info,basilica_protocol=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    // Initialize logging using the unified system
+    let binary_name = env!("CARGO_BIN_NAME").replace("-", "_");
+    let base_filter = format!("basilica_protocol=info,{}", binary_name);
+    let default_filter = format!("basilica_protocol=info,{}=info", binary_name);
+    basilica_common::logging::init_logging(&args.verbosity, &base_filter, &default_filter)?;
 
     if args.gen_config {
         let config = PaymentsConfig::default();

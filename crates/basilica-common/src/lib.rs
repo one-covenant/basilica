@@ -26,6 +26,7 @@ pub mod error;
 pub mod executor_identity;
 pub mod identity;
 pub mod journal;
+pub mod logging;
 pub mod metrics;
 pub mod network;
 pub mod persistence;

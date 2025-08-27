@@ -6,7 +6,6 @@
 
 use anyhow::Result;
 use clap::Parser;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod api;
 mod bittensor_core;
@@ -26,19 +25,12 @@ use cli::Args;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing with structured fields
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_default_env())
-        .with(
-            tracing_subscriber::fmt::layer(), // .with_target(true)
-                                              // .with_thread_ids(true)
-                                              // .with_thread_names(true)
-                                              // .with_file(true)
-                                              // .with_line_number(true),
-        )
-        .init();
-
     let args = Args::parse();
+
+    // Initialize logging using the unified system
+    let binary_name = env!("CARGO_BIN_NAME").replace("-", "_");
+    let default_filter = format!("{}=info", binary_name);
+    basilica_common::logging::init_logging(&args.verbosity, &binary_name, &default_filter)?;
 
     args.run().await
 }

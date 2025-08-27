@@ -24,6 +24,7 @@ prost-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { version = "4.4", features = ["derive", "env"] }
+clap-verbosity-flag = { workspace = true }
 figment = { version = "0.10", features = ["toml", "env", "json"] }
 toml = "0.8"
 sqlx = { version = "0.7", features = [
