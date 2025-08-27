@@ -961,7 +961,21 @@ impl VerificationEngine {
         .fetch_one(self.persistence.pool())
         .await?;
 
-        let new_status = if gpu_count > 0 { "verified" } else { "offline" };
+        // Status hierarchy: "online" > "verified" > "offline"
+        let current_status = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM miner_executors WHERE miner_id = ? AND executor_id = ?",
+        )
+        .bind(&miner_id)
+        .bind(executor_id)
+        .fetch_one(self.persistence.pool())
+        .await?;
+
+        let new_status = match (current_status.as_str(), gpu_count > 0) {
+            ("online", true) => "online",   // Keep online status if GPUs present
+            ("online", false) => "offline", // Downgrade to offline if no GPUs
+            (_, true) => "verified",        // Set verified if GPUs present and not online
+            (_, false) => "offline",        // Set offline if no GPUs
+        };
 
         sqlx::query(
             "UPDATE miner_executors SET gpu_count = ?, status = ?, updated_at = datetime('now')
