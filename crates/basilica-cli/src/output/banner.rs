@@ -2,23 +2,6 @@
 
 use console::style;
 
-/// Display the main Basilica ASCII art banner
-pub fn print_welcome_banner() {
-    let banner = r#"
- ██████╗  █████╗ ███████╗██╗██╗     ██╗ ██████╗ █████╗ 
- ██╔══██╗██╔══██╗██╔════╝██║██║     ██║██╔════╝██╔══██╗
- ██████╔╝███████║███████╗██║██║     ██║██║     ███████║
- ██╔══██╗██╔══██║╚════██║██║██║     ██║██║     ██╔══██║
- ██████╔╝██║  ██║███████║██║███████╗██║╚██████╗██║  ██║
- ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝╚══════╝╚═╝ ╚═════╝╚═╝  ╚═╝
-              GPU Marketplace for AI/ML
- "#;
-
-    for line in banner.lines() {
-        println!("{}", style(line).red().bright());
-    }
-}
-
 /// Display post-login welcome message with helpful commands
 pub fn print_post_login_welcome() {
     println!(

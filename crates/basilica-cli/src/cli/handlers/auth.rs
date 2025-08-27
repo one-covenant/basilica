@@ -14,10 +14,12 @@ const SERVICE_NAME: &str = "basilica-cli";
 pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
     debug!("Starting login process, device_code: {}", device_code);
 
-    // Display welcome banner at the start
-    println!();
-    banner::print_welcome_banner();
-    println!("{}", console::style("Welcome to Basilica!").green().bold());
+    println!(
+        "{}",
+        console::style("⛪ Basilica - Sacred Compute ⛪")
+            .red()
+            .bold()
+    );
     println!();
 
     // Determine which flow to use
