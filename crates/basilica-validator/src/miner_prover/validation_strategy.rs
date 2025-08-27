@@ -212,7 +212,7 @@ impl ValidationStrategySelector {
         executor_id: &str,
         miner_uid: u16,
     ) -> Result<Option<(chrono::DateTime<chrono::Utc>, f64)>> {
-        let composite_executor_id = format!("miner{}__{}", miner_uid, executor_id);
+        let composite_executor_id = format!("miner_{}__{}", miner_uid, executor_id);
         debug!(
             executor_id = executor_id,
             miner_uid = miner_uid,
