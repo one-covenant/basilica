@@ -29,7 +29,6 @@ pub mod journal;
 pub mod metrics;
 pub mod network;
 pub mod persistence;
-pub mod services;
 pub mod ssh;
 pub mod storage;
 
@@ -44,7 +43,6 @@ pub use identity::*;
 pub use metrics::labels;
 pub use metrics::traits as metrics_traits;
 pub use persistence::traits as persistence_traits;
-pub use services::traits as services_traits;
 pub use ssh::traits as ssh_traits;
 pub use storage::{KeyValueStorage, MemoryStorage};
 
@@ -52,7 +50,6 @@ pub use storage::{KeyValueStorage, MemoryStorage};
 pub use metrics::traits::*;
 pub use persistence::traits::*;
 pub use persistence::{PaginatedResponse, Pagination};
-pub use services::traits::*;
 
 /// Version of the common crate
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
