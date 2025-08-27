@@ -71,7 +71,7 @@ pub async fn start_rental(
     // Validate SSH public key
     if !is_valid_ssh_public_key(&request.ssh_public_key) {
         error!("Invalid SSH public key provided");
-        return Err(crate::error::Error::BadRequest {
+        return Err(crate::error::ApiError::BadRequest {
             message: "Invalid SSH public key".into(),
         });
     }
@@ -79,7 +79,7 @@ pub async fn start_rental(
     // Validate container image
     if !is_valid_container_image(&request.container_image) {
         error!("Invalid container image provided");
-        return Err(crate::error::Error::BadRequest {
+        return Err(crate::error::ApiError::BadRequest {
             message: "Invalid container image".into(),
         });
     }
@@ -134,7 +134,7 @@ pub async fn start_rental(
         }
 
         // Return error to the user
-        return Err(crate::error::Error::Internal {
+        return Err(crate::error::ApiError::Internal {
             message: "Failed to create rental: unable to store ownership record".into(),
         });
     }
@@ -203,7 +203,7 @@ pub async fn stream_rental_logs(
         .await
         .map_err(|e| {
             error!("Failed to get log stream from validator: {}", e);
-            crate::error::Error::ValidatorCommunication {
+            crate::error::ApiError::ValidatorCommunication {
                 message: format!("Failed to stream logs: {}", e),
             }
         })?;
@@ -257,7 +257,7 @@ pub async fn list_rentals_validator(
 
     // Get user's rental IDs from database
     let user_rental_ids = get_user_rental_ids(&state.db, user_id).await.map_err(|e| {
-        crate::error::Error::Internal {
+        crate::error::ApiError::Internal {
             message: format!("Failed to get user rentals: {}", e),
         }
     })?;
@@ -267,7 +267,7 @@ pub async fn list_rentals_validator(
         .validator_client
         .list_rentals(query.status)
         .await
-        .map_err(|e| crate::error::Error::ValidatorCommunication {
+        .map_err(|e| crate::error::ApiError::ValidatorCommunication {
             message: format!("Failed to list rentals: {e}"),
         })?;
 

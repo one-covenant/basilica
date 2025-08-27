@@ -1,8 +1,8 @@
-//! Error handling for Basilca
+//! Error handling for Basilica
 //!
 //! This module defines the core error handling infrastructure used throughout
-//! the Basilca system. It provides:
-//! - `BasilcaError` trait for consistent error handling
+//! the Basilica system. It provides:
+//! - `BasilicaError` trait for consistent error handling
 //! - Specific error types for different domains (Network, Crypto, Config, etc.)
 //! - Integration with `thiserror` for ergonomic error handling
 //!
@@ -14,9 +14,9 @@
 
 use thiserror::Error;
 
-/// Base trait for all Basilca-specific errors
+/// Base trait for all Basilica-specific errors
 ///
-/// This trait ensures all Basilca errors are:
+/// This trait ensures all Basilica errors are:
 /// - Thread-safe (Send + Sync)
 /// - Static lifetime (no borrowed data)
 /// - Implement standard Error trait
@@ -24,11 +24,11 @@ use thiserror::Error;
 /// # Implementation Notes for Developers
 /// When creating new error types:
 /// 1. Derive from thiserror::Error
-/// 2. Implement BasilcaError trait
+/// 2. Implement BasilicaError trait
 /// 3. Use `#[from]` for automatic conversions from underlying errors
 /// 4. Provide clear, user-facing error messages
 /// 5. Include context information where helpful
-pub trait BasilcaError: std::error::Error + Send + Sync + 'static {}
+pub trait BasilicaError: std::error::Error + Send + Sync + 'static {}
 
 /// Network-related errors
 ///
@@ -77,7 +77,7 @@ pub enum NetworkError {
     ConfigurationError { details: String },
 }
 
-impl BasilcaError for NetworkError {}
+impl BasilicaError for NetworkError {}
 
 /// Cryptographic operation errors
 ///
@@ -126,7 +126,7 @@ pub enum CryptoError {
     Generic { message: String },
 }
 
-impl BasilcaError for CryptoError {}
+impl BasilicaError for CryptoError {}
 
 /// Configuration-related errors
 ///
@@ -170,7 +170,7 @@ pub enum ConfigurationError {
     ValidationFailed { details: String },
 }
 
-impl BasilcaError for ConfigurationError {}
+impl BasilicaError for ConfigurationError {}
 
 /// Database and persistence-related errors
 ///
@@ -226,7 +226,7 @@ pub enum PersistenceError {
     NotFound { details: String },
 }
 
-impl BasilcaError for PersistenceError {}
+impl BasilicaError for PersistenceError {}
 
 /// System-level errors
 ///
@@ -263,7 +263,7 @@ pub enum SystemError {
     ValidationError { component: String, message: String },
 }
 
-impl BasilcaError for SystemError {}
+impl BasilicaError for SystemError {}
 
 /// Validation errors
 ///
@@ -296,7 +296,7 @@ pub enum ValidationError {
     InvalidEnum { enum_name: String, value: String },
 }
 
-impl BasilcaError for ValidationError {}
+impl BasilicaError for ValidationError {}
 
 /// Verification-related errors
 ///
@@ -329,10 +329,7 @@ pub enum VerificationError {
     Generic { details: String },
 }
 
-impl BasilcaError for VerificationError {}
-
-/// Result type alias for common Basilca operations
-pub type BasilcaResult<T, E = Box<dyn BasilcaError>> = Result<T, E>;
+impl BasilicaError for VerificationError {}
 
 /// Utility functions for error handling
 impl NetworkError {
@@ -405,15 +402,15 @@ mod tests {
     }
 
     #[test]
-    fn test_basilca_error_trait() {
-        fn test_basilca_error(_: impl BasilcaError) {}
+    fn test_basilica_error_trait() {
+        fn test_basilica_error(_: impl BasilicaError) {}
 
-        // These should compile, proving they implement BasilcaError
-        test_basilca_error(NetworkError::ConnectionLost {
+        // These should compile, proving they implement BasilicaError
+        test_basilica_error(NetworkError::ConnectionLost {
             endpoint: "test".to_string(),
         });
-        test_basilca_error(CryptoError::RandomGenerationFailed);
-        test_basilca_error(ConfigurationError::ValidationFailed {
+        test_basilica_error(CryptoError::RandomGenerationFailed);
+        test_basilica_error(ConfigurationError::ValidationFailed {
             details: "test".to_string(),
         });
     }

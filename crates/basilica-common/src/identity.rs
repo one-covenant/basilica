@@ -1,4 +1,4 @@
-//! Identity types for Basilca
+//! Identity types for Basilica
 //!
 //! This module defines the core identity types used throughout the system:
 //! - `Hotkey`: Bittensor hotkey in SS58 format

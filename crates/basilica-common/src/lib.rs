@@ -1,11 +1,11 @@
-//! # Common Basilca
+//! # Common Basilica
 //!
-//! Core shared types, error definitions, and cryptographic utilities for the Basilca .
-//! This crate provides the fundamental building blocks that all other Basilca crates depend on.
+//! Core shared types, error definitions, and cryptographic utilities for the Basilica .
+//! This crate provides the fundamental building blocks that all other Basilica crates depend on.
 //!
 //! ## Key Features
 //! - Identity types (Hotkey, ExecutorId, ValidatorUid, MinerUid)
-//! - Comprehensive error handling with BasilcaError trait
+//! - Comprehensive error handling with BasilicaError trait
 //! - Cryptographic utilities for hashing and signature verification
 //! - Shared persistence abstractions and repository patterns
 //! - Common service lifecycle management
@@ -49,7 +49,6 @@ pub use storage::{KeyValueStorage, MemoryStorage};
 // Re-export the main types directly
 pub use metrics::traits::*;
 pub use persistence::traits::*;
-pub use persistence::{PaginatedResponse, Pagination};
 
 /// Version of the common crate
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

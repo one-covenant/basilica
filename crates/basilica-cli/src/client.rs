@@ -98,24 +98,25 @@ impl TokenRefresh for CliTokenRefresher {
     async fn refresh_token(&self, expired_token: &str) -> basilica_api::error::Result<String> {
         debug!("CliTokenRefresher: Attempting to refresh expired token");
 
-        let token_store = TokenStore::new().map_err(|e| basilica_api::error::Error::Internal {
-            message: format!("Failed to access token store: {}", e),
-        })?;
+        let token_store =
+            TokenStore::new().map_err(|e| basilica_api::error::ApiError::Internal {
+                message: format!("Failed to access token store: {}", e),
+            })?;
 
         // Try to get stored tokens to get the refresh token
         let tokens = token_store
             .retrieve("basilica-cli")
             .await
-            .map_err(|e| basilica_api::error::Error::Authentication {
+            .map_err(|e| basilica_api::error::ApiError::Authentication {
                 message: format!("No stored tokens found: {}", e),
             })?
-            .ok_or_else(|| basilica_api::error::Error::Authentication {
+            .ok_or_else(|| basilica_api::error::ApiError::Authentication {
                 message: "No stored tokens found".to_string(),
             })?;
 
         // Verify the expired token matches what we have stored
         if tokens.access_token != expired_token {
-            return Err(basilica_api::error::Error::Authentication {
+            return Err(basilica_api::error::ApiError::Authentication {
                 message: "Token mismatch - cannot refresh".to_string(),
             });
         }
@@ -136,13 +137,13 @@ impl TokenRefresh for CliTokenRefresher {
                 }
                 Err(e) => {
                     debug!("CliTokenRefresher: Token refresh failed: {}", e);
-                    Err(basilica_api::error::Error::Authentication {
+                    Err(basilica_api::error::ApiError::Authentication {
                         message: format!("Token refresh failed: {}", e),
                     })
                 }
             }
         } else {
-            Err(basilica_api::error::Error::Authentication {
+            Err(basilica_api::error::ApiError::Authentication {
                 message: "No refresh token available".to_string(),
             })
         }

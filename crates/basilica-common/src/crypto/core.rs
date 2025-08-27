@@ -42,7 +42,7 @@ pub const AES_NONCE_SIZE: usize = 12;
 /// ```rust
 /// use basilica_common::crypto::hash_blake3_string;
 ///
-/// let data = b"Hello, Basilca!";
+/// let data = b"Hello, Basilica!";
 /// let hash = hash_blake3_string(data);
 /// assert_eq!(hash.len(), 64); // 32 bytes * 2 hex chars
 /// ```

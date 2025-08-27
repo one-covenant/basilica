@@ -46,7 +46,7 @@ async fn rate_limit_handler(
     State(state): axum::extract::State<AppState>,
     req: Request<Body>,
     next: Next,
-) -> Result<Response<Body>, crate::error::Error> {
+) -> Result<Response<Body>, crate::error::ApiError> {
     // Create rate limit storage
     let storage = std::sync::Arc::new(rate_limit::RateLimitStorage::new(std::sync::Arc::new(
         state.config.rate_limit.clone(),
@@ -55,8 +55,8 @@ async fn rate_limit_handler(
     // Check rate limit
     match rate_limit::rate_limit_middleware(storage, req, next).await {
         Ok(response) => Ok(response),
-        Err(StatusCode::TOO_MANY_REQUESTS) => Err(crate::error::Error::RateLimitExceeded),
-        Err(_) => Err(crate::error::Error::Internal {
+        Err(StatusCode::TOO_MANY_REQUESTS) => Err(crate::error::ApiError::RateLimitExceeded),
+        Err(_) => Err(crate::error::ApiError::Internal {
             message: "Rate limit check failed".to_string(),
         }),
     }
