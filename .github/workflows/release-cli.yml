@@ -1,0 +1,238 @@
+name: Release CLI
+
+on:
+  push:
+    tags:
+      - 'cli-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., cli-v0.1.0)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove 'cli-v' prefix to get clean version
+          CLEAN_VERSION="${VERSION#cli-v}"
+          echo "version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+        
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Basilica CLI ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Basilica CLI ${{ steps.version.outputs.version }}
+            
+            ### Installation
+            
+            #### macOS (Homebrew)
+            ```bash
+            brew tap tplr-ai/basilica
+            brew install basilica
+            ```
+            
+            #### Direct Download
+            Download the appropriate binary for your platform from the assets below.
+            
+            #### Verify checksums
+            ```bash
+            # macOS/Linux
+            shasum -a 256 -c basilica-cli-checksums.txt
+            
+            # Or individual file
+            shasum -a 256 basilica-darwin-arm64
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-binaries:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          # Linux builds (using Docker for consistency)
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            suffix: linux-amd64
+            use_docker: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            suffix: linux-arm64
+            use_docker: true
+          # macOS Intel build
+          - target: x86_64-apple-darwin
+            os: macos-13  # Use macos-13 for Intel (x86_64) runners
+            suffix: darwin-amd64
+            use_docker: false
+          # macOS Apple Silicon build
+          - target: aarch64-apple-darwin
+            os: macos-14  # Use macos-14 for Apple Silicon (M1) runners
+            suffix: darwin-arm64
+            use_docker: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        if: matrix.use_docker == false
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      
+      - name: Setup Rust cache
+        if: matrix.use_docker == false
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-cli-${{ matrix.target }}
+
+      # Install dependencies for macOS
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-13' || matrix.os == 'macos-14'
+        run: |
+          brew install protobuf pkg-config openssl
+
+      # Build using Docker for Linux
+      - name: Build with Docker (Linux)
+        if: matrix.use_docker == true
+        run: |
+          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ]]; then
+            ARCH="amd64"
+          else
+            ARCH="arm64"
+          fi
+          
+          ./scripts/cli/build.sh \
+            --architectures $ARCH \
+            --single-arch \
+            --no-extract
+          
+          # Extract binary from Docker image
+          docker create --name extract basilica/cli:latest
+          docker cp extract:/usr/local/bin/basilica ./basilica-${{ matrix.suffix }}
+          docker rm extract
+
+      # Build natively for macOS
+      - name: Build natively (macOS)
+        if: matrix.use_docker == false
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '10.15'  # Ensure compatibility with older macOS versions
+        run: |
+          # For cross-compilation on Apple Silicon to Intel
+          if [[ "${{ matrix.target }}" == "x86_64-apple-darwin" ]] && [[ "$(uname -m)" == "arm64" ]]; then
+            export CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER=x86_64-apple-darwin14-clang
+          fi
+          
+          # For cross-compilation on Intel to Apple Silicon
+          if [[ "${{ matrix.target }}" == "aarch64-apple-darwin" ]] && [[ "$(uname -m)" == "x86_64" ]]; then
+            export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=aarch64-apple-darwin14-clang
+          fi
+          
+          cargo build --release --target ${{ matrix.target }} -p basilica-cli
+          cp target/${{ matrix.target }}/release/basilica ./basilica-${{ matrix.suffix }}
+
+      # Make binary executable and generate checksums
+      - name: Prepare binary
+        run: |
+          chmod +x ./basilica-${{ matrix.suffix }}
+          
+          # Strip debug symbols to reduce size
+          if [[ "${{ matrix.os }}" == "macos-13" ]] || [[ "${{ matrix.os }}" == "macos-14" ]]; then
+            strip ./basilica-${{ matrix.suffix }}
+          elif [[ "${{ matrix.use_docker }}" == "false" ]]; then
+            strip ./basilica-${{ matrix.suffix }}
+          fi
+          
+          # Generate checksum
+          if command -v shasum &> /dev/null; then
+            shasum -a 256 ./basilica-${{ matrix.suffix }} > ./basilica-${{ matrix.suffix }}.sha256
+          else
+            sha256sum ./basilica-${{ matrix.suffix }} > ./basilica-${{ matrix.suffix }}.sha256
+          fi
+          
+          # Display file info
+          ls -lh ./basilica-${{ matrix.suffix }}
+
+      # Upload binary
+      - name: Upload Release Binary
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag }}
+          files: |
+            basilica-${{ matrix.suffix }}
+            basilica-${{ matrix.suffix }}.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Generate consolidated checksums file
+  generate-checksums:
+    needs: [create-release, build-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Generate consolidated checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Download all released binaries
+          gh release download ${{ needs.create-release.outputs.tag }} \
+            --pattern "basilica-*" \
+            --skip-existing \
+            --repo ${{ github.repository }}
+          
+          # Filter out individual .sha256 files and generate consolidated checksums
+          ls basilica-* | grep -v ".sha256$" | xargs sha256sum > basilica-cli-checksums.txt
+          
+          # Display checksums for verification
+          echo "Generated checksums:"
+          cat basilica-cli-checksums.txt
+          
+      - name: Upload checksums file
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag }}
+          files: basilica-cli-checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # # Update Homebrew formula (optional - requires separate tap repository)
+  # update-homebrew:
+  #   needs: [create-release, generate-checksums]
+  #   runs-on: ubuntu-latest
+  #   if: github.repository == 'tplr-ai/basilica' && contains(github.ref, 'refs/tags/')  # Only run on main repo for tag pushes
+  #   steps:
+  #     - name: Update Homebrew Formula
+  #       uses: peter-evans/repository-dispatch@v2
+  #       if: vars.HOMEBREW_TAP_TOKEN != ''  # Only run if token is configured
+  #       with:
+  #         token: ${{ secrets.HOMEBREW_TAP_TOKEN }}  # Requires PAT with repo access to tap
+  #         repository: tplr-ai/homebrew-basilica  # Assumes you have this tap repo
+  #         event-type: update-formula
+  #         client-payload: '{"version": "${{ needs.create-release.outputs.version }}", "tag": "${{ needs.create-release.outputs.tag }}"}'
