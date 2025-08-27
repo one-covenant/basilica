@@ -531,7 +531,7 @@ impl VerificationEngine {
         let gpu_infos = executor_result
             .executor_result
             .as_ref()
-            .map(|er| er.gpu_infos.clone())
+            .map(|er: &crate::miner_prover::types::ExecutorResult| er.gpu_infos.clone())
             .unwrap_or_default();
 
         // Ensure miner-executor relationship exists
@@ -1950,13 +1950,21 @@ impl VerificationEngine {
 
         // Step 4: Execute validation based on strategy
         let result = match strategy {
-            ValidationStrategy::Lightweight { previous_score } => {
+            ValidationStrategy::Lightweight {
+                previous_score,
+                executor_result,
+                gpu_count,
+                binary_validation_successful,
+            } => {
                 self.validation_executor
                     .execute_lightweight_validation(
                         executor_info,
                         &ssh_details,
                         &session_info,
                         previous_score,
+                        executor_result,
+                        gpu_count,
+                        binary_validation_successful,
                         &self.validator_hotkey,
                         &self.config,
                     )

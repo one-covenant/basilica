@@ -1612,6 +1612,63 @@ impl SimplePersistence {
 
         Ok(())
     }
+
+    /// Get last successful full validation data for lightweight validation
+    pub async fn get_last_full_validation_data(
+        &self,
+        executor_id: &str,
+    ) -> Result<Option<(f64, Option<super::super::miner_prover::types::ExecutorResult>, u64, bool)>, anyhow::Error> {
+        let query = r#"
+            SELECT score, details
+            FROM verification_logs
+            WHERE executor_id = ?
+              AND success = 1
+              AND verification_type = 'ssh_automation'
+              AND (
+                json_extract(details, '$.binary_validation_successful') = 1
+                OR json_extract(details, '$.binary_validation_successful') = 'true'
+              )
+            ORDER BY timestamp DESC
+            LIMIT 1
+        "#;
+
+        let row = sqlx::query(query)
+            .bind(executor_id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(row) = row {
+            let score: f64 = row.get("score");
+            let details_str: String = row.get("details");
+
+            let details: serde_json::Value = serde_json::from_str(&details_str)
+                .map_err(|e| anyhow::anyhow!("Failed to parse details JSON: {}", e))?;
+
+            let executor_result = details
+                .get("executor_result")
+                .and_then(|v| {
+                    if v.is_null() {
+                        None
+                    } else {
+                        serde_json::from_value::<super::super::miner_prover::types::ExecutorResult>(v.clone()).ok()
+                    }
+                });
+
+            let gpu_count = details
+                .get("gpu_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+
+            let binary_validation_successful = details
+                .get("binary_validation_successful")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            Ok(Some((score, executor_result, gpu_count, binary_validation_successful)))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[async_trait::async_trait]

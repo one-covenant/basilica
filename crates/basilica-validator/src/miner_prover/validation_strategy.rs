@@ -4,7 +4,9 @@
 //! validation history, and configuration settings. Also handles the execution
 //! of different validation strategies (lightweight vs full validation).
 
-use super::types::{ExecutorInfoDetailed, ExecutorVerificationResult, ValidationDetails};
+use super::types::{
+    ExecutorInfoDetailed, ExecutorResult, ExecutorVerificationResult, ValidationDetails,
+};
 use super::validation_binary::BinaryValidator;
 use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
@@ -19,12 +21,18 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 /// Validation strategy to determine execution path
-#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone)]
 pub enum ValidationStrategy {
     /// Full binary validation required
     Full,
     /// Lightweight connectivity check only
-    Lightweight { previous_score: f64 },
+    Lightweight {
+        previous_score: f64,
+        executor_result: Option<ExecutorResult>,
+        gpu_count: u64,
+        binary_validation_successful: bool,
+    },
 }
 
 /// Validation strategy selector for determining appropriate validation approach
@@ -85,16 +93,30 @@ impl ValidationStrategySelector {
             return Ok(ValidationStrategy::Full);
         }
 
-        let previous_score = match self.get_last_binary_validation(executor_id).await {
-            Ok(Some((_, score))) => score,
-            Ok(None) => 0.8,
+        let (previous_score, executor_result, gpu_count, binary_validation_successful) = match self
+            .persistence
+            .get_last_full_validation_data(executor_id)
+            .await
+        {
+            Ok(Some((score, exec_result, gpu_cnt, binary_success))) => {
+                (score, exec_result, gpu_cnt, binary_success)
+            }
+            Ok(None) => {
+                debug!(
+                    executor_id = executor_id,
+                    miner_uid = miner_uid,
+                    "[EVAL_FLOW] No previous validation data found - requiring full validation"
+                );
+                return Ok(ValidationStrategy::Full);
+            }
             Err(e) => {
                 error!(
                     executor_id = executor_id,
+                    miner_uid = miner_uid,
                     error = %e,
-                    "[EVAL_FLOW] Failed to get previous validation score - using default"
+                    "[EVAL_FLOW] Failed to get previous validation data - requiring full validation"
                 );
-                0.8
+                return Ok(ValidationStrategy::Full);
             }
         };
 
@@ -102,10 +124,17 @@ impl ValidationStrategySelector {
             executor_id = executor_id,
             miner_uid = miner_uid,
             previous_score = previous_score,
-            "[EVAL_FLOW] Strategy: Lightweight validation with previous score"
+            gpu_count = gpu_count,
+            binary_validation_successful = binary_validation_successful,
+            "[EVAL_FLOW] Strategy: Lightweight validation with previous validation data"
         );
 
-        Ok(ValidationStrategy::Lightweight { previous_score })
+        Ok(ValidationStrategy::Lightweight {
+            previous_score,
+            executor_result,
+            gpu_count,
+            binary_validation_successful,
+        })
     }
 
     /// Check if binary validation is needed for an executor
@@ -224,12 +253,16 @@ impl ValidationExecutor {
     }
 
     /// Execute lightweight validation (connectivity check only)
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute_lightweight_validation(
         &self,
         executor_info: &ExecutorInfoDetailed,
         ssh_details: &SshConnectionDetails,
         _session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         previous_score: f64,
+        executor_result: Option<ExecutorResult>,
+        gpu_count: u64,
+        binary_validation_successful: bool,
         _validator_hotkey: &Hotkey,
         _config: &crate::config::VerificationConfig,
     ) -> Result<ExecutorVerificationResult> {
@@ -298,13 +331,31 @@ impl ValidationExecutor {
                 .await;
         }
 
+        let final_executor_result = if connectivity_successful {
+            executor_result
+        } else {
+            None
+        };
+
+        let final_gpu_count = if connectivity_successful {
+            gpu_count
+        } else {
+            0
+        };
+
+        let final_binary_validation_successful = if connectivity_successful {
+            binary_validation_successful
+        } else {
+            false
+        };
+
         Ok(ExecutorVerificationResult {
             executor_id: executor_info.id.clone(),
             grpc_endpoint: executor_info.grpc_endpoint.clone(),
             verification_score,
             ssh_connection_successful: connectivity_successful,
-            binary_validation_successful: false,
-            executor_result: None,
+            binary_validation_successful: final_binary_validation_successful,
+            executor_result: final_executor_result,
             error: if connectivity_successful {
                 None
             } else {
@@ -312,7 +363,7 @@ impl ValidationExecutor {
             },
             execution_time: total_duration,
             validation_details: details,
-            gpu_count: 0,
+            gpu_count: final_gpu_count,
         })
     }
 
