@@ -1577,7 +1577,7 @@ impl SimplePersistence {
 
     /// Add binary validation tracking columns to verification_logs table
     async fn add_binary_validation_columns(&self) -> Result<(), anyhow::Error> {
-        let column_exists: bool = sqlx::query_scalar(
+        let has_last_col: bool = sqlx::query_scalar(
             r#"
             SELECT COUNT(*) > 0
             FROM pragma_table_info('verification_logs')
@@ -1588,7 +1588,7 @@ impl SimplePersistence {
         .await
         .unwrap_or(false);
 
-        if !column_exists {
+        if !has_last_col {
             sqlx::query(
                 r#"
                 ALTER TABLE verification_logs
@@ -1597,7 +1597,20 @@ impl SimplePersistence {
             )
             .execute(&self.pool)
             .await?;
+        }
 
+        let has_score_col: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('verification_logs')
+            WHERE name = 'last_binary_validation_score'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !has_score_col {
             sqlx::query(
                 r#"
                 ALTER TABLE verification_logs
@@ -1606,8 +1619,10 @@ impl SimplePersistence {
             )
             .execute(&self.pool)
             .await?;
+        }
 
-            info!("Added binary validation tracking columns to verification_logs table");
+        if !has_last_col || !has_score_col {
+            info!("Ensured binary validation tracking columns exist on verification_logs");
         }
 
         Ok(())
@@ -1629,7 +1644,7 @@ impl SimplePersistence {
         let query = r#"
             SELECT score, details
             FROM verification_logs
-            WHERE executor_id = ?
+            WHERE (executor_id = ? OR executor_id GLOB ('*__' || ?))
               AND success = 1
               AND verification_type = 'ssh_automation'
               AND (
@@ -1641,6 +1656,7 @@ impl SimplePersistence {
         "#;
 
         let row = sqlx::query(query)
+            .bind(executor_id)
             .bind(executor_id)
             .fetch_optional(&self.pool)
             .await?;
