@@ -972,6 +972,7 @@ impl VerificationEngine {
 
         let new_status = match (current_status.as_str(), gpu_count > 0) {
             ("online", true) => "online",   // Keep online status if GPUs present
+            ("verified", true) => "online", // Promote verified back to online if GPUs present
             ("online", false) => "offline", // Downgrade to offline if no GPUs
             (_, true) => "verified",        // Set verified if GPUs present and not online
             (_, false) => "offline",        // Set offline if no GPUs
