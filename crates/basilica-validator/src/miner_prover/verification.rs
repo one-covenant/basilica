@@ -91,19 +91,26 @@ impl VerificationEngine {
         let workflow_start = std::time::Instant::now();
         let mut verification_steps = Vec::new();
 
-        // Step 1: Discover miner executors via gRPC
-        let executor_list = self
-            .discover_miner_executors(&task.miner_endpoint)
-            .await
-            .with_context(|| {
-                format!("Failed to discover executors for miner {}", task.miner_uid)
-            })?;
+        // Step 1: Get executors from discovery + database fallback
+        let discovered_executors = self.discover_miner_executors(&task.miner_endpoint).await
+            .unwrap_or_else(|e| {
+                warn!("Failed to discover executors for miner {} via gRPC: {}. Using database fallback.", task.miner_uid, e);
+                Vec::new()
+            });
+
+        let known_executor_data = self
+            .persistence
+            .get_known_executors_for_miner(task.miner_uid)
+            .await?;
+        let known_executors =
+            self.convert_db_data_to_executor_info(known_executor_data, task.miner_uid)?;
+        let executor_list = self.combine_executor_lists(discovered_executors, known_executors);
 
         verification_steps.push(VerificationStep {
             step_name: "executor_discovery".to_string(),
             status: StepStatus::Completed,
             duration: workflow_start.elapsed(),
-            details: format!("Discovered {} executors", executor_list.len()),
+            details: format!("Found {} executors for verification", executor_list.len()),
         });
 
         if executor_list.is_empty() {
@@ -1998,6 +2005,67 @@ impl VerificationEngine {
             .await;
 
         result
+    }
+
+    /// Convert database executor data to ExecutorInfoDetailed
+    fn convert_db_data_to_executor_info(
+        &self,
+        db_data: Vec<(String, String, i32, String)>,
+        miner_uid: u16,
+    ) -> Result<Vec<ExecutorInfoDetailed>> {
+        let mut executors = Vec::new();
+        let prefix = format!("miner{}__", miner_uid);
+
+        for (executor_id, grpc_address, gpu_count, status) in db_data {
+            let clean_executor_id = if executor_id.starts_with(&prefix) {
+                executor_id.strip_prefix(&prefix).unwrap_or(&executor_id)
+            } else {
+                &executor_id
+            };
+
+            let executor_id_parsed = ExecutorId::from_str(clean_executor_id).map_err(|e| {
+                anyhow::anyhow!("Invalid executor ID '{}': {}", clean_executor_id, e)
+            })?;
+
+            executors.push(ExecutorInfoDetailed {
+                id: executor_id_parsed,
+                host: "from_database".to_string(),
+                port: 22,
+                status,
+                capabilities: if gpu_count > 0 {
+                    vec!["gpu".to_string()]
+                } else {
+                    vec![]
+                },
+                grpc_endpoint: grpc_address,
+            });
+        }
+
+        Ok(executors)
+    }
+
+    /// Combine discovered and known executor lists
+    fn combine_executor_lists(
+        &self,
+        discovered: Vec<ExecutorInfoDetailed>,
+        known: Vec<ExecutorInfoDetailed>,
+    ) -> Vec<ExecutorInfoDetailed> {
+        let mut combined = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
+
+        for executor in discovered {
+            if seen_ids.insert(executor.id.to_string()) {
+                combined.push(executor);
+            }
+        }
+
+        for executor in known {
+            if seen_ids.insert(executor.id.to_string()) {
+                combined.push(executor);
+            }
+        }
+
+        combined
     }
 }
 

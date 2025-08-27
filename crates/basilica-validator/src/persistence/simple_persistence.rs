@@ -1699,6 +1699,38 @@ impl SimplePersistence {
             Ok(None)
         }
     }
+
+    /// Get known executors from database for a miner
+    pub async fn get_known_executors_for_miner(
+        &self,
+        miner_uid: u16,
+    ) -> Result<Vec<(String, String, i32, String)>, anyhow::Error> {
+        let miner_id = format!("miner_{}", miner_uid);
+
+        let query = r#"
+            SELECT executor_id, grpc_address, gpu_count, status
+            FROM miner_executors 
+            WHERE miner_id = ? 
+            AND status IN ('online', 'verified')
+            AND (last_health_check IS NULL OR last_health_check > datetime('now', '-1 hour'))
+        "#;
+
+        let rows = sqlx::query(query)
+            .bind(&miner_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut known_executors = Vec::new();
+        for row in rows {
+            let executor_id: String = row.get("executor_id");
+            let grpc_address: String = row.get("grpc_address");
+            let gpu_count: i32 = row.get("gpu_count");
+            let status: String = row.get("status");
+            known_executors.push((executor_id, grpc_address, gpu_count, status));
+        }
+
+        Ok(known_executors)
+    }
 }
 
 #[async_trait::async_trait]

@@ -33,6 +33,7 @@ basilica-common = { path = "../basilica-common" }
 uuid = { workspace = true }
 prost = { workspace = true }
 tonic = { workspace = true, features = ["tls", "tls-roots"] }
+sqlx = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.5"
