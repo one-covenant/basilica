@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use super::categorization::{ExecutorValidationResult, GpuCategorizer, MinerGpuProfile};
+use crate::config::emission::EmissionConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
 use basilica_common::identity::MinerUid;
@@ -12,13 +13,15 @@ use basilica_common::identity::MinerUid;
 pub struct GpuScoringEngine {
     gpu_profile_repo: Arc<GpuProfileRepository>,
     metrics: Option<Arc<ValidatorMetrics>>,
+    emission_config: EmissionConfig,
 }
 
 impl GpuScoringEngine {
-    pub fn new(gpu_profile_repo: Arc<GpuProfileRepository>) -> Self {
+    pub fn new(gpu_profile_repo: Arc<GpuProfileRepository>, emission_config: EmissionConfig) -> Self {
         Self {
             gpu_profile_repo,
             metrics: None,
+            emission_config,
         }
     }
 
@@ -26,10 +29,12 @@ impl GpuScoringEngine {
     pub fn with_metrics(
         gpu_profile_repo: Arc<GpuProfileRepository>,
         metrics: Arc<ValidatorMetrics>,
+        emission_config: EmissionConfig,
     ) -> Self {
         Self {
             gpu_profile_repo,
             metrics: Some(metrics),
+            emission_config,
         }
     }
 
@@ -119,6 +124,12 @@ impl GpuScoringEngine {
         Ok(profile)
     }
 
+    /// Check if a GPU model is configured for rewards based on emission config
+    fn is_gpu_model_rewardable(&self, gpu_model: &str) -> bool {
+        let normalized_model = GpuCategorizer::normalize_gpu_model(gpu_model);
+        self.emission_config.gpu_allocations.contains_key(&normalized_model)
+    }
+
     /// Calculate verification score from executor results
     fn calculate_verification_score(
         &self,
@@ -184,7 +195,7 @@ impl GpuScoringEngine {
 
     /// Get all miners grouped by GPU category with multi-category support
     /// A single miner can appear in multiple categories if they have multiple GPU types
-    /// Only includes H100 and H200 categories for rewards (OTHER category excluded)
+    /// Only includes GPU categories configured in emission config for rewards
     /// Filters out miners without active axons on the chain
     /// Only includes miners with successful validations since the given timestamp
     pub async fn get_miners_by_gpu_category_since_epoch(
@@ -250,15 +261,15 @@ impl GpuScoringEngine {
                 continue;
             }
 
-            // Only consider H100 and H200 GPUs for rewards
+            // Only consider GPUs listed in emission config for rewards
             let rewardable_gpu_counts: HashMap<String, u32> = profile
                 .gpu_counts
                 .iter()
                 .filter_map(|(gpu_model, &gpu_count)| {
                     if gpu_count > 0 {
                         let normalized_model = GpuCategorizer::normalize_gpu_model(gpu_model);
-                        // Only include H100 and H200 for rewards
-                        if normalized_model == "H100" || normalized_model == "H200" {
+                        // Only include GPUs configured in emission config for rewards
+                        if self.is_gpu_model_rewardable(gpu_model) {
                             Some((normalized_model, gpu_count))
                         } else {
                             None
@@ -296,7 +307,7 @@ impl GpuScoringEngine {
             total_entries = miners_by_category.values().map(|v| v.len()).sum::<usize>(),
             cutoff_hours = cutoff_hours,
             metagraph_size = metagraph.hotkeys.len(),
-            "Retrieved miners by GPU category (H100/H200 only for rewards, with active axon validation)"
+            "Retrieved miners by GPU category (configured models only for rewards, with active axon validation)"
         );
 
         Ok(miners_by_category)
@@ -304,21 +315,21 @@ impl GpuScoringEngine {
 
     /// Get category statistics with multi-category support
     /// Statistics are calculated per category based on proportional scores
-    /// Only includes H100 and H200 categories for rewards (OTHER category excluded)
+    /// Only includes GPU categories configured in emission config for rewards
     pub async fn get_category_statistics(&self) -> Result<HashMap<String, CategoryStats>> {
         let all_profiles = self.gpu_profile_repo.get_all_gpu_profiles().await?;
         let mut category_stats = HashMap::new();
 
         for profile in all_profiles {
-            // Only consider H100 and H200 GPUs for rewards
+            // Only consider GPUs listed in emission config for rewards
             let rewardable_gpu_counts: HashMap<String, u32> = profile
                 .gpu_counts
                 .iter()
                 .filter_map(|(gpu_model, &gpu_count)| {
                     if gpu_count > 0 {
                         let normalized_model = GpuCategorizer::normalize_gpu_model(gpu_model);
-                        // Only include H100 and H200 for rewards
-                        if normalized_model == "H100" || normalized_model == "H200" {
+                        // Only include GPUs configured in emission config for rewards
+                        if self.is_gpu_model_rewardable(gpu_model) {
                             Some((normalized_model, gpu_count))
                         } else {
                             None
@@ -518,7 +529,7 @@ mod tests {
     #[tokio::test]
     async fn test_verification_score_calculation() {
         let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
-        let engine = GpuScoringEngine::new(repo);
+        let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         // Test with valid attestations
         let validations = vec![
@@ -626,7 +637,7 @@ mod tests {
     #[tokio::test]
     async fn test_gpu_count_weighting() {
         let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
-        let engine = GpuScoringEngine::new(repo);
+        let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         // Test different GPU counts
         for gpu_count in 1..=8 {
@@ -666,7 +677,7 @@ mod tests {
     #[tokio::test]
     async fn test_miner_profile_update() {
         let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
-        let engine = GpuScoringEngine::new(repo);
+        let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         let miner_uid = MinerUid::new(1);
         let validations = vec![ExecutorValidationResult {
@@ -709,7 +720,7 @@ mod tests {
     #[tokio::test]
     async fn test_category_statistics() {
         let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
-        let engine = GpuScoringEngine::new(repo.clone());
+        let engine = GpuScoringEngine::new(repo.clone(), EmissionConfig::for_testing());
 
         // Create test profiles
         let mut h100_counts_1 = HashMap::new();
@@ -777,7 +788,7 @@ mod tests {
     #[tokio::test]
     async fn test_pass_fail_scoring_edge_cases() {
         let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
-        let engine = GpuScoringEngine::new(repo);
+        let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         // Test all invalid validations
         let all_invalid = vec![
@@ -843,7 +854,7 @@ mod tests {
     #[tokio::test]
     async fn test_direct_score_update() {
         let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
-        let engine = GpuScoringEngine::new(repo.clone());
+        let engine = GpuScoringEngine::new(repo.clone(), EmissionConfig::for_testing());
 
         let miner_uid = MinerUid::new(100);
 
@@ -884,7 +895,7 @@ mod tests {
     #[tokio::test]
     async fn test_scoring_ignores_gpu_memory() {
         let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
-        let engine = GpuScoringEngine::new(repo);
+        let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         // Test various memory sizes all get same score
         let memory_sizes = vec![16, 24, 40, 80, 100];
@@ -902,6 +913,225 @@ mod tests {
 
             let score = engine.calculate_verification_score(&validations);
             assert_eq!(score, 1.0, "Memory {memory} should give score 1.0");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_b200_gpu_support() {
+        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let engine = GpuScoringEngine::new(repo.clone(), EmissionConfig::for_testing());
+
+        // Test that B200 is considered rewardable
+        assert!(engine.is_gpu_model_rewardable("B200"));
+        assert!(engine.is_gpu_model_rewardable("NVIDIA B200"));
+        assert!(engine.is_gpu_model_rewardable("Tesla B200"));
+
+        // Test that H100 and H200 are still rewardable
+        assert!(engine.is_gpu_model_rewardable("H100"));
+        assert!(engine.is_gpu_model_rewardable("H200"));
+
+        // Test that unconfigured GPUs are not rewardable
+        assert!(!engine.is_gpu_model_rewardable("V100"));
+        assert!(!engine.is_gpu_model_rewardable("A100"));
+
+        // Create B200 profile
+        let mut b200_counts = HashMap::new();
+        b200_counts.insert("B200".to_string(), 4);
+
+        let now = Utc::now();
+        let b200_profile = MinerGpuProfile {
+            miner_uid: MinerUid::new(100),
+            gpu_counts: b200_counts,
+            total_score: 1.0,
+            verification_count: 1,
+            last_updated: now,
+            last_successful_validation: Some(now - chrono::Duration::hours(1)),
+        };
+
+        // Seed B200 data
+        let persistence = crate::persistence::SimplePersistence::with_pool(repo.pool().clone());
+        seed_test_data(&persistence, &repo, &[b200_profile])
+            .await
+            .unwrap();
+
+        // Test category statistics include B200
+        let stats = engine.get_category_statistics().await.unwrap();
+        assert!(stats.contains_key("B200"), "B200 should be included in category statistics");
+
+        let b200_stats = stats.get("B200").unwrap();
+        assert_eq!(b200_stats.miner_count, 1);
+        assert_eq!(b200_stats.total_score, 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_emission_config_filtering() {
+        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+
+        // Create custom emission config with only H100 and B200 (exclude H200)
+        let mut custom_gpu_allocations = HashMap::new();
+        custom_gpu_allocations.insert("H100".to_string(), 20.0);
+        custom_gpu_allocations.insert("B200".to_string(), 80.0);
+        // Note: H200 is excluded
+
+        let custom_emission_config = EmissionConfig {
+            burn_percentage: 10.0,
+            burn_uid: 999,
+            gpu_allocations: custom_gpu_allocations,
+            weight_set_interval_blocks: 360,
+            weight_version_key: 0,
+        };
+
+        let engine = GpuScoringEngine::new(repo.clone(), custom_emission_config);
+
+        // Test filtering matches custom config
+        assert!(engine.is_gpu_model_rewardable("H100"));
+        assert!(engine.is_gpu_model_rewardable("B200"));
+        assert!(!engine.is_gpu_model_rewardable("H200")); // Should be excluded
+
+        // Create profiles with all GPU types
+        let mut h100_counts = HashMap::new();
+        h100_counts.insert("H100".to_string(), 2);
+
+        let mut h200_counts = HashMap::new();
+        h200_counts.insert("H200".to_string(), 1);
+
+        let mut b200_counts = HashMap::new();
+        b200_counts.insert("B200".to_string(), 3);
+
+        let now = Utc::now();
+        let profiles = vec![
+            MinerGpuProfile {
+                miner_uid: MinerUid::new(1),
+                gpu_counts: h100_counts,
+                total_score: 0.8,
+                verification_count: 1,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
+            },
+            MinerGpuProfile {
+                miner_uid: MinerUid::new(2),
+                gpu_counts: h200_counts,
+                total_score: 0.9,
+                verification_count: 1,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
+            },
+            MinerGpuProfile {
+                miner_uid: MinerUid::new(3),
+                gpu_counts: b200_counts,
+                total_score: 1.0,
+                verification_count: 1,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
+            },
+        ];
+
+        // Seed all data
+        let persistence = crate::persistence::SimplePersistence::with_pool(repo.pool().clone());
+        seed_test_data(&persistence, &repo, &profiles)
+            .await
+            .unwrap();
+
+        // Test category statistics only include configured GPUs
+        let stats = engine.get_category_statistics().await.unwrap();
+
+        // Should have H100 and B200 but NOT H200
+        assert_eq!(stats.len(), 2, "Should only have 2 categories (H100, B200)");
+        assert!(stats.contains_key("H100"), "Should include H100");
+        assert!(stats.contains_key("B200"), "Should include B200");
+        assert!(!stats.contains_key("H200"), "Should NOT include H200 (not in emission config)");
+
+        // Verify correct stats
+        assert_eq!(stats.get("H100").unwrap().miner_count, 1);
+        assert_eq!(stats.get("B200").unwrap().miner_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_multi_gpu_category_with_b200() {
+        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let engine = GpuScoringEngine::new(repo.clone(), EmissionConfig::for_testing());
+
+        // Create a miner with multiple GPU types including B200
+        let mut multi_gpu_counts = HashMap::new();
+        multi_gpu_counts.insert("H100".to_string(), 1);
+        multi_gpu_counts.insert("B200".to_string(), 2);
+
+        let now = Utc::now();
+        let multi_gpu_profile = MinerGpuProfile {
+            miner_uid: MinerUid::new(42),
+            gpu_counts: multi_gpu_counts,
+            total_score: 0.9,
+            verification_count: 1,
+            last_updated: now,
+            last_successful_validation: Some(now - chrono::Duration::hours(1)),
+        };
+
+        // Seed data
+        let persistence = crate::persistence::SimplePersistence::with_pool(repo.pool().clone());
+        seed_test_data(&persistence, &repo, &[multi_gpu_profile])
+            .await
+            .unwrap();
+
+        // Test category statistics account for both GPU types
+        let stats = engine.get_category_statistics().await.unwrap();
+
+        // Should have both H100 and B200 categories
+        assert!(stats.contains_key("H100"));
+        assert!(stats.contains_key("B200"));
+
+        // Both should show the same miner (miner can be in multiple categories)
+        assert_eq!(stats.get("H100").unwrap().miner_count, 1);
+        assert_eq!(stats.get("B200").unwrap().miner_count, 1);
+    }
+
+    #[test]
+    fn test_is_gpu_model_rewardable_normalization() {
+        // Create test emission config
+        let mut gpu_allocations = HashMap::new();
+        gpu_allocations.insert("H100".to_string(), 20.0);
+        gpu_allocations.insert("B200".to_string(), 80.0);
+
+        let emission_config = EmissionConfig {
+            burn_percentage: 10.0,
+            burn_uid: 999,
+            gpu_allocations,
+            weight_set_interval_blocks: 360,
+            weight_version_key: 0,
+        };
+
+        // Create a minimal repo for testing (we only need the method, not async functionality)
+        let _temp_file = tempfile::NamedTempFile::new().unwrap();
+
+        // This test doesn't need async functionality, just the is_gpu_model_rewardable method
+        // So we'll test the underlying logic directly
+
+        // Test that various GPU model strings are normalized correctly
+        let test_cases = vec![
+            ("H100", true),
+            ("NVIDIA H100", true),
+            ("Tesla H100", true),
+            ("h100", true),
+            ("B200", true),
+            ("NVIDIA B200", true),
+            ("b200", true),
+            ("H200", false), // Not in our custom config
+            ("V100", false),
+            ("A100", false),
+            ("GTX1080", false),
+        ];
+
+        // Since we can't easily test the method directly without async setup,
+        // we'll test the underlying logic through the normalization function
+        use crate::gpu::categorization::GpuCategorizer;
+
+        for (model, should_be_rewardable) in test_cases {
+            let normalized = GpuCategorizer::normalize_gpu_model(model);
+            let is_rewardable = emission_config.gpu_allocations.contains_key(&normalized);
+            assert_eq!(
+                is_rewardable, should_be_rewardable,
+                "GPU model '{}' normalized to '{}', expected rewardable: {}, got: {}",
+                model, normalized, should_be_rewardable, is_rewardable
+            );
         }
     }
 }
