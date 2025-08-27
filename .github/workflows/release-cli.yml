@@ -3,16 +3,20 @@ name: Release CLI
 on:
   push:
     tags:
-      - 'cli-v*'
+      - 'basilica-v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g., cli-v0.1.0)'
+        description: 'Tag to release (e.g., basilica-v0.1.0)'
         required: true
         type: string
 
 env:
   CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
   create-release:
@@ -33,8 +37,8 @@ jobs:
           else
             VERSION="${GITHUB_REF#refs/tags/}"
           fi
-          # Remove 'cli-v' prefix to get clean version
-          CLEAN_VERSION="${VERSION#cli-v}"
+          # Remove 'basilica-v' prefix to get clean version
+          CLEAN_VERSION="${VERSION#basilica-v}"
           echo "version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
           echo "tag=$VERSION" >> $GITHUB_OUTPUT
         
