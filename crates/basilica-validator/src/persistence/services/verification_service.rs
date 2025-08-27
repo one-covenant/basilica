@@ -14,7 +14,6 @@ use crate::persistence::{
     },
 };
 use crate::journal::VerificationLogger;
-use crate::validation::types::AttestationResult;
 use crate::metrics::ValidatorBusinessMetrics;
 
 /// Configuration for hardware verification scoring algorithms
@@ -306,59 +305,6 @@ where
             .await
     }
 
-    /// Store attestation result as a verification log entry
-    ///
-    /// Converts an AttestationResult into a VerificationLog and stores it
-    /// with appropriate logging and error handling.
-    pub async fn store_attestation_result(
-        &self,
-        attestation_result: &AttestationResult,
-    ) -> Result<(), PersistenceError> {
-        // Convert AttestationResult to VerificationLog
-        let verification_log = VerificationLog {
-            id: Uuid::new_v4(),
-            executor_id: attestation_result.executor_id.to_string(),
-            verification_type: "attestation".to_string(),
-            timestamp: attestation_result.validated_at
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-            success: attestation_result.is_valid,
-            score: 0.0, // Will be calculated separately by scoring algorithms
-            duration_ms: attestation_result.validation_duration.as_millis() as i64,
-            details: serde_json::to_value(&attestation_result.hardware_specs)
-                .unwrap_or(serde_json::Value::Null),
-            error_message: attestation_result.error_message.clone(),
-            signature: attestation_result.signature.clone(),
-        };
-
-        // Log the attestation storage attempt
-        self.logger
-            .log_verification_started(
-                verification_log.id,
-                &verification_log.executor_id,
-                &verification_log.verification_type,
-            )
-            .await;
-
-        // Store in repository
-        let result = self.verification_repo.create(&verification_log).await;
-
-        // Log the completion
-        if result.is_ok() {
-            self.logger
-                .log_verification_completed(
-                    verification_log.id,
-                    &verification_log.executor_id,
-                    verification_log.success,
-                    verification_log.score,
-                    verification_log.duration_ms,
-                )
-                .await;
-        }
-
-        result
-    }
 
     /// Get successful challenge results for an executor
     pub async fn get_successful_challenges(

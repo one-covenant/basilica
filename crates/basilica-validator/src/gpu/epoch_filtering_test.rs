@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use crate::config::emission::EmissionConfig;
     use crate::gpu::{GpuScoringEngine, MinerGpuProfile};
     use crate::persistence::{gpu_profile_repository::GpuProfileRepository, SimplePersistence};
     use basilica_common::identity::MinerUid;
@@ -269,7 +270,7 @@ mod tests {
         let persistence =
             Arc::new(SimplePersistence::new(&db_path, "test_validator".to_string()).await?);
         let gpu_repo = Arc::new(GpuProfileRepository::new(persistence.pool().clone()));
-        let scoring_engine = GpuScoringEngine::new(gpu_repo.clone());
+        let scoring_engine = GpuScoringEngine::new(gpu_repo.clone(), EmissionConfig::for_testing());
 
         let now = Utc::now();
         let one_hour_ago = now - chrono::Duration::hours(1);

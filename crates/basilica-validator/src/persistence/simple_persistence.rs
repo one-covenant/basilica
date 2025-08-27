@@ -388,6 +388,7 @@ impl SimplePersistence {
         }
 
         self.create_collateral_scanned_blocks_table().await?;
+        self.add_binary_validation_columns().await?;
 
         Ok(())
     }
@@ -600,7 +601,7 @@ impl SimplePersistence {
         // Build the base query with LEFT JOIN to find executors without active rentals
         // Also join with gpu_uuid_assignments to get actual GPU data
         let mut query_str = String::from(
-            "SELECT 
+            "SELECT
                 me.executor_id,
                 me.miner_id,
                 me.gpu_specs,
@@ -1429,10 +1430,10 @@ impl SimplePersistence {
     ) -> Result<Option<crate::api::types::ExecutorDetails>, anyhow::Error> {
         // First get the executor basic info with GPU data from gpu_uuid_assignments
         let row = sqlx::query(
-            "SELECT 
-                me.executor_id, 
-                me.gpu_specs, 
-                me.cpu_specs, 
+            "SELECT
+                me.executor_id,
+                me.gpu_specs,
+                me.cpu_specs,
                 me.location,
                 GROUP_CONCAT(gua.gpu_name) as gpu_names
              FROM miner_executors me
@@ -1572,6 +1573,163 @@ impl SimplePersistence {
         .await?;
 
         Ok(count as u32)
+    }
+
+    /// Add binary validation tracking columns to verification_logs table
+    async fn add_binary_validation_columns(&self) -> Result<(), anyhow::Error> {
+        let has_last_col: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('verification_logs')
+            WHERE name = 'last_binary_validation'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !has_last_col {
+            sqlx::query(
+                r#"
+                ALTER TABLE verification_logs
+                ADD COLUMN last_binary_validation TEXT;
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+        }
+
+        let has_score_col: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('verification_logs')
+            WHERE name = 'last_binary_validation_score'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !has_score_col {
+            sqlx::query(
+                r#"
+                ALTER TABLE verification_logs
+                ADD COLUMN last_binary_validation_score REAL;
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+        }
+
+        if !has_last_col || !has_score_col {
+            info!("Ensured binary validation tracking columns exist on verification_logs");
+        }
+
+        Ok(())
+    }
+
+    /// Get last successful full validation data for lightweight validation
+    pub async fn get_last_full_validation_data(
+        &self,
+        executor_id: &str,
+    ) -> Result<
+        Option<(
+            f64,
+            Option<super::super::miner_prover::types::ExecutorResult>,
+            u64,
+            bool,
+        )>,
+        anyhow::Error,
+    > {
+        let query = r#"
+            SELECT score, details
+            FROM verification_logs
+            WHERE (executor_id = ? OR executor_id GLOB ('*__' || ?))
+              AND success = 1
+              AND verification_type = 'ssh_automation'
+              AND (
+                json_extract(details, '$.binary_validation_successful') = 1
+                OR json_extract(details, '$.binary_validation_successful') = 'true'
+              )
+            ORDER BY timestamp DESC
+            LIMIT 1
+        "#;
+
+        let row = sqlx::query(query)
+            .bind(executor_id)
+            .bind(executor_id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(row) = row {
+            let score: f64 = row.get("score");
+            let details_str: String = row.get("details");
+
+            let details: serde_json::Value = serde_json::from_str(&details_str)
+                .map_err(|e| anyhow::anyhow!("Failed to parse details JSON: {}", e))?;
+
+            let executor_result = details.get("executor_result").and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    serde_json::from_value::<super::super::miner_prover::types::ExecutorResult>(
+                        v.clone(),
+                    )
+                    .ok()
+                }
+            });
+
+            let gpu_count = details
+                .get("gpu_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+
+            let binary_validation_successful = details
+                .get("binary_validation_successful")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            Ok(Some((
+                score,
+                executor_result,
+                gpu_count,
+                binary_validation_successful,
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get known executors from database for a miner
+    pub async fn get_known_executors_for_miner(
+        &self,
+        miner_uid: u16,
+    ) -> Result<Vec<(String, String, i32, String)>, anyhow::Error> {
+        let miner_id = format!("miner_{}", miner_uid);
+
+        let query = r#"
+            SELECT executor_id, grpc_address, gpu_count, status
+            FROM miner_executors 
+            WHERE miner_id = ? 
+            AND status IN ('online', 'verified')
+            AND (last_health_check IS NULL OR last_health_check > datetime('now', '-1 hour'))
+        "#;
+
+        let rows = sqlx::query(query)
+            .bind(&miner_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut known_executors = Vec::new();
+        for row in rows {
+            let executor_id: String = row.get("executor_id");
+            let grpc_address: String = row.get("grpc_address");
+            let gpu_count: i32 = row.get("gpu_count");
+            let status: String = row.get("status");
+            known_executors.push((executor_id, grpc_address, gpu_count, status));
+        }
+
+        Ok(known_executors)
     }
 }
 
