@@ -320,11 +320,17 @@ impl ValidationExecutor {
             .await
         {
             Ok(output) => {
-                let gpu_present =
-                    !output.trim().is_empty() && !output.contains("No devices were found");
+                let lines: Vec<&str> = output
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|l| !l.is_empty())
+                    .collect();
+                let gpus_detected = lines.iter().filter(|l| l.starts_with("GPU-")).count();
+                let gpu_present = gpus_detected > 0;
                 info!(
                     executor_id = %executor_info.id,
                     gpu_present = gpu_present,
+                    gpus_detected = gpus_detected,
                     "[EVAL_FLOW] GPU availability check completed"
                 );
                 gpu_present
