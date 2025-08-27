@@ -1617,7 +1617,15 @@ impl SimplePersistence {
     pub async fn get_last_full_validation_data(
         &self,
         executor_id: &str,
-    ) -> Result<Option<(f64, Option<super::super::miner_prover::types::ExecutorResult>, u64, bool)>, anyhow::Error> {
+    ) -> Result<
+        Option<(
+            f64,
+            Option<super::super::miner_prover::types::ExecutorResult>,
+            u64,
+            bool,
+        )>,
+        anyhow::Error,
+    > {
         let query = r#"
             SELECT score, details
             FROM verification_logs
@@ -1644,15 +1652,16 @@ impl SimplePersistence {
             let details: serde_json::Value = serde_json::from_str(&details_str)
                 .map_err(|e| anyhow::anyhow!("Failed to parse details JSON: {}", e))?;
 
-            let executor_result = details
-                .get("executor_result")
-                .and_then(|v| {
-                    if v.is_null() {
-                        None
-                    } else {
-                        serde_json::from_value::<super::super::miner_prover::types::ExecutorResult>(v.clone()).ok()
-                    }
-                });
+            let executor_result = details.get("executor_result").and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    serde_json::from_value::<super::super::miner_prover::types::ExecutorResult>(
+                        v.clone(),
+                    )
+                    .ok()
+                }
+            });
 
             let gpu_count = details
                 .get("gpu_count")
@@ -1664,7 +1673,12 @@ impl SimplePersistence {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            Ok(Some((score, executor_result, gpu_count, binary_validation_successful)))
+            Ok(Some((
+                score,
+                executor_result,
+                gpu_count,
+                binary_validation_successful,
+            )))
         } else {
             Ok(None)
         }
