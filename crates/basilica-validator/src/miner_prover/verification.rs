@@ -5,7 +5,7 @@
 
 use super::miner_client::{MinerClient, MinerClientConfig};
 use super::types::MinerInfo;
-use super::types::{ExecutorInfoDetailed, ExecutorVerificationResult, GpuInfo};
+use super::types::{ExecutorInfoDetailed, ExecutorVerificationResult, GpuInfo, ValidationType};
 use super::validation_strategy::{
     ValidationExecutor, ValidationStrategy, ValidationStrategySelector,
 };
@@ -497,7 +497,29 @@ impl VerificationEngine {
             return Err(anyhow::anyhow!("Database storage failed: {}", e));
         }
 
-        let status = if success { "online" } else { "offline" };
+        let status = if !success {
+            "offline".to_string()
+        } else if executor_result.validation_type == ValidationType::Full {
+            "online".to_string()
+        } else {
+            sqlx::query_scalar::<_, String>(
+                "SELECT status FROM miner_executors WHERE executor_id = ?",
+            )
+            .bind(&verification_log.executor_id)
+            .fetch_one(self.persistence.pool())
+            .await
+            .unwrap_or_else(|_| "offline".to_string())
+        };
+
+        info!(
+            security = true,
+            miner_uid = miner_uid,
+            executor_id = %executor_result.executor_id,
+            validation_type = %executor_result.validation_type,
+            new_status = %status,
+            "Status update based on validation type"
+        );
+
         let miner_id = format!("miner_{miner_uid}");
 
         // Use transaction to ensure atomic updates
@@ -509,7 +531,7 @@ impl VerificationEngine {
              SET status = ?, last_health_check = ?, updated_at = ?
              WHERE executor_id = ?",
         )
-        .bind(status)
+        .bind(&status)
         .bind(&now)
         .bind(&now)
         .bind(&verification_log.executor_id)
@@ -521,58 +543,33 @@ impl VerificationEngine {
             return Err(anyhow::anyhow!("Failed to update executor status: {}", e));
         }
 
-        // If marking offline, immediately clean up GPU assignments
+        // Clean up GPU assignments on failure
         if !success {
-            info!(
-                "Executor {} failed verification, marking offline and cleaning GPU assignments",
-                verification_log.executor_id
-            );
-
             self.cleanup_gpu_assignments(&verification_log.executor_id, &miner_id, Some(&mut tx))
                 .await?;
         }
 
         tx.commit().await?;
 
-        // Extract GPU infos from executor result if available
-        let gpu_infos = executor_result
-            .executor_result
-            .as_ref()
-            .map(|er: &crate::miner_prover::types::ExecutorResult| er.gpu_infos.clone())
-            .unwrap_or_default();
+        // Only full validations can update GPU assignments
+        if success && executor_result.validation_type == ValidationType::Full {
+            let gpu_infos = executor_result
+                .executor_result
+                .as_ref()
+                .map(|er| er.gpu_infos.clone())
+                .unwrap_or_default();
 
-        // Ensure miner-executor relationship exists
-        self.ensure_miner_executor_relationship(
-            miner_uid,
-            &unique_executor_id,
-            &executor_result.grpc_endpoint,
-            miner_info,
-        )
-        .await
-        .map_err(|e| {
-            error!(
-                "Failed to ensure miner-executor relationship for miner {}, executor {}: {}",
-                miner_uid, unique_executor_id, e
-            );
-            anyhow::anyhow!(
-                "Verification storage failed: Unable to establish miner-executor relationship: {}",
-                e
+            self.ensure_miner_executor_relationship(
+                miner_uid,
+                &unique_executor_id,
+                &executor_result.grpc_endpoint,
+                miner_info,
             )
-        })?;
+            .await?;
 
-        // Store GPU UUID assignments
-        self.store_gpu_uuid_assignments(miner_uid, &unique_executor_id, &gpu_infos)
-            .await
-            .map_err(|e| {
-                error!(
-                    "Failed to store GPU UUID assignments for miner {}, executor {}: {}",
-                    miner_uid, unique_executor_id, e
-                );
-                anyhow::anyhow!(
-                    "Verification storage failed: Unable to store GPU UUID assignments: {}",
-                    e
-                )
-            })?;
+            self.store_gpu_uuid_assignments(miner_uid, &unique_executor_id, &gpu_infos)
+                .await?;
+        }
 
         info!(
             "Executor verification result successfully stored to database for miner {}, executor {}: score={:.2}",
@@ -1717,6 +1714,68 @@ impl VerificationEngine {
             info!(
                 "Cleaned up {} stale GPU assignments (not verified in last hour or belonging to offline executors)",
                 stale_gpu_result.rows_affected()
+            );
+        }
+
+        // Step 1d: Clean up GPU assignments from executors offline
+        let cleanup_minutes = self
+            .config
+            .stale_executor_cleanup_interval
+            .map(|d| d.as_secs() / 60)
+            .unwrap_or(30)
+            .max(30); // Ensure minimum 30 minutes
+
+        info!(
+            "Cleaning GPU assignments from executors offline >{} minutes",
+            cleanup_minutes
+        );
+        let stale_offline_query = format!(
+            r#"
+            SELECT DISTINCT me.executor_id, me.miner_id, COUNT(ga.gpu_uuid) as gpu_count
+            FROM miner_executors me
+            INNER JOIN gpu_uuid_assignments ga ON me.executor_id = ga.executor_id AND me.miner_id = ga.miner_id
+            WHERE me.status = 'offline'
+            AND (
+                me.last_health_check < datetime('now', '-{cleanup_minutes} minutes')
+                OR (me.last_health_check IS NULL AND me.updated_at < datetime('now', '-{cleanup_minutes} minutes'))
+            )
+            GROUP BY me.executor_id, me.miner_id
+            "#
+        );
+
+        let stale_offline = sqlx::query(&stale_offline_query)
+            .fetch_all(self.persistence.pool())
+            .await?;
+
+        let mut stale_gpu_cleaned = 0;
+        for row in stale_offline {
+            let executor_id: String = row.try_get("executor_id")?;
+            let miner_id: String = row.try_get("miner_id")?;
+            let gpu_count: i64 = row.try_get("gpu_count")?;
+
+            info!(
+                security = true,
+                executor_id = %executor_id,
+                miner_id = %miner_id,
+                gpu_count = gpu_count,
+                cleanup_minutes = cleanup_minutes,
+                "Cleaning GPU assignments from executor offline >{}min", cleanup_minutes
+            );
+
+            let cleaned = self
+                .cleanup_gpu_assignments(&executor_id, &miner_id, None)
+                .await?;
+            stale_gpu_cleaned += cleaned;
+        }
+
+        if stale_gpu_cleaned > 0 {
+            info!(
+                security = true,
+                cleaned_count = stale_gpu_cleaned,
+                cleanup_minutes = cleanup_minutes,
+                "Cleaned {} GPU assignments from executors offline >{}min",
+                stale_gpu_cleaned,
+                cleanup_minutes
             );
         }
 

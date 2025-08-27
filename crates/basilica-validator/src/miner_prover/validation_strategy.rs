@@ -6,6 +6,7 @@
 
 use super::types::{
     ExecutorInfoDetailed, ExecutorResult, ExecutorVerificationResult, ValidationDetails,
+    ValidationType,
 };
 use super::validation_binary::BinaryValidator;
 use crate::config::VerificationConfig;
@@ -296,9 +297,9 @@ impl ValidationExecutor {
         ssh_details: &SshConnectionDetails,
         _session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         previous_score: f64,
-        executor_result: Option<ExecutorResult>,
-        gpu_count: u64,
-        binary_validation_successful: bool,
+        _executor_result: Option<ExecutorResult>,
+        _gpu_count: u64,
+        _binary_validation_successful: bool,
         _validator_hotkey: &Hotkey,
         _config: &crate::config::VerificationConfig,
     ) -> Result<ExecutorVerificationResult> {
@@ -385,31 +386,17 @@ impl ValidationExecutor {
                 .await;
         }
 
-        let final_executor_result = if connectivity_successful {
-            executor_result
-        } else {
-            None
-        };
-
-        let final_gpu_count = if connectivity_successful {
-            gpu_count
-        } else {
-            0
-        };
-
-        let final_binary_validation_successful = if connectivity_successful {
-            binary_validation_successful
-        } else {
-            false
-        };
-
         Ok(ExecutorVerificationResult {
             executor_id: executor_info.id.clone(),
             grpc_endpoint: executor_info.grpc_endpoint.clone(),
-            verification_score,
+            verification_score: if connectivity_successful {
+                previous_score
+            } else {
+                0.0
+            },
             ssh_connection_successful: connectivity_successful,
-            binary_validation_successful: final_binary_validation_successful,
-            executor_result: final_executor_result,
+            binary_validation_successful: false,
+            executor_result: None,
             error: if connectivity_successful {
                 None
             } else {
@@ -417,7 +404,8 @@ impl ValidationExecutor {
             },
             execution_time: total_duration,
             validation_details: details,
-            gpu_count: final_gpu_count,
+            gpu_count: 0,
+            validation_type: ValidationType::Lightweight,
         })
     }
 
@@ -553,6 +541,7 @@ impl ValidationExecutor {
             execution_time: total_start.elapsed(),
             validation_details,
             gpu_count,
+            validation_type: ValidationType::Full,
         })
     }
 
