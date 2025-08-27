@@ -511,9 +511,12 @@ impl BinaryValidator {
             // Base score for successful execution
             gpu_score += 0.3;
 
+            // Get metrics object from gpu_result
+            let metrics = gpu_result.get("metrics");
+
             // Anti-debug check
-            if gpu_result
-                .get("anti_debug_passed")
+            if metrics
+                .and_then(|m| m.get("anti_debug_passed"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
             {
@@ -521,7 +524,7 @@ impl BinaryValidator {
             }
 
             // SM utilization scoring
-            if let Some(sm_util) = gpu_result.get("sm_utilization") {
+            if let Some(sm_util) = metrics.and_then(|m| m.get("sm_utilization")) {
                 let avg_utilization = sm_util.get("avg").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let sm_score = if avg_utilization > 0.8 {
                     0.2
@@ -534,8 +537,8 @@ impl BinaryValidator {
             }
 
             // Memory bandwidth scoring
-            let bandwidth = gpu_result
-                .get("memory_bandwidth_gbps")
+            let bandwidth = metrics
+                .and_then(|m| m.get("memory_bandwidth_gbps"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
             let bandwidth_score = if bandwidth > 15000.0 {
@@ -608,45 +611,49 @@ impl BinaryValidator {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
 
-            let memory_bandwidth_gbps = gpu_result
-                .get("memory_bandwidth_gbps")
+            // Get metrics object
+            let metrics = gpu_result.get("metrics");
+
+            let memory_bandwidth_gbps = metrics
+                .and_then(|m| m.get("memory_bandwidth_gbps"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
 
-            let anti_debug_passed = gpu_result
-                .get("anti_debug_passed")
+            let anti_debug_passed = metrics
+                .and_then(|m| m.get("anti_debug_passed"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
             // SM utilization
-            let sm_utilization = if let Some(sm_util) = gpu_result.get("sm_utilization") {
-                let min_util = sm_util.get("min").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let max_util = sm_util.get("max").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let avg_util = sm_util.get("avg").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let sm_utilization =
+                if let Some(sm_util) = metrics.and_then(|m| m.get("sm_utilization")) {
+                    let min_util = sm_util.get("min").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let max_util = sm_util.get("max").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let avg_util = sm_util.get("avg").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
-                SmUtilizationStats {
-                    min_utilization: min_util,
-                    max_utilization: max_util,
-                    avg_utilization: avg_util,
-                    per_sm_stats: vec![],
-                }
-            } else {
-                SmUtilizationStats {
-                    min_utilization: 0.0,
-                    max_utilization: 0.0,
-                    avg_utilization: 0.0,
-                    per_sm_stats: vec![],
-                }
-            };
+                    SmUtilizationStats {
+                        min_utilization: min_util,
+                        max_utilization: max_util,
+                        avg_utilization: avg_util,
+                        per_sm_stats: vec![],
+                    }
+                } else {
+                    SmUtilizationStats {
+                        min_utilization: 0.0,
+                        max_utilization: 0.0,
+                        avg_utilization: 0.0,
+                        per_sm_stats: vec![],
+                    }
+                };
 
-            let active_sms = gpu_result
-                .get("sm_utilization")
+            let active_sms = metrics
+                .and_then(|m| m.get("sm_utilization"))
                 .and_then(|v| v.get("active_sms"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0) as u32;
 
-            let total_sms = gpu_result
-                .get("sm_utilization")
+            let total_sms = metrics
+                .and_then(|m| m.get("sm_utilization"))
                 .and_then(|v| v.get("total_sms"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0) as u32;
@@ -666,6 +673,7 @@ impl BinaryValidator {
 
         // Use the first GPU for primary information (backwards compatibility)
         let primary_gpu = &gpu_results[0];
+        let primary_metrics = primary_gpu.get("metrics");
 
         let gpu_name = primary_gpu
             .get("gpu_name")
@@ -684,13 +692,13 @@ impl BinaryValidator {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
-        let memory_bandwidth_gbps = primary_gpu
-            .get("memory_bandwidth_gbps")
+        let memory_bandwidth_gbps = primary_metrics
+            .and_then(|m| m.get("memory_bandwidth_gbps"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        let anti_debug_passed = primary_gpu
-            .get("anti_debug_passed")
+        let anti_debug_passed = primary_metrics
+            .and_then(|m| m.get("anti_debug_passed"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
@@ -905,5 +913,344 @@ impl BinaryValidator {
             validation_score,
             gpu_count: validation_result.gpu_count,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn create_test_validator() -> BinaryValidator {
+        let mock_ssh_client = Arc::new(crate::ssh::ValidatorSshClient::new());
+        BinaryValidator::new(mock_ssh_client)
+    }
+
+    #[test]
+    fn test_parse_real_validator_binary_output() {
+        let validator = create_test_validator();
+
+        // Real output from your validator binary execution
+        let real_output = r#"{
+  "execution_time_ms": 680536,
+  "gpu_count": 1,
+  "gpu_results": [
+    {
+      "computation_time_ns": 214282408766,
+      "gpu_index": 0,
+      "gpu_name": "NVIDIA B200",
+      "gpu_uuid": "GPU-12345678901234567890123456789abc",
+      "merkle_root": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "metrics": {
+        "anti_debug_passed": true,
+        "memory_bandwidth_gbps": 0.7563359043671317,
+        "sm_utilization": {
+          "active_sms": 148,
+          "avg": 0.5703122615814209,
+          "max": 1.0011287927627563,
+          "min": 0.0,
+          "total_sms": 148
+        }
+      }
+    }
+  ],
+  "matrix_size": 82176,
+  "random_seed": "0xfb9e0f67d3814c10",
+  "success": true,
+  "timing_fingerprint": "0x1a99231c86c",
+  "total_execution_time_ns": 676971022243
+}"#;
+
+        let result = validator.parse_validator_binary_output(real_output.as_bytes());
+        assert!(
+            result.is_ok(),
+            "Failed to parse real validator output: {:?}",
+            result.err()
+        );
+
+        let parsed = result.unwrap();
+        assert!(parsed.success);
+        assert_eq!(parsed.execution_time_ms, 680536);
+        assert_eq!(parsed.gpu_count, 1);
+        assert!(parsed.validation_score > 0.0);
+
+        let executor_result = parsed.executor_result.expect("Should have executor result");
+        assert_eq!(executor_result.gpu_name, "NVIDIA B200");
+        assert_eq!(
+            executor_result.gpu_uuid,
+            "GPU-12345678901234567890123456789abc"
+        );
+        assert_eq!(executor_result.computation_time_ns, 214282408766);
+        assert_eq!(executor_result.active_sms, 148);
+        assert_eq!(executor_result.total_sms, 148);
+        assert!(executor_result.anti_debug_passed);
+        assert!((executor_result.memory_bandwidth_gbps - 0.7563359043671317).abs() < 0.0001);
+        assert!(
+            (executor_result.sm_utilization.avg_utilization - 0.5703122615814209).abs() < 0.0001
+        );
+        assert!(
+            (executor_result.sm_utilization.max_utilization - 1.0011287927627563).abs() < 0.0001
+        );
+        assert_eq!(executor_result.sm_utilization.min_utilization, 0.0);
+        assert_eq!(executor_result.gpu_infos.len(), 1);
+    }
+
+    #[test]
+    fn test_calculate_validation_score_from_real_results() {
+        let validator = create_test_validator();
+
+        let real_json: serde_json::Value = serde_json::from_str(
+            r#"{
+  "execution_time_ms": 680536,
+  "gpu_count": 1,
+  "gpu_results": [
+    {
+      "computation_time_ns": 214282408766,
+      "gpu_index": 0,
+      "gpu_name": "NVIDIA B200",
+      "gpu_uuid": "GPU-12345678901234567890123456789abc",
+      "merkle_root": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "metrics": {
+        "anti_debug_passed": true,
+        "memory_bandwidth_gbps": 0.7563359043671317,
+        "sm_utilization": {
+          "active_sms": 148,
+          "avg": 0.5703122615814209,
+          "max": 1.0011287927627563,
+          "min": 0.0,
+          "total_sms": 148
+        }
+      }
+    }
+  ],
+  "matrix_size": 82176,
+  "random_seed": "0xfb9e0f67d3814c10",
+  "success": true,
+  "timing_fingerprint": "0x1a99231c86c",
+  "total_execution_time_ns": 676971022243
+}"#,
+        )
+        .unwrap();
+
+        let score = validator.calculate_validation_score_from_raw_results(&real_json);
+        assert!(
+            score.is_ok(),
+            "Failed to calculate score: {:?}",
+            score.err()
+        );
+
+        let calculated_score = score.unwrap();
+        // Base score (0.3) + anti-debug (0.2) + SM utilization (0.0 because avg < 0.6) + computation time (0.05) = 0.55
+        assert!(
+            calculated_score >= 0.5,
+            "Score should be >= 0.5, got {}",
+            calculated_score
+        );
+        assert!(
+            calculated_score <= 1.0,
+            "Score should be <= 1.0, got {}",
+            calculated_score
+        );
+    }
+
+    #[test]
+    fn test_convert_gpu_results_to_executor_result() {
+        let validator = create_test_validator();
+
+        let real_json: serde_json::Value = serde_json::from_str(
+            r#"{
+  "gpu_results": [
+    {
+      "computation_time_ns": 214282408766,
+      "gpu_index": 0,
+      "gpu_name": "NVIDIA B200",
+      "gpu_uuid": "GPU-12345678901234567890123456789abc",
+      "merkle_root": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "metrics": {
+        "anti_debug_passed": true,
+        "memory_bandwidth_gbps": 0.7563359043671317,
+        "sm_utilization": {
+          "active_sms": 148,
+          "avg": 0.5703122615814209,
+          "max": 1.0011287927627563,
+          "min": 0.0,
+          "total_sms": 148
+        }
+      }
+    }
+  ],
+  "timing_fingerprint": "0x1a99231c86c"
+}"#,
+        )
+        .unwrap();
+
+        let result = validator.convert_gpu_results_to_executor_result(&real_json);
+        assert!(
+            result.is_ok(),
+            "Failed to convert GPU results: {:?}",
+            result.err()
+        );
+
+        let executor_result = result.unwrap();
+        assert!(executor_result.is_some());
+
+        let exec = executor_result.unwrap();
+        assert_eq!(exec.gpu_name, "NVIDIA B200");
+        assert_eq!(exec.gpu_uuid, "GPU-12345678901234567890123456789abc");
+        assert_eq!(exec.computation_time_ns, 214282408766);
+        assert!(exec.anti_debug_passed);
+        assert_eq!(exec.active_sms, 148);
+        assert_eq!(exec.total_sms, 148);
+        assert!((exec.memory_bandwidth_gbps - 0.7563359043671317).abs() < 0.0001);
+        assert_eq!(exec.timing_fingerprint, 0x1a99231c86c);
+        assert_eq!(exec.gpu_infos.len(), 1);
+        assert_eq!(exec.gpu_infos[0].gpu_name, "NVIDIA B200");
+        assert_eq!(exec.gpu_infos[0].index, 0);
+    }
+
+    #[test]
+    fn test_extract_json_from_mixed_output() {
+        let validator = create_test_validator();
+
+        // Test with logs mixed with JSON (common real scenario)
+        let mixed_output = r#"
+[INFO] Starting validator binary
+[DEBUG] Connecting to SSH host
+[INFO] Uploading executor binary
+[DEBUG] Running GPU validation
+{
+  "execution_time_ms": 680536,
+  "gpu_count": 1,
+  "gpu_results": [
+    {
+      "computation_time_ns": 214282408766,
+      "gpu_name": "NVIDIA B200",
+      "metrics": {
+        "anti_debug_passed": true,
+        "memory_bandwidth_gbps": 0.7563359043671317,
+        "sm_utilization": {
+          "avg": 0.5703122615814209
+        }
+      }
+    }
+  ],
+  "success": true
+}
+[INFO] Validation complete
+"#;
+
+        let result = validator.extract_json_from_output(mixed_output);
+        assert!(result.is_ok(), "Failed to extract JSON: {:?}", result.err());
+
+        let json_str = result.unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["execution_time_ms"], 680536);
+        assert_eq!(parsed["success"], true);
+        assert_eq!(parsed["gpu_count"], 1);
+    }
+
+    #[test]
+    fn test_is_valid_validator_output() {
+        let validator = create_test_validator();
+
+        // Valid output with required fields
+        let valid_json: serde_json::Value = serde_json::from_str(
+            r#"{
+            "success": true,
+            "execution_time_ms": 1000,
+            "gpu_results": [],
+            "matrix_size": 1024
+        }"#,
+        )
+        .unwrap();
+
+        assert!(validator.is_valid_validator_output(&valid_json));
+
+        // Invalid output missing required fields
+        let invalid_json: serde_json::Value = serde_json::from_str(
+            r#"{
+            "some_other_field": "value"
+        }"#,
+        )
+        .unwrap();
+
+        assert!(!validator.is_valid_validator_output(&invalid_json));
+
+        // Partially valid (only 1 required field)
+        let partial_json: serde_json::Value = serde_json::from_str(
+            r#"{
+            "success": true
+        }"#,
+        )
+        .unwrap();
+
+        assert!(!validator.is_valid_validator_output(&partial_json));
+    }
+
+    #[test]
+    fn test_binary_validation_score_calculation() {
+        let validator = create_test_validator();
+
+        let validation_result = ValidatorBinaryOutput {
+            success: true,
+            execution_time_ms: 680536,
+            validation_score: 0.0, // Will be recalculated
+            gpu_count: 1,
+            error_message: None,
+            executor_result: Some(ExecutorResult {
+                gpu_name: "NVIDIA B200".to_string(),
+                gpu_uuid: "GPU-12345678901234567890123456789abc".to_string(),
+                gpu_infos: vec![],
+                cpu_info: BinaryCpuInfo {
+                    model: "Test".to_string(),
+                    cores: 8,
+                    threads: 16,
+                    frequency_mhz: 2400,
+                },
+                memory_info: BinaryMemoryInfo {
+                    total_gb: 32.0,
+                    available_gb: 16.0,
+                },
+                network_info: BinaryNetworkInfo { interfaces: vec![] },
+                matrix_c: CompressedMatrix {
+                    rows: 1024,
+                    cols: 1024,
+                    data: vec![],
+                },
+                computation_time_ns: 214282408766,
+                checksum: [0u8; 32],
+                sm_utilization: SmUtilizationStats {
+                    min_utilization: 0.0,
+                    max_utilization: 1.0011287927627563,
+                    avg_utilization: 0.5703122615814209,
+                    per_sm_stats: vec![],
+                },
+                active_sms: 148,
+                total_sms: 148,
+                memory_bandwidth_gbps: 0.7563359043671317,
+                anti_debug_passed: true,
+                timing_fingerprint: 0x1a99231c86c,
+            }),
+        };
+
+        let score = validator.calculate_binary_validation_score(&validation_result);
+        assert!(
+            score.is_ok(),
+            "Failed to calculate binary validation score: {:?}",
+            score.err()
+        );
+
+        let calculated_score = score.unwrap();
+        // Base (0.3) + anti-debug (0.2) + SM util (0.0 for avg < 0.6) + GPU efficiency (0.15 for 100%) + timing (0.05) = 0.7
+        assert!(
+            calculated_score >= 0.65,
+            "Score should be >= 0.65, got {}",
+            calculated_score
+        );
+        assert!(
+            calculated_score <= 1.0,
+            "Score should be <= 1.0, got {}",
+            calculated_score
+        );
     }
 }
