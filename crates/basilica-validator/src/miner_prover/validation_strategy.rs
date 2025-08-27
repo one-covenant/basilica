@@ -72,7 +72,7 @@ impl ValidationStrategySelector {
         );
 
         let needs_binary_validation = self
-            .is_binary_validation_needed(executor_id, &miner_id)
+            .is_binary_validation_needed(executor_id, &miner_id, miner_uid)
             .await
             .unwrap_or_else(|e| {
                 error!(
@@ -138,7 +138,12 @@ impl ValidationStrategySelector {
     }
 
     /// Check if binary validation is needed for an executor
-    async fn is_binary_validation_needed(&self, executor_id: &str, miner_id: &str) -> Result<bool> {
+    async fn is_binary_validation_needed(
+        &self,
+        executor_id: &str,
+        miner_id: &str,
+        miner_uid: u16,
+    ) -> Result<bool> {
         let status_query =
             "SELECT status FROM miner_executors WHERE executor_id = ? AND miner_id = ?";
         let status_row = sqlx::query(status_query)
@@ -167,7 +172,9 @@ impl ValidationStrategySelector {
             return Ok(true);
         }
 
-        let last_validation = self.get_last_binary_validation(executor_id).await?;
+        let last_validation = self
+            .get_last_binary_validation(executor_id, miner_uid)
+            .await?;
 
         match last_validation {
             None => {
@@ -203,7 +210,16 @@ impl ValidationStrategySelector {
     async fn get_last_binary_validation(
         &self,
         executor_id: &str,
+        miner_uid: u16,
     ) -> Result<Option<(chrono::DateTime<chrono::Utc>, f64)>> {
+        let composite_executor_id = format!("miner{}__{}", miner_uid, executor_id);
+        debug!(
+            executor_id = executor_id,
+            miner_uid = miner_uid,
+            composite_executor_id = composite_executor_id,
+            "Attempting to find last binary validation with composite executor_id"
+        );
+
         let query = r#"
             SELECT timestamp, score
             FROM verification_logs
@@ -219,9 +235,29 @@ impl ValidationStrategySelector {
         "#;
 
         let row = sqlx::query(query)
-            .bind(executor_id)
+            .bind(&composite_executor_id)
             .fetch_optional(self.persistence.pool())
             .await?;
+
+        let row = if row.is_none() {
+            debug!(
+                executor_id = executor_id,
+                miner_uid = miner_uid,
+                "No validation found with composite executor_id, trying plain executor_id as fallback"
+            );
+
+            sqlx::query(query)
+                .bind(executor_id)
+                .fetch_optional(self.persistence.pool())
+                .await?
+        } else {
+            debug!(
+                executor_id = executor_id,
+                miner_uid = miner_uid,
+                "Found validation with composite executor_id"
+            );
+            row
+        };
 
         if let Some(row) = row {
             let timestamp_str: String = row.get("timestamp");
