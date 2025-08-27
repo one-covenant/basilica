@@ -16,6 +16,7 @@ use crate::ssh::{parse_ssh_credentials, SshClient};
 use basilica_api::api::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
 };
+use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
 use basilica_validator::rental::types::RentalState;
@@ -208,14 +209,22 @@ pub async fn handle_up(
 
     let container_image = options.image.unwrap_or_else(|| config.image.name.clone());
 
-    let env_vars = parse_env_vars(&options.env).inspect_err(|_e| {
-        complete_spinner_error(spinner.clone(), "Environment variable parsing failed");
-    })?;
+    let env_vars = parse_env_vars(&options.env)
+        .map_err(|e| CliError::invalid_argument(e.to_string()))
+        .inspect_err(|_e| {
+            complete_spinner_error(spinner.clone(), "Environment variable parsing failed");
+        })?;
 
     // Parse port mappings if provided
-    let port_mappings = parse_port_mappings(&options.ports).inspect_err(|_e| {
-        complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
-    })?;
+    let port_mappings: Vec<basilica_api::api::types::PortMappingRequest> =
+        parse_port_mappings(&options.ports)
+            .map_err(|e| CliError::invalid_argument(e.to_string()))
+            .inspect_err(|_e| {
+                complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
+            })?
+            .into_iter()
+            .map(Into::into)
+            .collect();
 
     let command = if options.command.is_empty() {
         vec!["/bin/bash".to_string()]
@@ -878,63 +887,6 @@ fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result
 
     std::fs::read_to_string(path)
         .map_err(|_| CliError::ssh_key_not_found(path.display().to_string()))
-}
-
-fn parse_env_vars(env_vars: &[String]) -> Result<std::collections::HashMap<String, String>> {
-    let mut result = std::collections::HashMap::new();
-
-    for env_var in env_vars {
-        if let Some((key, value)) = env_var.split_once('=') {
-            result.insert(key.to_string(), value.to_string());
-        } else {
-            return Err(CliError::invalid_argument(format!(
-                "Invalid environment variable format: {env_var}. Expected KEY=VALUE"
-            )));
-        }
-    }
-
-    Ok(result)
-}
-
-fn parse_port_mappings(
-    ports: &[String],
-) -> Result<Vec<basilica_api::api::types::PortMappingRequest>> {
-    let mut mappings = Vec::new();
-
-    for port_spec in ports {
-        // Support format: host:container or just port (same for both)
-        let (host_port, container_port) = if let Some((host, container)) = port_spec.split_once(':')
-        {
-            // Parse as u16 to ensure valid port range (0-65535)
-            let host = host.parse::<u16>().map_err(|_| {
-                CliError::invalid_argument(format!(
-                    "Invalid host port: {host}. Port must be between 0 and 65535"
-                ))
-            })?;
-            let container = container.parse::<u16>().map_err(|_| {
-                CliError::invalid_argument(format!(
-                    "Invalid container port: {container}. Port must be between 0 and 65535"
-                ))
-            })?;
-            (host as u32, container as u32)
-        } else {
-            // Single port means same for host and container
-            let port = port_spec.parse::<u16>().map_err(|_| {
-                CliError::invalid_argument(format!(
-                    "Invalid port: {port_spec}. Port must be between 0 and 65535"
-                ))
-            })?;
-            (port as u32, port as u32)
-        };
-
-        mappings.push(basilica_api::api::types::PortMappingRequest {
-            container_port,
-            host_port,
-            protocol: "tcp".to_string(),
-        });
-    }
-
-    Ok(mappings)
 }
 
 fn split_remote_path(path: &str) -> (Option<String>, String) {

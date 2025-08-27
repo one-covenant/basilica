@@ -3,7 +3,7 @@ use crate::cli::{
     Command,
 };
 use clap::Parser;
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "validator")]
@@ -51,23 +51,12 @@ impl Args {
 
             Command::Database { action } => database::handle_database(action).await,
 
-            Command::Rental { action } => {
-                // TODO: for now can we use HandlerUtils::load_config to be consistent with other commands
+            Command::Rental { action, api_url } => {
+                // Load configuration
                 let config = crate::config::ValidatorConfig::load_from_file(&self.config)?;
 
-                let bittensor_service = bittensor::Service::new(config.bittensor.common.clone()).await?;
-                let account_id = bittensor_service.get_account_id();
-                let ss58_address = format!("{account_id}");
-                let validator_hotkey = basilica_common::identity::Hotkey::new(ss58_address)
-                    .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?;
-                let persistence = Arc::new(
-                    crate::persistence::SimplePersistence::new(
-                        &config.database.url,
-                        validator_hotkey.to_string(),
-                    ).await?
-                );
-
-                rental::handle_rental_command(action, &config, validator_hotkey, persistence, std::sync::Arc::new(bittensor_service)).await
+                // Use the simplified API-based handler
+                rental::handle_rental_command(action, &config, api_url).await
             }
         }
     }
