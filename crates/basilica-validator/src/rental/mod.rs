@@ -56,12 +56,10 @@ fn parse_ssh_host(credentials: &str) -> Result<&str> {
     Ok(host)
 }
 
-/// Extract miner UID from executor_id format: "miner{uid}__{uuid}"
-pub(crate) fn extract_miner_uid(executor_id: &str) -> Option<u16> {
-    if let Some(miner_part) = executor_id.split("__").next() {
-        if let Some(uid_str) = miner_part.strip_prefix("miner") {
-            return uid_str.parse().ok();
-        }
+/// Extract miner UID from miner_id format: "miner_{uid}"
+pub(crate) fn extract_miner_uid(miner_id: &str) -> Option<u16> {
+    if let Some(uid_str) = miner_id.strip_prefix("miner_") {
+        return uid_str.parse().ok();
     }
     None
 }
@@ -132,7 +130,17 @@ impl RentalManager {
         let rental_count = rentals.len();
 
         for rental in rentals {
-            if let Some(miner_uid) = extract_miner_uid(&rental.executor_id) {
+            // Get miner_id from database using executor_id, then extract UID
+            let miner_uid = match self
+                .persistence
+                .get_miner_id_by_executor(&rental.executor_id)
+                .await
+            {
+                Ok(miner_id) => extract_miner_uid(&miner_id),
+                Err(_) => None,
+            };
+
+            if let Some(miner_uid) = miner_uid {
                 let gpu_type = get_gpu_type(&rental.executor_details);
 
                 // Set metric based on rental state
@@ -240,7 +248,7 @@ impl RentalManager {
         // Fetch executor details from persistence
         let executor_details = match self
             .persistence
-            .get_executor_details(&request.executor_id)
+            .get_executor_details(&request.executor_id, &request.miner_id)
             .await
         {
             Ok(Some(details)) => Some(details),
@@ -280,7 +288,16 @@ impl RentalManager {
         self.persistence.save_rental(&rental_info).await?;
 
         // Record rental metrics
-        if let Some(miner_uid) = extract_miner_uid(&request.executor_id) {
+        let miner_uid = match self
+            .persistence
+            .get_miner_id_by_executor(&request.executor_id)
+            .await
+        {
+            Ok(miner_id) => extract_miner_uid(&miner_id),
+            Err(_) => None,
+        };
+
+        if let Some(miner_uid) = miner_uid {
             let gpu_type = get_gpu_type(&rental_info.executor_details);
 
             // Record rental status
@@ -372,7 +389,16 @@ impl RentalManager {
         self.persistence.save_rental(&updated_rental).await?;
 
         // Clear rental metric
-        if let Some(miner_uid) = extract_miner_uid(&rental_info.executor_id) {
+        let miner_uid = match self
+            .persistence
+            .get_miner_id_by_executor(&rental_info.executor_id)
+            .await
+        {
+            Ok(miner_id) => extract_miner_uid(&miner_id),
+            Err(_) => None,
+        };
+
+        if let Some(miner_uid) = miner_uid {
             let gpu_type = get_gpu_type(&rental_info.executor_details);
             self.metrics.record_executor_rental_status(
                 &rental_info.executor_id,

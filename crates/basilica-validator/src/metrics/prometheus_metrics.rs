@@ -473,11 +473,7 @@ impl ValidatorPrometheusMetrics {
 
             // Only set metrics for executors that have GPU assignments
             for (executor_id, gpu_count, gpu_model) in &executor_gpu_counts {
-                // executor_id has "minerXXX__UUID" format
-                let executor_uuid = executor_id
-                    .split("__")
-                    .nth(1)
-                    .unwrap_or(executor_id.as_str());
+                let executor_uuid = executor_id.as_str();
 
                 debug!(
                     "Setting executor GPU count: miner_uid={}, executor_id={}, gpu_model={}, gpu_count={}",

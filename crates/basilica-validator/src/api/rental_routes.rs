@@ -379,7 +379,7 @@ pub async fn get_rental_status(
         // Try to fetch executor details from database
         state
             .persistence
-            .get_executor_details(&rental_info.executor_id)
+            .get_executor_details(&rental_info.executor_id, &rental_info.miner_id)
             .await
             .ok()
             .flatten()

@@ -96,7 +96,7 @@ impl ValidationStrategySelector {
 
         let (previous_score, executor_result, gpu_count, binary_validation_successful) = match self
             .persistence
-            .get_last_full_validation_data(executor_id)
+            .get_last_full_validation_data(executor_id, &miner_id)
             .await
         {
             Ok(Some((score, exec_result, gpu_cnt, binary_success))) => {
@@ -213,12 +213,10 @@ impl ValidationStrategySelector {
         executor_id: &str,
         miner_uid: u16,
     ) -> Result<Option<(chrono::DateTime<chrono::Utc>, f64)>> {
-        let composite_executor_id = format!("miner_{}__{}", miner_uid, executor_id);
         debug!(
             executor_id = executor_id,
             miner_uid = miner_uid,
-            composite_executor_id = composite_executor_id,
-            "Attempting to find last binary validation with composite executor_id"
+            "Attempting to find last binary validation for executor_id"
         );
 
         let query = r#"
@@ -236,7 +234,7 @@ impl ValidationStrategySelector {
         "#;
 
         let row = sqlx::query(query)
-            .bind(&composite_executor_id)
+            .bind(executor_id)
             .fetch_optional(self.persistence.pool())
             .await?;
 

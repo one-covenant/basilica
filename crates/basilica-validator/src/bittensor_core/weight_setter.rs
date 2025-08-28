@@ -979,14 +979,9 @@ impl WeightSetter {
                     .unwrap_or("UNKNOWN")
                     .to_string();
 
-                let unique_executor_id = format!(
-                    "miner{}__{}",
-                    miner_id.strip_prefix("miner_").unwrap_or(miner_id),
-                    executor_id
-                );
                 let gpu_count = match self
                     .persistence
-                    .get_executor_gpu_count_from_assignments(miner_id, &unique_executor_id)
+                    .get_executor_gpu_count_from_assignments(miner_id, &executor_id.to_string())
                     .await
                 {
                     Ok(count) => count as usize,
@@ -1129,12 +1124,16 @@ impl WeightSetter {
         for row in rows {
             let executor_id_str: String = row.get("executor_id");
 
-            // Extract the UUID part from executor_id format: "miner{uid}__{uuid}"
-            let executor_id = executor_id_str
-                .split("__")
-                .nth(1)
-                .ok_or_else(|| anyhow::anyhow!("Invalid executor_id format: {}", executor_id_str))?
-                .parse::<ExecutorId>()?;
+            // Handle both segregated key as needed for migration and new format
+            let clean_executor_id = if executor_id_str.contains("__") {
+                executor_id_str.split("__").nth(1).ok_or_else(|| {
+                    anyhow::anyhow!("Invalid composite executor_id format: {}", executor_id_str)
+                })?
+            } else {
+                &executor_id_str
+            };
+
+            let executor_id = clean_executor_id.parse::<ExecutorId>()?;
 
             let log = VerificationLog {
                 id: Uuid::parse_str(&row.get::<String, _>("id"))
