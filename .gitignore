@@ -45,9 +45,8 @@ node_modules/
 .node_repl_history
 
 # Environment variables
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example
 
 *.db
 *.db-shm
@@ -76,12 +75,9 @@ scripts/provision/configs/production.toml
 scripts/provision/configs/staging.toml
 
 # Configuration files in config directory
-config/miner.toml
-config/executor.toml
-config/validator.toml
-config/api.toml
-config/gpu-attestor.toml
+config/*.toml
 !config/*.toml.example
+!config/*.correct.toml
 
 # SSH Keys and Certificates
 scripts/provision/configs/keys/
