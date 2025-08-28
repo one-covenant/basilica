@@ -45,9 +45,8 @@ node_modules/
 .node_repl_history
 
 # Environment variables
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example
 
 *.db
 *.db-shm
