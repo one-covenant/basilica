@@ -242,7 +242,7 @@ pub async fn handle_up(
             cpu_cores: options.cpu_cores.unwrap_or(1.0),
             memory_mb: options.memory_mb.unwrap_or(1024),
             storage_mb: 102400,
-            gpu_count: options.gpu_min.unwrap_or(0),
+            gpu_count: options.gpu_min.unwrap_or(1),
             gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
         },
         command,
