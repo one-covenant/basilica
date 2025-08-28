@@ -17,6 +17,7 @@ pub use deployment::DeploymentManager;
 pub use monitoring::{DatabaseHealthMonitor, LogStreamer};
 pub use types::*;
 
+use crate::metrics::ValidatorPrometheusMetrics;
 use crate::miner_prover::miner_client::{AuthenticatedMinerConnection, MinerClient};
 use crate::persistence::{SimplePersistence, ValidatorPersistence};
 use crate::ssh::ValidatorSshKeyManager;
@@ -36,6 +37,8 @@ pub struct RentalManager {
     miner_client: Arc<MinerClient>,
     /// SSH key manager for validator keys
     ssh_key_manager: Option<Arc<ValidatorSshKeyManager>>,
+    /// Metrics for tracking rental status (required)
+    metrics: Arc<ValidatorPrometheusMetrics>,
 }
 
 /// Parse SSH host from credentials string format "user@host:port"
@@ -52,6 +55,30 @@ fn parse_ssh_host(credentials: &str) -> Result<&str> {
 
     Ok(host)
 }
+
+/// Extract miner UID from executor_id format: "miner{uid}__{uuid}"
+pub(crate) fn extract_miner_uid(executor_id: &str) -> Option<u16> {
+    if let Some(miner_part) = executor_id.split("__").next() {
+        if let Some(uid_str) = miner_part.strip_prefix("miner") {
+            return uid_str.parse().ok();
+        }
+    }
+    None
+}
+
+/// Get normalized GPU type from executor details
+pub(crate) fn get_gpu_type(
+    executor_details: &Option<crate::api::types::ExecutorDetails>,
+) -> String {
+    use crate::gpu::categorization::GpuCategorizer;
+
+    executor_details
+        .as_ref()
+        .and_then(|details| details.gpu_specs.first())
+        .map(|gpu| GpuCategorizer::normalize_gpu_model(&gpu.name))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 impl RentalManager {
     /// Helper function to create a ContainerClient with SSH credentials
     fn create_container_client(&self, ssh_credentials: &str) -> Result<ContainerClient> {
@@ -69,14 +96,16 @@ impl RentalManager {
         miner_client: Arc<MinerClient>,
         persistence: Arc<SimplePersistence>,
         ssh_key_manager: Arc<ValidatorSshKeyManager>,
+        metrics: Arc<ValidatorPrometheusMetrics>,
     ) -> Self {
         let deployment_manager = Arc::new(DeploymentManager::new());
         let log_streamer = Arc::new(LogStreamer::new());
 
-        // Create health monitor with SSH key manager
+        // Create health monitor with SSH key manager and metrics
         let health_monitor = Arc::new(DatabaseHealthMonitor::new(
             persistence.clone(),
             ssh_key_manager.clone(),
+            metrics.clone(),
         ));
 
         Self {
@@ -86,12 +115,50 @@ impl RentalManager {
             health_monitor,
             miner_client,
             ssh_key_manager: Some(ssh_key_manager),
+            metrics,
         }
     }
 
     // Start the monitoring loop
     pub fn start_monitor(&self) {
         self.health_monitor.start_monitoring_loop();
+    }
+
+    /// Initialize metrics for all existing rentals on startup
+    pub async fn initialize_rental_metrics(&self) -> Result<()> {
+        // Query all non-terminal rentals from persistence
+        let rentals = self.persistence.query_non_terminated_rentals().await?;
+
+        let rental_count = rentals.len();
+
+        for rental in rentals {
+            if let Some(miner_uid) = extract_miner_uid(&rental.executor_id) {
+                let gpu_type = get_gpu_type(&rental.executor_details);
+
+                // Set metric based on rental state
+                let is_rented = matches!(
+                    rental.state,
+                    RentalState::Active | RentalState::Provisioning | RentalState::Stopping
+                );
+
+                self.metrics.record_executor_rental_status(
+                    &rental.executor_id,
+                    miner_uid,
+                    &gpu_type,
+                    is_rented,
+                );
+
+                tracing::info!(
+                    "Initialized rental metric for executor {} (state: {:?}, is_rented: {})",
+                    rental.executor_id,
+                    rental.state,
+                    is_rented
+                );
+            }
+        }
+
+        tracing::info!("Initialized metrics for {} existing rentals", rental_count);
+        Ok(())
     }
 
     /// Start a new rental
@@ -212,6 +279,29 @@ impl RentalManager {
         // Save to persistence
         self.persistence.save_rental(&rental_info).await?;
 
+        // Record rental metrics
+        if let Some(miner_uid) = extract_miner_uid(&request.executor_id) {
+            let gpu_type = get_gpu_type(&rental_info.executor_details);
+
+            // Record rental status
+            self.metrics.record_executor_rental_status(
+                &request.executor_id,
+                miner_uid,
+                &gpu_type,
+                true, // is_rented = true
+            );
+
+            // Record rental creation
+            self.metrics.record_rental_created(miner_uid, &gpu_type);
+
+            tracing::debug!(
+                "Recorded rental start for executor {} (miner_uid: {}, gpu_type: {})",
+                request.executor_id,
+                miner_uid,
+                gpu_type
+            );
+        }
+
         // Health monitoring happens automatically via the database monitor loop
 
         Ok(RentalResponse {
@@ -280,6 +370,23 @@ impl RentalManager {
         let mut updated_rental = rental_info.clone();
         updated_rental.state = RentalState::Stopped;
         self.persistence.save_rental(&updated_rental).await?;
+
+        // Clear rental metric
+        if let Some(miner_uid) = extract_miner_uid(&rental_info.executor_id) {
+            let gpu_type = get_gpu_type(&rental_info.executor_details);
+            self.metrics.record_executor_rental_status(
+                &rental_info.executor_id,
+                miner_uid,
+                &gpu_type,
+                false, // is_rented = false
+            );
+            tracing::debug!(
+                "Cleared rental metric for executor {} (miner_uid: {}, gpu_type: {})",
+                rental_info.executor_id,
+                miner_uid,
+                gpu_type
+            );
+        }
 
         Ok(())
     }

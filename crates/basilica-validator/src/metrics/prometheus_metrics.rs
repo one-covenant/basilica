@@ -157,6 +157,16 @@ impl ValidatorPrometheusMetrics {
             "GPU profiles for miners"
         );
 
+        // Rental metrics
+        describe_gauge!(
+            "basilica_validator_executor_rental_status",
+            "Executor rental status (1=rented, 0=available)"
+        );
+        describe_counter!(
+            "basilica_validator_rentals_created_total",
+            "Total number of rentals created"
+        );
+
         Ok(Self {
             last_collection: Arc::new(RwLock::new(SystemTime::now())),
             persistence,
@@ -311,6 +321,31 @@ impl ValidatorPrometheusMetrics {
             "executor_id" => executor_id.to_string()
         )
         .set(count as f64);
+    }
+
+    /// Record executor rental status
+    pub fn record_executor_rental_status(
+        &self,
+        executor_id: &str,
+        miner_uid: u16,
+        gpu_type: &str,
+        is_rented: bool,
+    ) {
+        gauge!("basilica_validator_executor_rental_status",
+            "executor_id" => executor_id.to_string(),
+            "miner_uid" => miner_uid.to_string(),
+            "gpu_type" => gpu_type.to_string()
+        )
+        .set(if is_rented { 1.0 } else { 0.0 });
+    }
+
+    /// Record rental creation
+    pub fn record_rental_created(&self, miner_uid: u16, gpu_type: &str) {
+        counter!("basilica_validator_rentals_created_total",
+            "miner_uid" => miner_uid.to_string(),
+            "gpu_type" => gpu_type.to_string()
+        )
+        .increment(1);
     }
 
     /// Collect system metrics periodically

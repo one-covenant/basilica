@@ -26,6 +26,7 @@ pub async fn create_rental_manager(
     validator_hotkey: basilica_common::identity::Hotkey,
     persistence: Arc<crate::persistence::SimplePersistence>,
     bittensor_service: Arc<bittensor::Service>,
+    metrics: Arc<crate::metrics::ValidatorPrometheusMetrics>,
 ) -> Result<crate::rental::RentalManager> {
     use crate::miner_prover::miner_client::{
         BittensorServiceSigner, MinerClient, MinerClientConfig,
@@ -56,8 +57,14 @@ pub async fn create_rental_manager(
     let ssh_key_manager = Arc::new(ssh_key_manager);
 
     // Create rental manager
-    let rental_manager = RentalManager::new(miner_client, persistence, ssh_key_manager);
+    let rental_manager = RentalManager::new(miner_client, persistence, ssh_key_manager, metrics);
     rental_manager.start_monitor();
+
+    // Initialize metrics for existing rentals
+    rental_manager
+        .initialize_rental_metrics()
+        .await
+        .context("Failed to initialize rental metrics")?;
 
     Ok(rental_manager)
 }
