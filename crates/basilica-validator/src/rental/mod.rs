@@ -279,15 +279,21 @@ impl RentalManager {
         // Save to persistence
         self.persistence.save_rental(&rental_info).await?;
 
-        // Record rental metric
+        // Record rental metrics
         if let Some(miner_uid) = extract_miner_uid(&request.executor_id) {
             let gpu_type = get_gpu_type(&rental_info.executor_details);
+
+            // Record rental status
             self.metrics.record_executor_rental_status(
                 &request.executor_id,
                 miner_uid,
                 &gpu_type,
                 true, // is_rented = true
             );
+
+            // Record rental creation
+            self.metrics.record_rental_created(miner_uid, &gpu_type);
+
             tracing::debug!(
                 "Recorded rental start for executor {} (miner_uid: {}, gpu_type: {})",
                 request.executor_id,
