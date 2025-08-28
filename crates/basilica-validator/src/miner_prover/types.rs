@@ -61,6 +61,22 @@ pub enum ValidationError {
 
 pub type ValidationResult<T> = Result<T, ValidationError>;
 
+/// Validation type enum to distinguish between full and lightweight validation
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValidationType {
+    Full,
+    Lightweight,
+}
+
+impl std::fmt::Display for ValidationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationType::Full => write!(f, "full"),
+            ValidationType::Lightweight => write!(f, "lightweight"),
+        }
+    }
+}
+
 /// Enhanced executor verification result
 #[derive(Debug, Clone)]
 pub struct ExecutorVerificationResult {
@@ -74,6 +90,7 @@ pub struct ExecutorVerificationResult {
     pub execution_time: Duration,
     pub validation_details: ValidationDetails,
     pub gpu_count: u64,
+    pub validation_type: ValidationType,
 }
 
 /// Detailed validation timing and scoring information

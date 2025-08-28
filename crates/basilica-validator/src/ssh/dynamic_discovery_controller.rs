@@ -668,6 +668,7 @@ mod tests {
             binary_validation: crate::config::BinaryValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
             executor_validation_interval: Duration::from_secs(12 * 3600),
+            stale_executor_cleanup_interval: Some(Duration::from_secs(30 * 60)),
         };
 
         let automatic_verification_config = AutomaticVerificationConfig {
