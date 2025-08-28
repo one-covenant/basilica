@@ -543,8 +543,10 @@ impl VerificationEngine {
             return Err(anyhow::anyhow!("Failed to update executor status: {}", e));
         }
 
-        // Clean up GPU assignments on failure
-        if !success {
+        if !(success
+            || executor_result.validation_type == ValidationType::Lightweight
+                && executor_result.ssh_connection_successful)
+        {
             self.cleanup_gpu_assignments(&verification_log.executor_id, &miner_id, Some(&mut tx))
                 .await?;
         }
@@ -561,14 +563,18 @@ impl VerificationEngine {
 
             self.ensure_miner_executor_relationship(
                 miner_uid,
-                &unique_executor_id,
+                &executor_result.executor_id.to_string(),
                 &executor_result.grpc_endpoint,
                 miner_info,
             )
             .await?;
 
-            self.store_gpu_uuid_assignments(miner_uid, &unique_executor_id, &gpu_infos)
-                .await?;
+            self.store_gpu_uuid_assignments(
+                miner_uid,
+                &executor_result.executor_id.to_string(),
+                &gpu_infos,
+            )
+            .await?;
         }
 
         info!(
