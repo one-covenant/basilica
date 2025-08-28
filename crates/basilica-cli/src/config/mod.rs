@@ -101,7 +101,7 @@ pub struct ImageConfig {
 impl Default for ImageConfig {
     fn default() -> Self {
         Self {
-            name: "nvidia/cuda:12.2.0-runtime-ubuntu22.04".to_string(),
+            name: "nvidia/cuda:12.8.0-runtime-ubuntu22.04".to_string(),
         }
     }
 }
