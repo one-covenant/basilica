@@ -40,9 +40,9 @@ pub fn init_logging<L: LogLevel>(
     default_filter: &str,
 ) -> Result<()> {
     // Check if verbosity flags were explicitly used
-    let filter = if let Some(log_level) = verbosity.log_level() {
+    let filter = if verbosity.is_present() {
         // CLI flags take priority - scope to specific binary
-        EnvFilter::try_new(format!("{}={}", base_filter, log_level))?
+        EnvFilter::try_new(format!("{}={}", base_filter, verbosity.log_level_filter()))?
     } else {
         // Fall back to RUST_LOG, then default
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter))
