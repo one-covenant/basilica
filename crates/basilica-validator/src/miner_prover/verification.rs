@@ -10,12 +10,17 @@ use super::validation_strategy::{
     ValidationExecutor, ValidationStrategy, ValidationStrategySelector,
 };
 use crate::config::VerificationConfig;
+use crate::gpu::{GpuCategorizer, MinerGpuProfile};
 use crate::metrics::ValidatorMetrics;
-use crate::persistence::{entities::VerificationLog, SimplePersistence};
+use crate::persistence::{
+    entities::VerificationLog, gpu_profile_repository::GpuProfileRepository, SimplePersistence,
+};
 use crate::ssh::{SshSessionManager, ValidatorSshClient, ValidatorSshKeyManager};
 use anyhow::{Context, Result};
 use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
+use chrono::Utc;
 use sqlx::Row;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -575,6 +580,50 @@ impl VerificationEngine {
                 &gpu_infos,
             )
             .await?;
+
+            // Create/update GPU profile for this miner after successful verification
+            let gpu_repo = GpuProfileRepository::new(self.persistence.pool().clone());
+
+            // Get actual GPU counts from the just-stored assignments
+            let miner_id = format!("miner_{}", miner_uid);
+            let gpu_counts = self
+                .persistence
+                .get_miner_gpu_counts_from_assignments(&miner_id)
+                .await?;
+            let mut gpu_map: HashMap<String, u32> = HashMap::new();
+            for (_, count, gpu_name) in gpu_counts {
+                let model = GpuCategorizer::normalize_gpu_model(&gpu_name);
+                *gpu_map.entry(model).or_insert(0) += count;
+            }
+
+            // Get existing verification count from committed logs (last 3 hours) + 1 for current verification
+            let existing_count = self
+                .persistence
+                .get_miner_verification_count(&miner_id, 3)
+                .await?;
+            let total_verification_count = existing_count + 1;
+
+            let profile = MinerGpuProfile {
+                miner_uid: MinerUid::new(miner_uid),
+                gpu_counts: gpu_map,
+                total_score: executor_result.verification_score,
+                verification_count: total_verification_count,
+                last_updated: Utc::now(),
+                last_successful_validation: Some(Utc::now()),
+            };
+
+            if let Err(e) = gpu_repo.upsert_gpu_profile(&profile).await {
+                warn!(
+                    "Failed to update GPU profile for miner {} after successful verification: {}",
+                    miner_uid, e
+                );
+            } else {
+                info!(
+                    "Successfully updated GPU profile for miner {}: {} GPUs",
+                    miner_uid,
+                    profile.gpu_counts.values().sum::<u32>()
+                );
+            }
         }
 
         info!(

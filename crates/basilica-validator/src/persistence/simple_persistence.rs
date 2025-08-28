@@ -1700,6 +1700,31 @@ impl SimplePersistence {
         }
     }
 
+    /// Get verification count for a miner from recent successful verifications
+    pub async fn get_miner_verification_count(
+        &self,
+        miner_id: &str,
+        hours: i64,
+    ) -> Result<u32, anyhow::Error> {
+        let count_query = r#"
+            SELECT COUNT(*) as count
+            FROM verification_logs vl
+            INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
+            WHERE me.miner_id = ?
+            AND vl.success = 1
+            AND vl.timestamp > datetime('now', ? || ' hours')
+        "#;
+
+        let count: i64 = sqlx::query_scalar(count_query)
+            .bind(miner_id)
+            .bind(format!("-{}", hours))
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(0);
+
+        Ok(count as u32)
+    }
+
     /// Get known executors from database for a miner
     pub async fn get_known_executors_for_miner(
         &self,
@@ -1709,8 +1734,8 @@ impl SimplePersistence {
 
         let query = r#"
             SELECT executor_id, grpc_address, gpu_count, status
-            FROM miner_executors 
-            WHERE miner_id = ? 
+            FROM miner_executors
+            WHERE miner_id = ?
             AND status IN ('online', 'verified')
             AND (last_health_check IS NULL OR last_health_check > datetime('now', '-1 hour'))
         "#;
