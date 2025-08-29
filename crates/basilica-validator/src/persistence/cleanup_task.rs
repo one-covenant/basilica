@@ -21,6 +21,9 @@ pub struct CleanupConfig {
     /// Delete emission metrics older than this many days
     pub emission_retention_days: i64,
 
+    /// How often to run stale executor cleanup (in minutes)
+    pub stale_executor_cleanup_cadence_minutes: u64,
+
     /// Whether cleanup is enabled
     pub enabled: bool,
 }
@@ -28,9 +31,10 @@ pub struct CleanupConfig {
 impl Default for CleanupConfig {
     fn default() -> Self {
         Self {
-            run_interval_hours: 24, // Daily
+            run_interval_hours: 24,
             profile_retention_days: 30,
-            emission_retention_days: 90, // Keep 3 months of emission history
+            emission_retention_days: 90,
+            stale_executor_cleanup_cadence_minutes: 30,
             enabled: true,
         }
     }
@@ -56,10 +60,21 @@ impl CleanupTask {
         }
 
         info!(
-            "Starting database cleanup task - will run every {} hours",
-            self.config.run_interval_hours
+            "Starting database cleanup task - will run every {} hours, stale executor cleanup every {} minutes",
+            self.config.run_interval_hours, self.config.stale_executor_cleanup_cadence_minutes
         );
 
+        // Run both cleanup types concurrently
+        tokio::try_join!(
+            self.run_database_cleanup_loop(),
+            self.run_stale_executor_cleanup_loop()
+        )?;
+
+        Ok(())
+    }
+
+    /// Run the database cleanup loop (daily)
+    async fn run_database_cleanup_loop(&self) -> Result<()> {
         let mut interval = interval(Duration::from_secs(self.config.run_interval_hours * 3600));
 
         loop {
@@ -67,6 +82,21 @@ impl CleanupTask {
 
             if let Err(e) = self.run_cleanup().await {
                 error!("Database cleanup failed: {}", e);
+            }
+        }
+    }
+
+    /// Run the stale executor cleanup loop
+    async fn run_stale_executor_cleanup_loop(&self) -> Result<()> {
+        let mut interval = interval(Duration::from_secs(
+            self.config.stale_executor_cleanup_cadence_minutes * 60,
+        ));
+
+        loop {
+            interval.tick().await;
+
+            if let Err(e) = self.run_stale_executor_cleanup().await {
+                error!("Stale executor cleanup failed: {}", e);
             }
         }
     }
@@ -96,6 +126,27 @@ impl CleanupTask {
         }
 
         info!("Database cleanup completed");
+        Ok(())
+    }
+
+    /// Run stale executor cleanup
+    async fn run_stale_executor_cleanup(&self) -> Result<()> {
+        info!("Starting stale executor cleanup");
+
+        let cleaned_count = self.gpu_repo.cleanup_stale_executors().await?;
+
+        if cleaned_count > 0 {
+            info!(
+                security = true,
+                cleaned_executors = cleaned_count,
+                cleanup_reason = "stale_executor_cleanup_task",
+                "Cleaned up {} stale executors and their GPU assignments",
+                cleaned_count
+            );
+        } else {
+            info!("No stale executors found for cleanup");
+        }
+
         Ok(())
     }
 }
@@ -176,6 +227,7 @@ mod tests {
             run_interval_hours: 24,
             profile_retention_days: 30,
             emission_retention_days: 90,
+            stale_executor_cleanup_cadence_minutes: 30,
             enabled: true,
         };
 

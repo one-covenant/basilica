@@ -91,10 +91,10 @@ impl MinerProver {
     }
 
     /// Start the miner verification loop
-    pub async fn start(&mut self) -> Result<()> {
+    pub async fn start(self) -> Result<()> {
         info!("Starting miner prover with automatic SSH session management");
         self.scheduler
-            .start(self.discovery.clone(), self.verification.clone())
+            .start(self.discovery, self.verification)
             .await
     }
 }

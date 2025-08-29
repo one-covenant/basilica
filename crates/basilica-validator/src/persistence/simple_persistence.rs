@@ -614,7 +614,7 @@ impl SimplePersistence {
                 GROUP_CONCAT(gua.gpu_name) as gpu_names
             FROM miner_executors me
             JOIN miners m ON me.miner_id = m.id
-            LEFT JOIN rentals r ON me.executor_id GLOB ('*__' || r.executor_id)
+            LEFT JOIN rentals r ON me.executor_id = r.executor_id
                 AND r.state IN ('Active', 'Provisioning', 'active', 'provisioning')
             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
             WHERE r.id IS NULL
@@ -1412,7 +1412,7 @@ impl SimplePersistence {
     ) -> Result<String, anyhow::Error> {
         let miner_id: String = sqlx::query(
             "SELECT miner_id FROM miner_executors \
-                 WHERE executor_id GLOB '*__' || ? \
+                 WHERE executor_id = ? \
                  LIMIT 1",
         )
         .bind(executor_id)
@@ -1427,6 +1427,7 @@ impl SimplePersistence {
     pub async fn get_executor_details(
         &self,
         executor_id: &str,
+        miner_id: &str,
     ) -> Result<Option<crate::api::types::ExecutorDetails>, anyhow::Error> {
         // First get the executor basic info with GPU data from gpu_uuid_assignments
         let row = sqlx::query(
@@ -1438,12 +1439,12 @@ impl SimplePersistence {
                 GROUP_CONCAT(gua.gpu_name) as gpu_names
              FROM miner_executors me
              LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
-             WHERE me.executor_id = ? OR me.executor_id GLOB '*__' || ?
+             WHERE me.executor_id = ? AND me.miner_id = ?
              GROUP BY me.executor_id, me.gpu_specs, me.cpu_specs, me.location
              LIMIT 1",
         )
         .bind(executor_id)
-        .bind(executor_id)
+        .bind(miner_id)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -1632,6 +1633,7 @@ impl SimplePersistence {
     pub async fn get_last_full_validation_data(
         &self,
         executor_id: &str,
+        miner_id: &str,
     ) -> Result<
         Option<(
             f64,
@@ -1641,10 +1643,21 @@ impl SimplePersistence {
         )>,
         anyhow::Error,
     > {
+        // duality due to schema migration issues
+        let composite_executor_id = if miner_id.starts_with("miner_") {
+            format!(
+                "{}__{}",
+                miner_id.replacen("miner_", "miner", 1),
+                executor_id
+            )
+        } else {
+            format!("miner{}__{}", miner_id, executor_id)
+        };
+
         let query = r#"
             SELECT score, details
             FROM verification_logs
-            WHERE (executor_id = ? OR executor_id GLOB ('*__' || ?))
+            WHERE (executor_id = ? OR executor_id GLOB ('*__' || ?) OR executor_id = ? )
               AND success = 1
               AND verification_type = 'ssh_automation'
               AND (
@@ -1658,6 +1671,7 @@ impl SimplePersistence {
         let row = sqlx::query(query)
             .bind(executor_id)
             .bind(executor_id)
+            .bind(&composite_executor_id)
             .fetch_optional(&self.pool)
             .await?;
 
@@ -1700,6 +1714,31 @@ impl SimplePersistence {
         }
     }
 
+    /// Get verification count for a miner from recent successful verifications
+    pub async fn get_miner_verification_count(
+        &self,
+        miner_id: &str,
+        hours: i64,
+    ) -> Result<u32, anyhow::Error> {
+        let count_query = r#"
+            SELECT COUNT(*) as count
+            FROM verification_logs vl
+            INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
+            WHERE me.miner_id = ?
+            AND vl.success = 1
+            AND vl.timestamp > datetime('now', ? || ' hours')
+        "#;
+
+        let count: i64 = sqlx::query_scalar(count_query)
+            .bind(miner_id)
+            .bind(format!("-{}", hours))
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(0);
+
+        Ok(count as u32)
+    }
+
     /// Get known executors from database for a miner
     pub async fn get_known_executors_for_miner(
         &self,
@@ -1709,8 +1748,8 @@ impl SimplePersistence {
 
         let query = r#"
             SELECT executor_id, grpc_address, gpu_count, status
-            FROM miner_executors 
-            WHERE miner_id = ? 
+            FROM miner_executors
+            WHERE miner_id = ?
             AND status IN ('online', 'verified')
             AND (last_health_check IS NULL OR last_health_check > datetime('now', '-1 hour'))
         "#;

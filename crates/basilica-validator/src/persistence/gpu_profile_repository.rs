@@ -422,7 +422,7 @@ impl GpuProfileRepository {
     }
 
     /// Clean up stale executors and orphan GPU profiles
-    pub async fn cleanup_stale_executors(&self) -> Result<()> {
+    pub async fn cleanup_stale_executors(&self) -> Result<usize> {
         let stale_threshold = Utc::now() - chrono::Duration::minutes(30);
 
         info!(
@@ -514,7 +514,7 @@ impl GpuProfileRepository {
             info!("Cleaned up {} orphan GPU profiles", orphan_count);
         }
 
-        Ok(())
+        Ok(stale_count)
     }
 }
 

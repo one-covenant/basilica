@@ -382,11 +382,7 @@ async fn handle_ls_executors(
             }
         };
 
-        // Remove miner prefix from executor ID if present
-        let executor_id = match executor.executor.id.split_once("__") {
-            Some((_, second)) => second.to_string(),
-            None => executor.executor.id,
-        };
+        let executor_id = executor.executor.id;
 
         info!(
             "{:<36} | {:<36} | {:<10} | {:<6} | {:<5.2} | {:<5.1}%",
