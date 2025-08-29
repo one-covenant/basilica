@@ -299,8 +299,8 @@ impl ValidationExecutor {
         ssh_details: &SshConnectionDetails,
         _session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         previous_score: f64,
-        _executor_result: Option<ExecutorResult>,
-        _gpu_count: u64,
+        executor_result: Option<ExecutorResult>,
+        gpu_count: u64,
         _binary_validation_successful: bool,
         _validator_hotkey: &Hotkey,
         _config: &crate::config::VerificationConfig,
@@ -398,7 +398,7 @@ impl ValidationExecutor {
             },
             ssh_connection_successful: connectivity_successful,
             binary_validation_successful: false,
-            executor_result: None,
+            executor_result,
             error: if connectivity_successful {
                 None
             } else {
@@ -406,7 +406,7 @@ impl ValidationExecutor {
             },
             execution_time: total_duration,
             validation_details: details,
-            gpu_count: 0,
+            gpu_count,
             validation_type: ValidationType::Lightweight,
         })
     }

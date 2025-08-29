@@ -435,13 +435,20 @@ impl VerificationEngine {
         );
 
         // Create verification log entry for database storage
+        let success = match executor_result.validation_type {
+            ValidationType::Lightweight => executor_result.ssh_connection_successful,
+            ValidationType::Full => {
+                executor_result.ssh_connection_successful
+                    && executor_result.binary_validation_successful
+            }
+        };
+
         let verification_log = VerificationLog::new(
             executor_result.executor_id.to_string(),
             self.validator_hotkey.to_string(),
             "ssh_automation".to_string(),
             executor_result.verification_score,
-            executor_result.ssh_connection_successful
-                && executor_result.binary_validation_successful,
+            success,
             serde_json::json!({
                 "miner_uid": miner_uid,
                 "executor_id": executor_result.executor_id.to_string(),
@@ -459,7 +466,9 @@ impl VerificationEngine {
             executor_result.execution_time.as_millis() as i64,
             if !executor_result.ssh_connection_successful {
                 Some("SSH connection failed".to_string())
-            } else if !executor_result.binary_validation_successful {
+            } else if executor_result.validation_type == ValidationType::Full
+                && !executor_result.binary_validation_successful
+            {
                 Some("Binary validation failed".to_string())
             } else {
                 None
@@ -511,18 +520,20 @@ impl VerificationEngine {
             return Err(anyhow::anyhow!("Database storage failed: {}", e));
         }
 
-        let status = if !success {
-            "offline".to_string()
-        } else if executor_result.validation_type == ValidationType::Full {
-            "online".to_string()
-        } else {
-            sqlx::query_scalar::<_, String>(
-                "SELECT status FROM miner_executors WHERE executor_id = ?",
+        let miner_id = format!("miner_{miner_uid}");
+        let status = match (success, &executor_result.validation_type) {
+            (false, _) => "offline".to_string(),
+            (true, ValidationType::Full) => "online".to_string(),
+            (true, ValidationType::Lightweight) => sqlx::query_scalar::<_, String>(
+                "SELECT status FROM miner_executors WHERE miner_id = ? AND executor_id = ?",
             )
+            .bind(&miner_id)
             .bind(&verification_log.executor_id)
-            .fetch_one(self.persistence.pool())
+            .fetch_optional(self.persistence.pool())
             .await
-            .unwrap_or_else(|_| "offline".to_string())
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "verified".to_string()),
         };
 
         info!(
@@ -533,8 +544,6 @@ impl VerificationEngine {
             new_status = %status,
             "Status update based on validation type"
         );
-
-        let miner_id = format!("miner_{miner_uid}");
 
         // Use transaction to ensure atomic updates
         let mut tx = self.persistence.pool().begin().await?;
