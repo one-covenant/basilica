@@ -466,7 +466,9 @@ impl VerificationEngine {
             executor_result.execution_time.as_millis() as i64,
             if !executor_result.ssh_connection_successful {
                 Some("SSH connection failed".to_string())
-            } else if !executor_result.binary_validation_successful {
+            } else if executor_result.validation_type == ValidationType::Full
+                && !executor_result.binary_validation_successful
+            {
                 Some("Binary validation failed".to_string())
             } else {
                 None
