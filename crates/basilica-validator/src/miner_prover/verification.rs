@@ -1922,7 +1922,7 @@ impl VerificationEngine {
         // Increased minimum cleanup time from 30 minutes to 2 hours
         let cleanup_minutes = self
             .config
-            .stale_executor_cleanup_interval
+            .gpu_assignment_cleanup_ttl
             .map(|d| d.as_secs() / 60)
             .unwrap_or(120)
             .max(120); // Ensure minimum 2 hours to reduce aggressive cleanup

@@ -116,9 +116,9 @@ pub struct VerificationConfig {
     /// Interval between full binary validations per executor
     #[serde(default = "default_executor_validation_interval")]
     pub executor_validation_interval: Duration,
-    /// Time period for cleaning up GPU assignments from offline executors (min 30 minutes)
-    #[serde(default = "default_stale_executor_cleanup_interval")]
-    pub stale_executor_cleanup_interval: Option<Duration>,
+    /// Time period for cleaning up GPU assignments from offline executors (min 2 hours)
+    #[serde(default = "default_gpu_assignment_cleanup_ttl")]
+    pub gpu_assignment_cleanup_ttl: Option<Duration>,
 }
 
 fn default_use_dynamic_discovery() -> bool {
@@ -145,7 +145,7 @@ fn default_executor_validation_interval() -> Duration {
     Duration::from_secs(6 * 3600) // 6 hours
 }
 
-fn default_stale_executor_cleanup_interval() -> Option<Duration> {
+fn default_gpu_assignment_cleanup_ttl() -> Option<Duration> {
     Some(Duration::from_secs(120 * 60)) // 2 hours
 }
 
@@ -444,7 +444,7 @@ impl Default for ValidatorConfig {
                 binary_validation: BinaryValidationConfig::default(),
                 collateral_event_scan_interval: default_collateral_event_scan_interval(),
                 executor_validation_interval: default_executor_validation_interval(),
-                stale_executor_cleanup_interval: default_stale_executor_cleanup_interval(),
+                gpu_assignment_cleanup_ttl: default_gpu_assignment_cleanup_ttl(),
             },
             automatic_verification: AutomaticVerificationConfig::default(),
             storage: StorageConfig {

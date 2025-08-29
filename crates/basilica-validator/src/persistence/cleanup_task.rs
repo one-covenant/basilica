@@ -22,7 +22,7 @@ pub struct CleanupConfig {
     pub emission_retention_days: i64,
 
     /// How often to run stale executor cleanup (in minutes)
-    pub stale_executor_cleanup_interval_minutes: u64,
+    pub stale_executor_cleanup_cadence_minutes: u64,
 
     /// Whether cleanup is enabled
     pub enabled: bool,
@@ -34,7 +34,7 @@ impl Default for CleanupConfig {
             run_interval_hours: 24,
             profile_retention_days: 30,
             emission_retention_days: 90,
-            stale_executor_cleanup_interval_minutes: 30,
+            stale_executor_cleanup_cadence_minutes: 30,
             enabled: true,
         }
     }
@@ -61,7 +61,7 @@ impl CleanupTask {
 
         info!(
             "Starting database cleanup task - will run every {} hours, stale executor cleanup every {} minutes",
-            self.config.run_interval_hours, self.config.stale_executor_cleanup_interval_minutes
+            self.config.run_interval_hours, self.config.stale_executor_cleanup_cadence_minutes
         );
 
         // Run both cleanup types concurrently
@@ -89,7 +89,7 @@ impl CleanupTask {
     /// Run the stale executor cleanup loop
     async fn run_stale_executor_cleanup_loop(&self) -> Result<()> {
         let mut interval = interval(Duration::from_secs(
-            self.config.stale_executor_cleanup_interval_minutes * 60,
+            self.config.stale_executor_cleanup_cadence_minutes * 60,
         ));
 
         loop {
@@ -227,7 +227,7 @@ mod tests {
             run_interval_hours: 24,
             profile_retention_days: 30,
             emission_retention_days: 90,
-            stale_executor_cleanup_interval_minutes: 30,
+            stale_executor_cleanup_cadence_minutes: 30,
             enabled: true,
         };
 
