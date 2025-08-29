@@ -10,7 +10,7 @@ use super::validation_strategy::{
     ValidationExecutor, ValidationStrategy, ValidationStrategySelector,
 };
 use crate::config::VerificationConfig;
-use crate::gpu::{GpuCategorizer, MinerGpuProfile};
+use crate::gpu::{categorization::GpuCategorizer, MinerGpuProfile};
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::{
     entities::VerificationLog, gpu_profile_repository::GpuProfileRepository, SimplePersistence,

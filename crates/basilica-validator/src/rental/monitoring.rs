@@ -226,14 +226,7 @@ impl DatabaseHealthMonitor {
 
             // Update metrics when state changes to terminal states
             if matches!(new_state, RentalState::Stopped | RentalState::Failed) {
-                let miner_uid = match self
-                    .persistence
-                    .get_miner_id_by_executor(&rental.executor_id)
-                    .await
-                {
-                    Ok(miner_id) => super::extract_miner_uid(&miner_id),
-                    Err(_) => None,
-                };
+                let miner_uid = super::extract_miner_uid(&rental.miner_id);
 
                 if let Some(miner_uid) = miner_uid {
                     let gpu_type = super::get_gpu_type(&rental.executor_details);

@@ -1124,14 +1124,16 @@ impl WeightSetter {
         for row in rows {
             let executor_id_str: String = row.get("executor_id");
 
-            // Handle both segregated key as needed for migration and new format
-            let clean_executor_id = if executor_id_str.contains("__") {
-                executor_id_str.split("__").nth(1).ok_or_else(|| {
-                    anyhow::anyhow!("Invalid composite executor_id format: {}", executor_id_str)
-                })?
-            } else {
-                &executor_id_str
-            };
+            // Handle composite miner{uid}__{uuid} or fallback to the new format
+            let clean_executor_id =
+                if executor_id_str.starts_with("miner") && executor_id_str.contains("__") {
+                    let (_, rest) = executor_id_str.split_once("__").ok_or_else(|| {
+                        anyhow::anyhow!("Invalid composite executor_id format: {}", executor_id_str)
+                    })?;
+                    rest
+                } else {
+                    &executor_id_str
+                };
 
             let executor_id = clean_executor_id.parse::<ExecutorId>()?;
 

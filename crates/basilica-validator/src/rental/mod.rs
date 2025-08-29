@@ -130,15 +130,7 @@ impl RentalManager {
         let rental_count = rentals.len();
 
         for rental in rentals {
-            // Get miner_id from database using executor_id, then extract UID
-            let miner_uid = match self
-                .persistence
-                .get_miner_id_by_executor(&rental.executor_id)
-                .await
-            {
-                Ok(miner_id) => extract_miner_uid(&miner_id),
-                Err(_) => None,
-            };
+            let miner_uid = extract_miner_uid(&rental.miner_id);
 
             if let Some(miner_uid) = miner_uid {
                 let gpu_type = get_gpu_type(&rental.executor_details);
@@ -288,14 +280,7 @@ impl RentalManager {
         self.persistence.save_rental(&rental_info).await?;
 
         // Record rental metrics
-        let miner_uid = match self
-            .persistence
-            .get_miner_id_by_executor(&request.executor_id)
-            .await
-        {
-            Ok(miner_id) => extract_miner_uid(&miner_id),
-            Err(_) => None,
-        };
+        let miner_uid = extract_miner_uid(&rental_info.miner_id);
 
         if let Some(miner_uid) = miner_uid {
             let gpu_type = get_gpu_type(&rental_info.executor_details);
@@ -389,14 +374,7 @@ impl RentalManager {
         self.persistence.save_rental(&updated_rental).await?;
 
         // Clear rental metric
-        let miner_uid = match self
-            .persistence
-            .get_miner_id_by_executor(&rental_info.executor_id)
-            .await
-        {
-            Ok(miner_id) => extract_miner_uid(&miner_id),
-            Err(_) => None,
-        };
+        let miner_uid = extract_miner_uid(&rental_info.miner_id);
 
         if let Some(miner_uid) = miner_uid {
             let gpu_type = get_gpu_type(&rental_info.executor_details);
