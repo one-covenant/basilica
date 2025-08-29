@@ -1,7 +1,7 @@
 use crate::cli::{commands::Commands, handlers};
 use crate::config::CliConfig;
 use crate::error::Result;
-use clap::Parser;
+use clap::{Parser, ValueHint};
 use clap_verbosity_flag::Verbosity;
 use etcetera::{choose_base_strategy, BaseStrategy};
 use std::path::{Path, PathBuf};
@@ -41,7 +41,7 @@ AUTHENTICATION:
 )]
 pub struct Args {
     /// Configuration file path
-    #[arg(short, long, global = true)]
+    #[arg(short, long, global = true, value_hint = ValueHint::FilePath)]
     pub config: Option<PathBuf>,
 
     #[command(flatten)]

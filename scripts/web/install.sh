@@ -71,21 +71,54 @@ setup_install_dir() {
     mkdir -p "$INSTALL_DIR"
 }
 
+# Detect user's shell type
+detect_shell_type() {
+    # Prefer the currently running shell over SHELL environment variable
+    local shell_path
+    local shell_name
+    
+    # Try to detect the current running shell first
+    shell_path="$(ps -p $$ -o comm= 2>/dev/null || echo "")"
+    
+    # If ps command fails or returns empty, fall back to SHELL env var
+    if [ -z "$shell_path" ]; then
+        shell_path="${SHELL:-/bin/bash}"
+    fi
+    
+    # Extract just the shell name
+    shell_name="$(basename "$shell_path")"
+    
+    case "$shell_name" in
+        bash) echo "bash" ;;
+        zsh) echo "zsh" ;;
+        fish) echo "fish" ;;
+        sh) echo "bash" ;;  # Treat sh as bash for completion purposes
+        *) echo "bash" ;;   # Default to bash if unknown
+    esac
+}
+
 # Detect user's shell profile file
 detect_shell_profile() {
-    if [ -n "$ZSH_VERSION" ]; then
-        echo "$HOME/.zshrc"
-    elif [ -n "$BASH_VERSION" ]; then
-        if [ -f "$HOME/.bashrc" ]; then
-            echo "$HOME/.bashrc"
-        else
-            echo "$HOME/.bash_profile"
-        fi
-    elif [ -f "$HOME/.profile" ]; then
-        echo "$HOME/.profile"
-    else
-        echo "$HOME/.bashrc"
-    fi
+    local shell_type
+    shell_type="$(detect_shell_type)"
+    
+    case "$shell_type" in
+        zsh)
+            echo "$HOME/.zshrc"
+            ;;
+        fish)
+            echo "$HOME/.config/fish/config.fish"
+            ;;
+        bash|*)
+            if [ -f "$HOME/.bashrc" ]; then
+                echo "$HOME/.bashrc"
+            elif [ -f "$HOME/.bash_profile" ]; then
+                echo "$HOME/.bash_profile"
+            else
+                echo "$HOME/.profile"
+            fi
+            ;;
+    esac
 }
 
 # Add directory to PATH in shell profile
@@ -261,11 +294,75 @@ install_binary() {
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
 }
 
+# Setup shell completions
+setup_shell_completions() {
+    # Separate declarations from assignments to avoid SC2155
+    local shell_type
+    local profile_file
+    local profile_dir
+    shell_type="$(detect_shell_type)"
+    profile_file="$(detect_shell_profile)"
+    local completion_marker="# Basilica CLI completions"
+    
+    print_step "Setting up shell completions for $shell_type..."
+    
+    # Check if completions are already configured
+    if [ -f "$profile_file" ] && grep -q "$completion_marker" "$profile_file" 2>/dev/null; then
+        print_info "Shell completions already configured"
+        return 0
+    fi
+    
+    # Ensure profile file and its directory exist
+    profile_dir="$(dirname "$profile_file")"
+    if [ ! -d "$profile_dir" ]; then
+        mkdir -p "$profile_dir" 2>/dev/null || true
+    fi
+    
+    # Touch the profile file to ensure it exists
+    if [ ! -f "$profile_file" ]; then
+        touch "$profile_file" 2>/dev/null || true
+    fi
+    
+    # Add completion based on shell type
+    local completion_cmd=""
+    case "$shell_type" in
+        bash)
+            completion_cmd='eval "$(COMPLETE=bash basilica)"'
+            ;;
+        zsh)
+            completion_cmd='eval "$(COMPLETE=zsh basilica)"'
+            ;;
+        fish)
+            completion_cmd='COMPLETE=fish basilica | source'
+            ;;
+        *)
+            print_warning "Unknown shell type: $shell_type"
+            print_info "Please add shell completions manually for your shell"
+            return 1
+            ;;
+    esac
+    
+    # Add completion to profile using direct conditional (fixes SC2320)
+    if {
+        echo ""
+        echo "$completion_marker"
+        echo "$completion_cmd"
+    } >> "$profile_file" 2>/dev/null; then
+        print_info "Added shell completions to $profile_file"
+        return 0
+    else
+        print_warning "Could not add completions automatically"
+        print_info "Please add this to your $profile_file:"
+        echo "  $completion_cmd"
+        return 1
+    fi
+}
+
 # Setup PATH if needed
 setup_path() {
     if [ "$SYSTEM_INSTALL" = false ] && ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
         if add_to_path "$HOME/.local/bin"; then
-            print_info "Run 'source $(detect_shell_profile)' or restart your terminal"
+            print_info "PATH updated in $(detect_shell_profile)"
         else
             print_warning "Manually add ~/.local/bin to your PATH:"
             echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
@@ -276,14 +373,26 @@ setup_path() {
 
 # Show completion message
 show_completion() {
+    local profile_file="$(detect_shell_profile)"
+    
     echo
     print_info "Basilica CLI installed successfully!"
     echo
+    
+    # Inform about shell completions
+    print_info "Shell completions have been configured for tab-completion support"
+    print_info "Please restart your terminal or run:"
+    echo -e "  ${CYAN}source $profile_file${NC}"
+    echo
 
     echo "Get started:"
-    echo "  basilica login"
-    echo "  basilica exec <uid> \"python train.py\""
-    echo "  basilica down <uid>"
+    echo "  basilica login                    # Login to Basilica"
+    echo "  basilica ls                       # List available GPUs"
+    echo "  basilica up                       # Start a GPU rental"
+    echo "  basilica exec <uid> \"python train.py\"  # Run your code"
+    echo "  basilica down <uid>               # Terminate rental"
+    echo
+    echo "Use TAB to autocomplete commands and options!"
     echo
 }
 
@@ -301,6 +410,7 @@ main() {
     verify_binary
     install_binary
     setup_path
+    setup_shell_completions
     show_completion
 }
 
