@@ -520,19 +520,22 @@ impl VerificationEngine {
             return Err(anyhow::anyhow!("Database storage failed: {}", e));
         }
 
+        let miner_id = format!("miner_{miner_uid}");
         let status = match (success, &executor_result.validation_type) {
-            // Failed validation regardless of type -> offline
             (false, _) => "offline".to_string(),
-            // Successful full validation -> online
             (true, ValidationType::Full) => "online".to_string(),
-            // Successful lightweight validation -> preserve existing status or set to verified
-            (true, ValidationType::Lightweight) => sqlx::query_scalar::<_, String>(
-                "SELECT status FROM miner_executors WHERE executor_id = ?",
-            )
-            .bind(&verification_log.executor_id)
-            .fetch_one(self.persistence.pool())
-            .await
-            .unwrap_or_else(|_| "verified".to_string()),
+            (true, ValidationType::Lightweight) => {
+                sqlx::query_scalar::<_, String>(
+                    "SELECT status FROM miner_executors WHERE miner_id = ? AND executor_id = ?",
+                )
+                .bind(&miner_id)
+                .bind(&verification_log.executor_id)
+                .fetch_optional(self.persistence.pool())
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "verified".to_string())
+            }
         };
 
         info!(
@@ -543,8 +546,6 @@ impl VerificationEngine {
             new_status = %status,
             "Status update based on validation type"
         );
-
-        let miner_id = format!("miner_{miner_uid}");
 
         // Use transaction to ensure atomic updates
         let mut tx = self.persistence.pool().begin().await?;
