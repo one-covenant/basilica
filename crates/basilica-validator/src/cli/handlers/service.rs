@@ -450,7 +450,7 @@ async fn start_validator_services(
         })
     });
 
-    let miner_prover_handle = miner_prover_opt.map(|mut miner_prover| {
+    let miner_prover_handle = miner_prover_opt.map(|miner_prover| {
         tokio::spawn(async move {
             if let Err(e) = miner_prover.start().await {
                 error!("Miner prover task failed: {}", e);

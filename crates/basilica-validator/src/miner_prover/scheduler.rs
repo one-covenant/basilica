@@ -4,14 +4,14 @@
 //! Implements Single Responsibility Principle by focusing only on task scheduling.
 
 use super::discovery::MinerDiscovery;
-use super::types::MinerInfo;
+use super::types::{MinerInfo, ValidationType};
 use super::verification::VerificationEngine;
 use crate::config::VerificationConfig;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
@@ -22,8 +22,10 @@ pub struct VerificationScheduler {
     /// For tracking verification tasks by UUID
     verification_handles:
         Arc<RwLock<HashMap<Uuid, JoinHandle<Result<super::verification::VerificationResult>>>>>,
-    /// For tracking active verifications by UUID
-    active_verification_tasks: Arc<RwLock<HashMap<Uuid, VerificationTask>>>,
+    /// For tracking active full validation tasks by UUID
+    active_full_tasks: Arc<RwLock<HashMap<Uuid, VerificationTask>>>,
+    /// For tracking active lightweight validation tasks by UUID
+    active_lightweight_tasks: Arc<RwLock<HashMap<Uuid, VerificationTask>>>,
 }
 
 impl VerificationScheduler {
@@ -31,43 +33,111 @@ impl VerificationScheduler {
         Self {
             config,
             verification_handles: Arc::new(RwLock::new(HashMap::new())),
-            active_verification_tasks: Arc::new(RwLock::new(HashMap::new())),
+            active_full_tasks: Arc::new(RwLock::new(HashMap::new())),
+            active_lightweight_tasks: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     /// Start the verification scheduling loop
     pub async fn start(
-        &mut self,
+        self,
         discovery: MinerDiscovery,
         verification: VerificationEngine,
     ) -> Result<()> {
-        let mut interval = interval(self.config.verification_interval);
-        let mut cleanup_interval = tokio::time::interval(Duration::from_secs(900)); // 15-minute cleanup cycle
+        let scheduler = Arc::new(Mutex::new(self));
+        let discovery = Arc::new(discovery);
+        let verification = Arc::new(verification);
 
         info!("Starting verification scheduler");
         info!(
             "Verification interval: {}s, Cleanup interval: {}s",
-            interval.period().as_secs(),
-            cleanup_interval.period().as_secs()
+            scheduler
+                .lock()
+                .await
+                .config
+                .verification_interval
+                .as_secs(),
+            900
         );
 
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    if let Err(e) = self.run_verification(&discovery, &verification).await {
-                        error!("Verification cycle failed: {}", e);
-                    }
-                    self.cleanup_completed_verification_handles().await;
-                }
-                _ = cleanup_interval.tick() => {
-                    info!("Running scheduled executor cleanup for failed executors");
-                    match verification.cleanup_failed_executors_after_failures(2).await {
-                        Ok(()) => info!("Executor cleanup completed successfully"),
-                        Err(e) => error!("Failed executor cleanup failed: {}", e),
+        // Full validation loop
+        let full_scheduler = scheduler.clone();
+        let full_discovery = discovery.clone();
+        let full_verification = verification.clone();
+        let full_loop = tokio::spawn(async move {
+            let mut full_interval =
+                interval(full_scheduler.lock().await.config.verification_interval);
+            loop {
+                tokio::select! {
+                    _ = full_interval.tick() => {
+                        if let Err(e) = full_scheduler.lock().await
+                            .run_full_validation(&full_discovery, &full_verification).await {
+                            error!("Full validation cycle failed: {}", e);
+                        }
                     }
                 }
             }
+        });
+
+        // Lightweight validation loop
+        let lightweight_scheduler = scheduler.clone();
+        let lightweight_discovery = discovery.clone();
+        let lightweight_verification = verification.clone();
+        let lightweight_loop = tokio::spawn(async move {
+            let mut lightweight_interval = interval(
+                lightweight_scheduler
+                    .lock()
+                    .await
+                    .config
+                    .verification_interval,
+            );
+            loop {
+                tokio::select! {
+                    _ = lightweight_interval.tick() => {
+                        if let Err(e) = lightweight_scheduler.lock().await
+                            .run_lightweight_validation(&lightweight_discovery, &lightweight_verification).await {
+                            error!("Lightweight validation cycle failed: {}", e);
+                        }
+                    }
+                }
+            }
+        });
+
+        // Cleanup loop
+        let cleanup_scheduler = scheduler.clone();
+        let cleanup_verification = verification.clone();
+        let cleanup_loop = tokio::spawn(async move {
+            let mut cleanup_interval = tokio::time::interval(Duration::from_secs(900));
+            loop {
+                tokio::select! {
+                    _ = cleanup_interval.tick() => {
+                        cleanup_scheduler.lock().await.cleanup_completed_verification_handles().await;
+
+                        info!("Running scheduled executor cleanup for failed executors");
+                        match cleanup_verification.cleanup_failed_executors_after_failures(2).await {
+                            Ok(()) => info!("Executor cleanup completed successfully"),
+                            Err(e) => error!("Failed executor cleanup failed: {}", e),
+                        }
+                    }
+                }
+            }
+        });
+
+        // Run all loops concurrently
+        let (full_result, lightweight_result, cleanup_result) =
+            tokio::join!(full_loop, lightweight_loop, cleanup_loop);
+
+        if let Err(e) = full_result {
+            error!("Full validation loop panicked: {}", e);
         }
+        if let Err(e) = lightweight_result {
+            error!("Lightweight validation loop panicked: {}", e);
+        }
+        if let Err(e) = cleanup_result {
+            error!("Cleanup loop panicked: {}", e);
+        }
+
+        Ok(())
     }
 
     /// Verification task spawning
@@ -88,16 +158,21 @@ impl VerificationScheduler {
             task.verification_type, task.timeout, task.miner_endpoint
         );
 
-        // Track active verification
+        let active_tasks = match task.intended_validation_strategy {
+            ValidationType::Full => &self.active_full_tasks,
+            ValidationType::Lightweight => &self.active_lightweight_tasks,
+        };
+
         info!(
-            "[EVAL_FLOW] Registering verification task {} in active tasks tracker",
-            task_id
+            "[EVAL_FLOW] Registering {:?} validation task {} in active tasks tracker",
+            task.intended_validation_strategy, task_id
         );
         {
-            let mut tasks_map = self.active_verification_tasks.write().await;
+            let mut tasks_map = active_tasks.write().await;
             tasks_map.insert(task_id, task.clone());
             info!(
-                "[EVAL_FLOW] Active verification tasks count: {}",
+                "[EVAL_FLOW] Active {:?} validation tasks count: {}",
+                task.intended_validation_strategy,
                 tasks_map.len()
             );
         }
@@ -160,82 +235,118 @@ impl VerificationScheduler {
         Ok(())
     }
 
-    /// Unified verification workflow combining discovery and scheduling
-    async fn run_verification(
+    /// Full validation workflow
+    async fn run_full_validation(
         &mut self,
         discovery: &MinerDiscovery,
         verification: &VerificationEngine,
     ) -> Result<()> {
-        info!("[EVAL_FLOW] Starting verification cycle");
+        info!("[EVAL_FLOW] Starting full validation cycle");
         let cycle_start = std::time::Instant::now();
 
-        // Step 1: Discover miners from metagraph
-        info!("[EVAL_FLOW] Fetching miners from discovery service");
-        let discovery_start = std::time::Instant::now();
         let discovered_miners = discovery.get_miners_for_verification().await?;
-
-        info!(
-            "[EVAL_FLOW] Discovery completed in {:?}: {} miners discovered",
-            discovery_start.elapsed(),
-            discovered_miners.len()
-        );
-
         if discovered_miners.is_empty() {
-            info!("[EVAL_FLOW] No miners discovered, skipping cycle");
             return Ok(());
         }
 
-        // Step 2: Sync miners from metagraph to database (fail if sync fails)
-        info!("[EVAL_FLOW] Syncing discovered miners to database");
         verification
             .sync_miners_from_metagraph(&discovered_miners)
-            .await
-            .map_err(|e| {
-                error!("[EVAL_FLOW] Failed to sync miners to database: {}", e);
-                e
-            })?;
-        info!("[EVAL_FLOW] Successfully synced miners to database");
+            .await?;
 
-        // Step 3: Filter miners that can be scheduled for verification
         let schedulable_miners: Vec<MinerInfo> = discovered_miners
             .into_iter()
-            .filter(|miner| self.can_schedule_verification(miner))
+            .filter(|miner| {
+                self.can_schedule_verification_for_strategy(miner, ValidationType::Full)
+            })
             .collect();
 
-        info!(
-            "[EVAL_FLOW] {} miners eligible for verification after filtering",
-            schedulable_miners.len()
-        );
-
         if schedulable_miners.is_empty() {
-            info!("[EVAL_FLOW] No miners available for verification");
             return Ok(());
         }
 
-        // Step 4: Execute individual verification tasks
-        let mut verification_tasks = 0;
-        let mut verification_failures = 0;
+        let full_tasks = self
+            .spawn_validation_pipeline(schedulable_miners, verification, ValidationType::Full)
+            .await?;
 
         info!(
-            "[EVAL_FLOW] Processing {} miners individually",
-            schedulable_miners.len()
+            "[EVAL_FLOW] Full validation cycle completed in {:?}: {} tasks",
+            cycle_start.elapsed(),
+            full_tasks
         );
 
-        for (i, miner_info) in schedulable_miners.iter().enumerate() {
-            info!(
-                miner_uid = miner_info.uid.as_u16(),
-                progress = format!("{}/{}", i + 1, schedulable_miners.len()),
-                "[EVAL_FLOW] Processing miner with SSH automation"
-            );
+        Ok(())
+    }
 
-            // Create verification task
+    /// Lightweight validation workflow
+    async fn run_lightweight_validation(
+        &mut self,
+        discovery: &MinerDiscovery,
+        verification: &VerificationEngine,
+    ) -> Result<()> {
+        info!("[EVAL_FLOW] Starting lightweight validation cycle");
+        let cycle_start = std::time::Instant::now();
+
+        let discovered_miners = discovery.get_miners_for_verification().await?;
+        if discovered_miners.is_empty() {
+            return Ok(());
+        }
+
+        verification
+            .sync_miners_from_metagraph(&discovered_miners)
+            .await?;
+
+        let schedulable_miners: Vec<MinerInfo> = discovered_miners
+            .into_iter()
+            .filter(|miner| {
+                self.can_schedule_verification_for_strategy(miner, ValidationType::Lightweight)
+            })
+            .collect();
+
+        if schedulable_miners.is_empty() {
+            return Ok(());
+        }
+
+        let lightweight_tasks = self
+            .spawn_validation_pipeline(
+                schedulable_miners,
+                verification,
+                ValidationType::Lightweight,
+            )
+            .await?;
+
+        info!(
+            "[EVAL_FLOW] Lightweight validation cycle completed in {:?}: {} tasks",
+            cycle_start.elapsed(),
+            lightweight_tasks
+        );
+
+        Ok(())
+    }
+
+    /// Pipeline for all validation strategies
+    async fn spawn_validation_pipeline(
+        &mut self,
+        miners: Vec<MinerInfo>,
+        verification: &VerificationEngine,
+        intended_strategy: ValidationType,
+    ) -> Result<usize> {
+        let mut tasks_spawned = 0;
+
+        info!(
+            "[EVAL_FLOW] Starting {:?} validation pipeline for {} miners",
+            intended_strategy,
+            miners.len()
+        );
+
+        for miner in miners {
             let verification_task = VerificationTask {
-                miner_uid: miner_info.uid.as_u16(),
-                miner_hotkey: miner_info.hotkey.to_string(),
-                miner_endpoint: miner_info.endpoint.clone(),
-                stake_tao: miner_info.stake_tao,
-                is_validator: miner_info.is_validator,
+                miner_uid: miner.uid.as_u16(),
+                miner_hotkey: miner.hotkey.to_string(),
+                miner_endpoint: miner.endpoint.clone(),
+                stake_tao: miner.stake_tao,
+                is_validator: miner.is_validator,
                 verification_type: VerificationType::AutomatedWithSsh,
+                intended_validation_strategy: intended_strategy.clone(),
                 created_at: chrono::Utc::now(),
                 timeout: self.config.challenge_timeout,
             };
@@ -244,43 +355,42 @@ impl VerificationScheduler {
                 .spawn_verification_task(verification_task, verification)
                 .await
             {
-                Ok(_) => {
-                    verification_tasks += 1;
-                    info!(
-                        miner_uid = miner_info.uid.as_u16(),
-                        "[EVAL_FLOW] Successfully initiated verification task"
-                    );
-                }
-                Err(e) => {
-                    verification_failures += 1;
-                    warn!(
-                        miner_uid = miner_info.uid.as_u16(),
-                        error = %e,
-                        "[EVAL_FLOW] Failed to initiate verification"
-                    );
-                }
+                Ok(_) => tasks_spawned += 1,
+                Err(e) => warn!(
+                    miner_uid = miner.uid.as_u16(),
+                    intended_strategy = ?intended_strategy,
+                    error = %e,
+                    "[EVAL_FLOW] Failed to spawn {:?} validation task",
+                    intended_strategy
+                ),
             }
         }
 
         info!(
-            "[EVAL_FLOW] Cycle completed in {:?}: {} tasks initiated, {} failures",
-            cycle_start.elapsed(),
-            verification_tasks,
-            verification_failures
+            "[EVAL_FLOW] {:?} validation pipeline spawned {} tasks",
+            intended_strategy, tasks_spawned
         );
 
-        Ok(())
+        Ok(tasks_spawned)
     }
 
-    fn can_schedule_verification(&self, miner: &MinerInfo) -> bool {
-        if let Ok(tasks_map) = self.active_verification_tasks.try_read() {
-            if tasks_map
-                .values()
-                .any(|t| t.miner_uid == miner.uid.as_u16())
-            {
+    fn can_schedule_verification_for_strategy(
+        &self,
+        miner: &MinerInfo,
+        strategy: ValidationType,
+    ) -> bool {
+        let miner_uid = miner.uid.as_u16();
+
+        let active_tasks = match strategy {
+            ValidationType::Full => &self.active_full_tasks,
+            ValidationType::Lightweight => &self.active_lightweight_tasks,
+        };
+
+        if let Ok(tasks_map) = active_tasks.try_read() {
+            if tasks_map.values().any(|t| t.miner_uid == miner_uid) {
                 debug!(
-                    "Miner {} already has an active verification task",
-                    miner.uid.as_u16()
+                    "Miner {} already has an active {:?} validation task",
+                    miner_uid, strategy
                 );
                 return false;
             }
@@ -302,13 +412,15 @@ impl VerificationScheduler {
         if !to_remove.is_empty() {
             let mut to_await = Vec::new();
             {
-                let mut tasks = self.active_verification_tasks.write().await;
+                let mut full_tasks = self.active_full_tasks.write().await;
+                let mut lightweight_tasks = self.active_lightweight_tasks.write().await;
                 let mut handles = self.verification_handles.write().await;
                 for id in &to_remove {
                     if let Some(h) = handles.remove(id) {
                         to_await.push((*id, h));
                     }
-                    tasks.remove(id);
+                    full_tasks.remove(id);
+                    lightweight_tasks.remove(id);
                 }
             }
 
@@ -334,6 +446,7 @@ pub struct VerificationTask {
     pub stake_tao: f64,
     pub is_validator: bool,
     pub verification_type: VerificationType,
+    pub intended_validation_strategy: ValidationType,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub timeout: std::time::Duration,
 }

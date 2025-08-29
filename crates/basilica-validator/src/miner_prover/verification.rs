@@ -89,8 +89,8 @@ impl VerificationEngine {
         task: &super::scheduler::VerificationTask,
     ) -> Result<VerificationResult> {
         info!(
-            "Executing automated verification workflow for miner {} (type: {:?})",
-            task.miner_uid, task.verification_type
+            "Executing verification workflow for miner {} (intended strategy: {:?})",
+            task.miner_uid, task.intended_validation_strategy
         );
 
         let workflow_start = std::time::Instant::now();
@@ -139,7 +139,12 @@ impl VerificationEngine {
             );
 
             match self
-                .verify_executor(&task.miner_endpoint, &executor_info, task.miner_uid)
+                .verify_executor(
+                    &task.miner_endpoint,
+                    &executor_info,
+                    task.miner_uid,
+                    task.intended_validation_strategy.clone(),
+                )
                 .await
             {
                 Ok(result) => {
@@ -157,6 +162,13 @@ impl VerificationEngine {
                         duration: workflow_start.elapsed(),
                         details: format!("SSH verification completed, score: {score}"),
                     });
+                }
+                Err(e) if e.to_string().contains("Strategy mismatch") => {
+                    debug!(
+                        miner_uid = task.miner_uid,
+                        executor_id = %executor_info.id,
+                        "[EVAL_FLOW] Executor handled by other pipeline"
+                    );
                 }
                 Err(e) => {
                     error!(
@@ -2174,6 +2186,7 @@ impl VerificationEngine {
         miner_endpoint: &str,
         executor_info: &ExecutorInfoDetailed,
         miner_uid: u16,
+        intended_strategy: ValidationType,
     ) -> Result<ExecutorVerificationResult> {
         info!(
             executor_id = %executor_info.id,
@@ -2230,6 +2243,30 @@ impl VerificationEngine {
                 super::validation_strategy::ValidationStrategy::Full
             }
         };
+
+        // Strategy filtering: skip if strategy doesn't match pipeline
+        let strategy_matches = matches!(
+            (&strategy, &intended_strategy),
+            (ValidationStrategy::Full, ValidationType::Full)
+                | (
+                    ValidationStrategy::Lightweight { .. },
+                    ValidationType::Lightweight
+                )
+        );
+
+        if !strategy_matches {
+            debug!(
+                executor_id = %executor_info.id,
+                intended = ?intended_strategy,
+                "[EVAL_FLOW] Strategy mismatch - skipping executor in this pipeline"
+            );
+
+            self.ssh_session_manager
+                .release_session(&executor_info.id.to_string())
+                .await;
+
+            return Err(anyhow::anyhow!("Strategy mismatch"));
+        }
 
         // Step 4: Execute validation based on strategy
         let result = match strategy {
