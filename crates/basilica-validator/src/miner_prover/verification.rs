@@ -444,7 +444,7 @@ impl VerificationEngine {
                 && executor_result.binary_validation_successful,
             serde_json::json!({
                 "miner_uid": miner_uid,
-                "executor_id": executor_result.executor_id,
+                "executor_id": executor_result.executor_id.to_string(),
                 "ssh_connection_successful": executor_result.ssh_connection_successful,
                 "binary_validation_successful": executor_result.binary_validation_successful,
                 "verification_method": "ssh_automation",
