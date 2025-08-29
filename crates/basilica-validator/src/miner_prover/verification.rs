@@ -435,13 +435,20 @@ impl VerificationEngine {
         );
 
         // Create verification log entry for database storage
+        let success = match executor_result.validation_type {
+            ValidationType::Lightweight => executor_result.ssh_connection_successful,
+            ValidationType::Full => {
+                executor_result.ssh_connection_successful
+                    && executor_result.binary_validation_successful
+            }
+        };
+
         let verification_log = VerificationLog::new(
             executor_result.executor_id.to_string(),
             self.validator_hotkey.to_string(),
             "ssh_automation".to_string(),
             executor_result.verification_score,
-            executor_result.ssh_connection_successful
-                && executor_result.binary_validation_successful,
+            success,
             serde_json::json!({
                 "miner_uid": miner_uid,
                 "executor_id": executor_result.executor_id.to_string(),
@@ -511,18 +518,19 @@ impl VerificationEngine {
             return Err(anyhow::anyhow!("Database storage failed: {}", e));
         }
 
-        let status = if !success {
-            "offline".to_string()
-        } else if executor_result.validation_type == ValidationType::Full {
-            "online".to_string()
-        } else {
-            sqlx::query_scalar::<_, String>(
+        let status = match (success, &executor_result.validation_type) {
+            // Failed validation regardless of type -> offline
+            (false, _) => "offline".to_string(),
+            // Successful full validation -> online
+            (true, ValidationType::Full) => "online".to_string(),
+            // Successful lightweight validation -> preserve existing status or set to verified
+            (true, ValidationType::Lightweight) => sqlx::query_scalar::<_, String>(
                 "SELECT status FROM miner_executors WHERE executor_id = ?",
             )
             .bind(&verification_log.executor_id)
             .fetch_one(self.persistence.pool())
             .await
-            .unwrap_or_else(|_| "offline".to_string())
+            .unwrap_or_else(|_| "verified".to_string()),
         };
 
         info!(
