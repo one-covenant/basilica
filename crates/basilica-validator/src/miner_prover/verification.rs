@@ -545,80 +545,114 @@ impl VerificationEngine {
             return Err(anyhow::anyhow!("Failed to update executor status: {}", e));
         }
 
+        // escape plan, if verification failed, clean up GPU assignments
         if !(success
             || executor_result.validation_type == ValidationType::Lightweight
                 && executor_result.ssh_connection_successful)
         {
             self.cleanup_gpu_assignments(&verification_log.executor_id, &miner_id, Some(&mut tx))
                 .await?;
+            tx.commit().await?;
+            return Ok(());
         }
 
         tx.commit().await?;
 
-        // Only full validations can update GPU assignments
-        if success && executor_result.validation_type == ValidationType::Full {
-            let gpu_infos = executor_result
-                .executor_result
-                .as_ref()
-                .map(|er| er.gpu_infos.clone())
-                .unwrap_or_default();
+        let gpu_infos = executor_result
+            .executor_result
+            .as_ref()
+            .map(|er| er.gpu_infos.clone())
+            .unwrap_or_default();
 
-            self.ensure_miner_executor_relationship(
-                miner_uid,
-                &executor_result.executor_id.to_string(),
-                &executor_result.grpc_endpoint,
-                miner_info,
-            )
-            .await?;
-
-            self.store_gpu_uuid_assignments(
-                miner_uid,
-                &executor_result.executor_id.to_string(),
-                &gpu_infos,
-            )
-            .await?;
-
-            // Create/update GPU profile for this miner after successful verification
-            let gpu_repo = GpuProfileRepository::new(self.persistence.pool().clone());
-
-            // Get actual GPU counts from the just-stored assignments
-            let miner_id = format!("miner_{}", miner_uid);
-            let gpu_counts = self
-                .persistence
-                .get_miner_gpu_counts_from_assignments(&miner_id)
-                .await?;
-            let mut gpu_map: HashMap<String, u32> = HashMap::new();
-            for (_, count, gpu_name) in gpu_counts {
-                let model = GpuCategorizer::normalize_gpu_model(&gpu_name);
-                *gpu_map.entry(model).or_insert(0) += count;
-            }
-
-            let existing_count = self
-                .persistence
-                .get_miner_verification_count(&miner_id, 3)
-                .await?;
-            let total_verification_count = existing_count + 1;
-
-            let profile = MinerGpuProfile {
-                miner_uid: MinerUid::new(miner_uid),
-                gpu_counts: gpu_map,
-                total_score: executor_result.verification_score,
-                verification_count: total_verification_count,
-                last_updated: Utc::now(),
-                last_successful_validation: Some(Utc::now()),
-            };
-
-            if let Err(e) = gpu_repo.upsert_gpu_profile(&profile).await {
-                warn!(
-                    "Failed to update GPU profile for miner {} after successful verification: {}",
-                    miner_uid, e
-                );
-            } else {
+        match executor_result.validation_type {
+            ValidationType::Full => {
                 info!(
-                    "Successfully updated GPU profile for miner {}: {} GPUs",
-                    miner_uid,
-                    profile.gpu_counts.values().sum::<u32>()
+                    security = true,
+                    miner_uid = miner_uid,
+                    executor_id = %executor_result.executor_id,
+                    validation_type = "full",
+                    gpu_count = gpu_infos.len(),
+                    action = "processing_full_validation",
+                    "Processing full validation for miner {}, executor {}",
+                    miner_uid, executor_result.executor_id
                 );
+
+                self.ensure_miner_executor_relationship(
+                    miner_uid,
+                    &executor_result.executor_id.to_string(),
+                    &executor_result.grpc_endpoint,
+                    miner_info,
+                )
+                .await?;
+
+                self.store_gpu_uuid_assignments(
+                    miner_uid,
+                    &executor_result.executor_id.to_string(),
+                    &gpu_infos,
+                )
+                .await?;
+
+                // Create/update GPU profile for this miner after successful verification
+                let gpu_repo = GpuProfileRepository::new(self.persistence.pool().clone());
+
+                // Get actual GPU counts from the just-stored assignments
+                let miner_id = format!("miner_{}", miner_uid);
+                let gpu_counts = self
+                    .persistence
+                    .get_miner_gpu_counts_from_assignments(&miner_id)
+                    .await?;
+                let mut gpu_map: HashMap<String, u32> = HashMap::new();
+                for (_, count, gpu_name) in gpu_counts {
+                    let model = GpuCategorizer::normalize_gpu_model(&gpu_name);
+                    *gpu_map.entry(model).or_insert(0) += count;
+                }
+
+                let existing_count = self
+                    .persistence
+                    .get_miner_verification_count(&miner_id, 3)
+                    .await?;
+                let total_verification_count = existing_count + 1;
+
+                let profile = MinerGpuProfile {
+                    miner_uid: MinerUid::new(miner_uid),
+                    gpu_counts: gpu_map,
+                    total_score: executor_result.verification_score,
+                    verification_count: total_verification_count,
+                    last_updated: Utc::now(),
+                    last_successful_validation: Some(Utc::now()),
+                };
+
+                if let Err(e) = gpu_repo.upsert_gpu_profile(&profile).await {
+                    warn!(
+                            "Failed to update GPU profile for miner {} after successful verification: {}",
+                            miner_uid, e
+                        );
+                } else {
+                    info!(
+                        "Successfully updated GPU profile for miner {}: {} GPUs",
+                        miner_uid,
+                        profile.gpu_counts.values().sum::<u32>()
+                    );
+                }
+            }
+            ValidationType::Lightweight => {
+                info!(
+                    security = true,
+                    miner_uid = miner_uid,
+                    executor_id = %executor_result.executor_id,
+                    validation_type = "lightweight",
+                    gpu_count = gpu_infos.len(),
+                    action = "processing_lightweight_validation",
+                    "Processing lightweight validation for miner {}, executor {}",
+                    miner_uid, executor_result.executor_id
+                );
+
+                self.update_gpu_assignment_timestamps(
+                    miner_uid,
+                    &executor_result.executor_id.to_string(),
+                    &gpu_infos,
+                )
+                .await?;
             }
         }
 
@@ -926,6 +960,14 @@ impl VerificationEngine {
                     if can_reassign {
                         // GPU reassignment allowed - previous executor is inactive
                         info!(
+                            security = true,
+                            gpu_uuid = %gpu_info.gpu_uuid,
+                            previous_miner_id = %existing_miner_id,
+                            previous_executor_id = %existing_executor_id,
+                            new_miner_id = %miner_id,
+                            new_executor_id = %executor_id,
+                            action = "gpu_assignment_reassigned",
+                            reassignment_reason = "previous_executor_inactive",
                             "GPU {} reassigned from {}/{} to {}/{} (previous executor inactive)",
                             gpu_info.gpu_uuid,
                             existing_miner_id,
@@ -952,6 +994,14 @@ impl VerificationEngine {
                     } else {
                         // Executor is still active - reject the reassignment
                         warn!(
+                            security = true,
+                            gpu_uuid = %gpu_info.gpu_uuid,
+                            existing_miner_id = %existing_miner_id,
+                            existing_executor_id = %existing_executor_id,
+                            attempting_miner_id = %miner_id,
+                            attempting_executor_id = %executor_id,
+                            action = "gpu_assignment_rejected",
+                            rejection_reason = "already_owned_by_active_executor",
                             "GPU UUID {} still owned by active executor {}/{}, rejecting claim from {}/{}",
                             gpu_info.gpu_uuid,
                             existing_miner_id,
@@ -994,6 +1044,13 @@ impl VerificationEngine {
                 .await?;
 
                 info!(
+                    security = true,
+                    gpu_uuid = %gpu_info.gpu_uuid,
+                    gpu_index = gpu_info.index,
+                    executor_id = %executor_id,
+                    miner_id = %miner_id,
+                    gpu_name = %gpu_info.gpu_name,
+                    action = "gpu_assignment_created",
                     "Registered new GPU {} (index {}) for {}/{}",
                     gpu_info.gpu_uuid, gpu_info.index, miner_id, executor_id
                 );
@@ -1039,13 +1096,25 @@ impl VerificationEngine {
 
         if gpu_count > 0 {
             info!(
-                "Executor {}/{} verified with {} GPUs",
-                miner_id, executor_id, gpu_count
+                security = true,
+                executor_id = %executor_id,
+                miner_id = %miner_id,
+                gpu_count = gpu_count,
+                new_status = %new_status,
+                action = "executor_gpu_verification_success",
+                "Executor {}/{} verified with {} GPUs, status: {}",
+                miner_id, executor_id, gpu_count, new_status
             );
         } else {
             warn!(
-                "Executor {}/{} has no GPUs, marking as offline",
-                miner_id, executor_id
+                security = true,
+                executor_id = %executor_id,
+                miner_id = %miner_id,
+                gpu_count = 0,
+                new_status = %new_status,
+                action = "executor_gpu_verification_failure",
+                "Executor {}/{} has no GPUs, marking as {}",
+                miner_id, executor_id, new_status
             );
         }
 
@@ -1072,6 +1141,78 @@ impl VerificationEngine {
                 "GPU assignment validation failed: no valid GPU UUIDs stored despite {} GPUs reported",
                 expected_gpu_count
             ));
+        }
+
+        Ok(())
+    }
+
+    /// Update last_verified timestamp for existing GPU assignments
+    async fn update_gpu_assignment_timestamps(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        gpu_infos: &[GpuInfo],
+    ) -> Result<()> {
+        let miner_id = format!("miner_{miner_uid}");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let reported_gpu_uuids: Vec<String> = gpu_infos
+            .iter()
+            .filter(|g| !g.gpu_uuid.is_empty() && g.gpu_uuid != "Unknown UUID")
+            .map(|g| g.gpu_uuid.clone())
+            .collect();
+
+        if reported_gpu_uuids.is_empty() {
+            debug!(
+                "No valid GPU UUIDs reported for {}/{} in lightweight validation",
+                miner_id, executor_id
+            );
+            return Ok(());
+        }
+
+        let placeholders = reported_gpu_uuids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let query = format!(
+            "UPDATE gpu_uuid_assignments
+             SET last_verified = ?, updated_at = ?
+             WHERE miner_id = ? AND executor_id = ? AND gpu_uuid IN ({placeholders})"
+        );
+
+        let mut q = sqlx::query(&query)
+            .bind(&now)
+            .bind(&now)
+            .bind(&miner_id)
+            .bind(executor_id);
+
+        for uuid in &reported_gpu_uuids {
+            q = q.bind(uuid);
+        }
+
+        let result = q.execute(self.persistence.pool()).await?;
+        let updated_count = result.rows_affected();
+
+        if updated_count > 0 {
+            info!(
+                security = true,
+                miner_uid = miner_uid,
+                executor_id = %executor_id,
+                validation_type = "lightweight",
+                updated_assignments = updated_count,
+                action = "gpu_assignment_timestamp_updated",
+                "Updated {} GPU assignment timestamps for {}/{} (lightweight validation)",
+                updated_count, miner_id, executor_id
+            );
+        } else {
+            debug!(
+                "No GPU assignments found to update for {}/{} with {} reported UUIDs",
+                miner_id,
+                executor_id,
+                reported_gpu_uuids.len()
+            );
         }
 
         Ok(())
@@ -1744,15 +1885,20 @@ impl VerificationEngine {
         }
 
         // Step 1c: Clean up stale GPU assignments (GPUs that haven't been verified recently)
+        // Increased threshold from 1 hour to 6 hours to reduce aggressive cleanup
         let stale_gpu_cleanup_query = r#"
             DELETE FROM gpu_uuid_assignments
-            WHERE last_verified < datetime('now', '-1 hour')
+            WHERE last_verified < datetime('now', '-6 hours')
             OR (
                 EXISTS (
                     SELECT 1 FROM miner_executors me
                     WHERE me.executor_id = gpu_uuid_assignments.executor_id
                     AND me.miner_id = gpu_uuid_assignments.miner_id
                     AND me.status = 'offline'
+                    AND (
+                        me.last_health_check < datetime('now', '-2 hours')
+                        OR (me.last_health_check IS NULL AND me.updated_at < datetime('now', '-2 hours'))
+                    )
                 )
             )
         "#;
@@ -1763,18 +1909,23 @@ impl VerificationEngine {
 
         if stale_gpu_result.rows_affected() > 0 {
             info!(
-                "Cleaned up {} stale GPU assignments (not verified in last hour or belonging to offline executors)",
+                security = true,
+                cleaned_count = stale_gpu_result.rows_affected(),
+                cleanup_reason = "stale_timeout",
+                threshold_hours = 6,
+                "Cleaned up {} stale GPU assignments (not verified in last 6 hours or belonging to offline executors >2h)",
                 stale_gpu_result.rows_affected()
             );
         }
 
         // Step 1d: Clean up GPU assignments from executors offline
+        // Increased minimum cleanup time from 30 minutes to 2 hours
         let cleanup_minutes = self
             .config
             .stale_executor_cleanup_interval
             .map(|d| d.as_secs() / 60)
-            .unwrap_or(30)
-            .max(30); // Ensure minimum 30 minutes
+            .unwrap_or(120)
+            .max(120); // Ensure minimum 2 hours to reduce aggressive cleanup
 
         info!(
             "Cleaning GPU assignments from executors offline >{} minutes",

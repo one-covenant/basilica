@@ -86,9 +86,11 @@ impl ValidationStrategySelector {
             });
 
         if needs_binary_validation {
-            debug!(
+            info!(
+                security = true,
                 executor_id = executor_id,
                 miner_uid = miner_uid,
+                validation_strategy = "Full",
                 "[EVAL_FLOW] Strategy: Full validation required"
             );
             return Ok(ValidationStrategy::Full);
@@ -121,9 +123,11 @@ impl ValidationStrategySelector {
             }
         };
 
-        debug!(
+        info!(
+            security = true,
             executor_id = executor_id,
             miner_uid = miner_uid,
+            validation_strategy = "Lightweight",
             previous_score = previous_score,
             gpu_count = gpu_count,
             binary_validation_successful = binary_validation_successful,

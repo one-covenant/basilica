@@ -142,11 +142,11 @@ fn default_collateral_event_scan_interval() -> Duration {
 }
 
 fn default_executor_validation_interval() -> Duration {
-    Duration::from_secs(12 * 3600) // 12 hours
+    Duration::from_secs(6 * 3600) // 6 hours
 }
 
 fn default_stale_executor_cleanup_interval() -> Option<Duration> {
-    Some(Duration::from_secs(30 * 60)) // 30 minutes
+    Some(Duration::from_secs(120 * 60)) // 2 hours
 }
 
 /// Configuration for binary validation using validator-binary and executor-binary
