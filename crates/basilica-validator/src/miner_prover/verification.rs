@@ -524,18 +524,16 @@ impl VerificationEngine {
         let status = match (success, &executor_result.validation_type) {
             (false, _) => "offline".to_string(),
             (true, ValidationType::Full) => "online".to_string(),
-            (true, ValidationType::Lightweight) => {
-                sqlx::query_scalar::<_, String>(
-                    "SELECT status FROM miner_executors WHERE miner_id = ? AND executor_id = ?",
-                )
-                .bind(&miner_id)
-                .bind(&verification_log.executor_id)
-                .fetch_optional(self.persistence.pool())
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_else(|| "verified".to_string())
-            }
+            (true, ValidationType::Lightweight) => sqlx::query_scalar::<_, String>(
+                "SELECT status FROM miner_executors WHERE miner_id = ? AND executor_id = ?",
+            )
+            .bind(&miner_id)
+            .bind(&verification_log.executor_id)
+            .fetch_optional(self.persistence.pool())
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "verified".to_string()),
         };
 
         info!(
