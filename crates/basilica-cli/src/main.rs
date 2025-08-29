@@ -2,10 +2,14 @@
 
 use anyhow::Result;
 use basilica_cli::cli::Args;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::env::CompleteEnv;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Handle shell completions first (must be before argument parsing)
+    CompleteEnv::with_factory(Args::command).complete();
+
     let args = Args::parse();
 
     // Initialize logging here in the binary context where CARGO_BIN_NAME is available

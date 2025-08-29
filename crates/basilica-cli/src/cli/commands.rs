@@ -1,5 +1,5 @@
 use basilica_validator::rental::types::RentalState;
-use clap::Subcommand;
+use clap::{Subcommand, ValueHint};
 use std::path::PathBuf;
 
 /// Main CLI commands
@@ -73,9 +73,11 @@ pub enum Commands {
     /// Copy files to/from instances
     Cp {
         /// Source path (local or remote)
+        #[arg(value_hint = ValueHint::AnyPath)]
         source: String,
 
         /// Destination path (local or remote)
+        #[arg(value_hint = ValueHint::AnyPath)]
         destination: String,
     },
 
@@ -170,7 +172,7 @@ pub struct UpOptions {
     pub name: Option<String>,
 
     /// SSH public key file path
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::FilePath)]
     pub ssh_key: Option<PathBuf>,
 
     /// Port mappings (host:container)
