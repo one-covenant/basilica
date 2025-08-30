@@ -119,10 +119,10 @@ jobs:
       - name: Build binary
         env:
           MACOSX_DEPLOYMENT_TARGET: "10.15" # Ensure compatibility with older macOS versions
-          BASILICA_AUTH0_CLIENT_ID: ${{ secrets.BASILICA_AUTH0_CLIENT_ID }}
-          BASILICA_AUTH0_AUDIENCE: ${{ secrets.BASILICA_AUTH0_AUDIENCE }}
-          BASILICA_AUTH0_ISSUER: ${{ secrets.BASILICA_AUTH0_ISSUER }}
-          BASILICA_AUTH0_DOMAIN: ${{ secrets.BASILICA_AUTH0_DOMAIN }}
+          BASILICA_AUTH0_CLIENT_ID: ${{ vars.BASILICA_AUTH0_CLIENT_ID }}
+          BASILICA_AUTH0_AUDIENCE: ${{ vars.BASILICA_AUTH0_AUDIENCE }}
+          BASILICA_AUTH0_ISSUER: ${{ vars.BASILICA_AUTH0_ISSUER }}
+          BASILICA_AUTH0_DOMAIN: ${{ vars.BASILICA_AUTH0_DOMAIN }}
         run: |
           cargo build --release --locked --target ${{ matrix.target }} -p basilica-cli
           cp target/${{ matrix.target }}/release/basilica ./basilica-${{ matrix.suffix }}
