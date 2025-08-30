@@ -382,8 +382,49 @@ check_existing_installation() {
 
         # Try to get current version
         local current_version
+        local current_version_clean
         if current_version=$("$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null | head -n1); then
-            print_info "Current version: $current_version"
+            # Extract just the version number (e.g., "basilica 0.1.0" -> "0.1.0")
+            current_version_clean=$(echo "$current_version" | sed 's/^[^0-9]*\([0-9.]*\).*/\1/')
+        else
+            current_version_clean="unknown"
+        fi
+
+        # Try to fetch latest version
+        local latest_tag
+        local latest_version_clean
+        print_step "Checking for latest version..."
+        
+        # Suppress the "Fetching latest release information..." message from get_latest_cli_release
+        latest_tag=$(get_latest_cli_release 2>/dev/null)
+        
+        if [ $? -eq 0 ] && [ -n "$latest_tag" ]; then
+            # Extract version from tag (e.g., "basilica-cli-v0.2.0" -> "0.2.0")
+            latest_version_clean=$(echo "$latest_tag" | sed 's/basilica-cli-v//')
+        else
+            latest_version_clean="unable to fetch"
+        fi
+
+        # Display version comparison
+        echo
+        if [ "$current_version_clean" != "unknown" ]; then
+            print_info "Current version: v$current_version_clean"
+        else
+            print_info "Current version: unable to determine"
+        fi
+        
+        if [ "$latest_version_clean" != "unable to fetch" ]; then
+            print_info "Latest version:  v$latest_version_clean"
+            
+            # Check if versions match
+            if [ "$current_version_clean" = "$latest_version_clean" ]; then
+                print_info "You already have the latest version!"
+            elif [ "$current_version_clean" != "unknown" ]; then
+                print_warning "Update available!"
+            fi
+        else
+            print_warning "Could not fetch latest version information"
+            print_info "Check https://github.com/$GITHUB_REPO/releases for updates"
         fi
 
         echo
@@ -395,11 +436,17 @@ check_existing_installation() {
             return 0
         fi
 
-        printf "Do you want to replace it? [y/N]: "
+        # Adjust prompt based on version comparison
+        if [ "$current_version_clean" = "$latest_version_clean" ] && [ "$latest_version_clean" != "unable to fetch" ]; then
+            printf "Do you want to reinstall? [y/N]: "
+        else
+            printf "Do you want to update? [y/N]: "
+        fi
+        
         if read -r response < /dev/tty 2>/dev/null; then
             case "$response" in
                 [yY][eE][sS]|[yY])
-                    print_info "Proceeding with replacement..."
+                    print_info "Proceeding with installation..."
                     return 0
                     ;;
                 *)
