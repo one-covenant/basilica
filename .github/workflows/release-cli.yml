@@ -60,12 +60,19 @@ jobs:
             Download the appropriate binary for your platform from the assets below.
             
             #### Verify checksums
+            Download both the binary and its corresponding `.sha256` file, then:
             ```bash
-            # macOS/Linux
-            shasum -a 256 -c basilica-cli-checksums.txt
+            # For macOS ARM64
+            shasum -a 256 -c basilica-darwin-arm64.sha256
             
-            # Or individual file
-            shasum -a 256 basilica-darwin-arm64
+            # For macOS Intel
+            shasum -a 256 -c basilica-darwin-amd64.sha256
+            
+            # For Linux x86_64
+            shasum -a 256 -c basilica-linux-amd64.sha256
+            
+            # For Linux ARM64
+            shasum -a 256 -c basilica-linux-arm64.sha256
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -161,38 +168,6 @@ jobs:
           files: |
             basilica-${{ matrix.suffix }}
             basilica-${{ matrix.suffix }}.sha256
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Generate consolidated checksums file
-  generate-checksums:
-    needs: [create-release, build-binaries]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Generate consolidated checksums
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Download all released binaries
-          gh release download ${{ needs.create-release.outputs.tag }} \
-            --pattern "basilica-*" \
-            --skip-existing \
-            --repo ${{ github.repository }}
-          
-          # Filter out individual .sha256 files and generate consolidated checksums
-          ls basilica-* | grep -v ".sha256$" | xargs sha256sum > basilica-cli-checksums.txt
-          
-          # Display checksums for verification
-          echo "Generated checksums:"
-          cat basilica-cli-checksums.txt
-          
-      - name: Upload checksums file
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ needs.create-release.outputs.tag }}
-          files: basilica-cli-checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
