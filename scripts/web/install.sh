@@ -5,7 +5,23 @@ set -e
 # Usage: curl -sSL https://basilica.ai/install.sh | bash
 
 BINARY_NAME="basilica"
-BINARY_URL="https://basilica.ai/releases/latest/basilica"
+GITHUB_REPO="tplr-ai/basilica"
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --repo)
+            GITHUB_REPO="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--repo owner/repo]"
+            exit 1
+            ;;
+    esac
+done
+
 TEMP_DIR=$(mktemp -d)
 TEMP_BINARY="$TEMP_DIR/$BINARY_NAME"
 
@@ -190,6 +206,64 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Get latest basilica-cli release tag from GitHub
+get_latest_cli_release() {
+    local releases_json
+    
+    print_step "Fetching latest release information from GitHub..." >&2
+    
+    # Fetch releases from GitHub API
+    if command_exists curl; then
+        releases_json=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases" 2>/dev/null)
+    elif command_exists wget; then
+        releases_json=$(wget -qO- "https://api.github.com/repos/$GITHUB_REPO/releases" 2>/dev/null)
+    else
+        print_error "Neither curl nor wget found" >&2
+        return 1
+    fi
+    
+    # Check if API call was successful
+    if [ -z "$releases_json" ]; then
+        print_error "Failed to fetch releases from GitHub" >&2
+        print_info "Please check your internet connection or try again later" >&2
+        return 1
+    fi
+    
+    # Check for rate limiting
+    if echo "$releases_json" | grep -q "API rate limit exceeded"; then
+        print_error "GitHub API rate limit exceeded" >&2
+        print_info "Please try again later or download manually from:" >&2
+        print_info "  https://github.com/$GITHUB_REPO/releases" >&2
+        return 1
+    fi
+    
+    # Parse JSON to find latest non-prerelease basilica-cli-v* tag
+    # Pipeline explanation:
+    # 1. grep -E '"tag_name"|"prerelease"' - Extract only tag_name and prerelease lines
+    # 2. grep -B1 '"prerelease": false' - Find non-prerelease entries and include 1 line before (the tag_name)
+    # 3. grep 'tag_name' - Filter to only tag_name lines from the previous output
+    # 4. grep 'basilica-cli-v' - Keep only tags starting with basilica-cli-v
+    # 5. head -1 - Take the first match (GitHub API returns releases in newest-first order)
+    # 6. cut -d '"' -f 4 - Extract the tag value between quotes
+    local latest_tag
+    latest_tag=$(echo "$releases_json" | \
+        grep -E '"tag_name"|"prerelease"' | \
+        grep -B1 '"prerelease": false' | \
+        grep 'tag_name' | \
+        grep 'basilica-cli-v' | \
+        head -1 | \
+        cut -d '"' -f 4)
+    
+    if [ -z "$latest_tag" ]; then
+        print_error "No stable basilica-cli releases found" >&2
+        print_info "Please check https://github.com/$GITHUB_REPO/releases" >&2
+        return 1
+    fi
+    
+    echo "$latest_tag"
+    return 0
+}
+
 # Install dependencies
 check_dependencies() {
     if ! command_exists curl && ! command_exists wget; then
@@ -202,16 +276,32 @@ check_dependencies() {
 download_binary() {
     local arch
     local os
+    local latest_tag
+    
+    # Get latest release tag first (this will print "Fetching latest release information...")
+    latest_tag=$(get_latest_cli_release)
+    if [ $? -ne 0 ] || [ -z "$latest_tag" ]; then
+        print_error "Failed to determine latest release"
+        exit 1
+    fi
+    
+    # Extract version number for display
+    local version
+    version=$(echo "$latest_tag" | sed 's/basilica-cli-v//')
+    print_info "Found latest version: v$version"
+    
+    # Detect platform
     arch=$(detect_arch)
     os=$(detect_os)
-    local download_url="${BINARY_URL}-${os}-${arch}"
+    local binary_name="basilica-${os}-${arch}"
+    local download_url="https://github.com/${GITHUB_REPO}/releases/download/${latest_tag}/${binary_name}"
 
-    print_step "Checking binary availability..."
+    print_step "Checking availability for ${os}-${arch}..."
     
-    # Check if the binary exists on the server first
+    # Check if the binary exists on GitHub first
     local http_status
     if command_exists curl; then
-        http_status=$(curl -o /dev/null -s -w "%{http_code}" -I "$download_url" 2>/dev/null)
+        http_status=$(curl -o /dev/null -s -w "%{http_code}" -I -L "$download_url" 2>/dev/null)
     elif command_exists wget; then
         http_status=$(wget --spider -S "$download_url" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1)
     else
@@ -220,19 +310,20 @@ download_binary() {
 
     if [ "$http_status" = "404" ]; then
         print_error "Binary not found for your platform: ${os}-${arch}"
-        print_info "This combination may not be supported yet"
+        print_info "This combination may not be supported in release $latest_tag"
+        print_info "Check available binaries at: https://github.com/$GITHUB_REPO/releases/tag/$latest_tag"
         exit 1
     elif [ "$http_status" = "403" ]; then
         print_error "Access denied to binary (HTTP 403)"
-        print_info "The binary URL may be incorrect or access may be restricted"
+        print_info "The release may be private or access may be restricted"
         print_info "URL attempted: $download_url"
         exit 1
     elif [ "$http_status" != "200" ] && [ "$http_status" != "302" ] && [ "$http_status" != "301" ]; then
-        print_warning "Unexpected response from server (HTTP $http_status)"
+        print_warning "Unexpected response from GitHub (HTTP $http_status)"
         print_info "Attempting download anyway..."
     fi
 
-    print_step "Downloading Basilica CLI..."
+    print_step "Downloading Basilica CLI v$version..."
 
     local download_success=false
     local attempts=0
@@ -242,13 +333,13 @@ download_binary() {
         attempts=$((attempts + 1))
 
         if command_exists curl; then
-            if curl -fsSL "$download_url" -o "$TEMP_BINARY" 2>/dev/null; then
+            if curl -fsSL -L "$download_url" -o "$TEMP_BINARY" 2>/dev/null; then
                 download_success=true
             else
                 local curl_exit_code=$?
                 if [ $curl_exit_code -eq 22 ]; then
-                    print_error "HTTP error from server (likely 403 or 404)"
-                    print_info "The binary may not be available for ${os}-${arch}"
+                    print_error "HTTP error from GitHub (likely 403 or 404)"
+                    print_info "The binary may not be available for ${os}-${arch} in release $latest_tag"
                     exit 1
                 fi
             fi
@@ -267,7 +358,8 @@ download_binary() {
     if [ ! -f "$TEMP_BINARY" ] || [ ! -s "$TEMP_BINARY" ]; then
         print_error "Download failed after $max_attempts attempts"
         print_info "URL attempted: $download_url"
-        print_info "Please verify the binary is available for your platform"
+        print_info "Please verify the binary is available for your platform at:"
+        print_info "  https://github.com/$GITHUB_REPO/releases/tag/$latest_tag"
         exit 1
     fi
 }
