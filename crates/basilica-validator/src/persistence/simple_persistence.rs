@@ -1836,6 +1836,7 @@ impl SimplePersistence {
         Ok(known_executors)
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Store executor hardware profile information
     #[allow(clippy::too_many_arguments)]
     pub async fn store_executor_hardware_profile(

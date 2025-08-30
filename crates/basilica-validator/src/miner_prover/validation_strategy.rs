@@ -812,79 +812,10 @@ impl ValidationExecutor {
             "[HARDWARE_PROFILE] Starting hardware profile collection"
         );
 
-        // Check if lshw exists
-        match self
-            .ssh_client
-            .execute_command(ssh_details, "which lshw", true)
-            .await
-        {
-            Ok(_) => {
-                debug!(
-                    executor_id = %executor_id.id,
-                    "[HARDWARE_PROFILE] lshw is already installed"
-                );
-            }
-            Err(_) => {
-                info!(
-                    executor_id = %executor_id.id,
-                    "[HARDWARE_PROFILE] lshw not found, attempting to install"
-                );
-
-                // Detect package manager
-                let package_manager = if self
-                    .ssh_client
-                    .execute_command(ssh_details, "command -v apt-get", true)
-                    .await
-                    .is_ok()
-                {
-                    Some("apt")
-                } else if self
-                    .ssh_client
-                    .execute_command(ssh_details, "command -v yum", true)
-                    .await
-                    .is_ok()
-                {
-                    Some("yum")
-                } else if self
-                    .ssh_client
-                    .execute_command(ssh_details, "command -v apk", true)
-                    .await
-                    .is_ok()
-                {
-                    Some("apk")
-                } else {
-                    None
-                };
-
-                // Install lshw based on package manager
-                match package_manager {
-                    Some("apt") => {
-                        self.ssh_client
-                            .execute_command(
-                                ssh_details,
-                                "sudo apt-get update && sudo apt-get install -y lshw",
-                                true,
-                            )
-                            .await?;
-                    }
-                    Some("yum") => {
-                        self.ssh_client
-                            .execute_command(ssh_details, "sudo yum install -y lshw", true)
-                            .await?;
-                    }
-                    Some("apk") => {
-                        self.ssh_client
-                            .execute_command(ssh_details, "sudo apk add lshw", true)
-                            .await?;
-                    }
-                    _ => {
-                        return Err(anyhow::anyhow!(
-                            "Could not detect package manager to install lshw"
-                        ));
-                    }
-                }
-            }
-        }
+        // Ensure lshw is installed
+        self.ssh_client
+            .ensure_command_installed(ssh_details, "lshw", "lshw")
+            .await?;
 
         // Execute lshw and collect hardware information
         let lshw_output = self
