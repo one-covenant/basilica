@@ -436,9 +436,16 @@ show_completion() {
     echo
     
     # Inform about shell completions
-    print_info "Shell completions have been configured for tab-completion support"
+    print_info "Shell completions have been configured for tab support"
     print_info "Please restart your terminal or run:"
     echo -e "  ${CYAN}source $profile_file${NC}"
+    echo
+    
+    # Show manual completion setup instructions
+    print_info "For other shells, add the appropriate completion command to your shell config:"
+    echo "  Bash:  eval \"\$(COMPLETE=bash basilica)\""
+    echo "  Zsh:   eval \"\$(COMPLETE=zsh basilica)\""
+    echo "  Fish:  COMPLETE=fish basilica | source"
     echo
 
     echo "Get started:"
