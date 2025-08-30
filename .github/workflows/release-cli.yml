@@ -64,6 +64,7 @@ jobs:
 
   build-binaries:
     needs: create-release
+    environment: auth0-variables
     strategy:
       matrix:
         include:
