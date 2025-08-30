@@ -748,31 +748,51 @@ impl ValidationExecutor {
             }
         }
 
-        // Find processor nodes
+        // Find processor nodes and sum all cores
         let mut processor_nodes = Vec::new();
         find_nodes_by_class(&json, "processor", &mut processor_nodes);
+
+        // Get CPU model from first processor
         if let Some(first_processor) = processor_nodes.first() {
             cpu_model = first_processor
                 .get("product")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+        }
 
-            cpu_cores = first_processor
+        // Sum cores from all processors
+        let mut total_cores = 0;
+        for processor in &processor_nodes {
+            if let Some(cores) = processor
                 .get("configuration")
                 .and_then(|c| c.get("cores"))
                 .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<i32>().ok());
+                .and_then(|s| s.parse::<i32>().ok())
+            {
+                total_cores += cores;
+            }
+        }
+        if total_cores > 0 {
+            cpu_cores = Some(total_cores);
         }
 
-        // Find memory nodes and sum sizes
+        // Find memory nodes - only use "System Memory" to avoid double counting
         let mut memory_nodes = Vec::new();
         find_nodes_by_class(&json, "memory", &mut memory_nodes);
         let mut total_memory_bytes: i64 = 0;
+
+        // Look for the "System Memory" node specifically to avoid counting individual banks
         for memory_node in &memory_nodes {
-            if let Some(size) = memory_node.get("size").and_then(|v| v.as_i64()) {
-                total_memory_bytes += size;
+            if let Some(description) = memory_node.get("description").and_then(|v| v.as_str()) {
+                if description == "System Memory" {
+                    if let Some(size) = memory_node.get("size").and_then(|v| v.as_i64()) {
+                        total_memory_bytes = size;
+                        break; // Use only the System Memory total
+                    }
+                }
             }
         }
+
         if total_memory_bytes > 0 {
             ram_gb = Some((total_memory_bytes / (1024 * 1024 * 1024)) as i32);
         }
@@ -818,9 +838,10 @@ impl ValidationExecutor {
             .await?;
 
         // Execute lshw and collect hardware information
+        // Using -sanitize flag to remove sensitive information like serial numbers
         let lshw_output = self
             .ssh_client
-            .execute_command(ssh_details, "sudo lshw -json -quiet", true)
+            .execute_command(ssh_details, "sudo lshw -json -quiet -sanitize", true)
             .await?;
 
         // Parse the output
@@ -865,5 +886,144 @@ impl ValidationExecutor {
             .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    struct TestCase {
+        name: &'static str,
+        file_name: &'static str,
+        expected_cpu_model: Option<&'static str>,
+        expected_cpu_cores: Option<i32>,
+        expected_ram_gb: Option<i32>,
+        expected_disk_gb: Option<i32>, // None if no disk expected
+    }
+
+    #[tokio::test]
+    async fn test_parse_lshw_outputs() {
+        // Define test cases for different hardware configurations
+        let test_cases = vec![
+            TestCase {
+                name: "H100 SXM5 with 30 vCPUs",
+                file_name: "h100_sxm5_30vcpu.json",
+                expected_cpu_model: Some("Intel(R) Xeon(R) Platinum 8462Y+"),
+                expected_cpu_cores: Some(30),
+                expected_ram_gb: Some(120),
+                expected_disk_gb: Some(250), // Can be None if disk parsing shows no disks
+            },
+            TestCase {
+                name: "AMD EPYC 9554 with B200 GPU and 31 vCPUs",
+                file_name: "amd_epyc_b200_31vcpu.json",
+                expected_cpu_model: Some("AMD EPYC 9554 64-Core Processor"),
+                expected_cpu_cores: Some(14), // 2 processors × 7 cores each
+                expected_ram_gb: Some(180),   // 193273528320 bytes = ~180 GB
+                expected_disk_gb: Some(100),  // Root volume is 107GB, rounded to 100
+            },
+            // Add more test cases here as you add more fixture files
+        ];
+
+        // Create a ValidationExecutor for testing
+        let ssh_client = Arc::new(ValidatorSshClient::new());
+        let persistence = Arc::new(
+            SimplePersistence::new("sqlite::memory:", "test_validator".to_string())
+                .await
+                .unwrap(),
+        );
+        let executor = ValidationExecutor::new(ssh_client, None, persistence);
+
+        for test_case in test_cases {
+            println!("\n=== Testing: {} ===", test_case.name);
+
+            // Build path to test fixture
+            let mut fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            fixture_path.push("tests");
+            fixture_path.push("fixtures");
+            fixture_path.push("lshw");
+            fixture_path.push(test_case.file_name);
+
+            // Read the test file
+            let json_content = fs::read_to_string(&fixture_path).unwrap_or_else(|e| {
+                panic!(
+                    "Failed to read test fixture '{}': {}",
+                    fixture_path.display(),
+                    e
+                )
+            });
+
+            // Parse the output
+            let result = executor.parse_lshw_output(&json_content);
+            assert!(
+                result.is_ok(),
+                "[{}] Failed to parse lshw output: {:?}",
+                test_case.name,
+                result.err()
+            );
+
+            let hardware_profile = result.unwrap();
+
+            // Print the parsed values for debugging
+            println!("Parsed Hardware Profile for '{}':", test_case.name);
+            println!("  CPU Model: {:?}", hardware_profile.cpu_model);
+            println!("  CPU Cores: {:?}", hardware_profile.cpu_cores);
+            println!("  RAM GB: {:?}", hardware_profile.ram_gb);
+            println!("  Disk GB: {:?}", hardware_profile.disk_gb);
+
+            // Verify CPU model
+            if let Some(expected_model) = test_case.expected_cpu_model {
+                assert_eq!(
+                    hardware_profile.cpu_model,
+                    Some(expected_model.to_string()),
+                    "[{}] CPU model mismatch",
+                    test_case.name
+                );
+            }
+
+            // Verify CPU cores
+            if let Some(expected_cores) = test_case.expected_cpu_cores {
+                assert_eq!(
+                    hardware_profile.cpu_cores,
+                    Some(expected_cores),
+                    "[{}] CPU cores mismatch",
+                    test_case.name
+                );
+            }
+
+            // Verify RAM
+            if let Some(expected_ram) = test_case.expected_ram_gb {
+                assert_eq!(
+                    hardware_profile.ram_gb,
+                    Some(expected_ram),
+                    "[{}] RAM mismatch",
+                    test_case.name
+                );
+            }
+
+            // Verify Disk (if expected)
+            match (test_case.expected_disk_gb, hardware_profile.disk_gb) {
+                (Some(expected), Some(actual)) => {
+                    assert_eq!(actual, expected, "[{}] Disk size mismatch", test_case.name);
+                }
+                (Some(expected), None) => {
+                    panic!(
+                        "[{}] Expected {} GB disk but found none",
+                        test_case.name, expected
+                    );
+                }
+                (None, Some(actual)) => {
+                    println!(
+                        "[{}] Found disk with {} GB (not expected in test case)",
+                        test_case.name, actual
+                    );
+                }
+                (None, None) => {
+                    println!("[{}] No disk found (as expected)", test_case.name);
+                }
+            }
+        }
     }
 }
