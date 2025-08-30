@@ -21,6 +21,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
+/// Hardware profile information extracted from lshw
+#[derive(Debug, Clone)]
+struct HardwareProfile {
+    cpu_model: Option<String>,
+    cpu_cores: Option<i32>,
+    ram_gb: Option<i32>,
+    disk_gb: Option<i32>,
+    full_json: String,
+}
+
 /// Validation strategy to determine execution path
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
@@ -47,6 +57,7 @@ pub struct ValidationExecutor {
     ssh_client: Arc<ValidatorSshClient>,
     binary_validator: BinaryValidator,
     metrics: Option<Arc<ValidatorMetrics>>,
+    persistence: Arc<SimplePersistence>,
 }
 
 impl ValidationStrategySelector {
@@ -282,12 +293,14 @@ impl ValidationExecutor {
     pub fn new(
         ssh_client: Arc<ValidatorSshClient>,
         metrics: Option<Arc<ValidatorMetrics>>,
+        persistence: Arc<SimplePersistence>,
     ) -> Self {
         let binary_validator = BinaryValidator::new(ssh_client.clone());
         Self {
             ssh_client,
             binary_validator,
             metrics,
+            persistence,
         }
     }
 
@@ -419,6 +432,7 @@ impl ValidationExecutor {
         session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         binary_config: &crate::config::BinaryValidationConfig,
         _validator_hotkey: &Hotkey,
+        miner_uid: u16,
     ) -> Result<ExecutorVerificationResult> {
         info!(
             executor_id = %executor_info.id,
@@ -459,6 +473,23 @@ impl ValidationExecutor {
 
         validation_details.ssh_test_duration = ssh_test_start.elapsed();
         validation_details.ssh_score = if ssh_connection_successful { 0.8 } else { 0.0 };
+
+        // Phase 1.5: Hardware Profile Collection
+        if ssh_connection_successful {
+            match self
+                .collect_hardware_profile(executor_info, miner_uid, ssh_details)
+                .await
+            {
+                Ok(_) => {}
+                Err(e) => {
+                    warn!(
+                        executor_id = %executor_info.id,
+                        error = %e,
+                        "[HARDWARE_PROFILE] Failed to collect hardware profile (non-critical)"
+                    );
+                }
+            }
+        }
 
         // Phase 2: Binary Validation
         let mut binary_validation_successful = false;
@@ -685,5 +716,223 @@ impl ValidationExecutor {
 
         // Ensure score is within bounds
         combined_score.clamp(0.0, 1.0)
+    }
+
+    /// Parse lshw output to extract hardware information
+    fn parse_lshw_output(&self, json_str: &str) -> Result<HardwareProfile> {
+        let json: serde_json::Value = serde_json::from_str(json_str)
+            .map_err(|e| anyhow::anyhow!("Failed to parse lshw JSON: {}", e))?;
+
+        let mut cpu_model: Option<String> = None;
+        let mut cpu_cores: Option<i32> = None;
+        let mut ram_gb: Option<i32> = None;
+        let mut disk_gb: Option<i32> = None;
+
+        // Helper function to recursively search for nodes
+        fn find_nodes_by_class<'a>(
+            node: &'a serde_json::Value,
+            class_name: &str,
+            results: &mut Vec<&'a serde_json::Value>,
+        ) {
+            if let Some(class) = node.get("class") {
+                if class.as_str() == Some(class_name) {
+                    results.push(node);
+                }
+            }
+            if let Some(children) = node.get("children") {
+                if let Some(arr) = children.as_array() {
+                    for child in arr {
+                        find_nodes_by_class(child, class_name, results);
+                    }
+                }
+            }
+        }
+
+        // Find processor nodes
+        let mut processor_nodes = Vec::new();
+        find_nodes_by_class(&json, "processor", &mut processor_nodes);
+        if let Some(first_processor) = processor_nodes.first() {
+            cpu_model = first_processor
+                .get("product")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            cpu_cores = first_processor
+                .get("configuration")
+                .and_then(|c| c.get("cores"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<i32>().ok());
+        }
+
+        // Find memory nodes and sum sizes
+        let mut memory_nodes = Vec::new();
+        find_nodes_by_class(&json, "memory", &mut memory_nodes);
+        let mut total_memory_bytes: i64 = 0;
+        for memory_node in &memory_nodes {
+            if let Some(size) = memory_node.get("size").and_then(|v| v.as_i64()) {
+                total_memory_bytes += size;
+            }
+        }
+        if total_memory_bytes > 0 {
+            ram_gb = Some((total_memory_bytes / (1024 * 1024 * 1024)) as i32);
+        }
+
+        // Find disk nodes and sum sizes
+        let mut disk_nodes = Vec::new();
+        find_nodes_by_class(&json, "disk", &mut disk_nodes);
+        let mut total_disk_bytes: i64 = 0;
+        for disk_node in &disk_nodes {
+            if let Some(size) = disk_node.get("size").and_then(|v| v.as_i64()) {
+                total_disk_bytes += size;
+            }
+        }
+        if total_disk_bytes > 0 {
+            disk_gb = Some((total_disk_bytes / (1024 * 1024 * 1024)) as i32);
+        }
+
+        Ok(HardwareProfile {
+            cpu_model,
+            cpu_cores,
+            ram_gb,
+            disk_gb,
+            full_json: json_str.to_string(),
+        })
+    }
+
+    /// Collect hardware profile from executor using lshw
+    async fn collect_hardware_profile(
+        &self,
+        executor_id: &ExecutorInfoDetailed,
+        miner_uid: u16,
+        ssh_details: &SshConnectionDetails,
+    ) -> Result<()> {
+        info!(
+            executor_id = %executor_id.id,
+            miner_uid = miner_uid,
+            "[HARDWARE_PROFILE] Starting hardware profile collection"
+        );
+
+        // Check if lshw exists
+        match self
+            .ssh_client
+            .execute_command(ssh_details, "which lshw", true)
+            .await
+        {
+            Ok(_) => {
+                debug!(
+                    executor_id = %executor_id.id,
+                    "[HARDWARE_PROFILE] lshw is already installed"
+                );
+            }
+            Err(_) => {
+                info!(
+                    executor_id = %executor_id.id,
+                    "[HARDWARE_PROFILE] lshw not found, attempting to install"
+                );
+
+                // Detect package manager
+                let package_manager = if self
+                    .ssh_client
+                    .execute_command(ssh_details, "command -v apt-get", true)
+                    .await
+                    .is_ok()
+                {
+                    Some("apt")
+                } else if self
+                    .ssh_client
+                    .execute_command(ssh_details, "command -v yum", true)
+                    .await
+                    .is_ok()
+                {
+                    Some("yum")
+                } else if self
+                    .ssh_client
+                    .execute_command(ssh_details, "command -v apk", true)
+                    .await
+                    .is_ok()
+                {
+                    Some("apk")
+                } else {
+                    None
+                };
+
+                // Install lshw based on package manager
+                match package_manager {
+                    Some("apt") => {
+                        self.ssh_client
+                            .execute_command(
+                                ssh_details,
+                                "sudo apt-get update && sudo apt-get install -y lshw",
+                                true,
+                            )
+                            .await?;
+                    }
+                    Some("yum") => {
+                        self.ssh_client
+                            .execute_command(ssh_details, "sudo yum install -y lshw", true)
+                            .await?;
+                    }
+                    Some("apk") => {
+                        self.ssh_client
+                            .execute_command(ssh_details, "sudo apk add lshw", true)
+                            .await?;
+                    }
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "Could not detect package manager to install lshw"
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Execute lshw and collect hardware information
+        let lshw_output = self
+            .ssh_client
+            .execute_command(ssh_details, "sudo lshw -json -quiet", true)
+            .await?;
+
+        // Parse the output
+        let hardware_profile = self.parse_lshw_output(&lshw_output)?;
+
+        // Create formatted hardware info strings
+        let cpu_info = format!(
+            "{} ({} cores)",
+            hardware_profile
+                .cpu_model
+                .as_deref()
+                .unwrap_or("Unknown CPU"),
+            hardware_profile.cpu_cores.unwrap_or(0)
+        );
+
+        let mem_info = format!(
+            "{}GB RAM, {}GB Disk",
+            hardware_profile.ram_gb.unwrap_or(0),
+            hardware_profile.disk_gb.unwrap_or(0)
+        );
+
+        // Log the collected information before storing
+        info!(
+            miner_uid = miner_uid,
+            executor_id = %executor_id.id,
+            cpu_info = cpu_info,
+            mem_info = mem_info,
+            "[HARDWARE_PROFILE] Successfully collected hardware profile"
+        );
+
+        // Store in database
+        self.persistence
+            .store_executor_hardware_profile(
+                miner_uid,
+                &executor_id.id.to_string(),
+                hardware_profile.cpu_model,
+                hardware_profile.cpu_cores,
+                hardware_profile.ram_gb,
+                hardware_profile.disk_gb,
+                &hardware_profile.full_json,
+            )
+            .await?;
+
+        Ok(())
     }
 }

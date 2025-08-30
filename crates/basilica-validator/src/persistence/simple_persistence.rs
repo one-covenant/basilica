@@ -234,6 +234,19 @@ impl SimplePersistence {
                 CONSTRAINT valid_gpu_memory CHECK (gpu_memory_gb >= 0)
             );
 
+            CREATE TABLE IF NOT EXISTS executor_hardware_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                cpu_model TEXT,
+                cpu_cores INTEGER,
+                ram_gb INTEGER,
+                disk_gb INTEGER,
+                full_hardware_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
             CREATE TABLE IF NOT EXISTS weight_allocation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 miner_uid INTEGER NOT NULL,
@@ -266,6 +279,8 @@ impl SimplePersistence {
             CREATE INDEX IF NOT EXISTS idx_weight_history_miner ON weight_allocation_history(miner_uid);
             CREATE INDEX IF NOT EXISTS idx_weight_history_category ON weight_allocation_history(gpu_category);
             CREATE INDEX IF NOT EXISTS idx_weight_history_block ON weight_allocation_history(weight_set_block);
+            CREATE INDEX IF NOT EXISTS idx_executor_hardware_miner ON executor_hardware_profile(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_executor_hardware_updated ON executor_hardware_profile(updated_at);
             "#,
         )
         .execute(&self.pool)
@@ -1819,6 +1834,51 @@ impl SimplePersistence {
         }
 
         Ok(known_executors)
+    }
+
+    /// Store executor hardware profile information
+    #[allow(clippy::too_many_arguments)]
+    pub async fn store_executor_hardware_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        cpu_model: Option<String>,
+        cpu_cores: Option<i32>,
+        ram_gb: Option<i32>,
+        disk_gb: Option<i32>,
+        full_hardware_json: &str,
+    ) -> Result<(), anyhow::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO executor_hardware_profile
+            (miner_uid, executor_id, cpu_model, cpu_cores, ram_gb, disk_gb, full_hardware_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                cpu_model = excluded.cpu_model,
+                cpu_cores = excluded.cpu_cores,
+                ram_gb = excluded.ram_gb,
+                disk_gb = excluded.disk_gb,
+                full_hardware_json = excluded.full_hardware_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(cpu_model)
+        .bind(cpu_cores)
+        .bind(ram_gb)
+        .bind(disk_gb)
+        .bind(full_hardware_json)
+        .execute(&self.pool)
+        .await?;
+
+        info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
+            "Stored hardware profile for executor"
+        );
+
+        Ok(())
     }
 }
 
