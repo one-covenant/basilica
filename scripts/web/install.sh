@@ -279,9 +279,9 @@ download_binary() {
     local latest_tag
     
     # Get latest release tag first (this will print "Fetching latest release information...")
-    latest_tag=$(get_latest_cli_release)
-    if [ $? -ne 0 ] || [ -z "$latest_tag" ]; then
-        print_error "Failed to determine latest release"
+    latest_tag=$(get_latest_cli_release 2>/dev/null || true)
+    if [ -z "$latest_tag" ]; then
+        print_error "Unable to fetch latest version (rate limited). Try again in a few minutes."
         exit 1
     fi
     
@@ -325,38 +325,31 @@ download_binary() {
 
     print_step "Downloading Basilica CLI v$version..."
 
-    local download_success=false
-    local attempts=0
-    local max_attempts=3
-
-    while [ $attempts -lt $max_attempts ] && [ "$download_success" = false ]; do
-        attempts=$((attempts + 1))
-
-        if command_exists curl; then
-            if curl -fsSL -L "$download_url" -o "$TEMP_BINARY" 2>/dev/null; then
-                download_success=true
+    if command_exists curl; then
+        if ! curl -fsSL -L "$download_url" -o "$TEMP_BINARY" 2>/dev/null; then
+            local curl_exit_code=$?
+            if [ $curl_exit_code -eq 22 ]; then
+                print_error "HTTP error from GitHub (likely 403 or 404)"
+                print_info "The binary may not be available for ${os}-${arch} in release $latest_tag"
+                exit 1
             else
-                local curl_exit_code=$?
-                if [ $curl_exit_code -eq 22 ]; then
-                    print_error "HTTP error from GitHub (likely 403 or 404)"
-                    print_info "The binary may not be available for ${os}-${arch} in release $latest_tag"
-                    exit 1
-                fi
-            fi
-        else
-            if wget -q "$download_url" -O "$TEMP_BINARY" 2>/dev/null; then
-                download_success=true
+                print_error "Download failed"
+                print_info "URL attempted: $download_url"
+                print_info "Please check your network connection and try again"
+                exit 1
             fi
         fi
-
-        if [ "$download_success" = false ] && [ $attempts -lt $max_attempts ]; then
-            print_warning "Download failed, retrying... ($attempts/$max_attempts)"
-            sleep 2
+    elif command_exists wget; then
+        if ! wget -q "$download_url" -O "$TEMP_BINARY" 2>/dev/null; then
+            print_error "Download failed"
+            print_info "URL attempted: $download_url"
+            print_info "Please check your network connection and try again"
+            exit 1
         fi
-    done
+    fi
 
     if [ ! -f "$TEMP_BINARY" ] || [ ! -s "$TEMP_BINARY" ]; then
-        print_error "Download failed after $max_attempts attempts"
+        print_error "Download failed - file is missing or empty"
         print_info "URL attempted: $download_url"
         print_info "Please verify the binary is available for your platform at:"
         print_info "  https://github.com/$GITHUB_REPO/releases/tag/$latest_tag"
@@ -396,9 +389,9 @@ check_existing_installation() {
         print_step "Checking for latest version..."
         
         # Suppress the "Fetching latest release information..." message from get_latest_cli_release
-        latest_tag=$(get_latest_cli_release 2>/dev/null)
+        latest_tag=$(get_latest_cli_release 2>/dev/null || true)
         
-        if [ $? -eq 0 ] && [ -n "$latest_tag" ]; then
+        if [ -n "$latest_tag" ]; then
             # Extract version from tag (e.g., "basilica-cli-v0.2.0" -> "0.2.0")
             latest_version_clean=$(echo "$latest_tag" | sed 's/basilica-cli-v//')
         else
@@ -406,14 +399,14 @@ check_existing_installation() {
         fi
 
         # Display version comparison
-        echo
-        if [ "$current_version_clean" != "unknown" ]; then
-            print_info "Current version: v$current_version_clean"
-        else
-            print_info "Current version: unable to determine"
-        fi
-        
         if [ "$latest_version_clean" != "unable to fetch" ]; then
+            echo
+            if [ "$current_version_clean" != "unknown" ]; then
+                print_info "Current version: v$current_version_clean"
+            else
+                print_info "Current version: unable to determine"
+            fi
+            
             print_info "Latest version:  v$latest_version_clean"
             
             # Check if versions match
@@ -423,8 +416,9 @@ check_existing_installation() {
                 print_warning "Update available!"
             fi
         else
-            print_warning "Could not fetch latest version information"
-            print_info "Check https://github.com/$GITHUB_REPO/releases for updates"
+            echo
+            print_warning "Unable to check for updates (rate limited). Try again in a few minutes."
+            exit 0
         fi
 
         echo
