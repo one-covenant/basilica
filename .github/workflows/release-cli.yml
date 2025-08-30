@@ -56,10 +56,8 @@ jobs:
           name: Basilica CLI ${{ steps.version.outputs.version }}
           draft: false
           prerelease: true
-          generate_release_notes: true
+          generate_release_notes: false
           body: |
-            ### Installation
-            
             For installation instructions, please visit [https://basilica.ai/](https://basilica.ai/)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
