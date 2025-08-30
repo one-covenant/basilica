@@ -166,6 +166,25 @@ detect_arch() {
     esac
 }
 
+# Detect operating system
+detect_os() {
+    local os
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    case $os in
+        linux)
+            echo "linux"
+            ;;
+        darwin)
+            echo "darwin"
+            ;;
+        *)
+            print_error "Unsupported OS: $os"
+            print_info "Supported operating systems: Linux, macOS"
+            exit 1
+            ;;
+    esac
+}
+
 # Check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -182,8 +201,36 @@ check_dependencies() {
 # Download binary
 download_binary() {
     local arch
+    local os
     arch=$(detect_arch)
-    local download_url="${BINARY_URL}-linux-${arch}"
+    os=$(detect_os)
+    local download_url="${BINARY_URL}-${os}-${arch}"
+
+    print_step "Checking binary availability..."
+    
+    # Check if the binary exists on the server first
+    local http_status
+    if command_exists curl; then
+        http_status=$(curl -o /dev/null -s -w "%{http_code}" -I "$download_url" 2>/dev/null)
+    elif command_exists wget; then
+        http_status=$(wget --spider -S "$download_url" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1)
+    else
+        http_status="000"
+    fi
+
+    if [ "$http_status" = "404" ]; then
+        print_error "Binary not found for your platform: ${os}-${arch}"
+        print_info "This combination may not be supported yet"
+        exit 1
+    elif [ "$http_status" = "403" ]; then
+        print_error "Access denied to binary (HTTP 403)"
+        print_info "The binary URL may be incorrect or access may be restricted"
+        print_info "URL attempted: $download_url"
+        exit 1
+    elif [ "$http_status" != "200" ] && [ "$http_status" != "302" ] && [ "$http_status" != "301" ]; then
+        print_warning "Unexpected response from server (HTTP $http_status)"
+        print_info "Attempting download anyway..."
+    fi
 
     print_step "Downloading Basilica CLI..."
 
@@ -195,11 +242,18 @@ download_binary() {
         attempts=$((attempts + 1))
 
         if command_exists curl; then
-            if curl -fsSL "$download_url" -o "$TEMP_BINARY"; then
+            if curl -fsSL "$download_url" -o "$TEMP_BINARY" 2>/dev/null; then
                 download_success=true
+            else
+                local curl_exit_code=$?
+                if [ $curl_exit_code -eq 22 ]; then
+                    print_error "HTTP error from server (likely 403 or 404)"
+                    print_info "The binary may not be available for ${os}-${arch}"
+                    exit 1
+                fi
             fi
         else
-            if wget -q "$download_url" -O "$TEMP_BINARY"; then
+            if wget -q "$download_url" -O "$TEMP_BINARY" 2>/dev/null; then
                 download_success=true
             fi
         fi
@@ -212,7 +266,8 @@ download_binary() {
 
     if [ ! -f "$TEMP_BINARY" ] || [ ! -s "$TEMP_BINARY" ]; then
         print_error "Download failed after $max_attempts attempts"
-        print_info "Please check your internet connection and try again"
+        print_info "URL attempted: $download_url"
+        print_info "Please verify the binary is available for your platform"
         exit 1
     fi
 }
@@ -268,29 +323,30 @@ check_existing_installation() {
     fi
 }
 
-# Backup config if it exists
-backup_config() {
+# Clean up old backups
+cleanup_old_backups() {
+    # Clean up old binary backups silently
+    for backup in "$INSTALL_DIR/$BINARY_NAME.backup."*; do
+        if [ -f "$backup" ]; then
+            rm -f "$backup" 2>/dev/null
+        fi
+    done
+    
+    # Clean up old config backups silently
     local config_dir="$HOME/.config/basilica"
-    local config_file="$config_dir/config.toml"
-
-    if [ -f "$config_file" ]; then
-        local backup_file="$config_file.bak.$(date +%s)"
-        cp "$config_file" "$backup_file"
-        print_info "Config backed up"
-    fi
+    for config_backup in "$config_dir/config.toml.bak."*; do
+        if [ -f "$config_backup" ]; then
+            rm -f "$config_backup" 2>/dev/null
+        fi
+    done
 }
 
 # Install binary
 install_binary() {
     print_step "Installing to $INSTALL_DIR..."
 
-    # Backup existing binary if present
-    if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
-        mv "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME.backup.$(date +%s)"
-    fi
-
-    # Install new binary
-    mv "$TEMP_BINARY" "$INSTALL_DIR/$BINARY_NAME"
+    # Directly overwrite existing binary
+    mv -f "$TEMP_BINARY" "$INSTALL_DIR/$BINARY_NAME"
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
 }
 
@@ -380,9 +436,16 @@ show_completion() {
     echo
     
     # Inform about shell completions
-    print_info "Shell completions have been configured for tab-completion support"
+    print_info "Shell completions have been configured for tab support"
     print_info "Please restart your terminal or run:"
     echo -e "  ${CYAN}source $profile_file${NC}"
+    echo
+    
+    # Show manual completion setup instructions
+    print_info "For other shells, add the appropriate completion command to your shell config:"
+    echo "  Bash:  eval \"\$(COMPLETE=bash basilica)\""
+    echo "  Zsh:   eval \"\$(COMPLETE=zsh basilica)\""
+    echo "  Fish:  COMPLETE=fish basilica | source"
     echo
 
     echo "Get started:"
@@ -405,7 +468,7 @@ main() {
     setup_install_dir
     check_existing_installation
     check_dependencies
-    backup_config
+    cleanup_old_backups
     download_binary
     verify_binary
     install_binary
