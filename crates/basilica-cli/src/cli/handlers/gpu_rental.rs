@@ -3,7 +3,7 @@
 use crate::cache::{CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::cli::handlers::gpu_rental_helpers::{
-    get_ssh_credentials_from_cache, resolve_target_rental, resolve_target_rental_with_service,
+    get_ssh_credentials_from_cache, resolve_target_rental_with_service,
 };
 // Removed create_authenticated_client - all handlers now use ServiceClient
 use crate::config::CliConfig;
@@ -948,73 +948,6 @@ pub async fn handle_cp(
 
 // Helper functions
 
-/// Poll rental status until it becomes active or timeout
-async fn poll_rental_status(
-    rental_id: &str,
-    api_client: &basilica_api::client::BasilicaClient,
-) -> Result<bool> {
-    const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
-    const INITIAL_INTERVAL: Duration = Duration::from_secs(2);
-    const MAX_INTERVAL: Duration = Duration::from_secs(10);
-
-    let spinner = create_spinner("Waiting for rental to become active...");
-    let start_time = std::time::Instant::now();
-    let mut interval = INITIAL_INTERVAL;
-    let mut attempt = 0;
-
-    loop {
-        // Check if we've exceeded the maximum wait time
-        if start_time.elapsed() > MAX_WAIT_TIME {
-            complete_spinner_error(spinner, "Timeout waiting for rental to become active");
-            return Ok(false);
-        }
-
-        attempt += 1;
-        spinner.set_message(format!("Checking rental status... (attempt {})", attempt));
-
-        // Check rental status
-        match api_client.get_rental_status(rental_id).await {
-            Ok(status) => {
-                match status.status {
-                    RentalStatus::Active => {
-                        complete_spinner_and_clear(spinner);
-                        return Ok(true);
-                    }
-                    RentalStatus::Failed => {
-                        complete_spinner_error(spinner, "Rental failed to start");
-                        return Err(CliError::rental_failed(
-                            "Rental failed during initialization",
-                        ));
-                    }
-                    RentalStatus::Terminated => {
-                        complete_spinner_error(spinner, "Rental was terminated");
-                        return Err(CliError::rental_failed(
-                            "Rental was terminated before becoming active",
-                        ));
-                    }
-                    RentalStatus::Pending => {
-                        // Still pending, continue polling
-                        spinner.set_message(format!(
-                            "Rental is pending... ({}s elapsed)",
-                            start_time.elapsed().as_secs()
-                        ));
-                    }
-                }
-            }
-            Err(e) => {
-                // Log the error but continue polling
-                debug!("Error checking rental status: {}", e);
-                spinner.set_message("Retrying status check...");
-            }
-        }
-
-        // Wait before next check with exponential backoff
-        tokio::time::sleep(interval).await;
-
-        // Increase interval up to maximum
-        interval = std::cmp::min(interval * 2, MAX_INTERVAL);
-    }
-}
 
 /// Poll rental status using ServiceClient - updated version for new architecture
 async fn poll_rental_status_with_service(
@@ -1101,33 +1034,6 @@ async fn verify_rental_status_and_cleanup_cache_with_service(
     Ok(())
 }
 
-/// Verify rental is still active and clean up cache if not - Legacy BasilicaClient version
-/// TODO: Remove once all callers are migrated
-async fn verify_rental_status_and_cleanup_cache(
-    rental_id: &str,
-    api_client: &basilica_api::client::BasilicaClient,
-    cache: &mut RentalCache,
-) -> Result<()> {
-    let status = api_client
-        .get_rental_status(rental_id)
-        .await
-        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
-
-    if matches!(
-        status.status,
-        RentalStatus::Terminated | RentalStatus::Failed
-    ) {
-        cache.remove_rental(rental_id);
-        cache.save().await?;
-        return Err(CliError::not_found(format!(
-            "Rental {} is no longer active (status: {:?})",
-            rental_id, status.status
-        ))
-        .with_suggestion("Run 'basilica ps' to see currently active rentals"));
-    }
-
-    Ok(())
-}
 
 fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result<String> {
     let path = key_path.as_ref().unwrap_or(&config.ssh.key_path);
