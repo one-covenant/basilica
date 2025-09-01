@@ -89,28 +89,67 @@ impl BinaryValidator {
         );
         let start_time = std::time::Instant::now();
 
-        let output = tokio::time::timeout(timeout_duration, command.output())
-            .await
-            .map_err(|_| {
+        let child = command.spawn().map_err(|e| {
+            error!(
+                "[EVAL_FLOW] Failed to spawn validator binary process: {}",
+                e
+            );
+            anyhow::anyhow!("Failed to spawn validator binary: {}", e)
+        })?;
+
+        let child_pid = child.id();
+
+        let output = match tokio::time::timeout(timeout_duration, child.wait_with_output()).await {
+            Ok(Ok(output)) => output,
+            Ok(Err(e)) => {
+                error!(
+                    ssh_host = %ssh_details.host,
+                    "[EVAL_FLOW] Failed to wait for validator binary process: {}",
+                    e
+                );
+                return Err(anyhow::anyhow!(
+                    "Failed to wait for validator binary: {}",
+                    e
+                ));
+            }
+            Err(_) => {
                 error!(
                     ssh_host = %ssh_details.host,
                     ssh_port = ssh_details.port,
                     ssh_user = %ssh_details.username,
-                    "[EVAL_FLOW] Validator binary execution timed out after {}s",
+                    "[EVAL_FLOW] Validator binary execution timed out after {}s, killing process",
                     timeout_duration.as_secs()
                 );
-                anyhow::anyhow!(
+
+                // Kill the process on timeout
+                if let Some(pid) = child_pid {
+                    let kill_result = std::process::Command::new("kill")
+                        .arg("-9")
+                        .arg(pid.to_string())
+                        .output();
+
+                    match kill_result {
+                        Ok(output) if output.status.success() => {
+                            info!("[EVAL_FLOW] Successfully killed timed out validator binary process {}", pid);
+                        }
+                        Ok(_) => {
+                            warn!("[EVAL_FLOW] Kill command failed for process {}", pid);
+                        }
+                        Err(e) => {
+                            warn!(
+                                "[EVAL_FLOW] Failed to execute kill command for process {}: {}",
+                                pid, e
+                            );
+                        }
+                    }
+                }
+
+                return Err(anyhow::anyhow!(
                     "Validator binary execution timeout after {}s",
                     timeout_duration.as_secs()
-                )
-            })?
-            .map_err(|e| {
-                error!(
-                    "[EVAL_FLOW] Failed to execute validator binary process: {}",
-                    e
-                );
-                anyhow::anyhow!("Failed to execute validator binary: {}", e)
-            })?;
+                ));
+            }
+        };
 
         let execution_time = start_time.elapsed();
         info!(

@@ -155,7 +155,11 @@ impl StandardSshClient {
         };
 
         let known_hosts = std::env::var("HOME")
-            .map(|home| std::path::PathBuf::from(home).join(".ssh").join("known_hosts"))
+            .map(|home| {
+                std::path::PathBuf::from(home)
+                    .join(".ssh")
+                    .join("known_hosts")
+            })
             .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/known_hosts"));
 
         // Check if host key already exists
