@@ -154,13 +154,11 @@ impl StandardSshClient {
             format!("[{}]:{}", details.host, details.port)
         };
 
-        let known_hosts = std::env::var("HOME")
-            .map(|home| {
-                std::path::PathBuf::from(home)
-                    .join(".ssh")
-                    .join("known_hosts")
-            })
-            .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/known_hosts"));
+        let home = std::env::var_os("HOME")
+            .ok_or_else(|| anyhow::anyhow!("$HOME not set; cannot resolve known_hosts path"))?;
+        let known_hosts = std::path::PathBuf::from(home)
+            .join(".ssh")
+            .join("known_hosts");
 
         // Check if host key already exists
         if known_hosts.exists() {
