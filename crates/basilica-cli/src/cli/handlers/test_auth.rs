@@ -1,5 +1,6 @@
 //! Test authentication token functionality
 
+use crate::auth::{OAuthFlow, TokenStore};
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
@@ -181,11 +182,90 @@ fn decode_jwt_scopes(token: &str) -> Option<Vec<String>> {
 }
 
 /// Test the authentication token by calling Auth0's /userinfo endpoint
-pub async fn handle_test_auth(config: &CliConfig, no_auth: bool) -> Result<()> {
+pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
     println!("Testing authentication token...\n");
 
-    // Get the authenticated client
-    let client = create_authenticated_client(config, no_auth).await?;
+    // First, test token refresh functionality
+    println!("Testing token refresh capability...");
+    println!("──────────────────────────────────\n");
+
+    let token_store = TokenStore::new().map_err(|e| CliError::internal(e.to_string()))?;
+
+    // Get current tokens to test refresh
+    let tokens = token_store
+        .retrieve("basilica-cli")
+        .await
+        .map_err(|e| CliError::internal(format!("Failed to retrieve tokens: {}", e)))?
+        .ok_or_else(|| {
+            CliError::internal("No authentication tokens found. Please run 'basilica login' first")
+        })?;
+
+    // Show current token status
+    println!("Current token status:");
+    if tokens.is_expired() {
+        println!("  ⚠️  Token is EXPIRED");
+    } else if tokens.needs_refresh() {
+        println!("  ⚠️  Token NEEDS REFRESH (expires within 5 minutes)");
+    } else {
+        println!("  ✅ Token is VALID");
+    }
+
+    // Show time until expiry
+    if let Some(duration) = tokens.time_until_expiry() {
+        let minutes = duration.as_secs() / 60;
+        let seconds = duration.as_secs() % 60;
+        if minutes > 0 {
+            println!("  ⏱️  Expires in: {} minutes {} seconds", minutes, seconds);
+        } else {
+            println!("  ⏱️  Expires in: {} seconds", seconds);
+        }
+    }
+
+    // Test refresh if we have a refresh token
+    if let Some(refresh_token) = &tokens.refresh_token {
+        println!("\nAttempting to refresh token (even if not expired)...");
+
+        let auth_config = crate::config::create_auth_config_with_port(0);
+        let oauth_flow = OAuthFlow::new(auth_config);
+
+        match oauth_flow.refresh_access_token(refresh_token).await {
+            Ok(new_tokens) => {
+                println!("  ✅ Token refresh SUCCESSFUL!");
+
+                // Store the new tokens
+                if let Err(e) = token_store.store("basilica-cli", &new_tokens).await {
+                    println!("  ⚠️  Warning: Failed to store refreshed tokens: {}", e);
+                }
+
+                // Show new expiry time
+                if let Some(duration) = new_tokens.time_until_expiry() {
+                    let minutes = duration.as_secs() / 60;
+                    if minutes > 0 {
+                        println!("  ⏱️  New expiry: {} minutes from now", minutes);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("  ❌ Token refresh FAILED: {}", e);
+                println!("     Continuing with existing token...");
+            }
+        }
+    } else {
+        println!("\n  ⚠️  No refresh token available (cannot test refresh)");
+        println!("     This usually means one of:");
+        println!("     1. Auth0 API needs 'Allow Offline Access' enabled");
+        println!("     2. You need to re-authenticate after the setting is enabled");
+        println!("\n  ℹ️  To fix this:");
+        println!("     1. Go to Auth0 Dashboard → APIs → Your API → Settings");
+        println!("     2. Enable 'Allow Offline Access' toggle");
+        println!("     3. Run 'basilica logout' then 'basilica login' again");
+    }
+
+    println!("\n──────────────────────────────────");
+    println!("Testing token validity with Auth0...\n");
+
+    // Get the authenticated client (will use refreshed token if available)
+    let client = create_authenticated_client(config).await?;
 
     // Use Auth0 domain from constants
     let userinfo_url = format!("https://{}/userinfo", basilica_common::auth0_domain());
@@ -245,6 +325,12 @@ pub async fn handle_test_auth(config: &CliConfig, no_auth: bool) -> Result<()> {
                     for scope in &scopes {
                         println!("  • {}", scope);
                     }
+
+                    // Check if offline_access is present
+                    if !scopes.contains(&"offline_access".to_string()) {
+                        println!("\n  ⚠️  Note: 'offline_access' scope not present in token");
+                        println!("     This is required for refresh tokens.");
+                    }
                 }
             }
             None => {
@@ -277,11 +363,11 @@ pub async fn handle_test_auth(config: &CliConfig, no_auth: bool) -> Result<()> {
 }
 
 /// Test API authentication by making a request to your Basilica API
-pub async fn handle_test_api_auth(config: &CliConfig, no_auth: bool) -> Result<()> {
+pub async fn handle_test_api_auth(config: &CliConfig) -> Result<()> {
     println!("Testing Basilica API authentication...\n");
 
     // Create authenticated client
-    let client = create_authenticated_client(config, no_auth).await?;
+    let client = create_authenticated_client(config).await?;
 
     // Try to call the health endpoint
     match client.health_check().await {

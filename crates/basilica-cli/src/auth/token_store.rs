@@ -173,11 +173,6 @@ impl TokenStore {
         Ok(metadata.services.keys().cloned().collect())
     }
 
-    /// Check if access token is expired
-    pub fn is_expired(&self, tokens: &TokenSet) -> bool {
-        tokens.is_expired()
-    }
-
     /// Check if token needs refresh (with 5 minute buffer)
     pub fn needs_refresh(&self, tokens: &TokenSet) -> bool {
         tokens.expires_within(Duration::from_secs(REFRESH_BUFFER_MINUTES * 60))

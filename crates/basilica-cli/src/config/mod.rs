@@ -142,6 +142,7 @@ pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig
             "openid".to_string(),
             "profile".to_string(),
             "email".to_string(),
+            "offline_access".to_string(), // Required for refresh tokens
             "rentals:*".to_string(),      // All rental operations
             "executors:list".to_string(), // List available executors
         ],

@@ -11,49 +11,31 @@ use std::time::Duration;
 use crate::auth::{OAuthFlow, TokenStore};
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
-use basilica_api::client::{BasilicaClient, ClientBuilder, TokenRefresh};
+use basilica_api::client::{BasilicaClient, ClientBuilder};
 use tracing::{debug, warn};
 
 /// Creates an authenticated BasilicaClient with JWT
 ///
 /// This function:
-/// 1. Attempts to use JWT tokens from TokenStore (unless bypass_auth is true)
+/// 1. Attempts to use JWT tokens from TokenStore
 /// 2. Refreshes expired tokens if possible
 ///
 /// # Arguments
 /// * `config` - CLI configuration
-/// * `bypass_auth` - If true, creates client without any authentication (debug builds only)
-pub async fn create_authenticated_client(
-    config: &CliConfig,
-    bypass_auth: bool,
-) -> Result<BasilicaClient> {
+pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaClient> {
     let api_url = config.api.base_url.clone();
 
     let mut builder = ClientBuilder::default()
         .base_url(api_url)
         .timeout(Duration::from_secs(config.api.request_timeout));
 
-    if !bypass_auth {
-        // Use JWT authentication
-        if let Ok(jwt_token) = get_valid_jwt_token(config).await {
-            debug!("Using JWT authentication with automatic token refresh");
-            // Create token refresher for automatic refresh
-            let refresher = std::sync::Arc::new(CliTokenRefresher::new(config.clone()));
-            builder = builder
-                .with_bearer_token(jwt_token)
-                .with_token_refresher(refresher);
-        } else {
-            // Provide a more helpful error message using our custom error type
-            return Err(CliError::login_required());
-        }
+    // Use JWT authentication
+    if let Ok(jwt_token) = get_valid_jwt_token(config).await {
+        debug!("Using JWT authentication with pre-emptive token refresh");
+        builder = builder.with_bearer_token(jwt_token);
     } else {
-        #[cfg(debug_assertions)]
-        debug!("Authentication bypassed (debug mode)");
-        #[cfg(not(debug_assertions))]
-        {
-            // This should never happen in release builds
-            unreachable!("bypass_auth should always be false in release builds");
-        }
+        // Provide a more helpful error message using our custom error type
+        return Err(CliError::login_required());
     }
 
     builder
@@ -61,16 +43,15 @@ pub async fn create_authenticated_client(
         .map_err(|e| CliError::internal(e.to_string()))
 }
 
-/// Gets a stored JWT token (without pre-emptive refresh)
+/// Gets a valid JWT token with pre-emptive refresh
 ///
-/// This function now returns the stored token as-is, letting the BasilicaClient
-/// handle automatic refresh when needed. This prevents duplicate refresh attempts
-/// and simplifies the flow.
+/// This function checks if the stored token needs refresh and refreshes it
+/// before returning, ensuring the API client always gets a valid token.
 async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
     let token_store = TokenStore::new().map_err(|e| CliError::internal(e.to_string()))?;
 
     // Try to get stored tokens
-    let tokens = token_store
+    let mut tokens = token_store
         .retrieve("basilica-cli")
         .await
         .map_err(|e| anyhow::anyhow!("Failed to retrieve authentication tokens: {}", e))?
@@ -80,74 +61,33 @@ async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
             )
         })?;
 
-    // Return the token as-is - the client will handle refresh if needed
-    Ok(tokens.access_token)
-}
+    if tokens.needs_refresh() {
+        debug!("Token needs refresh, attempting to refresh pre-emptively");
 
-/// CLI-specific token refresher that uses stored OAuth credentials
-pub struct CliTokenRefresher;
-
-impl CliTokenRefresher {
-    pub fn new(_config: CliConfig) -> Self {
-        Self
-    }
-}
-
-#[async_trait::async_trait]
-impl TokenRefresh for CliTokenRefresher {
-    async fn refresh_token(&self, expired_token: &str) -> basilica_api::error::Result<String> {
-        debug!("CliTokenRefresher: Attempting to refresh expired token");
-
-        let token_store =
-            TokenStore::new().map_err(|e| basilica_api::error::ApiError::Internal {
-                message: format!("Failed to access token store: {}", e),
-            })?;
-
-        // Try to get stored tokens to get the refresh token
-        let tokens = token_store
-            .retrieve("basilica-cli")
-            .await
-            .map_err(|e| basilica_api::error::ApiError::Authentication {
-                message: format!("No stored tokens found: {}", e),
-            })?
-            .ok_or_else(|| basilica_api::error::ApiError::Authentication {
-                message: "No stored tokens found".to_string(),
-            })?;
-
-        // Verify the expired token matches what we have stored
-        if tokens.access_token != expired_token {
-            return Err(basilica_api::error::ApiError::Authentication {
-                message: "Token mismatch - cannot refresh".to_string(),
-            });
-        }
-
-        // Try to refresh if we have a refresh token
         if let Some(refresh_token) = &tokens.refresh_token {
             let auth_config = crate::config::create_auth_config_with_port(0);
             let oauth_flow = OAuthFlow::new(auth_config);
 
             match oauth_flow.refresh_access_token(refresh_token).await {
                 Ok(new_tokens) => {
-                    debug!("CliTokenRefresher: Successfully refreshed tokens");
+                    debug!("Successfully refreshed tokens pre-emptively");
                     // Store new tokens
                     if let Err(e) = token_store.store("basilica-cli", &new_tokens).await {
                         warn!("Failed to store refreshed tokens: {}", e);
                     }
-                    Ok(new_tokens.access_token)
+                    tokens = new_tokens;
                 }
                 Err(e) => {
-                    debug!("CliTokenRefresher: Token refresh failed: {}", e);
-                    Err(basilica_api::error::ApiError::Authentication {
-                        message: format!("Token refresh failed: {}", e),
-                    })
+                    warn!("Failed to refresh token pre-emptively: {}", e);
+                    // Continue with existing token - it might still work
                 }
             }
         } else {
-            Err(basilica_api::error::ApiError::Authentication {
-                message: "No refresh token available".to_string(),
-            })
+            debug!("No refresh token available for pre-emptive refresh");
         }
     }
+
+    Ok(tokens.access_token)
 }
 
 /// Checks if the user is authenticated (has valid tokens)

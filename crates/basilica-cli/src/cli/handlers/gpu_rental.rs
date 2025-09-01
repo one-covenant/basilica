@@ -28,13 +28,8 @@ use tabled::{settings::Style, Table, Tabled};
 use tracing::debug;
 
 /// Handle the `ls` command - list available executors for rental
-pub async fn handle_ls(
-    filters: ListFilters,
-    json: bool,
-    config: &CliConfig,
-    no_auth: bool,
-) -> Result<()> {
-    let api_client = create_authenticated_client(config, no_auth).await?;
+pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> Result<()> {
+    let api_client = create_authenticated_client(config).await?;
 
     // Build query from filters
     let query = ListAvailableExecutorsQuery {
@@ -150,9 +145,8 @@ pub async fn handle_up(
     target: Option<String>,
     options: UpOptions,
     config: &CliConfig,
-    no_auth: bool,
 ) -> Result<()> {
-    let api_client = create_authenticated_client(config, no_auth).await?;
+    let api_client = create_authenticated_client(config).await?;
 
     // If no target provided, fetch available executors and prompt for selection
     let (target, executor_details) = if let Some(t) = target {
@@ -361,13 +355,8 @@ pub async fn handle_up(
 }
 
 /// Handle the `ps` command - list active rentals
-pub async fn handle_ps(
-    filters: PsFilters,
-    json: bool,
-    config: &CliConfig,
-    no_auth: bool,
-) -> Result<()> {
-    let api_client = create_authenticated_client(config, no_auth).await?;
+pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Result<()> {
+    let api_client = create_authenticated_client(config).await?;
 
     let spinner = create_spinner("Loading active rentals...");
 
@@ -398,13 +387,8 @@ pub async fn handle_ps(
 }
 
 /// Handle the `status` command - check rental status
-pub async fn handle_status(
-    target: Option<String>,
-    json: bool,
-    config: &CliConfig,
-    no_auth: bool,
-) -> Result<()> {
-    let api_client = create_authenticated_client(config, no_auth).await?;
+pub async fn handle_status(target: Option<String>, json: bool, config: &CliConfig) -> Result<()> {
+    let api_client = create_authenticated_client(config).await?;
 
     // Resolve target rental (fetch and prompt if not provided)
     let target = resolve_target_rental(target, &api_client, false).await?;
@@ -443,10 +427,9 @@ pub async fn handle_logs(
     target: Option<String>,
     options: LogsOptions,
     config: &CliConfig,
-    no_auth: bool,
 ) -> Result<()> {
     // Create API client
-    let api_client = create_authenticated_client(config, no_auth).await?;
+    let api_client = create_authenticated_client(config).await?;
 
     // Resolve target rental (fetch and prompt if not provided)
     let target = resolve_target_rental(target, &api_client, false).await?;
@@ -543,8 +526,8 @@ pub async fn handle_logs(
 }
 
 /// Handle the `down` command - terminate rental
-pub async fn handle_down(target: Option<String>, config: &CliConfig, no_auth: bool) -> Result<()> {
-    let api_client = create_authenticated_client(config, no_auth).await?;
+pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<()> {
+    let api_client = create_authenticated_client(config).await?;
 
     // Resolve target rental (fetch and prompt if not provided)
     let rental_id = resolve_target_rental(target, &api_client, false).await?;
@@ -582,10 +565,9 @@ pub async fn handle_exec(
     target: Option<String>,
     command: String,
     config: &CliConfig,
-    no_auth: bool,
 ) -> Result<()> {
     // Create API client to verify rental status
-    let api_client = create_authenticated_client(config, no_auth).await?;
+    let api_client = create_authenticated_client(config).await?;
 
     // Load rental cache first to see what's available for SSH
     let mut cache = RentalCache::load().await?;
@@ -619,10 +601,9 @@ pub async fn handle_ssh(
     target: Option<String>,
     options: crate::cli::commands::SshOptions,
     config: &CliConfig,
-    no_auth: bool,
 ) -> Result<()> {
     // Create API client to verify rental status
-    let api_client = create_authenticated_client(config, no_auth).await?;
+    let api_client = create_authenticated_client(config).await?;
 
     // Load rental cache first to see what's available for SSH
     let mut cache = RentalCache::load().await?;
@@ -656,16 +637,11 @@ pub async fn handle_ssh(
 }
 
 /// Handle the `cp` command - copy files via SSH
-pub async fn handle_cp(
-    source: String,
-    destination: String,
-    config: &CliConfig,
-    no_auth: bool,
-) -> Result<()> {
+pub async fn handle_cp(source: String, destination: String, config: &CliConfig) -> Result<()> {
     debug!("Copying files from {} to {}", source, destination);
 
     // Create API client
-    let api_client = create_authenticated_client(config, no_auth).await?;
+    let api_client = create_authenticated_client(config).await?;
 
     // Load rental cache
     let mut cache = RentalCache::load().await?;
