@@ -951,16 +951,70 @@ pub async fn handle_cp(
 
 /// Poll rental status using ServiceClient - updated version for new architecture
 async fn poll_rental_status_with_service(
-    _rental_id: &str,
-    _service_client: &basilica_api::services::client::ServiceClient,
+    rental_id: &str,
+    service_client: &basilica_api::services::client::ServiceClient,
 ) -> Result<bool> {
-    // For now, since the ServiceClient doesn't yet have rental status polling,
-    // we'll just do a simple wait and return true
-    // TODO: Implement actual rental status polling once the rental service
-    // exposes the get_rental_status functionality
+    const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
+    const INITIAL_INTERVAL: Duration = Duration::from_secs(2);
+    const MAX_INTERVAL: Duration = Duration::from_secs(10);
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
-    Ok(true) // Assume rental is ready after initial wait
+    let spinner = create_spinner("Waiting for rental to become active...");
+    let start_time = std::time::Instant::now();
+    let mut interval = INITIAL_INTERVAL;
+    let mut attempt = 0;
+
+    loop {
+        // Check if we've exceeded the maximum wait time
+        if start_time.elapsed() > MAX_WAIT_TIME {
+            complete_spinner_error(spinner, "Timeout waiting for rental to become active");
+            return Ok(false);
+        }
+
+        attempt += 1;
+        spinner.set_message(format!("Checking rental status... (attempt {})", attempt));
+
+        // Check rental status using ServiceClient
+        match service_client.get_rental_status(rental_id).await {
+            Ok(status) => {
+                match status.status {
+                    RentalStatus::Active => {
+                        complete_spinner_and_clear(spinner);
+                        return Ok(true);
+                    }
+                    RentalStatus::Failed => {
+                        complete_spinner_error(spinner, "Rental failed to start");
+                        return Err(CliError::rental_failed(
+                            "Rental failed during initialization",
+                        ));
+                    }
+                    RentalStatus::Terminated => {
+                        complete_spinner_error(spinner, "Rental was terminated");
+                        return Err(CliError::rental_failed(
+                            "Rental was terminated before becoming active",
+                        ));
+                    }
+                    RentalStatus::Pending => {
+                        // Still pending, continue polling
+                        spinner.set_message(format!(
+                            "Rental is pending... ({}s elapsed)",
+                            start_time.elapsed().as_secs()
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                // Log the error but continue polling
+                debug!("Error checking rental status: {}", e);
+                spinner.set_message("Retrying status check...");
+            }
+        }
+
+        // Wait before next check with exponential backoff
+        tokio::time::sleep(interval).await;
+
+        // Increase interval up to maximum
+        interval = std::cmp::min(interval * 2, MAX_INTERVAL);
+    }
 }
 
 /// Display SSH connection instructions after rental creation
