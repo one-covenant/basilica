@@ -10,31 +10,31 @@ use std::fmt;
 pub struct Deployment {
     /// Unique deployment identifier
     pub id: String,
-    
+
     /// Current deployment status
     pub status: DeploymentStatus,
-    
+
     /// SSH access information if available
     pub ssh_access: Option<crate::models::ssh::SshAccess>,
-    
+
     /// Executor ID where deployed
     pub executor_id: String,
-    
+
     /// Container image used
     pub image: String,
-    
+
     /// Resource allocation
     pub resources: crate::models::executor::ResourceRequirements,
-    
+
     /// Creation timestamp
     pub created_at: DateTime<Utc>,
-    
+
     /// Last update timestamp
     pub updated_at: DateTime<Utc>,
-    
+
     /// Container ID
     pub container_id: Option<String>,
-    
+
     /// Container name
     pub container_name: Option<String>,
 }
@@ -44,32 +44,32 @@ pub struct Deployment {
 pub struct DeploymentConfig {
     /// Target executor ID
     pub executor_id: String,
-    
+
     /// Container image to deploy
     pub image: String,
-    
+
     /// SSH public key for access
     pub ssh_key: String,
-    
+
     /// Resource requirements
     pub resources: crate::models::executor::ResourceRequirements,
-    
+
     /// Environment variables
     #[serde(default)]
     pub environment: HashMap<String, String>,
-    
+
     /// Port mappings
     #[serde(default)]
     pub ports: Vec<PortMapping>,
-    
+
     /// Volume mounts
     #[serde(default)]
     pub volumes: Vec<VolumeMount>,
-    
+
     /// Command to run
     #[serde(default)]
     pub command: Vec<String>,
-    
+
     /// Disable SSH access
     #[serde(default)]
     pub no_ssh: bool,
@@ -102,19 +102,19 @@ pub struct VolumeMount {
 pub enum DeploymentStatus {
     /// Deployment is being prepared
     Pending,
-    
+
     /// Deployment is starting
     Starting,
-    
+
     /// Deployment is running
     Running,
-    
+
     /// Deployment is stopping
     Stopping,
-    
+
     /// Deployment has stopped
     Stopped,
-    
+
     /// Deployment failed
     Failed(String),
 }
@@ -137,16 +137,16 @@ impl fmt::Display for DeploymentStatus {
 pub struct DeploymentFilters {
     /// Filter by status
     pub status: Option<DeploymentStatus>,
-    
+
     /// Filter by executor ID
     pub executor_id: Option<String>,
-    
+
     /// Filter by GPU type
     pub gpu_type: Option<String>,
-    
+
     /// Minimum GPU count
     pub min_gpu_count: Option<u32>,
-    
+
     /// Maximum age in seconds
     pub max_age_seconds: Option<u64>,
 }
@@ -158,15 +158,15 @@ impl DeploymentConfig {
         if self.image.is_empty() {
             return Err("Image name cannot be empty".to_string());
         }
-        
+
         // Validate SSH key
         if !self.no_ssh && self.ssh_key.is_empty() {
             return Err("SSH key is required when SSH is enabled".to_string());
         }
-        
+
         // Validate resources
         self.resources.validate()?;
-        
+
         // Validate ports
         for port in &self.ports {
             if port.container_port == 0 || port.host_port == 0 {
@@ -176,7 +176,7 @@ impl DeploymentConfig {
                 return Err("Port numbers must be less than 65536".to_string());
             }
         }
-        
+
         Ok(())
     }
 }
@@ -186,12 +186,12 @@ impl DeploymentStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Stopped | Self::Failed(_))
     }
-    
+
     /// Check if the deployment is active
     pub fn is_active(&self) -> bool {
         matches!(self, Self::Running)
     }
-    
+
     /// Check if the deployment is transitioning
     pub fn is_transitioning(&self) -> bool {
         matches!(self, Self::Pending | Self::Starting | Self::Stopping)
@@ -216,7 +216,7 @@ impl From<basilica_validator::rental::types::RentalState> for DeploymentStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_deployment_status_display() {
         assert_eq!(DeploymentStatus::Pending.to_string(), "Pending");
@@ -226,20 +226,20 @@ mod tests {
             "Failed: Test error"
         );
     }
-    
+
     #[test]
     fn test_deployment_status_states() {
         assert!(DeploymentStatus::Stopped.is_terminal());
         assert!(DeploymentStatus::Failed("error".to_string()).is_terminal());
         assert!(!DeploymentStatus::Running.is_terminal());
-        
+
         assert!(DeploymentStatus::Running.is_active());
         assert!(!DeploymentStatus::Pending.is_active());
-        
+
         assert!(DeploymentStatus::Starting.is_transitioning());
         assert!(!DeploymentStatus::Running.is_transitioning());
     }
-    
+
     #[test]
     fn test_deployment_config_validation() {
         let mut config = DeploymentConfig {
@@ -253,20 +253,20 @@ mod tests {
             command: vec![],
             no_ssh: false,
         };
-        
+
         assert!(config.validate().is_ok());
-        
+
         // Test empty image
         config.image = "".to_string();
         assert!(config.validate().is_err());
         config.image = "nginx:latest".to_string();
-        
+
         // Test SSH key requirement
         config.ssh_key = "".to_string();
         assert!(config.validate().is_err());
         config.no_ssh = true;
         assert!(config.validate().is_ok());
-        
+
         // Test invalid ports
         config.ports.push(PortMapping {
             container_port: 0,
@@ -274,10 +274,10 @@ mod tests {
             protocol: "tcp".to_string(),
         });
         assert!(config.validate().is_err());
-        
+
         config.ports[0].container_port = 80;
         assert!(config.validate().is_ok());
-        
+
         config.ports[0].host_port = 70000;
         assert!(config.validate().is_err());
     }
