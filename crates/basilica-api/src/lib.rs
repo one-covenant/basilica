@@ -15,6 +15,7 @@
 pub mod api;
 pub mod config;
 pub mod error;
+pub mod models;
 pub mod server;
 
 // Client module (conditionally compiled)
