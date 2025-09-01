@@ -17,6 +17,7 @@ pub mod config;
 pub mod error;
 pub mod models;
 pub mod server;
+pub mod services;
 
 // Client module (conditionally compiled)
 #[cfg(feature = "client")]
