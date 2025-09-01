@@ -335,6 +335,44 @@ impl ServiceClient {
             .map(|ae| ae.executor)
             .collect())
     }
+
+    /// Get rental status
+    pub async fn get_rental_status(
+        &self,
+        rental_id: &str,
+    ) -> Result<basilica_validator::api::types::RentalStatusResponse, ServiceClientError> {
+        let token = self.get_token().await?;
+        
+        self.rental_service
+            .get_rental_status(&token, rental_id)
+            .await
+            .map_err(|e| ServiceClientError::RentalError(format!("{}", e)))
+    }
+
+    /// Stop a rental
+    pub async fn stop_rental(&self, rental_id: &str) -> Result<(), ServiceClientError> {
+        let token = self.get_token().await?;
+        
+        self.rental_service
+            .stop_rental(&token, rental_id)
+            .await
+            .map_err(|e| ServiceClientError::RentalError(format!("{}", e)))
+    }
+
+    /// Get rental logs
+    pub async fn get_rental_logs(
+        &self,
+        rental_id: &str,
+        follow: bool,
+        tail: Option<usize>,
+    ) -> Result<reqwest::Response, ServiceClientError> {
+        let token = self.get_token().await?;
+        
+        self.rental_service
+            .get_rental_logs(&token, rental_id, follow, tail)
+            .await
+            .map_err(|e| ServiceClientError::RentalError(format!("{}", e)))
+    }
 }
 
 /// Errors that can occur when using the service client

@@ -34,6 +34,12 @@ pub enum RentalError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+    #[error("Network error: {0}")]
+    NetworkError(String),
+    #[error("API error: {0}")]
+    ApiError(String),
+    #[error("Not supported: {0}")]
+    NotSupported(String),
 }
 
 /// Request to create a new rental
@@ -119,6 +125,25 @@ pub trait RentalService: Send + Sync {
 
     /// Detach a deployment from a rental
     async fn detach_deployment(&self, rental_id: &str) -> Result<(), RentalError>;
+
+    /// Get rental status
+    async fn get_rental_status(
+        &self,
+        token: &str,
+        rental_id: &str,
+    ) -> Result<basilica_validator::api::types::RentalStatusResponse, RentalError>;
+
+    /// Stop (terminate) a rental
+    async fn stop_rental(&self, token: &str, rental_id: &str) -> Result<(), RentalError>;
+
+    /// Get rental logs (returns a stream URL or handle)
+    async fn get_rental_logs(
+        &self,
+        token: &str,
+        rental_id: &str,
+        follow: bool,
+        tail: Option<usize>,
+    ) -> Result<reqwest::Response, RentalError>;
 }
 
 /// Default implementation of rental service using validator API
@@ -128,6 +153,8 @@ pub struct DefaultRentalService {
     ssh_service: Arc<dyn SshService>,
     cache: Arc<CacheService>,
     validator_client: ValidatorClient,
+    api_base_url: String,
+    http_client: reqwest::Client,
 }
 
 impl DefaultRentalService {
@@ -138,8 +165,13 @@ impl DefaultRentalService {
         cache: Arc<CacheService>,
         base_url: String,
     ) -> Self {
-        let validator_client = ValidatorClient::new(base_url, Duration::from_secs(30))
+        let validator_client = ValidatorClient::new(base_url.clone(), Duration::from_secs(30))
             .expect("Failed to create validator client");
+
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("Failed to create HTTP client");
 
         Self {
             auth_service,
@@ -147,6 +179,8 @@ impl DefaultRentalService {
             ssh_service,
             cache,
             validator_client,
+            api_base_url: base_url,
+            http_client,
         }
     }
 
@@ -418,6 +452,101 @@ impl RentalService for DefaultRentalService {
         // TODO: Add deployment detachment to validator API if needed
         Ok(())
     }
+
+    async fn get_rental_status(
+        &self,
+        token: &str,
+        rental_id: &str,
+    ) -> Result<basilica_validator::api::types::RentalStatusResponse, RentalError> {
+        // Validate token
+        let _user_id = self.validate_token(token).await?;
+
+        // Make request to validator API
+        let url = format!("{}/api/v1/rentals/{}/status", self.api_base_url, rental_id);
+        
+        let response = self
+            .http_client
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| RentalError::NetworkError(format!("Failed to get rental status: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(RentalError::ApiError(format!(
+                "Failed to get rental status: {} - {}",
+                status, error_text
+            )));
+        }
+
+        response
+            .json()
+            .await
+            .map_err(|e| RentalError::ApiError(format!("Failed to parse rental status: {}", e)))
+    }
+
+    async fn stop_rental(&self, token: &str, rental_id: &str) -> Result<(), RentalError> {
+        // Validate token
+        let _user_id = self.validate_token(token).await?;
+
+        // Make request to validator API to stop rental
+        let url = format!("{}/api/v1/rentals/{}/stop", self.api_base_url, rental_id);
+        
+        let response = self
+            .http_client
+            .post(&url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| RentalError::NetworkError(format!("Failed to stop rental: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(RentalError::ApiError(format!(
+                "Failed to stop rental: {} - {}",
+                status, error_text
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn get_rental_logs(
+        &self,
+        token: &str,
+        rental_id: &str,
+        follow: bool,
+        tail: Option<usize>,
+    ) -> Result<reqwest::Response, RentalError> {
+        // Validate token
+        let _user_id = self.validate_token(token).await?;
+
+        // Build query parameters
+        let mut query = vec![];
+        if follow {
+            query.push(("follow", "true".to_string()));
+        }
+        if let Some(tail_lines) = tail {
+            query.push(("tail", tail_lines.to_string()));
+        }
+
+        // Make request to validator API for logs
+        let url = format!("{}/api/v1/rentals/{}/logs", self.api_base_url, rental_id);
+        
+        let mut request = self.http_client.get(&url).bearer_auth(token);
+        
+        if !query.is_empty() {
+            request = request.query(&query);
+        }
+
+        request
+            .send()
+            .await
+            .map_err(|e| RentalError::NetworkError(format!("Failed to get rental logs: {}", e)))
+    }
 }
 
 /// Mock implementation for testing
@@ -577,6 +706,52 @@ impl RentalService for MockRentalService {
 
         rental.deployment_id = None;
         Ok(())
+    }
+
+    async fn get_rental_status(
+        &self,
+        _token: &str,
+        rental_id: &str,
+    ) -> Result<basilica_validator::api::types::RentalStatusResponse, RentalError> {
+        let rentals = self.rentals.read().await;
+        let rental = rentals
+            .get(rental_id)
+            .ok_or_else(|| RentalError::NotFound(rental_id.to_string()))?;
+
+        // Create a mock status response
+        Ok(basilica_validator::api::types::RentalStatusResponse {
+            rental_id: rental.id.clone(),
+            status: basilica_validator::api::types::RentalStatus::Active,
+            executor: basilica_validator::api::types::ExecutorDetails {
+                id: rental.executor_id.clone(),
+                gpu_specs: vec![],
+                cpu_specs: basilica_validator::api::types::CpuSpec {
+                    model: "Mock CPU".to_string(),
+                    cores: 4,
+                    memory_gb: 32,
+                },
+                location: None,
+            },
+            created_at: rental.created_at,
+            updated_at: rental.updated_at,
+        })
+    }
+
+    async fn stop_rental(&self, _token: &str, rental_id: &str) -> Result<(), RentalError> {
+        // Just call terminate_rental
+        self.terminate_rental(_token, rental_id).await
+    }
+
+    async fn get_rental_logs(
+        &self,
+        _token: &str,
+        _rental_id: &str,
+        _follow: bool,
+        _tail: Option<usize>,
+    ) -> Result<reqwest::Response, RentalError> {
+        // Mock implementation - return a fake response
+        // In a real test, you'd mock the HTTP response properly
+        Err(RentalError::NotSupported("Mock service doesn't support log streaming".to_string()))
     }
 }
 
