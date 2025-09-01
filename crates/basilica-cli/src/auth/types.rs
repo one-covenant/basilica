@@ -85,9 +85,9 @@ impl TokenSet {
         }
     }
 
-    /// Check if the token needs refresh (expires within 5 minutes)
+    /// Check if the token needs refresh (expires within 60 minutes)
     pub fn needs_refresh(&self) -> bool {
-        self.expires_within(std::time::Duration::from_secs(300))
+        self.expires_within(std::time::Duration::from_secs(60 * 60))
     }
 
     /// Check if the token expires within the specified duration

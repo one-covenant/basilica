@@ -51,16 +51,6 @@ pub struct Args {
     #[arg(long, global = true)]
     pub json: bool,
 
-    /// Bypass OAuth authentication (debug builds only, for testing)
-    #[cfg(debug_assertions)]
-    #[arg(long, global = true, hide = true)]
-    pub no_auth: bool,
-
-    /// Placeholder for release builds to maintain struct compatibility
-    #[cfg(not(debug_assertions))]
-    #[arg(skip)]
-    pub no_auth: bool,
-
     /// Subcommand to execute
     #[command(subcommand)]
     pub command: Commands,
@@ -85,41 +75,39 @@ impl Args {
             #[cfg(debug_assertions)]
             Commands::TestAuth { api } => {
                 if api {
-                    handlers::test_auth::handle_test_api_auth(&config, self.no_auth).await
+                    handlers::test_auth::handle_test_api_auth(&config).await
                 } else {
-                    handlers::test_auth::handle_test_auth(&config, self.no_auth).await
+                    handlers::test_auth::handle_test_auth(&config).await
                 }
             }
 
             // GPU rental operations
             Commands::Ls { filters } => {
-                handlers::gpu_rental::handle_ls(filters, self.json, &config, self.no_auth).await
+                handlers::gpu_rental::handle_ls(filters, self.json, &config).await
             }
             Commands::Up { target, options } => {
-                handlers::gpu_rental::handle_up(target, options, &config, self.no_auth).await
+                handlers::gpu_rental::handle_up(target, options, &config).await
             }
             Commands::Ps { filters } => {
-                handlers::gpu_rental::handle_ps(filters, self.json, &config, self.no_auth).await
+                handlers::gpu_rental::handle_ps(filters, self.json, &config).await
             }
             Commands::Status { target } => {
-                handlers::gpu_rental::handle_status(target, self.json, &config, self.no_auth).await
+                handlers::gpu_rental::handle_status(target, self.json, &config).await
             }
             Commands::Logs { target, options } => {
-                handlers::gpu_rental::handle_logs(target, options, &config, self.no_auth).await
+                handlers::gpu_rental::handle_logs(target, options, &config).await
             }
-            Commands::Down { target } => {
-                handlers::gpu_rental::handle_down(target, &config, self.no_auth).await
-            }
+            Commands::Down { target } => handlers::gpu_rental::handle_down(target, &config).await,
             Commands::Exec { command, target } => {
-                handlers::gpu_rental::handle_exec(target, command, &config, self.no_auth).await
+                handlers::gpu_rental::handle_exec(target, command, &config).await
             }
             Commands::Ssh { target, options } => {
-                handlers::gpu_rental::handle_ssh(target, options, &config, self.no_auth).await
+                handlers::gpu_rental::handle_ssh(target, options, &config).await
             }
             Commands::Cp {
                 source,
                 destination,
-            } => handlers::gpu_rental::handle_cp(source, destination, &config, self.no_auth).await,
+            } => handlers::gpu_rental::handle_cp(source, destination, &config).await,
 
             // Network component delegation
             Commands::Validator { args } => handlers::external::handle_validator(args),
