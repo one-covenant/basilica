@@ -6,11 +6,12 @@
 pub mod auth;
 pub mod cache;
 pub mod executor;
+pub mod ssh;
 
 // Future services to be added:
 // pub mod deployment;
-// pub mod ssh;
 
 pub use auth::{AuthService, DefaultAuthService};
 pub use cache::{CacheService, CacheStorage};
 pub use executor::{ExecutorService, MockExecutorService, AvailableExecutor, ListExecutorsResponse};
+pub use ssh::{SshService, DefaultSshService, MockSshService, SshServiceConfig};

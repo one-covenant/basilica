@@ -181,10 +181,91 @@ impl PortForward {
     }
 }
 
+/// SSH key information
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SshKey {
+    /// The full public key string
+    pub public_key: String,
+    
+    /// Key type (e.g., "ed25519", "rsa")
+    pub key_type: String,
+    
+    /// Key fingerprint
+    pub fingerprint: String,
+    
+    /// Optional comment
+    pub comment: Option<String>,
+}
+
+impl SshKey {
+    /// Create from a public key string
+    pub fn from_public_key(public_key: &str) -> Result<Self, SshKeyValidationError> {
+        validate_ssh_public_key(public_key)?;
+        
+        let parts: Vec<&str> = public_key.split_whitespace().collect();
+        let key_type = parts[0].strip_prefix("ssh-").unwrap_or(parts[0]).to_string();
+        let comment = parts.get(2).map(|s| s.to_string());
+        
+        // Generate a mock fingerprint for now
+        let fingerprint = format!("SHA256:mock_{}", uuid::Uuid::new_v4());
+        
+        Ok(Self {
+            public_key: public_key.to_string(),
+            key_type,
+            fingerprint,
+            comment,
+        })
+    }
+}
+
+/// SSH key pair
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshKeyPair {
+    /// Private key content
+    pub private_key: String,
+    
+    /// Public key content
+    pub public_key: String,
+    
+    /// Key type
+    pub key_type: String,
+    
+    /// Key fingerprint
+    pub fingerprint: String,
+    
+    /// Optional comment
+    pub comment: Option<String>,
+}
+
+/// SSH key validation errors
+#[derive(Debug, thiserror::Error)]
+pub enum SshKeyValidationError {
+    #[error("Invalid key format")]
+    InvalidFormat,
+    
+    #[error("Key too short")]
+    KeyTooShort,
+    
+    #[error("Invalid algorithm")]
+    InvalidAlgorithm,
+    
+    #[error("Invalid characters in key")]
+    InvalidCharacters,
+    
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+}
+
+impl From<String> for SshKeyValidationError {
+    fn from(err: String) -> Self {
+        Self::ValidationError(err)
+    }
+}
+
 /// SSH key validation
-pub fn validate_ssh_public_key(key: &str) -> Result<(), String> {
+pub fn validate_ssh_public_key(key: &str) -> Result<(), SshKeyValidationError> {
     if key.trim().is_empty() {
-        return Err("SSH key cannot be empty".to_string());
+        return Err(SshKeyValidationError::ValidationError("SSH key cannot be empty".to_string()));
     }
 
     // Must start with a known key type
@@ -198,26 +279,26 @@ pub fn validate_ssh_public_key(key: &str) -> Result<(), String> {
     ];
 
     if !valid_prefixes.iter().any(|prefix| key.starts_with(prefix)) {
-        return Err("SSH key must start with a valid algorithm identifier".to_string());
+        return Err(SshKeyValidationError::InvalidAlgorithm);
     }
 
     // Must have at least algorithm and key data
     let parts: Vec<&str> = key.split_whitespace().collect();
     if parts.len() < 2 {
-        return Err("SSH key must contain algorithm and key data".to_string());
+        return Err(SshKeyValidationError::InvalidFormat);
     }
 
     // Basic base64 validation for the key data
     let key_data = parts[1];
     if key_data.len() < 20 {
         // Reduced minimum length for testing
-        return Err("SSH key data appears too short".to_string());
+        return Err(SshKeyValidationError::KeyTooShort);
     }
 
     // Check for valid base64 characters (allow dots for abbreviated keys in tests)
     for c in key_data.chars() {
         if !c.is_ascii_alphanumeric() && c != '+' && c != '/' && c != '=' && c != '.' {
-            return Err("SSH key contains invalid characters".to_string());
+            return Err(SshKeyValidationError::InvalidCharacters);
         }
     }
 
