@@ -38,7 +38,7 @@ impl BinaryValidator {
         );
 
         self.ssh_client
-            .pre_accept_host_key(ssh_details)
+            .ensure_host_key_available(ssh_details)
             .await
             .map_err(|e| {
                 warn!("Failed to pre-accept SSH host key: {}.", e);
