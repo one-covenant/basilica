@@ -9,16 +9,17 @@ use crate::client::create_authenticated_client; // Still needed for functions no
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::output::{
-    compress_path, json_output, print_error, print_info, print_success, table_output,
+    compress_path, json_output, print_error, print_info, print_success,
 };
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
-use basilica_api::api::types::{ListRentalsQuery, RentalStatusResponse, SshAccess}; // Still needed for functions not yet updated
+use basilica_api::api::types::{RentalStatusResponse, SshAccess}; // Still needed for functions not yet updated
 use basilica_api::models::executor::ExecutorFilters;
+use basilica_api::models::rental::RentalFilters;
 use basilica_api::services::{ServiceClient, ServiceClientConfig};
-use basilica_common::utils::{parse_env_vars, parse_port_mappings};
+// Use validator RentalStatus for functions not yet updated
 use basilica_validator::api::types::RentalStatus;
-use basilica_validator::rental::types::RentalState;
+use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use console::style;
 use reqwest::StatusCode;
 use std::path::PathBuf;
@@ -423,20 +424,32 @@ pub async fn handle_ps(
     filters: PsFilters,
     json: bool,
     config: &CliConfig,
-    no_auth: bool,
+    _no_auth: bool,
 ) -> Result<()> {
-    let api_client = create_authenticated_client(config, no_auth).await?;
+    // Create service client configuration from CLI config
+    let service_config = ServiceClientConfig {
+        auth_config: crate::cli::handlers::auth::create_auth_config_for_cli(),
+        ssh_config: Some(basilica_api::services::ssh::SshServiceConfig::default()),
+        cache_dir: Some(
+            CliConfig::data_dir()
+                .map_err(|e| CliError::internal(format!("Failed to get data dir: {}", e)))?
+                .to_string_lossy()
+                .to_string()
+        ),
+    };
 
+    let service_client = ServiceClient::new(service_config);
     let spinner = create_spinner("Loading active rentals...");
 
-    // Build query from filters - default to "active" if no status specified
-    let query = Some(ListRentalsQuery {
-        status: filters.status.or(Some(RentalState::Active)),
+    // Convert filters to rental service filters  
+    let rental_filters = RentalFilters {
+        status: filters.status.map(|s| s.into()).or(Some(basilica_api::models::rental::RentalStatus::Active)), // Default to active
         gpu_type: filters.gpu_type,
         min_gpu_count: filters.min_gpu_count,
-    });
+        ..Default::default()
+    };
 
-    let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
+    let rentals = service_client.list_rentals(rental_filters).await.map_err(|e| {
         complete_spinner_error(spinner.clone(), "Failed to load rentals");
         CliError::api_request_failed("list rentals", e.to_string())
     })?;
@@ -444,10 +457,15 @@ pub async fn handle_ps(
     complete_spinner_and_clear(spinner);
 
     if json {
-        json_output(&rentals_list)?;
+        json_output(&rentals)?;
     } else {
-        table_output::display_rental_items(&rentals_list.rentals[..])?;
-        println!("\nTotal: {} active rentals", rentals_list.rentals.len());
+        // TODO: Update table_output to work with service layer Rental type
+        // For now, convert to the expected format or create a simple display
+        println!("Active Rentals:");
+        for rental in &rentals {
+            println!("  {} - {} ({})", rental.id, rental.executor_id, rental.status);
+        }
+        println!("\nTotal: {} active rentals", rentals.len());
 
         display_ps_quick_start_commands();
     }

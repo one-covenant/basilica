@@ -1,4 +1,4 @@
-use basilica_validator::rental::types::RentalState;
+use basilica_api::models::rental::RentalState;
 use clap::{Subcommand, ValueHint};
 use std::path::PathBuf;
 
@@ -239,3 +239,4 @@ pub struct SshOptions {
     #[arg(short = 'R', long)]
     pub remote_forward: Vec<String>,
 }
+

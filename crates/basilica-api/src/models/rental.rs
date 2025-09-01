@@ -4,6 +4,35 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Rental state enum from validator - used for external APIs  
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
+pub enum RentalState {
+    Provisioning,
+    Active,
+    Stopping,
+    Stopped,
+    Failed,
+}
+
+impl fmt::Display for RentalState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl From<RentalState> for RentalStatus {
+    fn from(state: RentalState) -> Self {
+        match state {
+            RentalState::Provisioning => Self::Provisioning,
+            RentalState::Active => Self::Active,
+            RentalState::Stopping => Self::Stopping,
+            RentalState::Stopped => Self::Stopped,
+            RentalState::Failed => Self::Failed("Unknown error".to_string()),
+        }
+    }
+}
+
 /// Rental validation errors
 #[derive(Debug, thiserror::Error)]
 pub enum RentalValidationError {
