@@ -59,10 +59,7 @@ nonzero_ext = "0.3"
 
 # Caching
 moka = { version = "0.12", features = ["future"] }
-redis = { version = "0.24", features = [
-  "tokio-comp",
-  "connection-manager",
-], optional = true }
+# Redis removed - using our own cache service implementation
 
 # OpenAPI documentation
 utoipa = { version = "4.1", features = ["axum_extras", "chrono", "uuid"] }
@@ -99,11 +96,10 @@ mockall = "0.12"
 wiremock = "0.6"
 
 [features]
-default = ["server", "redis-cache"]
+default = ["server"]
 server = []
 client = []
-redis-cache = ["redis"]
-full = ["server", "client", "redis-cache"]
+full = ["server", "client"]
 
 [[bin]]
 name = "basilica-api"
