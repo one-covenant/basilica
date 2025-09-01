@@ -8,16 +8,18 @@
 //! - Integrates with basilica-validator API for real data
 
 use crate::models::executor::{
-    Executor, ExecutorDetails, ExecutorFilters, GpuSpec, CpuSpec, 
-    NetworkInfo, ResourceRequirements, ResourceUsage
+    CpuSpec, Executor, ExecutorDetails, ExecutorFilters, GpuSpec, NetworkInfo,
+    ResourceRequirements, ResourceUsage,
 };
 use crate::services::cache::CacheService;
 use async_trait::async_trait;
+use basilica_validator::api::client::ValidatorClient;
+use basilica_validator::api::types::{
+    ExecutorDetails as ValidatorExecutorDetails, ListAvailableExecutorsQuery,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use basilica_validator::api::client::ValidatorClient;
-use basilica_validator::api::types::{ListAvailableExecutorsQuery, ExecutorDetails as ValidatorExecutorDetails};
 
 /// Executor availability information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,16 +48,16 @@ pub struct ListExecutorsResponse {
 pub enum ExecutorError {
     #[error("No executors available matching requirements")]
     NoExecutorsAvailable,
-    
+
     #[error("Executor not found: {0}")]
     ExecutorNotFound(String),
-    
+
     #[error("Invalid requirements: {0}")]
     InvalidRequirements(String),
-    
+
     #[error("Cache error: {0}")]
     CacheError(String),
-    
+
     #[error("Backend error: {0}")]
     BackendError(String),
 }
@@ -68,26 +70,29 @@ pub trait ExecutorService: Send + Sync {
         &self,
         filters: Option<ExecutorFilters>,
     ) -> Result<ListExecutorsResponse, ExecutorError>;
-    
+
     /// Get a specific executor by ID
     async fn get_executor(&self, executor_id: &str) -> Result<Executor, ExecutorError>;
-    
+
     /// Find the best executor matching requirements
     async fn find_best_executor(
         &self,
         requirements: &ResourceRequirements,
     ) -> Result<AvailableExecutor, ExecutorError>;
-    
+
     /// Get executor details with extended information
-    async fn get_executor_details(&self, executor_id: &str) -> Result<ExecutorDetails, ExecutorError>;
-    
+    async fn get_executor_details(
+        &self,
+        executor_id: &str,
+    ) -> Result<ExecutorDetails, ExecutorError>;
+
     /// Update executor availability status
     async fn update_availability(
         &self,
         executor_id: &str,
         available: bool,
     ) -> Result<(), ExecutorError>;
-    
+
     /// Get executor health metrics
     async fn get_executor_health(&self, executor_id: &str) -> Result<ResourceUsage, ExecutorError>;
 }
@@ -103,24 +108,26 @@ impl DefaultExecutorService {
     pub fn new(base_url: String, cache: Arc<CacheService>) -> Self {
         let validator_client = ValidatorClient::new(base_url, Duration::from_secs(30))
             .expect("Failed to create validator client");
-        
+
         Self {
             cache,
             validator_client,
         }
     }
-    
+
     /// Try to create a new default executor service, returning error if validation fails
     pub fn try_new(base_url: String, cache: Arc<CacheService>) -> Result<Self, ExecutorError> {
-        let validator_client = ValidatorClient::new(base_url, Duration::from_secs(30))
-            .map_err(|e| ExecutorError::BackendError(format!("Failed to create validator client: {}", e)))?;
-        
+        let validator_client =
+            ValidatorClient::new(base_url, Duration::from_secs(30)).map_err(|e| {
+                ExecutorError::BackendError(format!("Failed to create validator client: {}", e))
+            })?;
+
         Ok(Self {
             cache,
             validator_client,
         })
     }
-    
+
     /// Convert validator API executor to our model
     fn convert_executor(&self, validator_exec: &ValidatorExecutorDetails) -> Executor {
         // Convert from validator API types to our types
@@ -133,12 +140,16 @@ impl DefaultExecutorService {
                 model: validator_exec.cpu_specs.model.clone(),
                 frequency_ghz: 2.0, // Would come from validator API
             },
-            gpu_specs: validator_exec.gpu_specs.iter().map(|gpu| GpuSpec {
-                name: gpu.name.clone(),
-                memory_gb: gpu.memory_gb,
-                compute_capability: Some(gpu.compute_capability.clone()),
-                cuda_cores: None, // Would need to be added to validator API
-            }).collect(),
+            gpu_specs: validator_exec
+                .gpu_specs
+                .iter()
+                .map(|gpu| GpuSpec {
+                    name: gpu.name.clone(),
+                    memory_gb: gpu.memory_gb,
+                    compute_capability: Some(gpu.compute_capability.clone()),
+                    cuda_cores: None, // Would need to be added to validator API
+                })
+                .collect(),
             memory_gb: validator_exec.cpu_specs.memory_gb,
             storage_gb: 1000, // Would come from validator API
             is_available: true,
@@ -150,7 +161,10 @@ impl DefaultExecutorService {
 
 #[async_trait]
 impl ExecutorService for DefaultExecutorService {
-    async fn list_available(&self, filters: Option<ExecutorFilters>) -> Result<ListExecutorsResponse, ExecutorError> {
+    async fn list_available(
+        &self,
+        filters: Option<ExecutorFilters>,
+    ) -> Result<ListExecutorsResponse, ExecutorError> {
         // Convert our filters to validator API query
         let query = filters.map(|f| ListAvailableExecutorsQuery {
             available: Some(f.available_only),
@@ -158,13 +172,14 @@ impl ExecutorService for DefaultExecutorService {
             gpu_type: f.gpu_type,
             min_gpu_count: f.min_gpu_count,
         });
-        
+
         // Use validator API to get executors
-        let response = self.validator_client
+        let response = self
+            .validator_client
             .list_available_executors(query)
             .await
             .map_err(|e| ExecutorError::BackendError(format!("Validator API error: {}", e)))?;
-        
+
         // Convert validator API response to our types
         let available_executors: Vec<AvailableExecutor> = response
             .available_executors
@@ -178,41 +193,48 @@ impl ExecutorService for DefaultExecutorService {
                 },
             })
             .collect();
-        
+
         Ok(ListExecutorsResponse {
             total_count: available_executors.len(),
             available_executors,
         })
     }
-    
+
     async fn get_executor(&self, executor_id: &str) -> Result<Executor, ExecutorError> {
         // Check cache first
         let cache_key = format!("executor:{}", executor_id);
         if let Ok(Some(cached)) = self.cache.get::<Executor>(&cache_key).await {
             return Ok(cached);
         }
-        
+
         // For now, get from list of available executors
         // TODO: Add direct executor lookup to validator API
         let response = self.list_available(None).await?;
-        let executor = response.available_executors
+        let executor = response
+            .available_executors
             .into_iter()
             .find(|ae| ae.executor.id == executor_id)
             .map(|ae| ae.executor)
             .ok_or_else(|| ExecutorError::ExecutorNotFound(executor_id.to_string()))?;
-        
+
         // Cache the result
-        let _ = self.cache.set(&cache_key, &executor, Some(Duration::from_secs(300))).await;
-        
+        let _ = self
+            .cache
+            .set(&cache_key, &executor, Some(Duration::from_secs(300)))
+            .await;
+
         Ok(executor)
     }
-    
-    async fn get_executor_details(&self, executor_id: &str) -> Result<ExecutorDetails, ExecutorError> {
+
+    async fn get_executor_details(
+        &self,
+        executor_id: &str,
+    ) -> Result<ExecutorDetails, ExecutorError> {
         let executor = self.get_executor(executor_id).await?;
-        
+
         // Get additional details from validator API
         let health = self.get_executor_health(executor_id).await?;
-        
+
         Ok(ExecutorDetails {
             executor,
             network: NetworkInfo {
@@ -225,43 +247,50 @@ impl ExecutorService for DefaultExecutorService {
             location: Some("us-east-1".to_string()),
         })
     }
-    
-    async fn find_best_executor(&self, requirements: &ResourceRequirements) -> Result<AvailableExecutor, ExecutorError> {
+
+    async fn find_best_executor(
+        &self,
+        requirements: &ResourceRequirements,
+    ) -> Result<AvailableExecutor, ExecutorError> {
         // Convert requirements to filters
         let filters = ExecutorFilters {
             available_only: true,
-            min_gpu_count: Some(requirements.gpu_count as u32),
+            min_gpu_count: Some(requirements.gpu_count),
             gpu_type: requirements.gpu_types.first().cloned(),
             min_memory_gb: Some((requirements.memory_mb / 1024) as u32),
             min_cpu_cores: Some(requirements.cpu_cores as u32),
             ..Default::default()
         };
-        
+
         let response = self.list_available(Some(filters)).await?;
-        
+
         if response.available_executors.is_empty() {
             return Err(ExecutorError::NoExecutorsAvailable);
         }
-        
+
         // Simple selection - first available (could be more sophisticated)
         Ok(response.available_executors[0].clone())
     }
-    
-    async fn update_availability(&self, executor_id: &str, _available: bool) -> Result<(), ExecutorError> {
+
+    async fn update_availability(
+        &self,
+        executor_id: &str,
+        _available: bool,
+    ) -> Result<(), ExecutorError> {
         // This would call validator API to update availability
         // For now, just invalidate cache
         let cache_key = format!("executor:{}", executor_id);
         let _ = self.cache.invalidate_pattern(&cache_key).await;
         Ok(())
     }
-    
+
     async fn get_executor_health(&self, executor_id: &str) -> Result<ResourceUsage, ExecutorError> {
         // Check cache first
         let cache_key = format!("executor_health:{}", executor_id);
         if let Ok(Some(cached)) = self.cache.get::<ResourceUsage>(&cache_key).await {
             return Ok(cached);
         }
-        
+
         // Use validator API to get health metrics
         // For now, return default values
         let health = ResourceUsage {
@@ -269,10 +298,13 @@ impl ExecutorService for DefaultExecutorService {
             memory_percent: 40.0,
             gpu_percent: Some(15.0), // Would come from validator API
         };
-        
+
         // Cache the result
-        let _ = self.cache.set(&cache_key, &health, Some(Duration::from_secs(30))).await;
-        
+        let _ = self
+            .cache
+            .set(&cache_key, &health, Some(Duration::from_secs(30)))
+            .await;
+
         Ok(health)
     }
 }
@@ -291,7 +323,7 @@ impl MockExecutorService {
             executors: Self::create_mock_executors(),
         }
     }
-    
+
     /// Create mock executors for testing
     fn create_mock_executors() -> Vec<Executor> {
         vec![
@@ -303,14 +335,12 @@ impl MockExecutorService {
                     model: "AMD EPYC 7763".to_string(),
                     frequency_ghz: 2.45,
                 },
-                gpu_specs: vec![
-                    GpuSpec {
-                        name: "NVIDIA RTX 4090".to_string(),
-                        memory_gb: 24,
-                        compute_capability: Some("8.9".to_string()),
-                        cuda_cores: Some(16384),
-                    }
-                ],
+                gpu_specs: vec![GpuSpec {
+                    name: "NVIDIA RTX 4090".to_string(),
+                    memory_gb: 24,
+                    compute_capability: Some("8.9".to_string()),
+                    cuda_cores: Some(16384),
+                }],
                 memory_gb: 64,
                 storage_gb: 1000,
                 is_available: true,
@@ -337,7 +367,7 @@ impl MockExecutorService {
                         memory_gb: 80,
                         compute_capability: Some("8.0".to_string()),
                         cuda_cores: Some(6912),
-                    }
+                    },
                 ],
                 memory_gb: 256,
                 storage_gb: 4000,
@@ -371,12 +401,12 @@ impl ExecutorService for MockExecutorService {
         filters: Option<ExecutorFilters>,
     ) -> Result<ListExecutorsResponse, ExecutorError> {
         let mut executors = self.executors.clone();
-        
+
         // Apply filters if provided
         if let Some(f) = filters {
             executors.retain(|e| f.matches(e));
         }
-        
+
         // Convert to available executors with availability info
         let available_executors: Vec<AvailableExecutor> = executors
             .into_iter()
@@ -393,22 +423,22 @@ impl ExecutorService for MockExecutorService {
                 }
             })
             .collect();
-        
+
         let total_count = available_executors.len();
-        
+
         Ok(ListExecutorsResponse {
             available_executors,
             total_count,
         })
     }
-    
+
     async fn get_executor(&self, executor_id: &str) -> Result<Executor, ExecutorError> {
         // Try cache first
         let cache_key = format!("executor:{}", executor_id);
         if let Ok(Some(executor)) = self.cache.get::<Executor>(&cache_key).await {
             return Ok(executor);
         }
-        
+
         // Find in mock data
         self.executors
             .iter()
@@ -416,26 +446,28 @@ impl ExecutorService for MockExecutorService {
             .cloned()
             .ok_or_else(|| ExecutorError::ExecutorNotFound(executor_id.to_string()))
     }
-    
+
     async fn find_best_executor(
         &self,
         requirements: &ResourceRequirements,
     ) -> Result<AvailableExecutor, ExecutorError> {
         // Validate requirements
-        requirements.validate()
+        requirements
+            .validate()
             .map_err(ExecutorError::InvalidRequirements)?;
-        
+
         // Find matching executors
-        let mut matching: Vec<_> = self.executors
+        let mut matching: Vec<_> = self
+            .executors
             .iter()
             .filter(|e| e.is_available && requirements.matches_executor(e))
             .map(|e| (e.clone(), e.score_for_requirements(requirements)))
             .filter(|(_, score)| *score > 0.0)
             .collect();
-        
+
         // Sort by score (highest first)
         matching.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        
+
         // Return the best one
         matching
             .into_iter()
@@ -453,10 +485,13 @@ impl ExecutorService for MockExecutorService {
             })
             .ok_or(ExecutorError::NoExecutorsAvailable)
     }
-    
-    async fn get_executor_details(&self, executor_id: &str) -> Result<ExecutorDetails, ExecutorError> {
+
+    async fn get_executor_details(
+        &self,
+        executor_id: &str,
+    ) -> Result<ExecutorDetails, ExecutorError> {
         let executor = self.get_executor(executor_id).await?;
-        
+
         Ok(ExecutorDetails {
             executor,
             network: NetworkInfo {
@@ -473,7 +508,7 @@ impl ExecutorService for MockExecutorService {
             location: Some("us-east-1".to_string()),
         })
     }
-    
+
     async fn update_availability(
         &self,
         executor_id: &str,
@@ -488,11 +523,11 @@ impl ExecutorService for MockExecutorService {
             .map_err(|e| ExecutorError::CacheError(e.to_string()))?;
         Ok(())
     }
-    
+
     async fn get_executor_health(&self, executor_id: &str) -> Result<ResourceUsage, ExecutorError> {
         // Check if executor exists
         self.get_executor(executor_id).await?;
-        
+
         // Return mock health data
         Ok(ResourceUsage {
             cpu_percent: 35.0,
@@ -506,134 +541,139 @@ impl ExecutorService for MockExecutorService {
 mod tests {
     use super::*;
     use crate::services::cache::MemoryCacheStorage;
-    
+
     async fn create_test_service() -> MockExecutorService {
         let cache = Arc::new(CacheService::new(Box::new(MemoryCacheStorage::new())));
         MockExecutorService::new(cache)
     }
-    
+
     #[tokio::test]
     async fn test_list_available_executors() {
         let service = create_test_service().await;
-        
+
         let response = service.list_available(None).await.unwrap();
         assert_eq!(response.total_count, 3);
         assert_eq!(response.available_executors.len(), 3);
     }
-    
+
     #[tokio::test]
     async fn test_list_with_gpu_filter() {
         let service = create_test_service().await;
-        
+
         let filters = ExecutorFilters {
             min_gpu_count: Some(1),
             ..Default::default()
         };
-        
+
         let response = service.list_available(Some(filters)).await.unwrap();
         assert_eq!(response.total_count, 2); // Only GPU executors
     }
-    
+
     #[tokio::test]
     async fn test_get_executor() {
         let service = create_test_service().await;
-        
+
         let executor = service.get_executor("exec-gpu-1").await.unwrap();
         assert_eq!(executor.id, "exec-gpu-1");
         assert!(!executor.gpu_specs.is_empty());
     }
-    
+
     #[tokio::test]
     async fn test_get_nonexistent_executor() {
         let service = create_test_service().await;
-        
+
         let result = service.get_executor("nonexistent").await;
         assert!(matches!(result, Err(ExecutorError::ExecutorNotFound(_))));
     }
-    
+
     #[tokio::test]
     async fn test_find_best_executor() {
         let service = create_test_service().await;
-        
+
         let requirements = ResourceRequirements {
             cpu_cores: 8.0,
-            memory_mb: 32768, // 32GB
+            memory_mb: 32768,       // 32GB
             storage_mb: 100 * 1024, // 100GB
             gpu_count: 1,
             gpu_types: vec!["NVIDIA RTX 4090".to_string()], // Full GPU name
         };
-        
+
         let executor = service.find_best_executor(&requirements).await.unwrap();
         assert_eq!(executor.executor.id, "exec-gpu-1");
     }
-    
+
     #[tokio::test]
     async fn test_find_best_executor_no_match() {
         let service = create_test_service().await;
-        
+
         let requirements = ResourceRequirements {
-            cpu_cores: 128.0, // Too many
-            memory_mb: 1024 * 1024, // 1TB
+            cpu_cores: 128.0,             // Too many
+            memory_mb: 1024 * 1024,       // 1TB
             storage_mb: 10 * 1024 * 1024, // 10TB
             gpu_count: 8,
             gpu_types: vec![],
         };
-        
+
         let result = service.find_best_executor(&requirements).await;
         assert!(matches!(result, Err(ExecutorError::NoExecutorsAvailable)));
     }
-    
+
     #[tokio::test]
     async fn test_get_executor_details() {
         let service = create_test_service().await;
-        
+
         let details = service.get_executor_details("exec-gpu-1").await.unwrap();
         assert_eq!(details.executor.id, "exec-gpu-1");
         assert!(details.network.public_ip);
         assert!(details.resource_usage.gpu_percent.is_some());
     }
-    
+
     #[tokio::test]
     async fn test_update_availability() {
         let service = create_test_service().await;
-        
-        service.update_availability("exec-gpu-1", false).await.unwrap();
+
+        service
+            .update_availability("exec-gpu-1", false)
+            .await
+            .unwrap();
         // In real implementation, this would affect future queries
     }
-    
+
     #[tokio::test]
     async fn test_get_executor_health() {
         let service = create_test_service().await;
-        
+
         let health = service.get_executor_health("exec-gpu-1").await.unwrap();
         assert!(health.cpu_percent > 0.0);
         assert!(health.memory_percent > 0.0);
         assert!(health.gpu_percent.is_some());
     }
-    
+
     #[tokio::test]
     async fn test_filters_gpu_type() {
         let service = create_test_service().await;
-        
+
         let filters = ExecutorFilters {
             gpu_type: Some("A100".to_string()),
             ..Default::default()
         };
-        
+
         let response = service.list_available(Some(filters)).await.unwrap();
         assert_eq!(response.total_count, 1);
-        assert!(response.available_executors[0].executor.gpu_specs[0].name.contains("A100"));
+        assert!(response.available_executors[0].executor.gpu_specs[0]
+            .name
+            .contains("A100"));
     }
-    
+
     #[tokio::test]
     async fn test_filters_min_memory() {
         let service = create_test_service().await;
-        
+
         let filters = ExecutorFilters {
             min_memory_gb: Some(128),
             ..Default::default()
         };
-        
+
         let response = service.list_available(Some(filters)).await.unwrap();
         assert_eq!(response.total_count, 1);
         assert!(response.available_executors[0].executor.memory_gb >= 128);

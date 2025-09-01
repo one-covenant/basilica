@@ -1,5 +1,5 @@
 //! OAuth callback server for CLI authentication
-//! 
+//!
 //! This module provides a local HTTP server to receive OAuth callbacks
 //! when using browser-based authentication flow in CLI applications.
 
@@ -11,12 +11,12 @@ use axum::{
     routing::get,
     Router,
 };
+use html_escape;
 use serde::Deserialize;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener as TokioTcpListener;
-use html_escape;
 
 /// Authorization callback data received from OAuth provider
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ impl CallbackServer {
     pub fn new(port: u16, timeout: Duration) -> Self {
         Self { port, timeout }
     }
-    
+
     /// Create with default settings (port 8080, 5 minute timeout)
     pub fn default() -> Self {
         Self::new(8080, Duration::from_secs(300))
@@ -67,18 +67,25 @@ impl CallbackServer {
 
         match TcpListener::bind(("127.0.0.1", preferred_port)) {
             Ok(listener) => {
-                let port = listener.local_addr()
-                    .map_err(|e| AuthError::NetworkError(format!("Failed to get local address: {}", e)))?
+                let port = listener
+                    .local_addr()
+                    .map_err(|e| {
+                        AuthError::NetworkError(format!("Failed to get local address: {}", e))
+                    })?
                     .port();
                 drop(listener);
                 Ok(port)
             }
             Err(_) => {
                 // Port 8080 is occupied, find any available port
-                let listener = TcpListener::bind(("127.0.0.1", 0))
-                    .map_err(|e| AuthError::NetworkError(format!("Failed to bind to any port: {}", e)))?;
-                let port = listener.local_addr()
-                    .map_err(|e| AuthError::NetworkError(format!("Failed to get local address: {}", e)))?
+                let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| {
+                    AuthError::NetworkError(format!("Failed to bind to any port: {}", e))
+                })?;
+                let port = listener
+                    .local_addr()
+                    .map_err(|e| {
+                        AuthError::NetworkError(format!("Failed to get local address: {}", e))
+                    })?
                     .port();
                 drop(listener);
                 Ok(port)
@@ -107,7 +114,8 @@ impl CallbackServer {
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
 
         // Start the server
-        let listener = TokioTcpListener::bind(&addr).await
+        let listener = TokioTcpListener::bind(&addr)
+            .await
             .map_err(|e| AuthError::NetworkError(format!("Failed to bind to {}: {}", addr, e)))?;
 
         tracing::info!("OAuth callback server listening on http://{}", addr);
@@ -413,24 +421,24 @@ pub async fn browser_auth_flow(
 ) -> Result<crate::models::auth::TokenSet, AuthError> {
     // Get auth URL with PKCE
     let (auth_url, pkce) = auth_service.get_auth_url(state).await?;
-    
+
     // Find available port for callback server
     let port = CallbackServer::find_available_port()?;
-    
+
     // Update redirect URI if needed (this would need to be coordinated with OAuth provider)
     let callback_server = CallbackServer::new(port, Duration::from_secs(300));
-    
+
     // Open browser
     println!("Opening browser for authentication...");
     println!("If the browser doesn't open, please visit:");
     println!("{}", auth_url);
-    
+
     // Try to open browser (optional - can fail in headless environments)
     let _ = webbrowser::open(&auth_url);
-    
+
     // Start callback server and wait for response
     let callback_data = callback_server.start_and_wait(state).await?;
-    
+
     // Check for errors
     if let Some(error) = callback_data.error {
         return Err(AuthError::OAuthError(format!(
@@ -439,11 +447,12 @@ pub async fn browser_auth_flow(
             callback_data.error_description.unwrap_or_default()
         )));
     }
-    
+
     // Exchange code for tokens
-    let code = callback_data.code
+    let code = callback_data
+        .code
         .ok_or_else(|| AuthError::OAuthError("No authorization code received".to_string()))?;
-    
+
     auth_service.exchange_code(&code, &pkce.verifier).await
 }
 
@@ -459,7 +468,7 @@ mod tests {
             error: None,
             error_description: None,
         };
-        
+
         assert_eq!(data.code, Some("test_code".to_string()));
         assert_eq!(data.state, Some("test_state".to_string()));
         assert!(data.error.is_none());
@@ -469,7 +478,7 @@ mod tests {
     fn test_html_generation() {
         let success_html = CallbackServer::generate_success_page();
         assert!(success_html.contains("Authentication Successful"));
-        
+
         let error_html = CallbackServer::generate_error_page("Test error");
         assert!(error_html.contains("Authentication Failed"));
         assert!(error_html.contains("Test error"));

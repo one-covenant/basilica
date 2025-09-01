@@ -13,13 +13,22 @@ pub mod rental;
 pub mod ssh;
 
 pub use auth::{
-    AuthService, DefaultAuthService, MockAuthService,
-    is_wsl_environment, is_ssh_session, is_container_runtime, should_use_device_flow
+    is_container_runtime, is_ssh_session, is_wsl_environment, should_use_device_flow, AuthService,
+    DefaultAuthService, MockAuthService,
 };
-pub use auth_callback::{CallbackServer, CallbackData, browser_auth_flow};
+pub use auth_callback::{browser_auth_flow, CallbackData, CallbackServer};
 pub use cache::{CacheService, CacheStorage};
 pub use client::{ServiceClient, ServiceClientConfig, ServiceClientError};
-pub use deployment::{DeploymentService, DefaultDeploymentService, MockDeploymentService, CreateDeploymentRequest, CreateDeploymentResponse};
-pub use executor::{ExecutorService, DefaultExecutorService, MockExecutorService, AvailableExecutor, ListExecutorsResponse};
-pub use rental::{RentalService, DefaultRentalService, MockRentalService, CreateRentalRequest, CreateRentalResponse, ListRentalsRequest, ListRentalsResponse};
-pub use ssh::{SshService, DefaultSshService, MockSshService, SshServiceConfig};
+pub use deployment::{
+    CreateDeploymentRequest, CreateDeploymentResponse, DefaultDeploymentService, DeploymentService,
+    MockDeploymentService,
+};
+pub use executor::{
+    AvailableExecutor, DefaultExecutorService, ExecutorService, ListExecutorsResponse,
+    MockExecutorService,
+};
+pub use rental::{
+    CreateRentalRequest, CreateRentalResponse, DefaultRentalService, ListRentalsRequest,
+    ListRentalsResponse, MockRentalService, RentalService,
+};
+pub use ssh::{DefaultSshService, MockSshService, SshService, SshServiceConfig};

@@ -34,11 +34,11 @@ pub struct AuthConfig {
 
     /// OAuth token endpoint
     pub token_endpoint: String,
-    
+
     /// OAuth device authorization endpoint (for device flow)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_auth_endpoint: Option<String>,
-    
+
     /// OAuth token revocation endpoint
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revoke_endpoint: Option<String>,

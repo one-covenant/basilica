@@ -9,7 +9,7 @@ use std::fmt;
 pub enum RentalValidationError {
     #[error("Invalid field: {0}")]
     InvalidField(String),
-    
+
     #[error("Invalid resources: {0}")]
     InvalidResources(String),
 }
@@ -19,34 +19,34 @@ pub enum RentalValidationError {
 pub struct Rental {
     /// Unique rental identifier
     pub id: String,
-    
+
     /// User ID who owns this rental
     pub user_id: String,
-    
+
     /// Current rental status
     pub status: RentalStatus,
-    
+
     /// SSH access information
     pub ssh_access: Option<crate::models::ssh::SshAccess>,
-    
+
     /// Executor ID where rented
     pub executor_id: String,
-    
+
     /// Resource allocation
     pub resources: crate::models::executor::ResourceRequirements,
-    
+
     /// Creation timestamp
     pub created_at: DateTime<Utc>,
-    
+
     /// Last update timestamp  
     pub updated_at: DateTime<Utc>,
-    
+
     /// Expiration timestamp
     pub expires_at: Option<DateTime<Utc>>,
-    
+
     /// Termination timestamp
     pub terminated_at: Option<DateTime<Utc>>,
-    
+
     /// Associated deployment ID if a container is deployed
     pub deployment_id: Option<String>,
 }
@@ -56,35 +56,42 @@ impl Rental {
     pub fn validate(&self) -> Result<(), RentalValidationError> {
         // Validate ID
         if self.id.is_empty() {
-            return Err(RentalValidationError::InvalidField("id cannot be empty".to_string()));
+            return Err(RentalValidationError::InvalidField(
+                "id cannot be empty".to_string(),
+            ));
         }
-        
+
         // Validate user ID
         if self.user_id.is_empty() {
-            return Err(RentalValidationError::InvalidField("user_id cannot be empty".to_string()));
+            return Err(RentalValidationError::InvalidField(
+                "user_id cannot be empty".to_string(),
+            ));
         }
-        
+
         // Validate executor ID
         if self.executor_id.is_empty() {
-            return Err(RentalValidationError::InvalidField("executor_id cannot be empty".to_string()));
+            return Err(RentalValidationError::InvalidField(
+                "executor_id cannot be empty".to_string(),
+            ));
         }
-        
+
         // Validate resources
-        self.resources.validate()
+        self.resources
+            .validate()
             .map_err(RentalValidationError::InvalidResources)?;
-        
+
         // Validate expiration
         if let Some(expires_at) = self.expires_at {
             if expires_at <= self.created_at {
                 return Err(RentalValidationError::InvalidField(
-                    "expires_at must be after created_at".to_string()
+                    "expires_at must be after created_at".to_string(),
                 ));
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Check if this rental has an active deployment
     pub fn has_deployment(&self) -> bool {
         self.deployment_id.is_some()
@@ -96,13 +103,13 @@ impl Rental {
 pub struct RentalConfig {
     /// Target executor ID (optional, will auto-select if not provided)
     pub executor_id: Option<String>,
-    
+
     /// SSH public key for access
     pub ssh_key: String,
-    
+
     /// Resource requirements
     pub resources: crate::models::executor::ResourceRequirements,
-    
+
     /// Duration in seconds
     pub duration_seconds: Option<u64>,
 }
@@ -114,10 +121,10 @@ impl RentalConfig {
         if self.ssh_key.is_empty() {
             return Err("SSH key is required for rentals".to_string());
         }
-        
+
         // Validate resources
         self.resources.validate()?;
-        
+
         Ok(())
     }
 }
@@ -127,22 +134,22 @@ impl RentalConfig {
 pub enum RentalStatus {
     /// Rental is being prepared
     Pending,
-    
+
     /// Rental is being provisioned
     Provisioning,
-    
+
     /// Rental is active and ready
     Active,
-    
+
     /// Rental is stopping
     Stopping,
-    
+
     /// Rental has stopped
     Stopped,
-    
+
     /// Rental has been terminated
     Terminated,
-    
+
     /// Rental failed
     Failed(String),
 }
@@ -166,12 +173,12 @@ impl RentalStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Stopped | Self::Terminated | Self::Failed(_))
     }
-    
+
     /// Check if the rental is active
     pub fn is_active(&self) -> bool {
         matches!(self, Self::Active)
     }
-    
+
     /// Check if the rental is transitioning
     pub fn is_transitioning(&self) -> bool {
         matches!(self, Self::Pending | Self::Provisioning | Self::Stopping)
@@ -183,22 +190,22 @@ impl RentalStatus {
 pub struct RentalFilters {
     /// Filter by status
     pub status: Option<RentalStatus>,
-    
+
     /// Filter by executor ID
     pub executor_id: Option<String>,
-    
+
     /// Filter by GPU type
     pub gpu_type: Option<String>,
-    
+
     /// Minimum GPU count
     pub min_gpu_count: Option<u32>,
-    
+
     /// Maximum age in seconds
     pub max_age_seconds: Option<u64>,
-    
+
     /// Only rentals without deployments
     pub no_deployment: Option<bool>,
-    
+
     /// Only rentals with deployments
     pub with_deployment: Option<bool>,
 }
@@ -221,7 +228,7 @@ impl From<basilica_validator::rental::types::RentalState> for RentalStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_rental_status_display() {
         assert_eq!(RentalStatus::Pending.to_string(), "Pending");
@@ -231,20 +238,20 @@ mod tests {
             "Failed: Test error"
         );
     }
-    
+
     #[test]
     fn test_rental_status_states() {
         assert!(RentalStatus::Stopped.is_terminal());
         assert!(RentalStatus::Failed("error".to_string()).is_terminal());
         assert!(!RentalStatus::Active.is_terminal());
-        
+
         assert!(RentalStatus::Active.is_active());
         assert!(!RentalStatus::Pending.is_active());
-        
+
         assert!(RentalStatus::Provisioning.is_transitioning());
         assert!(!RentalStatus::Active.is_transitioning());
     }
-    
+
     #[test]
     fn test_rental_validation() {
         let rental = Rental {
@@ -260,15 +267,15 @@ mod tests {
             terminated_at: None,
             deployment_id: None,
         };
-        
+
         assert!(rental.validate().is_ok());
         assert!(!rental.has_deployment());
-        
+
         let mut rental_with_deployment = rental.clone();
         rental_with_deployment.deployment_id = Some("deploy-1".to_string());
         assert!(rental_with_deployment.has_deployment());
     }
-    
+
     #[test]
     fn test_rental_config_validation() {
         let mut config = RentalConfig {
@@ -277,9 +284,9 @@ mod tests {
             resources: crate::models::executor::ResourceRequirements::default(),
             duration_seconds: Some(3600),
         };
-        
+
         assert!(config.validate().is_ok());
-        
+
         // Test empty SSH key
         config.ssh_key = "".to_string();
         assert!(config.validate().is_err());

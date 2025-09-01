@@ -13,14 +13,11 @@ use crate::output::{
 };
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
-use basilica_api::services::{ServiceClient, ServiceClientConfig};
+use basilica_api::api::types::{ListRentalsQuery, RentalStatusResponse, SshAccess}; // Still needed for functions not yet updated
 use basilica_api::models::executor::ExecutorFilters;
-use basilica_api::api::types::{
-    ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
-}; // Still needed for functions not yet updated
+use basilica_api::services::{ServiceClient, ServiceClientConfig};
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
-use basilica_validator::api::rental_routes::StartRentalRequest;
-use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
+use basilica_validator::api::types::RentalStatus;
 use basilica_validator::rental::types::RentalState;
 use console::style;
 use reqwest::StatusCode;
@@ -43,12 +40,13 @@ pub async fn handle_ls(
         cache_dir: Some(
             CliConfig::data_dir()
                 .map_err(|e| CliError::internal(format!("Failed to get data dir: {}", e)))?
-                .to_string_lossy().to_string()
+                .to_string_lossy()
+                .to_string(),
         ),
     };
 
     let service_client = ServiceClient::new(service_config);
-    
+
     // Convert filters to executor filters
     let executor_filters = Some(ExecutorFilters {
         available_only: true,
@@ -60,7 +58,8 @@ pub async fn handle_ls(
 
     let spinner = create_spinner("Fetching available executors...");
 
-    let executors = service_client.executors()
+    let executors = service_client
+        .executors()
         .list_available(executor_filters)
         .await
         .map_err(|e| CliError::internal(format!("Failed to list executors: {}", e)))?;
@@ -170,7 +169,8 @@ pub async fn handle_up(
         cache_dir: Some(
             CliConfig::data_dir()
                 .map_err(|e| CliError::internal(format!("Failed to get data dir: {}", e)))?
-                .to_string_lossy().to_string()
+                .to_string_lossy()
+                .to_string(),
         ),
     };
 
@@ -190,7 +190,8 @@ pub async fn handle_up(
             ..Default::default()
         });
 
-        let response = service_client.executors()
+        let response = service_client
+            .executors()
             .list_available(filters)
             .await
             .map_err(|e| {
@@ -219,7 +220,10 @@ pub async fn handle_up(
                 Some((_, second)) => second.to_string(),
                 None => executor_id.clone(),
             };
-            println!("Multiple executors available, selecting first one: {}", executor_id);
+            println!(
+                "Multiple executors available, selecting first one: {}",
+                executor_id
+            );
             executor_id
         };
 
@@ -264,11 +268,13 @@ pub async fn handle_up(
                 complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
             })?
             .into_iter()
-            .map(|pm| basilica_validator::api::rental_routes::PortMappingRequest {
-                container_port: pm.container_port,
-                host_port: pm.host_port,
-                protocol: pm.protocol,
-            })
+            .map(
+                |pm| basilica_validator::api::rental_routes::PortMappingRequest {
+                    container_port: pm.container_port,
+                    host_port: pm.host_port,
+                    protocol: pm.protocol,
+                },
+            )
             .collect();
 
     // Convert to rental service request
@@ -284,7 +290,7 @@ pub async fn handle_up(
         },
         duration_seconds: None, // No specific duration limit
     };
-    
+
     let rental_request = basilica_api::services::rental::CreateRentalRequest {
         token: service_client.get_token().await.map_err(|e| {
             complete_spinner_error(spinner.clone(), "Authentication failed");
@@ -292,9 +298,10 @@ pub async fn handle_up(
         })?,
         config: rental_config,
     };
-    
+
     spinner.set_message("Creating rental...");
-    let rental_response = service_client.rentals()
+    let rental_response = service_client
+        .rentals()
         .create_rental(rental_request)
         .await
         .map_err(|e| {
@@ -368,7 +375,8 @@ pub async fn handle_up(
         print_info("Waiting for rental to become active...");
 
         // Poll for rental to become active
-        let rental_active = poll_rental_status_with_service(&rental_response.rental_id, &service_client).await?;
+        let rental_active =
+            poll_rental_status_with_service(&rental_response.rental_id, &service_client).await?;
 
         if rental_active {
             // Parse SSH credentials and connect
@@ -391,7 +399,11 @@ pub async fn handle_up(
                     print_error(&format!("SSH connection failed: {}", e));
                     println!();
                     print_info("You can manually connect using:");
-                    display_ssh_connection_instructions(&rental_response.rental_id, ssh_creds, config)?;
+                    display_ssh_connection_instructions(
+                        &rental_response.rental_id,
+                        ssh_creds,
+                        config,
+                    )?;
                 }
             }
         } else {
@@ -864,9 +876,9 @@ async fn poll_rental_status_with_service(
 ) -> Result<bool> {
     // For now, since the ServiceClient doesn't yet have rental status polling,
     // we'll just do a simple wait and return true
-    // TODO: Implement actual rental status polling once the rental service 
+    // TODO: Implement actual rental status polling once the rental service
     // exposes the get_rental_status functionality
-    
+
     tokio::time::sleep(Duration::from_secs(5)).await;
     Ok(true) // Assume rental is ready after initial wait
 }

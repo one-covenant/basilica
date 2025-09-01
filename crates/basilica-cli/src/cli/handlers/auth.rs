@@ -4,10 +4,11 @@ use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::output::{banner, compress_path, print_success};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
-use basilica_api::services::{ServiceClient, ServiceClientConfig, is_wsl_environment, is_ssh_session, is_container_runtime};
 use basilica_api::models::auth::AuthConfig;
+use basilica_api::services::{
+    is_container_runtime, is_ssh_session, is_wsl_environment, ServiceClient, ServiceClientConfig,
+};
 use tracing::{debug, warn};
-
 
 /// Create auth config for CLI
 pub fn create_auth_config_for_cli() -> AuthConfig {
@@ -43,7 +44,7 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
     // Create service client configuration
     let cache_dir = CliConfig::data_dir()
         .map_err(|e| CliError::internal(format!("Failed to get cache directory: {}", e)))?;
-    
+
     let service_config = ServiceClientConfig {
         auth_config: create_auth_config_for_cli(),
         ssh_config: None,
@@ -54,7 +55,8 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
     let auth_service = service_client.auth();
 
     // Determine which flow to use
-    let use_device_flow = device_code || is_wsl_environment() || is_ssh_session() || is_container_runtime();
+    let use_device_flow =
+        device_code || is_wsl_environment() || is_ssh_session() || is_container_runtime();
 
     let spinner = if use_device_flow {
         create_spinner("Starting device authentication flow...")
@@ -65,61 +67,74 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
     let token_set = if use_device_flow {
         // Use device flow
         spinner.set_message("Starting device authentication flow...");
-        
+
         // Start device flow
         let device_auth = match auth_service.start_device_flow().await {
             Ok(device_auth) => device_auth,
             Err(e) => {
                 complete_spinner_error(spinner, "Failed to start device flow");
-                return Err(CliError::auth(format!("Device flow initialization failed: {}", e))
-                    .with_suggestion("Try 'basilica login' without --device-code for browser flow"));
+                return Err(
+                    CliError::auth(format!("Device flow initialization failed: {}", e))
+                        .with_suggestion(
+                            "Try 'basilica login' without --device-code for browser flow",
+                        ),
+                );
             }
         };
-        
+
         complete_spinner_and_clear(spinner);
-        
+
         // Display user instructions
         println!("Please visit the following URL to authenticate:");
         println!("  {}", device_auth.verification_uri);
         println!();
         println!("Enter this code when prompted: {}", device_auth.user_code);
         println!();
-        
+
         let spinner = create_spinner("Waiting for authentication...");
-        
+
         // Poll for completion
-        match auth_service.poll_device_flow(&device_auth.device_code).await {
+        match auth_service
+            .poll_device_flow(&device_auth.device_code)
+            .await
+        {
             Ok(tokens) => {
                 complete_spinner_and_clear(spinner);
                 tokens
             }
             Err(e) => {
                 complete_spinner_error(spinner, "Device authentication failed");
-                return Err(CliError::auth(format!("Device authentication failed: {}", e))
-                    .with_suggestion("Please ensure you completed the authentication in your browser"));
+                return Err(
+                    CliError::auth(format!("Device authentication failed: {}", e)).with_suggestion(
+                        "Please ensure you completed the authentication in your browser",
+                    ),
+                );
             }
         }
     } else {
         // Use browser flow with callback server
         let state = uuid::Uuid::new_v4().to_string();
-        
+
         // Get auth URL and PKCE challenge
         let (_auth_url, _pkce) = match auth_service.get_auth_url(&state).await {
             Ok((url, pkce)) => (url, pkce),
             Err(e) => {
                 complete_spinner_error(spinner, "Failed to generate auth URL");
-                return Err(CliError::auth(format!("Failed to start browser authentication: {}", e))
-                    .with_suggestion("Try 'basilica login --device-code' for device flow"));
+                return Err(CliError::auth(format!(
+                    "Failed to start browser authentication: {}",
+                    e
+                ))
+                .with_suggestion("Try 'basilica login --device-code' for device flow"));
             }
         };
-        
+
         complete_spinner_and_clear(spinner);
-        
+
         // For now, fall back to device flow as browser flow needs concrete implementation
         println!("Browser authentication not yet implemented with new services.");
         println!("Falling back to device flow...");
         println!();
-        
+
         // Start device flow as fallback
         let device_auth = match auth_service.start_device_flow().await {
             Ok(device_auth) => device_auth,
@@ -128,18 +143,21 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
                     .with_suggestion("Please check your internet connection and try again"));
             }
         };
-        
+
         // Display user instructions
         println!("Please visit the following URL to authenticate:");
         println!("  {}", device_auth.verification_uri);
         println!();
         println!("Enter this code when prompted: {}", device_auth.user_code);
         println!();
-        
+
         let spinner = create_spinner("Waiting for authentication...");
-        
+
         // Poll for completion
-        match auth_service.poll_device_flow(&device_auth.device_code).await {
+        match auth_service
+            .poll_device_flow(&device_auth.device_code)
+            .await
+        {
             Ok(tokens) => {
                 complete_spinner_and_clear(spinner);
                 tokens
@@ -147,19 +165,21 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
             Err(e) => {
                 complete_spinner_error(spinner, "Authentication failed");
                 return Err(CliError::auth(format!("Authentication failed: {}", e))
-                    .with_suggestion("Please ensure you completed the authentication in your browser"));
+                    .with_suggestion(
+                        "Please ensure you completed the authentication in your browser",
+                    ));
             }
         }
     };
 
     // Store tokens using the auth service
     let spinner = create_spinner("Storing authentication tokens...");
-    
+
     if let Err(e) = auth_service.store_token(token_set).await {
         complete_spinner_error(spinner, "Failed to store tokens");
         return Err(CliError::internal(format!("Failed to store tokens: {}", e)));
     }
-    
+
     complete_spinner_and_clear(spinner);
 
     print_success("⛪ Login successful!");
@@ -210,7 +230,7 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
     // Create service client configuration
     let cache_dir = CliConfig::data_dir()
         .map_err(|e| CliError::internal(format!("Failed to get cache directory: {}", e)))?;
-    
+
     let service_config = ServiceClientConfig {
         auth_config: create_auth_config_for_cli(),
         ssh_config: None,

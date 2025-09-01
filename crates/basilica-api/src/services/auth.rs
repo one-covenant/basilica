@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Token response from OAuth provider
 #[derive(Debug, Deserialize)]
@@ -144,13 +144,13 @@ impl DefaultAuthService {
         self.token_cache_key = key;
         self
     }
-    
+
     /// Add additional OAuth parameters
     pub fn with_additional_params(mut self, params: HashMap<String, String>) -> Self {
         self.additional_params = params;
         self
     }
-    
+
     /// Add a single OAuth parameter
     pub fn with_param(mut self, key: String, value: String) -> Self {
         self.additional_params.insert(key, value);
@@ -186,7 +186,7 @@ impl AuthService for DefaultAuthService {
         if let Some(audience) = &self.config.auth0_audience {
             url.query_pairs_mut().append_pair("audience", audience);
         }
-        
+
         // Add any additional parameters (e.g., from CLI configuration)
         for (key, value) in &self.additional_params {
             url.query_pairs_mut().append_pair(key, value);
@@ -342,7 +342,7 @@ impl AuthService for DefaultAuthService {
         if let Some(audience) = &self.config.auth0_audience {
             params.push(("audience", audience.clone()));
         }
-        
+
         // Add any additional parameters
         for (key, value) in &self.additional_params {
             params.push((key.as_str(), value.clone()));
@@ -467,7 +467,7 @@ impl AuthService for MockAuthService {
             },
         ))
     }
-    
+
     async fn exchange_code(&self, _code: &str, _verifier: &str) -> Result<TokenSet, AuthError> {
         Ok(TokenSet {
             access_token: "mock_access_token".to_string(),
@@ -477,7 +477,7 @@ impl AuthService for MockAuthService {
             scopes: vec![],
         })
     }
-    
+
     async fn refresh_token(&self, _refresh_token: &str) -> Result<TokenSet, AuthError> {
         Ok(TokenSet {
             access_token: "mock_refreshed_token".to_string(),
@@ -487,18 +487,20 @@ impl AuthService for MockAuthService {
             scopes: vec![],
         })
     }
-    
+
     async fn start_device_flow(&self) -> Result<DeviceAuth, AuthError> {
         Ok(DeviceAuth {
             device_code: "mock_device_code".to_string(),
             user_code: "MOCK-CODE".to_string(),
             verification_uri: "https://auth.example.com/device".to_string(),
-            verification_uri_complete: Some("https://auth.example.com/device?code=MOCK-CODE".to_string()),
+            verification_uri_complete: Some(
+                "https://auth.example.com/device?code=MOCK-CODE".to_string(),
+            ),
             expires_at: chrono::Utc::now() + chrono::Duration::seconds(600),
             interval: 5,
         })
     }
-    
+
     async fn poll_device_flow(&self, _device_code: &str) -> Result<TokenSet, AuthError> {
         Ok(TokenSet {
             access_token: "mock_device_token".to_string(),
@@ -508,19 +510,19 @@ impl AuthService for MockAuthService {
             scopes: vec![],
         })
     }
-    
+
     async fn get_token(&self) -> Result<Option<TokenSet>, AuthError> {
         Ok(None)
     }
-    
+
     async fn store_token(&self, _token: TokenSet) -> Result<(), AuthError> {
         Ok(())
     }
-    
+
     async fn clear_token(&self) -> Result<(), AuthError> {
         Ok(())
     }
-    
+
     async fn validate_token(&self) -> Result<TokenSet, AuthError> {
         Ok(TokenSet {
             access_token: "mock_validated_token".to_string(),

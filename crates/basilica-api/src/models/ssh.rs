@@ -186,13 +186,13 @@ impl PortForward {
 pub struct SshKey {
     /// The full public key string
     pub public_key: String,
-    
+
     /// Key type (e.g., "ed25519", "rsa")
     pub key_type: String,
-    
+
     /// Key fingerprint
     pub fingerprint: String,
-    
+
     /// Optional comment
     pub comment: Option<String>,
 }
@@ -201,14 +201,17 @@ impl SshKey {
     /// Create from a public key string
     pub fn from_public_key(public_key: &str) -> Result<Self, SshKeyValidationError> {
         validate_ssh_public_key(public_key)?;
-        
+
         let parts: Vec<&str> = public_key.split_whitespace().collect();
-        let key_type = parts[0].strip_prefix("ssh-").unwrap_or(parts[0]).to_string();
+        let key_type = parts[0]
+            .strip_prefix("ssh-")
+            .unwrap_or(parts[0])
+            .to_string();
         let comment = parts.get(2).map(|s| s.to_string());
-        
+
         // Generate a mock fingerprint for now
         let fingerprint = format!("SHA256:mock_{}", uuid::Uuid::new_v4());
-        
+
         Ok(Self {
             public_key: public_key.to_string(),
             key_type,
@@ -223,16 +226,16 @@ impl SshKey {
 pub struct SshKeyPair {
     /// Private key content
     pub private_key: String,
-    
+
     /// Public key content
     pub public_key: String,
-    
+
     /// Key type
     pub key_type: String,
-    
+
     /// Key fingerprint
     pub fingerprint: String,
-    
+
     /// Optional comment
     pub comment: Option<String>,
 }
@@ -242,16 +245,16 @@ pub struct SshKeyPair {
 pub enum SshKeyValidationError {
     #[error("Invalid key format")]
     InvalidFormat,
-    
+
     #[error("Key too short")]
     KeyTooShort,
-    
+
     #[error("Invalid algorithm")]
     InvalidAlgorithm,
-    
+
     #[error("Invalid characters in key")]
     InvalidCharacters,
-    
+
     #[error("Validation error: {0}")]
     ValidationError(String),
 }
@@ -265,7 +268,9 @@ impl From<String> for SshKeyValidationError {
 /// SSH key validation
 pub fn validate_ssh_public_key(key: &str) -> Result<(), SshKeyValidationError> {
     if key.trim().is_empty() {
-        return Err(SshKeyValidationError::ValidationError("SSH key cannot be empty".to_string()));
+        return Err(SshKeyValidationError::ValidationError(
+            "SSH key cannot be empty".to_string(),
+        ));
     }
 
     // Must start with a known key type
