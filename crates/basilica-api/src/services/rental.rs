@@ -45,10 +45,22 @@ pub struct CreateRentalRequest {
     pub config: RentalConfig,
 }
 
-/// Response from creating a rental
+/// Response from creating a rental - matches validator API response
 #[derive(Debug, Clone)]
 pub struct CreateRentalResponse {
-    pub rental: Rental,
+    pub rental_id: String,
+    pub ssh_credentials: Option<String>,
+    pub container_info: ContainerInfo,
+}
+
+/// Container information from rental response
+#[derive(Debug, Clone)]
+pub struct ContainerInfo {
+    pub container_id: String,
+    pub container_name: String,
+    pub mapped_ports: Vec<basilica_validator::rental::types::PortMapping>,
+    pub status: String,
+    pub labels: std::collections::HashMap<String, String>,
 }
 
 /// Request to list rentals
@@ -193,26 +205,18 @@ impl RentalService for DefaultRentalService {
             .await
             .map_err(|e| RentalError::InternalError(format!("Validator API error: {}", e)))?;
         
-        // Create rental from validator response
-        let rental = Rental {
-            id: validator_response.rental_id.clone(),
-            user_id: _user_id,
-            status: RentalStatus::Provisioning,
-            ssh_access: validator_response.ssh_credentials.as_ref().map(|_| crate::models::ssh::SshAccess {
-                host: "basilica.io".to_string(), // Would get from container info
-                port: 22,
-                username: "root".to_string(),
-            }),
-            executor_id: "executor-from-container-labels".to_string(), // Would extract from container labels
-            resources: request.config.resources,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            expires_at: request.config.duration_seconds.map(|secs| Utc::now() + ChronoDuration::seconds(secs as i64)),
-            terminated_at: None,
-            deployment_id: None,
-        };
-        
-        Ok(CreateRentalResponse { rental })
+        // Return validator-compatible response
+        Ok(CreateRentalResponse {
+            rental_id: validator_response.rental_id,
+            ssh_credentials: validator_response.ssh_credentials,
+            container_info: ContainerInfo {
+                container_id: validator_response.container_info.container_id,
+                container_name: validator_response.container_info.container_name,
+                mapped_ports: validator_response.container_info.mapped_ports,
+                status: validator_response.container_info.status,
+                labels: validator_response.container_info.labels,
+            },
+        })
     }
     
     async fn list_rentals(&self, request: ListRentalsRequest) -> Result<ListRentalsResponse, RentalError> {
@@ -399,7 +403,20 @@ impl RentalService for MockRentalService {
         let mut rentals = self.rentals.write().await;
         rentals.insert(rental.id.clone(), rental.clone());
         
-        Ok(CreateRentalResponse { rental })
+        // Create validator-compatible response structure
+        Ok(CreateRentalResponse {
+            rental_id: rental.id,
+            ssh_credentials: rental.ssh_access.map(|ssh| {
+                format!("ssh {}@{}:{}", ssh.username, ssh.host, ssh.port)
+            }),
+            container_info: ContainerInfo {
+                container_id: format!("container_{}", &rental.executor_id),
+                container_name: format!("rental_{}", &rental.executor_id),
+                mapped_ports: vec![], // TODO: Add port mappings when supported
+                status: "pending".to_string(),
+                labels: std::collections::HashMap::new(),
+            },
+        })
     }
     
     async fn list_rentals(&self, _request: ListRentalsRequest) -> Result<ListRentalsResponse, RentalError> {
@@ -490,9 +507,9 @@ mod tests {
         };
         
         let response = service.create_rental(request).await.unwrap();
-        assert!(response.rental.id.starts_with("rental-"));
-        assert_eq!(response.rental.status, RentalStatus::Active);
-        assert!(response.rental.ssh_access.is_some());
+        assert!(response.rental_id.starts_with("rental-"));
+        assert!(response.ssh_credentials.is_some());
+        assert!(!response.container_info.container_id.is_empty());
     }
     
     #[tokio::test]
@@ -535,7 +552,7 @@ mod tests {
             },
         };
         let response = service.create_rental(create_request).await.unwrap();
-        let rental_id = response.rental.id.clone();
+        let rental_id = response.rental_id.clone();
         
         // Terminate it
         service.terminate_rental("test-token", &rental_id).await.unwrap();
@@ -561,8 +578,11 @@ mod tests {
             },
         };
         let response = service.create_rental(create_request).await.unwrap();
-        let rental_id = response.rental.id.clone();
-        let original_expiry = response.rental.expires_at.unwrap();
+        let rental_id = response.rental_id.clone();
+        
+        // Note: original expiry not available in new response structure, get it from service
+        let original_rental = service.get_rental("test-token", &rental_id).await.unwrap();
+        let original_expiry = original_rental.expires_at.unwrap();
         
         // Extend by 1 hour
         let updated = service.extend_rental("test-token", &rental_id, 3600).await.unwrap();
@@ -584,7 +604,7 @@ mod tests {
             },
         };
         let response = service.create_rental(create_request).await.unwrap();
-        let rental_id = response.rental.id.clone();
+        let rental_id = response.rental_id.clone();
         
         // Attach deployment
         service.attach_deployment(&rental_id, "deploy-1").await.unwrap();

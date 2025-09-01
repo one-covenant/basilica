@@ -173,6 +173,10 @@ impl ServiceClient {
     pub async fn rent_vm(&self, config: RentalConfig) -> Result<Rental, ServiceClientError> {
         let token = self.get_token().await?;
         
+        // Clone necessary fields before moving config
+        let executor_id = config.executor_id.clone();
+        let resources = config.resources.clone();
+        
         let request = CreateRentalRequest {
             token,
             config,
@@ -183,7 +187,30 @@ impl ServiceClient {
             .await
             .map_err(|e| ServiceClientError::RentalError(format!("{}", e)))?;
         
-        Ok(response.rental)
+        // Convert CreateRentalResponse to Rental for backward compatibility
+        let rental = Rental {
+            id: response.rental_id,
+            user_id: "unknown".to_string(), // TODO: Get from auth context
+            status: crate::models::rental::RentalStatus::Pending, // Assume pending initially 
+            ssh_access: response.ssh_credentials.map(|creds| {
+                // Parse SSH credentials to create SshAccess
+                // For now, just create a basic structure
+                crate::models::ssh::SshAccess {
+                    host: "unknown".to_string(),
+                    port: 22,
+                    username: "root".to_string(),
+                }
+            }),
+            executor_id: executor_id.unwrap_or("unknown".to_string()),
+            resources: resources,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            expires_at: None,
+            terminated_at: None,
+            deployment_id: None,
+        };
+        
+        Ok(rental)
     }
     
     /// Deploy a container
