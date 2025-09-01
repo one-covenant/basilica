@@ -34,6 +34,14 @@ pub struct AuthConfig {
 
     /// OAuth token endpoint
     pub token_endpoint: String,
+    
+    /// OAuth device authorization endpoint (for device flow)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_auth_endpoint: Option<String>,
+    
+    /// OAuth token revocation endpoint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoke_endpoint: Option<String>,
 
     /// OAuth redirect URI
     pub redirect_uri: String,
@@ -42,9 +50,11 @@ pub struct AuthConfig {
     pub scopes: Vec<String>,
 
     /// Auth0 domain (if using Auth0)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auth0_domain: Option<String>,
 
     /// Auth0 audience
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auth0_audience: Option<String>,
 }
 
@@ -180,6 +190,8 @@ impl AuthConfig {
             client_id,
             auth_endpoint: format!("https://{}/authorize", domain),
             token_endpoint: format!("https://{}/oauth/token", domain),
+            device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),
+            revoke_endpoint: Some(format!("https://{}/oauth/revoke", domain)),
             redirect_uri: "http://localhost:8080/callback".to_string(),
             scopes: vec![
                 "openid".to_string(),
@@ -312,6 +324,8 @@ mod tests {
             client_id: "client123".to_string(),
             auth_endpoint: "https://auth.example.com/authorize".to_string(),
             token_endpoint: "https://auth.example.com/token".to_string(),
+            device_auth_endpoint: None,
+            revoke_endpoint: None,
             redirect_uri: "http://localhost:8080/callback".to_string(),
             scopes: vec![],
             auth0_domain: None,

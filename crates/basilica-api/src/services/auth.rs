@@ -5,6 +5,8 @@
 //! - Token storage and refresh
 //! - Device flow authentication
 //! - Token validation and expiry management
+//! - Environment detection for appropriate auth flow selection
+//! - Compatible with both CLI and API usage
 
 use crate::models::auth::{AuthConfig, AuthError, DeviceAuth, PkceChallenge, TokenSet};
 use crate::services::cache::{CacheService, CacheStorage};
@@ -13,6 +15,7 @@ use chrono::{Duration, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::collections::HashMap;
 
 /// Token response from OAuth provider
 #[derive(Debug, Deserialize)]
@@ -101,6 +104,8 @@ pub struct DefaultAuthService {
     cache: Arc<CacheService>,
     client: Client,
     token_cache_key: String,
+    /// Additional OAuth parameters (e.g., for Auth0-specific settings)
+    additional_params: HashMap<String, String>,
 }
 
 impl DefaultAuthService {
@@ -114,6 +119,7 @@ impl DefaultAuthService {
             cache,
             client: Client::new(),
             token_cache_key: "auth:token".to_string(),
+            additional_params: HashMap::new(),
         })
     }
 
@@ -129,12 +135,25 @@ impl DefaultAuthService {
             cache: Arc::new(CacheService::new(Box::new(storage))),
             client: Client::new(),
             token_cache_key: "auth:token".to_string(),
+            additional_params: HashMap::new(),
         })
     }
 
     /// Set custom token cache key
     pub fn with_cache_key(mut self, key: String) -> Self {
         self.token_cache_key = key;
+        self
+    }
+    
+    /// Add additional OAuth parameters
+    pub fn with_additional_params(mut self, params: HashMap<String, String>) -> Self {
+        self.additional_params = params;
+        self
+    }
+    
+    /// Add a single OAuth parameter
+    pub fn with_param(mut self, key: String, value: String) -> Self {
+        self.additional_params.insert(key, value);
         self
     }
 
@@ -166,6 +185,11 @@ impl AuthService for DefaultAuthService {
         // Add Auth0-specific parameters
         if let Some(audience) = &self.config.auth0_audience {
             url.query_pairs_mut().append_pair("audience", audience);
+        }
+        
+        // Add any additional parameters (e.g., from CLI configuration)
+        for (key, value) in &self.additional_params {
+            url.query_pairs_mut().append_pair(key, value);
         }
 
         Ok((url.to_string(), pkce))
@@ -318,12 +342,19 @@ impl AuthService for DefaultAuthService {
         if let Some(audience) = &self.config.auth0_audience {
             params.push(("audience", audience.clone()));
         }
+        
+        // Add any additional parameters
+        for (key, value) in &self.additional_params {
+            params.push((key.as_str(), value.clone()));
+        }
 
-        let device_endpoint = if let Some(domain) = &self.config.auth0_domain {
+        let device_endpoint = if let Some(endpoint) = &self.config.device_auth_endpoint {
+            endpoint.clone()
+        } else if let Some(domain) = &self.config.auth0_domain {
             format!("https://{}/oauth/device/code", domain)
         } else {
             return Err(AuthError::ConfigError(
-                "Device flow requires Auth0 domain".to_string(),
+                "Device flow requires device_auth_endpoint or auth0_domain".to_string(),
             ));
         };
 
@@ -511,6 +542,8 @@ mod tests {
             client_id: "test-client".to_string(),
             auth_endpoint: "https://auth.example.com/authorize".to_string(),
             token_endpoint: "https://auth.example.com/token".to_string(),
+            device_auth_endpoint: Some("https://auth.example.com/device".to_string()),
+            revoke_endpoint: Some("https://auth.example.com/revoke".to_string()),
             redirect_uri: "http://localhost:8080/callback".to_string(),
             scopes: vec!["openid".to_string(), "profile".to_string()],
             auth0_domain: Some("auth.example.com".to_string()),
@@ -647,4 +680,36 @@ mod tests {
         let retrieved = service.get_token().await.unwrap();
         assert!(retrieved.is_some());
     }
+}
+
+/// Environment detection utilities for determining authentication flow
+/// These help decide whether to use device flow or browser flow
+
+/// Detect if running in Windows Subsystem for Linux (WSL)
+pub fn is_wsl_environment() -> bool {
+    std::fs::read_to_string("/proc/version")
+        .map(|content| content.contains("Microsoft") || content.contains("WSL"))
+        .unwrap_or(false)
+}
+
+/// Detect if running in an SSH session
+pub fn is_ssh_session() -> bool {
+    std::env::var("SSH_CLIENT").is_ok() || std::env::var("SSH_TTY").is_ok()
+}
+
+/// Detect if running inside a container runtime
+pub fn is_container_runtime() -> bool {
+    std::path::Path::new("/.dockerenv").exists()
+        || std::path::Path::new("/run/.containerenv").exists()
+}
+
+/// Determine if device flow should be used for authentication
+///
+/// Device flow is preferred when:
+/// - Running in WSL environment
+/// - Running in SSH session
+/// - Running in container
+/// - Browser cannot be opened (fallback)
+pub fn should_use_device_flow() -> bool {
+    is_wsl_environment() || is_ssh_session() || is_container_runtime()
 }

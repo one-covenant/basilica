@@ -92,6 +92,8 @@ regex = "1.10"
 # Load balancing algorithms
 weighted-rs = "0.1"
 rand = { workspace = true }
+webbrowser = "1.0.5"
+html-escape = "0.2.13"
 
 [dev-dependencies]
 criterion = "0.5"
