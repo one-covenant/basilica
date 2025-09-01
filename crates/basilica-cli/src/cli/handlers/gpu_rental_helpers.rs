@@ -62,7 +62,7 @@ pub fn filter_rentals_with_ssh(
 /// * `target` - Optional rental ID provided by user
 /// * `service_client` - Service client instance
 /// * `require_ssh` - If true, only show rentals with SSH access
-pub async fn resolve_target_rental_with_service(
+pub async fn resolve_target_rental(
     target: Option<String>,
     service_client: &ServiceClient,
     require_ssh: bool,

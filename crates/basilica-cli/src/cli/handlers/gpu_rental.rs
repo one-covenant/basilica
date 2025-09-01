@@ -3,7 +3,7 @@
 use crate::cache::{CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::cli::handlers::gpu_rental_helpers::{
-    get_ssh_credentials_from_cache, resolve_target_rental_with_service,
+    get_ssh_credentials_from_cache, resolve_target_rental,
 };
 // Removed create_authenticated_client - all handlers now use ServiceClient
 use crate::config::CliConfig;
@@ -431,7 +431,7 @@ pub async fn handle_up(
 
         // Poll for rental to become active
         let rental_active =
-            poll_rental_status_with_service(&rental_id, &service_client).await?;
+            poll_rental_status(&rental_id, &service_client).await?;
 
         if rental_active {
             // Parse SSH credentials and connect
@@ -606,7 +606,7 @@ pub async fn handle_status(
     let service_client = ServiceClient::new(service_config);
 
     // Resolve target rental (fetch and prompt if not provided)
-    let target = resolve_target_rental_with_service(target, &service_client, false).await?;
+    let target = resolve_target_rental(target, &service_client, false).await?;
 
     let spinner = create_spinner("Checking rental status...");
 
@@ -649,7 +649,7 @@ pub async fn handle_logs(
     let service_client = ServiceClient::new(service_config);
 
     // Resolve target rental (fetch and prompt if not provided)
-    let target = resolve_target_rental_with_service(target, &service_client, false).await?;
+    let target = resolve_target_rental(target, &service_client, false).await?;
 
     let spinner = create_spinner("Connecting to log stream...");
 
@@ -749,7 +749,7 @@ pub async fn handle_down(target: Option<String>, config: &CliConfig, _no_auth: b
     let service_client = ServiceClient::new(service_config);
 
     // Resolve target rental (fetch and prompt if not provided)
-    let rental_id = resolve_target_rental_with_service(target, &service_client, false).await?;
+    let rental_id = resolve_target_rental(target, &service_client, false).await?;
 
     // Load rental cache
     let mut cache = RentalCache::load().await.unwrap_or_default();
@@ -794,7 +794,7 @@ pub async fn handle_exec(
     let mut cache = RentalCache::load().await?;
 
     // Resolve target rental with SSH requirement
-    let target = resolve_target_rental_with_service(target, &service_client, true).await?;
+    let target = resolve_target_rental(target, &service_client, true).await?;
 
     debug!("Executing command on rental: {}", target);
 
@@ -802,7 +802,7 @@ pub async fn handle_exec(
     let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
 
     // Verify rental is still active before proceeding
-    verify_rental_status_and_cleanup_cache_with_service(&target, &service_client, &mut cache).await?;
+    verify_rental_status_and_cleanup_cache(&target, &service_client, &mut cache).await?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -832,7 +832,7 @@ pub async fn handle_ssh(
     let mut cache = RentalCache::load().await?;
 
     // Resolve target rental with SSH requirement
-    let target = resolve_target_rental_with_service(target, &service_client, true).await?;
+    let target = resolve_target_rental(target, &service_client, true).await?;
 
     debug!("Opening SSH connection to rental: {}", target);
 
@@ -840,7 +840,7 @@ pub async fn handle_ssh(
     let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
 
     // Verify rental is still active before proceeding
-    verify_rental_status_and_cleanup_cache_with_service(&target, &service_client, &mut cache).await?;
+    verify_rental_status_and_cleanup_cache(&target, &service_client, &mut cache).await?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -900,7 +900,7 @@ pub async fn handle_cp(
             let source_exists = std::path::Path::new(&source).exists();
 
             // Resolve target rental with SSH requirement
-            let selected_rental = resolve_target_rental_with_service(None, &service_client, true).await
+            let selected_rental = resolve_target_rental(None, &service_client, true).await
                 .map_err(|e| e.with_suggestion("Specify rental ID explicitly: 'basilica cp <rental_id>:<path> <local_path>' or vice versa"))?;
 
             // Determine direction based on source file existence
@@ -922,7 +922,7 @@ pub async fn handle_cp(
         )))?;
 
     // Verify rental is still active before proceeding
-    verify_rental_status_and_cleanup_cache_with_service(&rental_id, &service_client, &mut cache).await?;
+    verify_rental_status_and_cleanup_cache(&rental_id, &service_client, &mut cache).await?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -949,8 +949,8 @@ pub async fn handle_cp(
 // Helper functions
 
 
-/// Poll rental status using ServiceClient - updated version for new architecture
-async fn poll_rental_status_with_service(
+/// Poll rental status using ServiceClient
+async fn poll_rental_status(
     rental_id: &str,
     service_client: &basilica_api::services::client::ServiceClient,
 ) -> Result<bool> {
@@ -1061,8 +1061,8 @@ fn display_ssh_connection_instructions(
     Ok(())
 }
 
-/// Verify rental is still active and clean up cache if not - ServiceClient version
-async fn verify_rental_status_and_cleanup_cache_with_service(
+/// Verify rental is still active and clean up cache if not
+async fn verify_rental_status_and_cleanup_cache(
     rental_id: &str,
     service_client: &ServiceClient,
     cache: &mut RentalCache,
