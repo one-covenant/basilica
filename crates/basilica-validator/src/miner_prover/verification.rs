@@ -119,6 +119,11 @@ impl VerificationEngine {
         });
 
         if executor_list.is_empty() {
+            info!(
+                miner_uid = task.miner_uid,
+                "[EVAL_FLOW] No executors found for miner {}", task.miner_uid
+            );
+
             return Ok(VerificationResult {
                 miner_uid: task.miner_uid,
                 overall_score: 0.0,

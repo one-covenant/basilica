@@ -146,6 +146,70 @@ impl StandardSshClient {
         Ok(())
     }
 
+    /// Pre-accept SSH host key to prevent hanging on host verification
+    pub async fn pre_accept_host_key(&self, details: &SshConnectionDetails) -> Result<()> {
+        let host_identifier = if details.port == 22 {
+            details.host.clone()
+        } else {
+            format!("[{}]:{}", details.host, details.port)
+        };
+
+        let known_hosts = std::env::var("HOME")
+            .map(|home| std::path::PathBuf::from(home).join(".ssh").join("known_hosts"))
+            .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/known_hosts"));
+
+        // Check if host key already exists
+        if known_hosts.exists() {
+            if let Ok(content) = std::fs::read_to_string(&known_hosts) {
+                if content.lines().any(|line| line.contains(&host_identifier)) {
+                    return Ok(());
+                }
+            }
+        }
+
+        let mut cmd = tokio::process::Command::new("ssh-keyscan");
+        cmd.arg("-p")
+            .arg(details.port.to_string())
+            .arg("-T")
+            .arg("5")
+            .arg("-t")
+            .arg("rsa,ed25519")
+            .arg(&details.host)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+
+        let output = timeout(Duration::from_secs(10), cmd.output())
+            .await
+            .map_err(|_| anyhow::anyhow!("Host key scan timeout"))?
+            .map_err(|e| anyhow::anyhow!("Failed to scan host key: {}", e))?;
+
+        if !output.status.success() || output.stdout.is_empty() {
+            return Err(anyhow::anyhow!("Unable to retrieve host key"));
+        }
+
+        if let Some(dir) = known_hosts.parent() {
+            std::fs::create_dir_all(dir).ok();
+        }
+
+        let host_keys = String::from_utf8_lossy(&output.stdout);
+        let mut file_content = if known_hosts.exists() {
+            std::fs::read_to_string(&known_hosts).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        if !file_content.is_empty() && !file_content.ends_with('\n') {
+            file_content.push('\n');
+        }
+        file_content.push_str(host_keys.trim());
+        file_content.push('\n');
+
+        std::fs::write(&known_hosts, file_content)
+            .map_err(|e| anyhow::anyhow!("Failed to write host key: {}", e))?;
+
+        Ok(())
+    }
+
     /// Internal SSH command execution
     async fn execute_ssh_command(
         &self,

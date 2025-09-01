@@ -13,12 +13,14 @@ use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 /// Binary validation executor for running and parsing validator binaries
-pub struct BinaryValidator {}
+pub struct BinaryValidator {
+    ssh_client: Arc<crate::ssh::ValidatorSshClient>,
+}
 
 impl BinaryValidator {
     /// Create a new binary validator
-    pub fn new(_ssh_client: Arc<crate::ssh::ValidatorSshClient>) -> Self {
-        Self {}
+    pub fn new(ssh_client: Arc<crate::ssh::ValidatorSshClient>) -> Self {
+        Self { ssh_client }
     }
 
     /// Execute validator-binary locally with SSH parameters
@@ -34,6 +36,15 @@ impl BinaryValidator {
             ssh_port = ssh_details.port,
             "[EVAL_FLOW] Executing validator binary locally"
         );
+
+        self.ssh_client
+            .pre_accept_host_key(ssh_details)
+            .await
+            .map_err(|e| {
+                warn!("Failed to pre-accept SSH host key: {}.", e);
+                e
+            })
+            .ok();
 
         let mut command = tokio::process::Command::new(&binary_config.validator_binary_path);
 
@@ -53,9 +64,6 @@ impl BinaryValidator {
             .arg(&binary_config.output_format)
             .arg("--timeout")
             .arg(binary_config.execution_timeout_secs.to_string());
-
-        // Set environment variable for matrix size
-        command.env("BAS_MATRIX_SIZE", "1024");
 
         // Set timeout for entire process
         let timeout_duration = Duration::from_secs(binary_config.execution_timeout_secs + 10);

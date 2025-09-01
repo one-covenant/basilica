@@ -140,6 +140,11 @@ impl Default for SshSessionStats {
 }
 
 impl ValidatorSshClient {
+    /// Pre-accept SSH host key
+    pub async fn pre_accept_host_key(&self, details: &SshConnectionDetails) -> Result<()> {
+        self.client.pre_accept_host_key(details).await
+    }
+
     /// Create a new validator SSH client with default configuration
     pub fn new() -> Self {
         Self {
