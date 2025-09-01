@@ -532,6 +532,38 @@ impl AuthService for MockAuthService {
     }
 }
 
+/// Environment detection utilities for determining authentication flow
+/// These help decide whether to use device flow or browser flow
+
+/// Detect if running in Windows Subsystem for Linux (WSL)
+pub fn is_wsl_environment() -> bool {
+    std::fs::read_to_string("/proc/version")
+        .map(|content| content.contains("Microsoft") || content.contains("WSL"))
+        .unwrap_or(false)
+}
+
+/// Detect if running in an SSH session
+pub fn is_ssh_session() -> bool {
+    std::env::var("SSH_CLIENT").is_ok() || std::env::var("SSH_TTY").is_ok()
+}
+
+/// Detect if running inside a container runtime
+pub fn is_container_runtime() -> bool {
+    std::path::Path::new("/.dockerenv").exists()
+        || std::path::Path::new("/run/.containerenv").exists()
+}
+
+/// Determine if device flow should be used for authentication
+///
+/// Device flow is preferred when:
+/// - Running in WSL environment
+/// - Running in SSH session
+/// - Running in container
+/// - Browser cannot be opened (fallback)
+pub fn should_use_device_flow() -> bool {
+    is_wsl_environment() || is_ssh_session() || is_container_runtime()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -680,36 +712,4 @@ mod tests {
         let retrieved = service.get_token().await.unwrap();
         assert!(retrieved.is_some());
     }
-}
-
-/// Environment detection utilities for determining authentication flow
-/// These help decide whether to use device flow or browser flow
-
-/// Detect if running in Windows Subsystem for Linux (WSL)
-pub fn is_wsl_environment() -> bool {
-    std::fs::read_to_string("/proc/version")
-        .map(|content| content.contains("Microsoft") || content.contains("WSL"))
-        .unwrap_or(false)
-}
-
-/// Detect if running in an SSH session
-pub fn is_ssh_session() -> bool {
-    std::env::var("SSH_CLIENT").is_ok() || std::env::var("SSH_TTY").is_ok()
-}
-
-/// Detect if running inside a container runtime
-pub fn is_container_runtime() -> bool {
-    std::path::Path::new("/.dockerenv").exists()
-        || std::path::Path::new("/run/.containerenv").exists()
-}
-
-/// Determine if device flow should be used for authentication
-///
-/// Device flow is preferred when:
-/// - Running in WSL environment
-/// - Running in SSH session
-/// - Running in container
-/// - Browser cannot be opened (fallback)
-pub fn should_use_device_flow() -> bool {
-    is_wsl_environment() || is_ssh_session() || is_container_runtime()
 }

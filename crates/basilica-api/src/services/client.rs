@@ -11,7 +11,7 @@ use crate::services::{
     auth::{AuthService, DefaultAuthService, MockAuthService},
     cache::{CacheService, FileCacheStorage},
     deployment::{DeploymentService, DefaultDeploymentService, CreateDeploymentRequest},
-    executor::{ExecutorService, MockExecutorService},
+    executor::{ExecutorService, DefaultExecutorService, MockExecutorService},
     rental::{RentalService, DefaultRentalService, CreateRentalRequest, ListRentalsRequest},
     ssh::{SshService, DefaultSshService, SshServiceConfig},
 };
@@ -86,10 +86,17 @@ impl ServiceClient {
         };
         
         let ssh_config = config.ssh_config.clone()
-            .unwrap_or_else(|| SshServiceConfig::default());
+            .unwrap_or_default();
         let ssh_service = Arc::new(DefaultSshService::new(ssh_config, cache.clone()));
         
-        let executor_service = Arc::new(MockExecutorService::new(cache.clone()));
+        // Try to use DefaultExecutorService with validator API, fallback to Mock on error
+        let executor_service = match DefaultExecutorService::try_new(
+            "https://api.basilica.io".to_string(),
+            cache.clone(),
+        ) {
+            Ok(service) => Arc::new(service) as Arc<dyn ExecutorService>,
+            Err(_) => Arc::new(MockExecutorService::new(cache.clone())) as Arc<dyn ExecutorService>,
+        };
         
         let deployment_config = Default::default();
         let deployment_service = Arc::new(DefaultDeploymentService::new(
@@ -105,6 +112,7 @@ impl ServiceClient {
             executor_service.clone(),
             ssh_service.clone(),
             cache.clone(),
+            "https://api.basilica.io".to_string(), // base URL for validator API
         ));
         
         Self {

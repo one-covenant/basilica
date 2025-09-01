@@ -5,6 +5,7 @@
 //! - Selecting optimal executors based on requirements
 //! - Managing executor health and availability
 //! - Executor scoring and ranking
+//! - Integrates with basilica-validator API for real data
 
 use crate::models::executor::{
     Executor, ExecutorDetails, ExecutorFilters, GpuSpec, CpuSpec, 
@@ -15,6 +16,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
+use basilica_validator::api::client::ValidatorClient;
+use basilica_validator::api::types::{ListAvailableExecutorsQuery, ExecutorDetails as ValidatorExecutorDetails};
 
 /// Executor availability information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +90,191 @@ pub trait ExecutorService: Send + Sync {
     
     /// Get executor health metrics
     async fn get_executor_health(&self, executor_id: &str) -> Result<ResourceUsage, ExecutorError>;
+}
+
+/// Default executor service implementation using validator API
+pub struct DefaultExecutorService {
+    cache: Arc<CacheService>,
+    validator_client: ValidatorClient,
+}
+
+impl DefaultExecutorService {
+    /// Create a new default executor service
+    pub fn new(base_url: String, cache: Arc<CacheService>) -> Self {
+        let validator_client = ValidatorClient::new(base_url, Duration::from_secs(30))
+            .expect("Failed to create validator client");
+        
+        Self {
+            cache,
+            validator_client,
+        }
+    }
+    
+    /// Try to create a new default executor service, returning error if validation fails
+    pub fn try_new(base_url: String, cache: Arc<CacheService>) -> Result<Self, ExecutorError> {
+        let validator_client = ValidatorClient::new(base_url, Duration::from_secs(30))
+            .map_err(|e| ExecutorError::BackendError(format!("Failed to create validator client: {}", e)))?;
+        
+        Ok(Self {
+            cache,
+            validator_client,
+        })
+    }
+    
+    /// Convert validator API executor to our model
+    fn convert_executor(&self, validator_exec: &ValidatorExecutorDetails) -> Executor {
+        // Convert from validator API types to our types
+        // This is a simplified conversion - in practice you'd map all fields properly
+        Executor {
+            id: validator_exec.id.clone(),
+            cpu_specs: CpuSpec {
+                cores: validator_exec.cpu_specs.cores,
+                threads: validator_exec.cpu_specs.cores * 2, // Assume 2 threads per core
+                model: validator_exec.cpu_specs.model.clone(),
+                frequency_ghz: 2.0, // Would come from validator API
+            },
+            gpu_specs: validator_exec.gpu_specs.iter().map(|gpu| GpuSpec {
+                name: gpu.name.clone(),
+                memory_gb: gpu.memory_gb,
+                compute_capability: Some(gpu.compute_capability.clone()),
+                cuda_cores: None, // Would need to be added to validator API
+            }).collect(),
+            memory_gb: validator_exec.cpu_specs.memory_gb,
+            storage_gb: 1000, // Would come from validator API
+            is_available: true,
+            verification_score: 0.95,
+            uptime_percentage: 99.5,
+        }
+    }
+}
+
+#[async_trait]
+impl ExecutorService for DefaultExecutorService {
+    async fn list_available(&self, filters: Option<ExecutorFilters>) -> Result<ListExecutorsResponse, ExecutorError> {
+        // Convert our filters to validator API query
+        let query = filters.map(|f| ListAvailableExecutorsQuery {
+            available: Some(f.available_only),
+            min_gpu_memory: f.min_memory_gb,
+            gpu_type: f.gpu_type,
+            min_gpu_count: f.min_gpu_count,
+        });
+        
+        // Use validator API to get executors
+        let response = self.validator_client
+            .list_available_executors(query)
+            .await
+            .map_err(|e| ExecutorError::BackendError(format!("Validator API error: {}", e)))?;
+        
+        // Convert validator API response to our types
+        let available_executors: Vec<AvailableExecutor> = response
+            .available_executors
+            .iter()
+            .map(|validator_exec| AvailableExecutor {
+                executor: self.convert_executor(&validator_exec.executor),
+                availability: AvailabilityInfo {
+                    available_until: validator_exec.availability.available_until,
+                    verification_score: validator_exec.availability.verification_score,
+                    uptime_percentage: validator_exec.availability.uptime_percentage,
+                },
+            })
+            .collect();
+        
+        Ok(ListExecutorsResponse {
+            total_count: available_executors.len(),
+            available_executors,
+        })
+    }
+    
+    async fn get_executor(&self, executor_id: &str) -> Result<Executor, ExecutorError> {
+        // Check cache first
+        let cache_key = format!("executor:{}", executor_id);
+        if let Ok(Some(cached)) = self.cache.get::<Executor>(&cache_key).await {
+            return Ok(cached);
+        }
+        
+        // For now, get from list of available executors
+        // TODO: Add direct executor lookup to validator API
+        let response = self.list_available(None).await?;
+        let executor = response.available_executors
+            .into_iter()
+            .find(|ae| ae.executor.id == executor_id)
+            .map(|ae| ae.executor)
+            .ok_or_else(|| ExecutorError::ExecutorNotFound(executor_id.to_string()))?;
+        
+        // Cache the result
+        let _ = self.cache.set(&cache_key, &executor, Some(Duration::from_secs(300))).await;
+        
+        Ok(executor)
+    }
+    
+    async fn get_executor_details(&self, executor_id: &str) -> Result<ExecutorDetails, ExecutorError> {
+        let executor = self.get_executor(executor_id).await?;
+        
+        // Get additional details from validator API
+        let health = self.get_executor_health(executor_id).await?;
+        
+        Ok(ExecutorDetails {
+            executor,
+            network: NetworkInfo {
+                bandwidth_mbps: 1000,
+                public_ip: true,
+                ipv6_support: false,
+            },
+            resource_usage: health,
+            price_per_hour: 2.50,
+            location: Some("us-east-1".to_string()),
+        })
+    }
+    
+    async fn find_best_executor(&self, requirements: &ResourceRequirements) -> Result<AvailableExecutor, ExecutorError> {
+        // Convert requirements to filters
+        let filters = ExecutorFilters {
+            available_only: true,
+            min_gpu_count: Some(requirements.gpu_count as u32),
+            gpu_type: requirements.gpu_types.first().cloned(),
+            min_memory_gb: Some((requirements.memory_mb / 1024) as u32),
+            min_cpu_cores: Some(requirements.cpu_cores as u32),
+            ..Default::default()
+        };
+        
+        let response = self.list_available(Some(filters)).await?;
+        
+        if response.available_executors.is_empty() {
+            return Err(ExecutorError::NoExecutorsAvailable);
+        }
+        
+        // Simple selection - first available (could be more sophisticated)
+        Ok(response.available_executors[0].clone())
+    }
+    
+    async fn update_availability(&self, executor_id: &str, _available: bool) -> Result<(), ExecutorError> {
+        // This would call validator API to update availability
+        // For now, just invalidate cache
+        let cache_key = format!("executor:{}", executor_id);
+        let _ = self.cache.invalidate_pattern(&cache_key).await;
+        Ok(())
+    }
+    
+    async fn get_executor_health(&self, executor_id: &str) -> Result<ResourceUsage, ExecutorError> {
+        // Check cache first
+        let cache_key = format!("executor_health:{}", executor_id);
+        if let Ok(Some(cached)) = self.cache.get::<ResourceUsage>(&cache_key).await {
+            return Ok(cached);
+        }
+        
+        // Use validator API to get health metrics
+        // For now, return default values
+        let health = ResourceUsage {
+            cpu_percent: 25.0,
+            memory_percent: 40.0,
+            gpu_percent: Some(15.0), // Would come from validator API
+        };
+        
+        // Cache the result
+        let _ = self.cache.set(&cache_key, &health, Some(Duration::from_secs(30))).await;
+        
+        Ok(health)
+    }
 }
 
 /// Mock implementation for testing

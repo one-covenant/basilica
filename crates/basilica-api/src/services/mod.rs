@@ -20,6 +20,6 @@ pub use auth_callback::{CallbackServer, CallbackData, browser_auth_flow};
 pub use cache::{CacheService, CacheStorage};
 pub use client::{ServiceClient, ServiceClientConfig, ServiceClientError};
 pub use deployment::{DeploymentService, DefaultDeploymentService, MockDeploymentService, CreateDeploymentRequest, CreateDeploymentResponse};
-pub use executor::{ExecutorService, MockExecutorService, AvailableExecutor, ListExecutorsResponse};
+pub use executor::{ExecutorService, DefaultExecutorService, MockExecutorService, AvailableExecutor, ListExecutorsResponse};
 pub use rental::{RentalService, DefaultRentalService, MockRentalService, CreateRentalRequest, CreateRentalResponse, ListRentalsRequest, ListRentalsResponse};
 pub use ssh::{SshService, DefaultSshService, MockSshService, SshServiceConfig};

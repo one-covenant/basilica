@@ -48,10 +48,6 @@ pub async fn handle_ls(
 
     let response = api_client
         .list_available_executors(Some(query))
-        .await
-        .map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to fetch executors");
-            CliError::api_request_failed("list available executors", e.to_string())
         })?;
 
     complete_spinner_and_clear(spinner);

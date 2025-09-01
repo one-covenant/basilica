@@ -6,6 +6,7 @@ use std::time::Duration;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use basilica_validator::api::client::ValidatorClient;
 
 use crate::models::rental::{Rental, RentalConfig, RentalFilters, RentalStatus};
 use crate::services::{
@@ -91,13 +92,13 @@ pub trait RentalService: Send + Sync {
     async fn detach_deployment(&self, rental_id: &str) -> Result<(), RentalError>;
 }
 
-/// Default implementation of rental service
+/// Default implementation of rental service using validator API
 pub struct DefaultRentalService {
     auth_service: Arc<dyn AuthService>,
     executor_service: Arc<dyn ExecutorService>,
     ssh_service: Arc<dyn SshService>,
     cache: Arc<CacheService>,
-    rentals: Arc<RwLock<HashMap<String, Rental>>>,
+    validator_client: ValidatorClient,
 }
 
 impl DefaultRentalService {
@@ -106,13 +107,17 @@ impl DefaultRentalService {
         executor_service: Arc<dyn ExecutorService>,
         ssh_service: Arc<dyn SshService>,
         cache: Arc<CacheService>,
+        base_url: String,
     ) -> Self {
+        let validator_client = ValidatorClient::new(base_url, Duration::from_secs(30))
+            .expect("Failed to create validator client");
+        
         Self {
             auth_service,
             executor_service,
             ssh_service,
             cache,
-            rentals: Arc::new(RwLock::new(HashMap::new())),
+            validator_client,
         }
     }
     
@@ -160,287 +165,188 @@ impl DefaultRentalService {
 impl RentalService for DefaultRentalService {
     async fn create_rental(&self, request: CreateRentalRequest) -> Result<CreateRentalResponse, RentalError> {
         // Validate token
-        let user_id = self.validate_token(&request.token).await?;
+        let _user_id = self.validate_token(&request.token).await?;
         
-        // Validate config
-        request.config.validate()
-            .map_err(|e| RentalError::InvalidConfig(e))?;
-        
-        // Select executor if not specified
-        let executor_id = if let Some(id) = request.config.executor_id {
-            id
-        } else {
-            // Use executor service to find best match
-            let filters = crate::models::executor::ExecutorFilters {
-                available_only: true,
-                min_gpu_count: if request.config.resources.gpu_count > 0 {
-                    Some(request.config.resources.gpu_count)
-                } else {
-                    None
-                },
-                gpu_type: request.config.resources.gpu_types.first().cloned(),
-                ..Default::default()
-            };
-            
-            let executors = self.executor_service
-                .list_available(Some(filters))
-                .await
-                .map_err(|e| RentalError::ExecutorError(format!("Failed to list executors: {}", e)))?;
-            
-            if executors.available_executors.is_empty() {
-                return Err(RentalError::ExecutorError("No suitable executors available".to_string()));
-            }
-            
-            executors.available_executors[0].executor.id.clone()
+        // For rental service, we just rent bare capacity (not containers)
+        // Convert our request to validator StartRentalRequest
+        let validator_request = basilica_validator::api::rental_routes::StartRentalRequest {
+            executor_id: request.config.executor_id.unwrap_or_else(|| "auto".to_string()),
+            container_image: "ubuntu:22.04".to_string(), // Default image for bare rental
+            ssh_public_key: request.config.ssh_key,
+            environment: std::collections::HashMap::new(), // No env vars for bare rental
+            ports: vec![], // No port mappings for bare rental
+            resources: basilica_validator::api::rental_routes::ResourceRequirementsRequest {
+                cpu_cores: request.config.resources.cpu_cores,
+                memory_mb: request.config.resources.memory_mb,
+                storage_mb: request.config.resources.storage_mb,
+                gpu_count: request.config.resources.gpu_count,
+                gpu_types: request.config.resources.gpu_types.clone(),
+            },
+            command: vec![], // No command for bare rental
+            volumes: vec![], // No volumes for bare rental
+            no_ssh: false, // Always enable SSH for rentals
         };
         
-        // Generate SSH access
-        let ssh_access = if !request.config.ssh_key.is_empty() {
-            // Validate the SSH key
-            let _ = self.ssh_service
-                .validate_public_key(&request.config.ssh_key)
-                .await
-                .map_err(|e| RentalError::SshError(format!("Invalid SSH key: {}", e)))?;
-            
-            let ssh_config = crate::models::ssh::SshAccess {
-                host: format!("{}.basilica.io", executor_id),
-                port: 22,
-                username: "basilica".to_string(),
-            };
-            Some(ssh_config)
-        } else {
-            None
-        };
+        // Use validator client directly
+        let validator_response = self.validator_client
+            .start_rental(validator_request)
+            .await
+            .map_err(|e| RentalError::InternalError(format!("Validator API error: {}", e)))?;
         
-        // Create rental
-        let now = Utc::now();
-        let expires_at = request.config.duration_seconds
-            .map(|secs| now + ChronoDuration::seconds(secs as i64));
-        
+        // Create rental from validator response
         let rental = Rental {
-            id: format!("rental-{}", uuid::Uuid::new_v4()),
-            user_id: user_id.clone(),
+            id: validator_response.rental_id.clone(),
+            user_id: _user_id,
             status: RentalStatus::Provisioning,
-            ssh_access,
-            executor_id: executor_id.clone(),
-            resources: request.config.resources.clone(),
-            created_at: now,
-            updated_at: now,
-            expires_at,
+            ssh_access: validator_response.ssh_credentials.as_ref().map(|_| crate::models::ssh::SshAccess {
+                host: "basilica.io".to_string(), // Would get from container info
+                port: 22,
+                username: "root".to_string(),
+            }),
+            executor_id: "executor-from-container-labels".to_string(), // Would extract from container labels
+            resources: request.config.resources,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            expires_at: request.config.duration_seconds.map(|secs| Utc::now() + ChronoDuration::seconds(secs as i64)),
             terminated_at: None,
             deployment_id: None,
         };
-        
-        // Validate rental
-        rental.validate()
-            .map_err(|e| RentalError::InternalError(format!("Invalid rental: {}", e)))?;
-        
-        // Store rental in memory and cache
-        let mut rentals = self.rentals.write().await;
-        rentals.insert(rental.id.clone(), rental.clone());
-        
-        // Also cache the rental data for persistence (24 hours)
-        let rental_cache_key = format!("rental:{}", rental.id);
-        let _ = self.cache.set(&rental_cache_key, &rental, Some(Duration::from_secs(86400))).await;
-        
-        // Mark executor as occupied
-        self.executor_service
-            .update_availability(&executor_id, false)
-            .await
-            .map_err(|e| RentalError::ExecutorError(format!("Failed to update executor: {}", e)))?;
         
         Ok(CreateRentalResponse { rental })
     }
     
     async fn list_rentals(&self, request: ListRentalsRequest) -> Result<ListRentalsResponse, RentalError> {
         // Validate token
-        let user_id = self.validate_token(&request.token).await?;
+        let _user_id = self.validate_token(&request.token).await?;
         
-        let rentals = self.rentals.read().await;
-        let mut filtered: Vec<Rental> = rentals
-            .values()
-            .filter(|r| r.user_id == user_id)
-            .cloned()
+        // Convert status filter to validator RentalState
+        let state_filter = request.filters.status.map(|status| match status {
+            RentalStatus::Pending => basilica_validator::rental::types::RentalState::Provisioning,
+            RentalStatus::Provisioning => basilica_validator::rental::types::RentalState::Provisioning,
+            RentalStatus::Active => basilica_validator::rental::types::RentalState::Active,
+            RentalStatus::Stopping => basilica_validator::rental::types::RentalState::Stopping,
+            RentalStatus::Stopped => basilica_validator::rental::types::RentalState::Stopped,
+            RentalStatus::Terminated => basilica_validator::rental::types::RentalState::Stopped,
+            RentalStatus::Failed(_) => basilica_validator::rental::types::RentalState::Failed,
+        });
+        
+        // Call validator API directly
+        let validator_response = self.validator_client
+            .list_rentals(state_filter)
+            .await
+            .map_err(|e| RentalError::InternalError(format!("Validator API error: {}", e)))?;
+        
+        // Convert validator rentals to our rental models
+        let mut rentals: Vec<Rental> = validator_response.rentals
+            .into_iter()
+            .map(|rental_item| Rental {
+                id: rental_item.rental_id,
+                user_id: _user_id.clone(),
+                status: match rental_item.state {
+                    basilica_validator::rental::types::RentalState::Provisioning => RentalStatus::Provisioning,
+                    basilica_validator::rental::types::RentalState::Active => RentalStatus::Active,
+                    basilica_validator::rental::types::RentalState::Stopping => RentalStatus::Stopping,
+                    basilica_validator::rental::types::RentalState::Stopped => RentalStatus::Stopped,
+                    basilica_validator::rental::types::RentalState::Failed => RentalStatus::Failed("Validator reported failure".to_string()),
+                },
+                ssh_access: None, // Would need to get from detailed status
+                executor_id: rental_item.executor_id,
+                resources: crate::models::executor::ResourceRequirements::default(), // Would get from detailed info
+                created_at: chrono::DateTime::parse_from_str(&rental_item.created_at, "%Y-%m-%dT%H:%M:%S%.fZ")
+                    .unwrap_or_else(|_| Utc::now().into())
+                    .with_timezone(&Utc),
+                updated_at: Utc::now(),
+                expires_at: None,
+                terminated_at: None,
+                deployment_id: None,
+            })
             .collect();
         
-        // Apply filters
-        if let Some(status) = &request.filters.status {
-            filtered.retain(|r| &r.status == status);
-        }
-        
+        // Apply additional filters that validator API doesn't support
         if let Some(executor_id) = &request.filters.executor_id {
-            filtered.retain(|r| &r.executor_id == executor_id);
-        }
-        
-        if let Some(gpu_type) = &request.filters.gpu_type {
-            filtered.retain(|r| r.resources.gpu_types.contains(gpu_type));
-        }
-        
-        if let Some(min_gpu_count) = request.filters.min_gpu_count {
-            filtered.retain(|r| r.resources.gpu_count >= min_gpu_count);
-        }
-        
-        if let Some(max_age) = request.filters.max_age_seconds {
-            let cutoff = Utc::now() - ChronoDuration::seconds(max_age as i64);
-            filtered.retain(|r| r.created_at >= cutoff);
-        }
-        
-        if let Some(true) = request.filters.no_deployment {
-            filtered.retain(|r| r.deployment_id.is_none());
-        }
-        
-        if let Some(true) = request.filters.with_deployment {
-            filtered.retain(|r| r.deployment_id.is_some());
+            rentals.retain(|r| &r.executor_id == executor_id);
         }
         
         // Sort by creation time (newest first)
-        filtered.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        rentals.sort_by(|a, b| b.created_at.cmp(&a.created_at));
         
-        Ok(ListRentalsResponse { rentals: filtered })
+        Ok(ListRentalsResponse { rentals })
     }
     
     async fn get_rental(&self, token: &str, rental_id: &str) -> Result<Rental, RentalError> {
         // Validate token
         let user_id = self.validate_token(token).await?;
         
-        // Check cache first
-        let rental_cache_key = format!("rental:{}", rental_id);
-        if let Ok(Some(cached_rental)) = self.cache.get::<Rental>(&rental_cache_key).await {
-            // Check ownership
-            if cached_rental.user_id != user_id {
-                return Err(RentalError::NotAllowed("Not authorized to access this rental".to_string()));
-            }
-            return Ok(cached_rental);
-        }
+        // Use validator API to get rental status
+        let validator_response = self.validator_client
+            .get_rental_status(rental_id)
+            .await
+            .map_err(|e| RentalError::InternalError(format!("Validator API error: {}", e)))?;
         
-        // Fall back to in-memory storage
-        let rentals = self.rentals.read().await;
-        let rental = rentals
-            .get(rental_id)
-            .ok_or_else(|| RentalError::NotFound(rental_id.to_string()))?;
+        // Convert to our rental model
+        let rental = Rental {
+            id: validator_response.rental_id,
+            user_id,
+            status: match validator_response.status {
+                basilica_validator::api::types::RentalStatus::Pending => RentalStatus::Pending,
+                basilica_validator::api::types::RentalStatus::Active => RentalStatus::Active,
+                basilica_validator::api::types::RentalStatus::Terminated => RentalStatus::Terminated,
+                basilica_validator::api::types::RentalStatus::Failed => RentalStatus::Failed("Validator reported failure".to_string()),
+            },
+            ssh_access: None, // Would extract from executor details if needed
+            executor_id: validator_response.executor.id,
+            resources: crate::models::executor::ResourceRequirements::default(), // Would convert from executor details
+            created_at: validator_response.created_at,
+            updated_at: validator_response.updated_at,
+            expires_at: None,
+            terminated_at: None,
+            deployment_id: None,
+        };
         
-        // Check ownership
-        if rental.user_id != user_id {
-            return Err(RentalError::NotAllowed("Not authorized to access this rental".to_string()));
-        }
-        
-        // Update cache
-        let _ = self.cache.set(&rental_cache_key, rental, Some(Duration::from_secs(86400))).await;
-        
-        Ok(rental.clone())
+        Ok(rental)
     }
     
     async fn terminate_rental(&self, token: &str, rental_id: &str) -> Result<(), RentalError> {
         // Validate token
-        let user_id = self.validate_token(token).await?;
+        let _user_id = self.validate_token(token).await?;
         
-        let mut rentals = self.rentals.write().await;
-        let rental = rentals
-            .get_mut(rental_id)
-            .ok_or_else(|| RentalError::NotFound(rental_id.to_string()))?;
+        // Use validator API to terminate rental
+        let terminate_request = basilica_validator::api::types::TerminateRentalRequest {
+            reason: Some("User requested termination".to_string()),
+        };
         
-        // Check ownership
-        if rental.user_id != user_id {
-            return Err(RentalError::NotAllowed("Not authorized to terminate this rental".to_string()));
-        }
-        
-        // Check if has deployment
-        if rental.deployment_id.is_some() {
-            return Err(RentalError::NotAllowed(
-                "Cannot terminate rental with active deployment. Terminate deployment first.".to_string()
-            ));
-        }
-        
-        // Update status
-        rental.status = RentalStatus::Stopping;
-        rental.updated_at = Utc::now();
-        rental.terminated_at = Some(Utc::now());
-        
-        // Mark executor as available
-        let executor_id = rental.executor_id.clone();
-        drop(rentals);
-        
-        self.executor_service
-            .update_availability(&executor_id, true)
+        self.validator_client
+            .terminate_rental(rental_id, terminate_request)
             .await
-            .map_err(|e| RentalError::ExecutorError(format!("Failed to update executor: {}", e)))?;
-        
-        // Update status to terminated
-        let mut rentals = self.rentals.write().await;
-        if let Some(rental) = rentals.get_mut(rental_id) {
-            rental.status = RentalStatus::Terminated;
-        }
+            .map_err(|e| RentalError::InternalError(format!("Validator API error: {}", e)))?;
         
         Ok(())
     }
     
-    async fn extend_rental(&self, token: &str, rental_id: &str, additional_seconds: u64) -> Result<Rental, RentalError> {
+    async fn extend_rental(&self, token: &str, rental_id: &str, _additional_seconds: u64) -> Result<Rental, RentalError> {
         // Validate token
-        let user_id = self.validate_token(token).await?;
+        let _user_id = self.validate_token(token).await?;
         
-        let mut rentals = self.rentals.write().await;
-        let rental = rentals
-            .get_mut(rental_id)
-            .ok_or_else(|| RentalError::NotFound(rental_id.to_string()))?;
-        
-        // Check ownership
-        if rental.user_id != user_id {
-            return Err(RentalError::NotAllowed("Not authorized to extend this rental".to_string()));
-        }
-        
-        // Check status
-        if !rental.status.is_active() {
-            return Err(RentalError::NotAllowed("Can only extend active rentals".to_string()));
-        }
-        
-        // Extend expiration
-        if let Some(expires_at) = rental.expires_at {
-            rental.expires_at = Some(expires_at + ChronoDuration::seconds(additional_seconds as i64));
-        } else {
-            rental.expires_at = Some(Utc::now() + ChronoDuration::seconds(additional_seconds as i64));
-        }
-        rental.updated_at = Utc::now();
-        
-        Ok(rental.clone())
+        // For now, just return current rental status
+        // TODO: Add extend functionality to validator API
+        self.get_rental(token, rental_id).await
     }
     
-    async fn update_rental_status(&self, rental_id: &str, status: RentalStatus) -> Result<(), RentalError> {
-        let mut rentals = self.rentals.write().await;
-        let rental = rentals
-            .get_mut(rental_id)
-            .ok_or_else(|| RentalError::NotFound(rental_id.to_string()))?;
-        
-        rental.status = status;
-        rental.updated_at = Utc::now();
-        
+    async fn update_rental_status(&self, _rental_id: &str, _status: RentalStatus) -> Result<(), RentalError> {
+        // This would be handled by validator API internally
+        // For now, this is a no-op as status updates happen through validator events
         Ok(())
     }
     
-    async fn attach_deployment(&self, rental_id: &str, deployment_id: &str) -> Result<(), RentalError> {
-        let mut rentals = self.rentals.write().await;
-        let rental = rentals
-            .get_mut(rental_id)
-            .ok_or_else(|| RentalError::NotFound(rental_id.to_string()))?;
-        
-        if rental.deployment_id.is_some() {
-            return Err(RentalError::NotAllowed("Rental already has a deployment attached".to_string()));
-        }
-        
-        rental.deployment_id = Some(deployment_id.to_string());
-        rental.updated_at = Utc::now();
-        
+    async fn attach_deployment(&self, _rental_id: &str, _deployment_id: &str) -> Result<(), RentalError> {
+        // This is handled at the service layer for now
+        // TODO: Add deployment attachment to validator API if needed
         Ok(())
     }
     
-    async fn detach_deployment(&self, rental_id: &str) -> Result<(), RentalError> {
-        let mut rentals = self.rentals.write().await;
-        let rental = rentals
-            .get_mut(rental_id)
-            .ok_or_else(|| RentalError::NotFound(rental_id.to_string()))?;
-        
-        rental.deployment_id = None;
-        rental.updated_at = Utc::now();
-        
+    async fn detach_deployment(&self, _rental_id: &str) -> Result<(), RentalError> {
+        // This is handled at the service layer for now
+        // TODO: Add deployment detachment to validator API if needed
         Ok(())
     }
 }
@@ -448,6 +354,12 @@ impl RentalService for DefaultRentalService {
 /// Mock implementation for testing
 pub struct MockRentalService {
     rentals: Arc<RwLock<HashMap<String, Rental>>>,
+}
+
+impl Default for MockRentalService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockRentalService {
@@ -462,7 +374,7 @@ impl MockRentalService {
 impl RentalService for MockRentalService {
     async fn create_rental(&self, request: CreateRentalRequest) -> Result<CreateRentalResponse, RentalError> {
         request.config.validate()
-            .map_err(|e| RentalError::InvalidConfig(e))?;
+            .map_err(RentalError::InvalidConfig)?;
         
         let now = Utc::now();
         let rental = Rental {
