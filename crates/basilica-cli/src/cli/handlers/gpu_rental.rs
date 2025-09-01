@@ -503,15 +503,92 @@ pub async fn handle_ps(
     if json {
         json_output(&rentals)?;
     } else {
-        // TODO: Update table_output to work with service layer Rental type
-        // For now, convert to the expected format or create a simple display
-        println!("Active Rentals:");
-        for rental in &rentals {
-            println!("  {} - {} ({})", rental.id, rental.executor_id, rental.status);
+        // Display rentals in a formatted table
+        #[derive(Tabled)]
+        struct RentalRow {
+            #[tabled(rename = "GPU")]
+            gpu_info: String,
+            #[tabled(rename = "Rental ID")]
+            rental_id: String,
+            #[tabled(rename = "Status")]
+            status: String,
+            #[tabled(rename = "Executor")]
+            executor: String,
+            #[tabled(rename = "Resources")]
+            resources: String,
+            #[tabled(rename = "Created")]
+            created: String,
         }
-        println!("\nTotal: {} active rentals", rentals.len());
 
-        display_ps_quick_start_commands();
+        // Load cache to get additional info like GPU details
+        let cache = RentalCache::load().await.unwrap_or_default();
+
+        let rows: Vec<RentalRow> = rentals
+            .iter()
+            .map(|rental| {
+                // Try to get GPU info from cache, otherwise format from resources
+                let gpu_info = cache
+                    .get_rental(&rental.id)
+                    .and_then(|cached| cached.gpu_info.clone())
+                    .unwrap_or_else(|| {
+                        if rental.resources.gpu_count > 0 {
+                            if rental.resources.gpu_types.is_empty() {
+                                format!("{}x GPU", rental.resources.gpu_count)
+                            } else {
+                                format!("{}x {}", 
+                                    rental.resources.gpu_count,
+                                    rental.resources.gpu_types.join(", ")
+                                )
+                            }
+                        } else {
+                            "CPU only".to_string()
+                        }
+                    });
+
+                // Format resources summary
+                let resources = format!(
+                    "{} cores, {}GB RAM",
+                    rental.resources.cpu_cores,
+                    rental.resources.memory_mb / 1024
+                );
+
+                // Format timestamp
+                let created = rental.created_at.format("%Y-%m-%d %H:%M UTC").to_string();
+
+                // Remove miner prefix from executor ID if present
+                let executor_id = match rental.executor_id.split_once("__") {
+                    Some((_, second)) => second.to_string(),
+                    None => rental.executor_id.clone(),
+                };
+
+                RentalRow {
+                    gpu_info,
+                    rental_id: rental.id.clone(),
+                    status: rental.status.to_string(),
+                    executor: executor_id,
+                    resources,
+                    created,
+                }
+            })
+            .collect();
+
+        if rows.is_empty() {
+            println!("No active rentals found.");
+            println!();
+            println!("To create a new rental, run:");
+            println!("  {}", console::style("basilica up").cyan().bold());
+        } else {
+            let mut table = Table::new(rows);
+            table.with(Style::modern());
+            println!("{table}");
+            println!();
+            println!("Total: {} active rental{}", 
+                rentals.len(),
+                if rentals.len() == 1 { "" } else { "s" }
+            );
+
+            display_ps_quick_start_commands();
+        }
     }
 
     Ok(())
