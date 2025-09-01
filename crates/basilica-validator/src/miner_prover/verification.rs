@@ -2074,16 +2074,31 @@ impl VerificationEngine {
         }
 
         // Step 3: Delete stale offline executors
-        let stale_delete_query = r#"
+        let cleanup_minutes = self
+            .config
+            .gpu_assignment_cleanup_ttl
+            .map(|d| d.as_secs() / 60)
+            .unwrap_or(120)
+            .max(120);
+
+        let stale_delete_query = format!(
+            r#"
             DELETE FROM miner_executors
             WHERE status = 'offline'
             AND (
-                last_health_check < datetime('now', '-10 minutes')
-                OR (last_health_check IS NULL AND updated_at < datetime('now', '-10 minutes'))
+                last_health_check < datetime('now', '-{} minutes')
+                OR (last_health_check IS NULL AND updated_at < datetime('now', '-{} minutes'))
             )
-        "#;
+            "#,
+            cleanup_minutes, cleanup_minutes
+        );
 
-        let stale_result = sqlx::query(stale_delete_query)
+        info!(
+            "Deleting stale offline executors using {}min timeout (configurable via gpu_assignment_cleanup_ttl)",
+            cleanup_minutes
+        );
+
+        let stale_result = sqlx::query(&stale_delete_query)
             .execute(self.persistence.pool())
             .await?;
 
