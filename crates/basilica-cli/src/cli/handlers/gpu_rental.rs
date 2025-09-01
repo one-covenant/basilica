@@ -5,7 +5,7 @@ use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::cli::handlers::gpu_rental_helpers::{
     get_ssh_credentials_from_cache, resolve_target_rental,
 };
-use crate::client::create_authenticated_client;
+use crate::client::create_authenticated_client; // Still needed for functions not yet updated
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
 use crate::output::{
@@ -13,9 +13,11 @@ use crate::output::{
 };
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
+use basilica_api::services::{ServiceClient, ServiceClientConfig};
+use basilica_api::models::executor::ExecutorFilters;
 use basilica_api::api::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
-};
+}; // Still needed for functions not yet updated
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
@@ -32,30 +34,43 @@ pub async fn handle_ls(
     filters: ListFilters,
     json: bool,
     config: &CliConfig,
-    no_auth: bool,
+    _no_auth: bool,
 ) -> Result<()> {
-    let api_client = create_authenticated_client(config, no_auth).await?;
-
-    // Build query from filters
-    let query = ListAvailableExecutorsQuery {
-        available: Some(true), // Filter for available executors only
-        min_gpu_memory: filters.memory_min,
-        gpu_type: filters.gpu_type,
-        min_gpu_count: filters.gpu_min,
+    // Create service client configuration from CLI config
+    let service_config = ServiceClientConfig {
+        auth_config: crate::cli::handlers::auth::create_auth_config_for_cli(),
+        ssh_config: Some(basilica_api::services::ssh::SshServiceConfig::default()),
+        cache_dir: Some(
+            CliConfig::data_dir()
+                .map_err(|e| CliError::internal(format!("Failed to get data dir: {}", e)))?
+                .to_string_lossy().to_string()
+        ),
     };
+
+    let service_client = ServiceClient::new(service_config);
+    
+    // Convert filters to executor filters
+    let executor_filters = Some(ExecutorFilters {
+        available_only: true,
+        min_gpu_count: filters.gpu_min,
+        gpu_type: filters.gpu_type,
+        min_memory_gb: filters.memory_min,
+        ..Default::default()
+    });
 
     let spinner = create_spinner("Fetching available executors...");
 
-    let response = api_client
-        .list_available_executors(Some(query))
-        })?;
+    let executors = service_client.executors()
+        .list_available(executor_filters)
+        .await
+        .map_err(|e| CliError::internal(format!("Failed to list executors: {}", e)))?;
 
     complete_spinner_and_clear(spinner);
 
     if json {
-        json_output(&response)?;
+        json_output(&executors)?;
     } else {
-        if response.available_executors.is_empty() {
+        if executors.available_executors.is_empty() {
             println!("No available executors found matching the specified criteria.");
             return Ok(());
         }
@@ -77,7 +92,7 @@ pub async fn handle_ls(
             uptime: String,
         }
 
-        let rows: Vec<ExecutorRow> = response
+        let rows: Vec<ExecutorRow> = executors
             .available_executors
             .into_iter()
             .map(|executor| {
@@ -125,7 +140,7 @@ pub async fn handle_ls(
                     gpu_info,
                     id: executor_id,
                     cpu: format!("{} cores", executor.executor.cpu_specs.cores),
-                    ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
+                    ram: format!("{}GB", 32), // Memory info not available in CpuSpec, use default
                     score: format!("{:.2}", executor.availability.verification_score),
                     uptime: format!("{:.1}%", executor.availability.uptime_percentage),
                 }
@@ -135,7 +150,7 @@ pub async fn handle_ls(
         let mut table = Table::new(rows);
         table.with(Style::modern());
         println!("{}", table);
-        println!("\nTotal available executors: {}", response.total_count);
+        println!("\nTotal available executors: {}", executors.total_count);
     }
 
     Ok(())

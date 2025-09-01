@@ -10,7 +10,7 @@ use tracing::{debug, warn};
 
 
 /// Create auth config for CLI
-fn create_auth_config_for_cli() -> AuthConfig {
+pub fn create_auth_config_for_cli() -> AuthConfig {
     AuthConfig {
         client_id: "basilica-client".to_string(),
         auth_endpoint: "https://auth.basilica.io/oauth/authorize".to_string(),
