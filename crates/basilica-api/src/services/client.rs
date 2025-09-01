@@ -27,6 +27,12 @@ pub struct ServiceClientConfig {
 
     /// Cache directory
     pub cache_dir: Option<String>,
+
+    /// Base API URL (defaults to https://api.basilica.io)
+    pub api_base_url: Option<String>,
+
+    /// Request timeout in seconds
+    pub request_timeout_seconds: Option<u64>,
 }
 
 impl Default for ServiceClientConfig {
@@ -51,6 +57,8 @@ impl Default for ServiceClientConfig {
             },
             ssh_config: None,
             cache_dir: None,
+            api_base_url: None,
+            request_timeout_seconds: None,
         }
     }
 }
@@ -88,9 +96,15 @@ impl ServiceClient {
         let ssh_config = config.ssh_config.clone().unwrap_or_default();
         let ssh_service = Arc::new(DefaultSshService::new(ssh_config, cache.clone()));
 
+        // Use API base URL from config, default to standard URL
+        let api_base_url = config
+            .api_base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.basilica.io".to_string());
+
         // Try to use DefaultExecutorService with validator API, fallback to Mock on error
         let executor_service = match DefaultExecutorService::try_new(
-            "https://api.basilica.io".to_string(),
+            api_base_url.clone(),
             cache.clone(),
         ) {
             Ok(service) => Arc::new(service) as Arc<dyn ExecutorService>,
@@ -104,6 +118,7 @@ impl ServiceClient {
             executor_service.clone(),
             ssh_service.clone(),
             auth_service.clone(),
+            api_base_url.clone(),
         ));
 
         let rental_service = Arc::new(DefaultRentalService::new(
@@ -111,7 +126,7 @@ impl ServiceClient {
             executor_service.clone(),
             ssh_service.clone(),
             cache.clone(),
-            "https://api.basilica.io".to_string(), // base URL for validator API
+            api_base_url.clone(), // Use configured API base URL
         ));
 
         Self {
@@ -191,12 +206,12 @@ impl ServiceClient {
             user_id: "unknown".to_string(), // TODO: Get from auth context
             status: crate::models::rental::RentalStatus::Pending, // Assume pending initially
             ssh_access: response.ssh_credentials.map(|creds| {
-                // Parse SSH credentials to create SshAccess
-                // For now, just create a basic structure
+                // Parse SSH credentials using utility function
+                let (host, port, username) = crate::services::parse_ssh_credentials(&creds);
                 crate::models::ssh::SshAccess {
-                    host: "unknown".to_string(),
-                    port: 22,
-                    username: "root".to_string(),
+                    host,
+                    port,
+                    username,
                 }
             }),
             executor_id: executor_id.unwrap_or("unknown".to_string()),

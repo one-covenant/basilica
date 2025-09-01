@@ -15,6 +15,10 @@ use crate::services::cache::CacheService;
 use crate::services::executor::{AvailableExecutor, ExecutorService};
 use crate::services::ssh::SshService;
 use async_trait::async_trait;
+use basilica_validator::api::rental_routes::{
+    PortMappingRequest, ResourceRequirementsRequest, StartRentalRequest, VolumeMountRequest,
+};
+use basilica_validator::rental::RentalResponse;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -173,6 +177,12 @@ pub enum DeploymentError {
 
     #[error("Validation error: {0}")]
     ValidationError(#[from] DeploymentValidationError),
+
+    #[error("Network error: {0}")]
+    NetworkError(String),
+
+    #[error("API error: {0}")]
+    ApiError(String),
 }
 
 /// Deployment service trait
@@ -245,6 +255,8 @@ pub struct DefaultDeploymentService {
     ssh_service: Arc<dyn SshService>,
     auth_service: Arc<dyn AuthService>,
     deployments: Arc<dashmap::DashMap<String, Deployment>>,
+    api_base_url: String,
+    http_client: reqwest::Client,
 }
 
 impl DefaultDeploymentService {
@@ -255,6 +267,7 @@ impl DefaultDeploymentService {
         executor_service: Arc<dyn ExecutorService>,
         ssh_service: Arc<dyn SshService>,
         auth_service: Arc<dyn AuthService>,
+        api_base_url: String,
     ) -> Self {
         Self {
             config,
@@ -263,6 +276,11 @@ impl DefaultDeploymentService {
             ssh_service,
             auth_service,
             deployments: Arc::new(dashmap::DashMap::new()),
+            api_base_url,
+            http_client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(120))
+                .build()
+                .expect("Failed to create HTTP client"),
         }
     }
 
@@ -417,22 +435,88 @@ impl DeploymentService for DefaultDeploymentService {
         // Generate deployment ID
         let deployment_id = format!("dep-{}", uuid::Uuid::new_v4());
 
-        // Create SSH access if not disabled
+        // Convert request to validator API format and make the actual deployment
+        let start_rental_request = StartRentalRequest {
+            executor_id: executor.executor.id.clone(),
+            container_image: request.image.clone(),
+            ssh_public_key: request.ssh_public_key.clone(),
+            no_ssh: request.no_ssh,
+            resources: ResourceRequirementsRequest {
+                gpu_count: request.resources.gpu_count,
+                gpu_types: request.resources.gpu_types.clone(),
+                cpu_cores: request.resources.cpu_cores as f64,
+                memory_mb: request.resources.memory_mb as i64,
+                storage_mb: request.resources.storage_mb,
+            },
+            environment: request.environment.clone(),
+            ports: request
+                .ports
+                .iter()
+                .map(|p| PortMappingRequest {
+                    container_port: p.container_port as u32,
+                    host_port: p.host_port as u32,
+                    protocol: p.protocol.clone(),
+                })
+                .collect(),
+            volumes: request
+                .volumes
+                .iter()
+                .map(|v| VolumeMountRequest {
+                    host_path: v.host_path.clone(),
+                    container_path: v.container_path.clone(),
+                    read_only: v.read_only,
+                })
+                .collect(),
+            command: request.command.clone(),
+        };
+
+        // Make the actual API call to the validator service
+        let validator_url = format!("{}/api/v1/rentals/start", self.api_base_url);
+        let response = self
+            .http_client
+            .post(&validator_url)
+            .bearer_auth(&token.access_token)
+            .json(&start_rental_request)
+            .send()
+            .await
+            .map_err(|e| DeploymentError::NetworkError(format!("Failed to contact validator: {}", e)))?;
+
+        // Check response status
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(DeploymentError::ApiError(format!(
+                "Validator API returned {}: {}",
+                status, error_text
+            )));
+        }
+
+        // Parse the response
+        let validator_response: RentalResponse = response
+            .json()
+            .await
+            .map_err(|e| DeploymentError::ApiError(format!("Failed to parse validator response: {}", e)))?;
+
+        // Extract SSH access info from validator response
         let ssh_access = if !request.no_ssh {
-            Some(SshAccess {
-                host: executor.executor.id.clone(), // In real impl, this would be the actual host
-                port: 22,
-                username: "root".to_string(),
+            validator_response.ssh_credentials.map(|creds| {
+                // Parse SSH credentials using utility function
+                let (host, port, username) = crate::services::parse_ssh_credentials(&creds);
+                SshAccess {
+                    host,
+                    port,
+                    username,
+                }
             })
         } else {
             None
         };
 
-        // Create deployment
+        // Create deployment record using validator response
         let deployment = Deployment {
-            id: deployment_id.clone(),
+            id: validator_response.rental_id.clone(), // Use the actual rental ID from validator
             user_id: user_id.to_string(),
-            status: DeploymentStatus::Provisioning,
+            status: DeploymentStatus::Running, // Container is running after successful creation
             ssh_access: ssh_access.clone(),
             executor_id: executor.executor.id.clone(),
             image: request.image.clone(),
@@ -450,8 +534,8 @@ impl DeploymentService for DefaultDeploymentService {
                     ),
             ),
             terminated_at: None,
-            container_id: None,
-            container_name: None,
+            container_id: Some(validator_response.container_info.container_id),
+            container_name: Some(validator_response.container_info.container_name),
         };
 
         // Validate deployment
@@ -469,8 +553,8 @@ impl DeploymentService for DefaultDeploymentService {
             .map_err(|e| DeploymentError::CacheError(e.to_string()))?;
 
         Ok(CreateDeploymentResponse {
-            deployment_id,
-            status: DeploymentStatus::Provisioning,
+            deployment_id: validator_response.rental_id,
+            status: deployment.status.clone(),
             ssh_access,
             executor_id: executor.executor.id,
             created_at: deployment.created_at,
@@ -969,6 +1053,7 @@ mod tests {
             executor_service,
             ssh_service,
             auth_service,
+            "http://localhost:8080".to_string(), // Test API URL
         )
     }
 

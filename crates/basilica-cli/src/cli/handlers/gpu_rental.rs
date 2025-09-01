@@ -16,7 +16,7 @@ use crate::ssh::{parse_ssh_credentials, SshClient};
 use basilica_api::api::types::{RentalStatusResponse, SshAccess}; // Still needed for functions not yet updated
 use basilica_api::models::executor::ExecutorFilters;
 use basilica_api::models::rental::RentalFilters;
-use basilica_api::services::{ServiceClient, ServiceClientConfig};
+use basilica_api::services::ServiceClient;
 // Use validator RentalStatus for functions not yet updated
 use basilica_validator::api::types::RentalStatus;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
@@ -34,18 +34,8 @@ pub async fn handle_ls(
     config: &CliConfig,
     _no_auth: bool,
 ) -> Result<()> {
-    // Create service client configuration from CLI config
-    let service_config = ServiceClientConfig {
-        auth_config: crate::cli::handlers::auth::create_auth_config_for_cli(),
-        ssh_config: Some(basilica_api::services::ssh::SshServiceConfig::default()),
-        cache_dir: Some(
-            CliConfig::data_dir()
-                .map_err(|e| CliError::internal(format!("Failed to get data dir: {}", e)))?
-                .to_string_lossy()
-                .to_string(),
-        ),
-    };
-
+    // Create service client using idiomatic CLI config conversion
+    let service_config = config.to_service_config()?;
     let service_client = ServiceClient::new(service_config);
 
     // Convert filters to executor filters
@@ -163,18 +153,8 @@ pub async fn handle_up(
     config: &CliConfig,
     _no_auth: bool,
 ) -> Result<()> {
-    // Create service client configuration from CLI config
-    let service_config = ServiceClientConfig {
-        auth_config: crate::cli::handlers::auth::create_auth_config_for_cli(),
-        ssh_config: Some(basilica_api::services::ssh::SshServiceConfig::default()),
-        cache_dir: Some(
-            CliConfig::data_dir()
-                .map_err(|e| CliError::internal(format!("Failed to get data dir: {}", e)))?
-                .to_string_lossy()
-                .to_string(),
-        ),
-    };
-
+    // Create service client using idiomatic CLI config conversion
+    let service_config = config.to_service_config()?;
     let service_client = ServiceClient::new(service_config);
 
     // If no target provided, fetch available executors and prompt for selection
@@ -253,6 +233,13 @@ pub async fn handle_up(
         complete_spinner_error(spinner.clone(), "SSH key validation failed");
     })?;
 
+    // Determine if this is a container deployment or bare VM rental
+    let has_container_options = options.image.is_some() 
+        || !options.env.is_empty() 
+        || !options.ports.is_empty()
+        || !options.command.is_empty();
+
+    // Parse container options if provided
     let container_image = options.image.unwrap_or_else(|| config.image.name.clone());
 
     let env_vars = parse_env_vars(&options.env)
@@ -262,54 +249,116 @@ pub async fn handle_up(
         })?;
 
     // Parse port mappings if provided
-    let port_mappings: Vec<basilica_validator::api::rental_routes::PortMappingRequest> =
-        parse_port_mappings(&options.ports)
-            .map_err(|e| CliError::invalid_argument(e.to_string()))
-            .inspect_err(|_e| {
-                complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
-            })?
-            .into_iter()
-            .map(
-                |pm| basilica_validator::api::rental_routes::PortMappingRequest {
-                    container_port: pm.container_port,
-                    host_port: pm.host_port,
+    let port_mappings = parse_port_mappings(&options.ports)
+        .map_err(|e| CliError::invalid_argument(e.to_string()))
+        .inspect_err(|_e| {
+            complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
+        })?;
+
+    spinner.set_message(if has_container_options { 
+        "Creating container deployment..." 
+    } else { 
+        "Creating rental..." 
+    });
+
+    // Create response structure to normalize both paths
+    let (rental_id, ssh_credentials, container_info) = if has_container_options {
+        // Use deployment service for container deployments
+        let deployment_request = basilica_api::services::deployment::CreateDeploymentRequest {
+            image: container_image,
+            ssh_public_key: ssh_public_key.clone(),
+            resources: basilica_api::models::executor::ResourceRequirements {
+                cpu_cores: options.cpu_cores.unwrap_or(1.0),
+                memory_mb: options.memory_mb.unwrap_or(1024),
+                storage_mb: 102400,
+                gpu_count: options.gpu_min.unwrap_or(1),
+                gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
+            },
+            environment: env_vars,
+            ports: port_mappings.into_iter().map(|pm| {
+                basilica_api::services::deployment::PortMapping {
+                    container_port: pm.container_port as u16,
+                    host_port: pm.host_port as u16,
                     protocol: pm.protocol,
-                },
-            )
-            .collect();
+                }
+            }).collect(),
+            volumes: vec![], // TODO: Add volume support if needed
+            command: options.command.clone(),
+            max_duration_hours: Some(24),
+            executor_id: Some(target.clone()),
+            no_ssh: options.no_ssh,
+        };
 
-    // Convert to rental service request
-    let rental_config = basilica_api::models::rental::RentalConfig {
-        executor_id: Some(target.clone()),
-        ssh_key: ssh_public_key,
-        resources: basilica_api::models::executor::ResourceRequirements {
-            cpu_cores: options.cpu_cores.unwrap_or(1.0),
-            memory_mb: options.memory_mb.unwrap_or(1024),
-            storage_mb: 102400,
-            gpu_count: options.gpu_min.unwrap_or(1),
-            gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
-        },
-        duration_seconds: None, // No specific duration limit
-    };
-
-    let rental_request = basilica_api::services::rental::CreateRentalRequest {
-        token: service_client.get_token().await.map_err(|e| {
+        let token = service_client.get_token().await.map_err(|e| {
             complete_spinner_error(spinner.clone(), "Authentication failed");
             CliError::auth(format!("Failed to get auth token: {}", e))
-        })?,
-        config: rental_config,
-    };
-
-    spinner.set_message("Creating rental...");
-    let rental_response = service_client
-        .rentals()
-        .create_rental(rental_request)
-        .await
-        .map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to create rental");
-            CliError::api_request_failed("start rental", e.to_string())
-                .with_suggestion("Ensure the executor is available and try again")
         })?;
+
+        let deployment_response = service_client
+            .deployments()
+            .create_deployment(deployment_request, &token)
+            .await
+            .map_err(|e| {
+                complete_spinner_error(spinner.clone(), "Failed to create deployment");
+                CliError::api_request_failed("create deployment", e.to_string())
+                    .with_suggestion("Ensure the executor is available and try again")
+            })?;
+
+        // Format SSH credentials if available
+        let ssh_creds = deployment_response.ssh_access.as_ref().map(|access| {
+            format!("{}@{}:{}", access.username, access.host, access.port)
+        });
+
+        (
+            deployment_response.deployment_id,
+            ssh_creds,
+            Some(basilica_api::services::rental::ContainerInfo {
+                container_id: format!("container-{}", uuid::Uuid::new_v4()),
+                container_name: format!("basilica-{}", target),
+                mapped_ports: vec![],
+                status: "running".to_string(),
+                labels: std::collections::HashMap::new(),
+            })
+        )
+    } else {
+        // Use rental service for bare VM rentals
+        let rental_config = basilica_api::models::rental::RentalConfig {
+            executor_id: Some(target.clone()),
+            ssh_key: ssh_public_key,
+            resources: basilica_api::models::executor::ResourceRequirements {
+                cpu_cores: options.cpu_cores.unwrap_or(1.0),
+                memory_mb: options.memory_mb.unwrap_or(1024),
+                storage_mb: 102400,
+                gpu_count: options.gpu_min.unwrap_or(1),
+                gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
+            },
+            duration_seconds: None, // No specific duration limit
+        };
+
+        let rental_request = basilica_api::services::rental::CreateRentalRequest {
+            token: service_client.get_token().await.map_err(|e| {
+                complete_spinner_error(spinner.clone(), "Authentication failed");
+                CliError::auth(format!("Failed to get auth token: {}", e))
+            })?,
+            config: rental_config,
+        };
+
+        let rental_response = service_client
+            .rentals()
+            .create_rental(rental_request)
+            .await
+            .map_err(|e| {
+                complete_spinner_error(spinner.clone(), "Failed to create rental");
+                CliError::api_request_failed("start rental", e.to_string())
+                    .with_suggestion("Ensure the executor is available and try again")
+            })?;
+
+        (
+            rental_response.rental_id,
+            rental_response.ssh_credentials,
+            Some(rental_response.container_info)
+        )
+    };
 
     spinner.set_message("Caching rental information...");
 
@@ -335,10 +384,14 @@ pub async fn handle_up(
     // Cache the rental information
     let mut cache = RentalCache::load().await.unwrap_or_default();
     cache.add_rental(CachedRental {
-        rental_id: rental_response.rental_id.clone(),
-        ssh_credentials: rental_response.ssh_credentials.clone(),
-        container_id: rental_response.container_info.container_id.clone(),
-        container_name: rental_response.container_info.container_name.clone(),
+        rental_id: rental_id.clone(),
+        ssh_credentials: ssh_credentials.clone(),
+        container_id: container_info.as_ref()
+            .map(|ci| ci.container_id.clone())
+            .unwrap_or_else(|| format!("rental-{}", rental_id)),
+        container_name: container_info.as_ref()
+            .map(|ci| ci.container_name.clone())
+            .unwrap_or_else(|| format!("basilica-{}", target)),
         executor_id: target.clone(),
         gpu_info,
         created_at: chrono::Utc::now(),
@@ -349,8 +402,9 @@ pub async fn handle_up(
     complete_spinner_and_clear(spinner);
 
     print_success(&format!(
-        "Successfully created rental: {}",
-        rental_response.rental_id
+        "Successfully created {}: {}",
+        if has_container_options { "deployment" } else { "rental" },
+        rental_id
     ));
 
     // Handle SSH based on options
@@ -360,7 +414,7 @@ pub async fn handle_up(
     }
 
     // Check if we have SSH credentials
-    let ssh_creds = match rental_response.ssh_credentials {
+    let ssh_creds = match ssh_credentials {
         Some(ref creds) => creds,
         None => {
             print_info("SSH access not available (unexpected error)");
@@ -370,18 +424,18 @@ pub async fn handle_up(
 
     if options.detach {
         // Detached mode: just show instructions and exit
-        display_ssh_connection_instructions(&rental_response.rental_id, ssh_creds, config)?;
+        display_ssh_connection_instructions(&rental_id, ssh_creds, config)?;
     } else {
         // Auto-SSH mode: wait for rental to be active and connect
-        print_info("Waiting for rental to become active...");
+        print_info("Waiting for instance to become active...");
 
         // Poll for rental to become active
         let rental_active =
-            poll_rental_status_with_service(&rental_response.rental_id, &service_client).await?;
+            poll_rental_status_with_service(&rental_id, &service_client).await?;
 
         if rental_active {
             // Parse SSH credentials and connect
-            print_info("Connecting to rental...");
+            print_info("Connecting to instance...");
             let (host, port, username) = parse_ssh_credentials(ssh_creds)?;
             let ssh_access = SshAccess {
                 host,
@@ -401,7 +455,7 @@ pub async fn handle_up(
                     println!();
                     print_info("You can manually connect using:");
                     display_ssh_connection_instructions(
-                        &rental_response.rental_id,
+                        &rental_id,
                         ssh_creds,
                         config,
                     )?;
@@ -409,10 +463,10 @@ pub async fn handle_up(
             }
         } else {
             // Timeout or error - show manual instructions
-            print_info("Rental is taking longer than expected to become active");
+            print_info("Instance is taking longer than expected to become active");
             println!();
             print_info("You can manually connect once it's ready using:");
-            display_ssh_connection_instructions(&rental_response.rental_id, ssh_creds, config)?;
+            display_ssh_connection_instructions(&rental_id, ssh_creds, config)?;
         }
     }
 
@@ -426,18 +480,8 @@ pub async fn handle_ps(
     config: &CliConfig,
     _no_auth: bool,
 ) -> Result<()> {
-    // Create service client configuration from CLI config
-    let service_config = ServiceClientConfig {
-        auth_config: crate::cli::handlers::auth::create_auth_config_for_cli(),
-        ssh_config: Some(basilica_api::services::ssh::SshServiceConfig::default()),
-        cache_dir: Some(
-            CliConfig::data_dir()
-                .map_err(|e| CliError::internal(format!("Failed to get data dir: {}", e)))?
-                .to_string_lossy()
-                .to_string()
-        ),
-    };
-
+    // Create service client using idiomatic CLI config conversion
+    let service_config = config.to_service_config()?;
     let service_client = ServiceClient::new(service_config);
     let spinner = create_spinner("Loading active rentals...");
 

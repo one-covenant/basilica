@@ -23,6 +23,10 @@ use std::time::Duration;
 /// SSH service configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshServiceConfig {
+    /// Path to SSH private key
+    pub private_key_path: Option<std::path::PathBuf>,
+    /// Path to SSH public key
+    pub public_key_path: Option<std::path::PathBuf>,
     /// Default connection timeout in seconds
     pub connection_timeout: u64,
     /// Default execution timeout in seconds
@@ -40,6 +44,8 @@ pub struct SshServiceConfig {
 impl Default for SshServiceConfig {
     fn default() -> Self {
         Self {
+            private_key_path: None,
+            public_key_path: None,
             connection_timeout: 30,
             execution_timeout: 3600,
             retry_attempts: 3,

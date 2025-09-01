@@ -6,7 +6,7 @@ use crate::output::{banner, compress_path, print_success};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use basilica_api::models::auth::AuthConfig;
 use basilica_api::services::{
-    is_container_runtime, is_ssh_session, is_wsl_environment, ServiceClient, ServiceClientConfig,
+    is_container_runtime, is_ssh_session, is_wsl_environment, ServiceClient,
 };
 use tracing::{debug, warn};
 
@@ -41,16 +41,8 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
     );
     println!();
 
-    // Create service client configuration
-    let cache_dir = CliConfig::data_dir()
-        .map_err(|e| CliError::internal(format!("Failed to get cache directory: {}", e)))?;
-
-    let service_config = ServiceClientConfig {
-        auth_config: create_auth_config_for_cli(),
-        ssh_config: None,
-        cache_dir: Some(cache_dir.to_string_lossy().to_string()),
-    };
-
+    // Create service client using idiomatic CLI config conversion
+    let service_config = config.to_service_config()?;
     let service_client = ServiceClient::new(service_config);
     let auth_service = service_client.auth();
 
@@ -224,19 +216,11 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
 }
 
 /// Handle logout command
-pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
+pub async fn handle_logout(config: &CliConfig) -> Result<()> {
     let spinner = create_spinner("Checking authentication status...");
 
-    // Create service client configuration
-    let cache_dir = CliConfig::data_dir()
-        .map_err(|e| CliError::internal(format!("Failed to get cache directory: {}", e)))?;
-
-    let service_config = ServiceClientConfig {
-        auth_config: create_auth_config_for_cli(),
-        ssh_config: None,
-        cache_dir: Some(cache_dir.to_string_lossy().to_string()),
-    };
-
+    // Create service client using idiomatic CLI config conversion
+    let service_config = config.to_service_config()?;
     let service_client = ServiceClient::new(service_config);
     let auth_service = service_client.auth();
 

@@ -1,6 +1,7 @@
 //! Configuration management for the Basilica CLI
 
 use crate::error::{CliError, Result};
+use basilica_api::services::{ServiceClientConfig, ssh::SshServiceConfig};
 use basilica_common::config::loader;
 use etcetera::{choose_base_strategy, BaseStrategy};
 use serde::{Deserialize, Serialize};
@@ -418,6 +419,34 @@ impl CliConfig {
     pub fn config_exists() -> Result<bool> {
         let path = Self::default_config_path()?;
         Ok(path.exists())
+    }
+
+    /// Convert CliConfig to ServiceClientConfig for basilica-api integration
+    pub fn to_service_config(&self) -> Result<ServiceClientConfig> {
+        let cache_dir = Self::data_dir()?
+            .to_string_lossy()
+            .to_string();
+
+        let ssh_config = SshServiceConfig {
+            private_key_path: Some(self.ssh.private_key_path.clone()),
+            public_key_path: Some(self.ssh.key_path.clone()),
+            connection_timeout: self.ssh.connection_timeout,
+            execution_timeout: self.api.request_timeout, // Use API timeout for SSH execution
+            retry_attempts: 3,
+            max_transfer_size: 1000 * 1024 * 1024, // 1GB
+            cleanup_remote_files: false,
+            default_key_type: "ed25519".to_string(),
+        };
+
+        let service_config = ServiceClientConfig {
+            auth_config: crate::cli::handlers::auth::create_auth_config_for_cli(),
+            ssh_config: Some(ssh_config),
+            cache_dir: Some(cache_dir),
+            api_base_url: Some(self.api.base_url.clone()),
+            request_timeout_seconds: Some(self.api.request_timeout),
+        };
+
+        Ok(service_config)
     }
 }
 

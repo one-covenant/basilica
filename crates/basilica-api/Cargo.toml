@@ -110,3 +110,4 @@ full = ["server", "client"]
 [[bin]]
 name = "basilica-api"
 path = "src/main.rs"
+required-features = ["cli"]
