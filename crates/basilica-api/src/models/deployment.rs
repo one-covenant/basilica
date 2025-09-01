@@ -5,11 +5,27 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+/// Deployment validation errors
+#[derive(Debug, thiserror::Error)]
+pub enum DeploymentValidationError {
+    #[error("Invalid field: {0}")]
+    InvalidField(String),
+    
+    #[error("Invalid resources: {0}")]
+    InvalidResources(String),
+    
+    #[error("Invalid configuration: {0}")]
+    InvalidConfig(String),
+}
+
 /// Represents a deployed container instance
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Deployment {
     /// Unique deployment identifier
     pub id: String,
+    
+    /// User ID who owns this deployment
+    pub user_id: String,
 
     /// Current deployment status
     pub status: DeploymentStatus,
@@ -25,18 +41,67 @@ pub struct Deployment {
 
     /// Resource allocation
     pub resources: crate::models::executor::ResourceRequirements,
+    
+    /// Environment variables
+    pub environment: HashMap<String, String>,
 
     /// Creation timestamp
     pub created_at: DateTime<Utc>,
 
     /// Last update timestamp
     pub updated_at: DateTime<Utc>,
+    
+    /// Expiration timestamp
+    pub expires_at: Option<DateTime<Utc>>,
+    
+    /// Termination timestamp
+    pub terminated_at: Option<DateTime<Utc>>,
 
     /// Container ID
     pub container_id: Option<String>,
 
     /// Container name
     pub container_name: Option<String>,
+}
+
+impl Deployment {
+    /// Validate the deployment
+    pub fn validate(&self) -> Result<(), DeploymentValidationError> {
+        // Validate ID
+        if self.id.is_empty() {
+            return Err(DeploymentValidationError::InvalidField("id cannot be empty".to_string()));
+        }
+        
+        // Validate user ID
+        if self.user_id.is_empty() {
+            return Err(DeploymentValidationError::InvalidField("user_id cannot be empty".to_string()));
+        }
+        
+        // Validate executor ID
+        if self.executor_id.is_empty() {
+            return Err(DeploymentValidationError::InvalidField("executor_id cannot be empty".to_string()));
+        }
+        
+        // Validate image
+        if self.image.is_empty() {
+            return Err(DeploymentValidationError::InvalidField("image cannot be empty".to_string()));
+        }
+        
+        // Validate resources
+        self.resources.validate()
+            .map_err(DeploymentValidationError::InvalidResources)?;
+        
+        // Validate expiration
+        if let Some(expires_at) = self.expires_at {
+            if expires_at <= self.created_at {
+                return Err(DeploymentValidationError::InvalidField(
+                    "expires_at must be after created_at".to_string()
+                ));
+            }
+        }
+        
+        Ok(())
+    }
 }
 
 /// Configuration for creating a new deployment
@@ -102,6 +167,9 @@ pub struct VolumeMount {
 pub enum DeploymentStatus {
     /// Deployment is being prepared
     Pending,
+    
+    /// Deployment is being provisioned
+    Provisioning,
 
     /// Deployment is starting
     Starting,
@@ -114,6 +182,9 @@ pub enum DeploymentStatus {
 
     /// Deployment has stopped
     Stopped,
+    
+    /// Deployment has been terminated
+    Terminated,
 
     /// Deployment failed
     Failed(String),
@@ -123,10 +194,12 @@ impl fmt::Display for DeploymentStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Pending => write!(f, "Pending"),
+            Self::Provisioning => write!(f, "Provisioning"),
             Self::Starting => write!(f, "Starting"),
             Self::Running => write!(f, "Running"),
             Self::Stopping => write!(f, "Stopping"),
             Self::Stopped => write!(f, "Stopped"),
+            Self::Terminated => write!(f, "Terminated"),
             Self::Failed(reason) => write!(f, "Failed: {}", reason),
         }
     }
@@ -184,7 +257,7 @@ impl DeploymentConfig {
 impl DeploymentStatus {
     /// Check if the deployment is in a terminal state
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Stopped | Self::Failed(_))
+        matches!(self, Self::Stopped | Self::Terminated | Self::Failed(_))
     }
 
     /// Check if the deployment is active
@@ -194,7 +267,7 @@ impl DeploymentStatus {
 
     /// Check if the deployment is transitioning
     pub fn is_transitioning(&self) -> bool {
-        matches!(self, Self::Pending | Self::Starting | Self::Stopping)
+        matches!(self, Self::Pending | Self::Provisioning | Self::Starting | Self::Stopping)
     }
 }
 

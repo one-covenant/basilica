@@ -412,6 +412,95 @@ impl AuthService for DefaultAuthService {
     }
 }
 
+/// Mock authentication service for testing
+pub struct MockAuthService {
+    cache: Arc<CacheService>,
+}
+
+impl MockAuthService {
+    /// Create a new mock auth service
+    pub fn new(cache: Arc<CacheService>) -> Self {
+        Self { cache }
+    }
+}
+
+#[async_trait]
+impl AuthService for MockAuthService {
+    async fn get_auth_url(&self, state: &str) -> Result<(String, PkceChallenge), AuthError> {
+        Ok((
+            format!("https://auth.example.com/authorize?state={}", state),
+            PkceChallenge {
+                verifier: "mock_verifier".to_string(),
+                challenge: "mock_challenge".to_string(),
+                method: "S256".to_string(),
+            },
+        ))
+    }
+    
+    async fn exchange_code(&self, _code: &str, _verifier: &str) -> Result<TokenSet, AuthError> {
+        Ok(TokenSet {
+            access_token: "mock_access_token".to_string(),
+            refresh_token: Some("mock_refresh_token".to_string()),
+            expires_at: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            token_type: "Bearer".to_string(),
+            scopes: vec![],
+        })
+    }
+    
+    async fn refresh_token(&self, _refresh_token: &str) -> Result<TokenSet, AuthError> {
+        Ok(TokenSet {
+            access_token: "mock_refreshed_token".to_string(),
+            refresh_token: Some("mock_new_refresh_token".to_string()),
+            expires_at: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            token_type: "Bearer".to_string(),
+            scopes: vec![],
+        })
+    }
+    
+    async fn start_device_flow(&self) -> Result<DeviceAuth, AuthError> {
+        Ok(DeviceAuth {
+            device_code: "mock_device_code".to_string(),
+            user_code: "MOCK-CODE".to_string(),
+            verification_uri: "https://auth.example.com/device".to_string(),
+            verification_uri_complete: Some("https://auth.example.com/device?code=MOCK-CODE".to_string()),
+            expires_at: chrono::Utc::now() + chrono::Duration::seconds(600),
+            interval: 5,
+        })
+    }
+    
+    async fn poll_device_flow(&self, _device_code: &str) -> Result<TokenSet, AuthError> {
+        Ok(TokenSet {
+            access_token: "mock_device_token".to_string(),
+            refresh_token: Some("mock_device_refresh".to_string()),
+            expires_at: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            token_type: "Bearer".to_string(),
+            scopes: vec![],
+        })
+    }
+    
+    async fn get_token(&self) -> Result<Option<TokenSet>, AuthError> {
+        Ok(None)
+    }
+    
+    async fn store_token(&self, _token: TokenSet) -> Result<(), AuthError> {
+        Ok(())
+    }
+    
+    async fn clear_token(&self) -> Result<(), AuthError> {
+        Ok(())
+    }
+    
+    async fn validate_token(&self) -> Result<TokenSet, AuthError> {
+        Ok(TokenSet {
+            access_token: "mock_validated_token".to_string(),
+            refresh_token: Some("mock_refresh_token".to_string()),
+            expires_at: chrono::Utc::now() + chrono::Duration::seconds(3600),
+            token_type: "Bearer".to_string(),
+            scopes: vec![],
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
