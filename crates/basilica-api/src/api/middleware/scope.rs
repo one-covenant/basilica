@@ -96,7 +96,7 @@ fn get_required_scope(req: &Request) -> Option<String> {
         (&Method::GET, p) if p.starts_with("/rentals/") => Some("rentals:view".to_string()),
 
         // Executor endpoints
-        (&Method::GET, "/executors") => Some("executors:list".to_string()),
+        (&Method::GET, "/executors") => Some("executor:read".to_string()),
 
         // Health check requires authentication but no specific scope
         // We use an empty string to indicate "authenticated but no specific scope required"

@@ -10,6 +10,7 @@
 
 use crate::models::auth::{AuthConfig, AuthError, DeviceAuth, PkceChallenge, TokenSet};
 use crate::services::cache::{CacheService, CacheStorage};
+use crate::services::token_store::TokenStore;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use reqwest::Client;
@@ -101,47 +102,53 @@ pub trait AuthService: Send + Sync {
 /// Default implementation of AuthService
 pub struct DefaultAuthService {
     config: AuthConfig,
-    cache: Arc<CacheService>,
+    token_store: TokenStore,
     client: Client,
-    token_cache_key: String,
+    service_name: String,
     /// Additional OAuth parameters (e.g., for Auth0-specific settings)
     additional_params: HashMap<String, String>,
 }
 
 impl DefaultAuthService {
     /// Create a new authentication service
-    pub fn new(config: AuthConfig, cache: Arc<CacheService>) -> Result<Self, AuthError> {
+    pub fn new(config: AuthConfig, _cache: Arc<CacheService>) -> Result<Self, AuthError> {
         // Validate configuration
         config.validate()?;
+        
+        // Create token store
+        let token_store = TokenStore::new()?;
 
         Ok(Self {
             config,
-            cache,
+            token_store,
             client: Client::new(),
-            token_cache_key: "auth:token".to_string(),
+            service_name: "basilica".to_string(),
             additional_params: HashMap::new(),
         })
     }
 
-    /// Create with custom cache storage
+    /// Create with custom cache storage (for compatibility, uses TokenStore internally)
     pub fn with_storage<S: CacheStorage + 'static>(
         config: AuthConfig,
-        storage: S,
+        _storage: S,
     ) -> Result<Self, AuthError> {
         config.validate()?;
+        
+        // Create token store
+        let token_store = TokenStore::new()?;
 
         Ok(Self {
             config,
-            cache: Arc::new(CacheService::new(Box::new(storage))),
+            token_store,
             client: Client::new(),
-            token_cache_key: "auth:token".to_string(),
+            service_name: "basilica".to_string(),
             additional_params: HashMap::new(),
         })
     }
 
-    /// Set custom token cache key
-    pub fn with_cache_key(mut self, key: String) -> Self {
-        self.token_cache_key = key;
+    /// Set custom service name for token storage
+    pub fn with_service_name(mut self, name: String) -> Self {
+        self.service_name = name;
         self
     }
 
@@ -286,30 +293,15 @@ impl AuthService for DefaultAuthService {
     }
 
     async fn get_token(&self) -> Result<Option<TokenSet>, AuthError> {
-        self.cache
-            .get(&self.token_cache_key)
-            .await
-            .map_err(|e| AuthError::StorageError(e.to_string()))
+        self.token_store.retrieve(&self.service_name).await
     }
 
     async fn store_token(&self, token: TokenSet) -> Result<(), AuthError> {
-        // Store with TTL based on token expiry
-        let ttl = token.time_until_expiry().to_std().ok();
-
-        self.cache
-            .set(&self.token_cache_key, &token, ttl)
-            .await
-            .map_err(|e| AuthError::StorageError(e.to_string()))?;
-
-        Ok(())
+        self.token_store.store(&self.service_name, &token).await
     }
 
     async fn clear_token(&self) -> Result<(), AuthError> {
-        self.cache
-            .delete(&self.token_cache_key)
-            .await
-            .map_err(|e| AuthError::StorageError(e.to_string()))?;
-        Ok(())
+        self.token_store.delete(&self.service_name).await
     }
 
     async fn validate_token(&self) -> Result<TokenSet, AuthError> {
@@ -444,14 +436,12 @@ impl AuthService for DefaultAuthService {
 }
 
 /// Mock authentication service for testing
-pub struct MockAuthService {
-    cache: Arc<CacheService>,
-}
+pub struct MockAuthService {}
 
 impl MockAuthService {
     /// Create a new mock auth service
-    pub fn new(cache: Arc<CacheService>) -> Self {
-        Self { cache }
+    pub fn new(_cache: Arc<CacheService>) -> Self {
+        Self {}
     }
 }
 
@@ -701,16 +691,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_custom_cache_key() {
+    async fn test_custom_service_name() {
         let config = create_test_config();
         let service = DefaultAuthService::with_storage(config, MemoryCacheStorage::new())
             .unwrap()
-            .with_cache_key("custom:token:key".to_string());
+            .with_service_name("custom-service".to_string());
 
         let token_set = TokenSet::new("test-token".to_string(), None, 3600);
         service.store_token(token_set).await.unwrap();
 
-        // Token should be stored under custom key
+        // Token should be stored under custom service name
         let retrieved = service.get_token().await.unwrap();
         assert!(retrieved.is_some());
     }

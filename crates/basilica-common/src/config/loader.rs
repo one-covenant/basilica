@@ -19,8 +19,8 @@ use tracing::{debug, info, warn};
 /// Default configuration file name
 const DEFAULT_CONFIG_FILE: &str = "config.toml";
 
-/// Environment variable prefix for Basilca
-const DEFAULT_ENV_PREFIX: &str = "BASILCA";
+/// Environment variable prefix for Basilica
+const DEFAULT_ENV_PREFIX: &str = "BASILICA";
 
 /// Load configuration with layered approach
 ///
@@ -31,13 +31,13 @@ const DEFAULT_ENV_PREFIX: &str = "BASILCA";
 /// * Loaded and validated configuration
 ///
 /// # Configuration Layer Priority (highest to lowest)
-/// 1. Environment variables (BASILCA_*)
+/// 1. Environment variables (BASILICA_*)
 /// 2. Configuration file (config.toml or specified path)
 /// 3. Compiled defaults
 ///
 /// # Environment Variable Mapping
-/// - Nested fields use double underscore: `BASILCA_DATABASE__URL`
-/// - Arrays use indices: `BASILCA_SERVERS__0__HOST`
+/// - Nested fields use double underscore: `BASILICA_DATABASE__URL`
+/// - Arrays use indices: `BASILICA_SERVERS__0__HOST`
 /// - Case insensitive matching
 ///
 /// # Example

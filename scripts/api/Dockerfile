@@ -34,7 +34,8 @@ ENV BITTENSOR_NETWORK=$BITTENSOR_NETWORK
 ENV CARGO_TARGET_DIR=/tmp/target
 ENV CARGO_INCREMENTAL=0
 ENV RUST_BACKTRACE=1
-
+# Limit cargo parallelism to avoid "too many open files"
+ENV CARGO_BUILD_JOBS=10
 # Build the basilica-api binary
 RUN if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
@@ -77,7 +78,7 @@ RUN useradd -m -u 1000 -s /bin/bash basilica
 RUN mkdir -p /etc/basilica && chown basilica:basilica /etc/basilica
 RUN mkdir -p /home/basilica/.bittensor/wallets && chown -R basilica:basilica /home/basilica/.bittensor
 
-COPY scripts/api/service-wallet/default /home/basilica/.bittensor/wallets/default
+COPY scripts/api/dummy_wallet/wallets/default /home/basilica/.bittensor/wallets/default
 RUN chown -R basilica:basilica /home/basilica/.bittensor
 
 # Switch to non-root user

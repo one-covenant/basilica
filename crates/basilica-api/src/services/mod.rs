@@ -11,6 +11,7 @@ pub mod deployment;
 pub mod executor;
 pub mod rental;
 pub mod ssh;
+pub mod token_store;
 
 pub use auth::{
     is_container_runtime, is_ssh_session, is_wsl_environment, should_use_device_flow, AuthService,
@@ -32,6 +33,7 @@ pub use rental::{
     ListRentalsResponse, MockRentalService, RentalService,
 };
 pub use ssh::{DefaultSshService, MockSshService, SshService, SshServiceConfig};
+pub use token_store::TokenStore;
 
 /// Parse SSH credentials string into components (host, port, username)
 /// 

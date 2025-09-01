@@ -17,6 +17,7 @@ use std::{pin::Pin, time::Duration};
 pub struct ValidatorClient {
     base_url: String,
     http_client: Client,
+    auth_token: Option<String>,
 }
 
 impl ValidatorClient {
@@ -30,6 +31,7 @@ impl ValidatorClient {
         Ok(Self {
             base_url: base_url.into(),
             http_client,
+            auth_token: None,
         })
     }
 
@@ -38,7 +40,38 @@ impl ValidatorClient {
         Self {
             base_url: base_url.into(),
             http_client,
+            auth_token: None,
         }
+    }
+    
+    /// Create a new ValidatorClient with authentication
+    pub fn with_auth(base_url: impl Into<String>, timeout: Duration, auth_token: String) -> Result<Self> {
+        let http_client = Client::builder()
+            .timeout(timeout)
+            .build()
+            .context("Failed to build HTTP client")?;
+
+        Ok(Self {
+            base_url: base_url.into(),
+            http_client,
+            auth_token: Some(auth_token),
+        })
+    }
+    
+    /// Set the authentication token
+    pub fn set_auth_token(&mut self, token: Option<String>) {
+        self.auth_token = token;
+    }
+    
+    /// Helper to add auth header if token is present
+    fn add_auth_header(&self, mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(token) = &self.auth_token {
+            tracing::debug!("Adding auth header to request");
+            req = req.header("Authorization", format!("Bearer {}", token));
+        } else {
+            tracing::debug!("No auth token available for request");
+        }
+        req
     }
 
     /// List rentals with optional state filter
@@ -51,6 +84,7 @@ impl ValidatorClient {
             let state_str = state_filter.to_string();
             req = req.query(&[("state", state_str)]);
         }
+        req = self.add_auth_header(req);
 
         let response = req.send().await.context("Failed to send list request")?;
 
@@ -75,10 +109,10 @@ impl ValidatorClient {
     ) -> Result<crate::rental::RentalResponse> {
         let url = format!("{}/rentals", self.base_url);
 
-        let response = self
-            .http_client
-            .post(&url)
-            .json(&request)
+        let mut req = self.http_client.post(&url).json(&request);
+        req = self.add_auth_header(req);
+        
+        let response = req
             .send()
             .await
             .context("Failed to send rental request")?;
@@ -99,9 +133,10 @@ impl ValidatorClient {
     pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusResponse> {
         let url = format!("{}/rentals/{}", self.base_url, rental_id);
 
-        let response = self
-            .http_client
-            .get(&url)
+        let mut req = self.http_client.get(&url);
+        req = self.add_auth_header(req);
+        
+        let response = req
             .send()
             .await
             .context("Failed to send status request")?;
@@ -126,9 +161,10 @@ impl ValidatorClient {
     ) -> Result<()> {
         let url = format!("{}/rentals/{}", self.base_url, rental_id);
 
-        let response = self
-            .http_client
-            .delete(&url)
+        let mut req = self.http_client.delete(&url);
+        req = self.add_auth_header(req);
+        
+        let response = req
             .send()
             .await
             .context("Failed to send termination request")?;
@@ -203,6 +239,8 @@ impl ValidatorClient {
         if let Some(query_params) = query {
             req = req.query(&query_params);
         }
+        
+        req = self.add_auth_header(req);
 
         let response = req
             .send()

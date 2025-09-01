@@ -1,0 +1,4 @@
+[api]
+# Base URL for the Basilica API
+base_url = "http://localhost:8000"
+request_timeout = 120

@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Rental state enum from validator - used for external APIs  
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
 pub enum RentalState {
     Provisioning,
     Active,

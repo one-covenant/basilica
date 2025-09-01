@@ -114,6 +114,19 @@ impl DefaultExecutorService {
             validator_client,
         }
     }
+    
+    /// Create with auth token
+    pub fn with_auth(base_url: String, cache: Arc<CacheService>, auth_token: Option<String>) -> Result<Self, ExecutorError> {
+        let mut validator_client = ValidatorClient::new(base_url, Duration::from_secs(30))
+            .map_err(|e| ExecutorError::BackendError(format!("Failed to create validator client: {}", e)))?;
+        
+        validator_client.set_auth_token(auth_token.clone());
+        
+        Ok(Self {
+            cache,
+            validator_client,
+        })
+    }
 
     /// Try to create a new default executor service, returning error if validation fails
     pub fn try_new(base_url: String, cache: Arc<CacheService>) -> Result<Self, ExecutorError> {

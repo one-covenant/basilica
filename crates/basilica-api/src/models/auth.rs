@@ -138,6 +138,12 @@ impl TokenSet {
     pub fn has_scope(&self, scope: &str) -> bool {
         self.scopes.iter().any(|s| s == scope)
     }
+
+    /// Check if the token will expire within the given duration
+    pub fn expires_within(&self, duration: std::time::Duration) -> bool {
+        let chrono_duration = Duration::from_std(duration).unwrap_or(Duration::seconds(0));
+        Utc::now() + chrono_duration >= self.expires_at
+    }
 }
 
 impl AuthConfig {

@@ -46,11 +46,42 @@ static DOCKER_IMAGE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 pub async fn get_rental_status(
     State(state): State<AppState>,
     owned_rental: OwnedRental,
+    headers: axum::http::HeaderMap,
 ) -> Result<Json<RentalStatusResponse>> {
     debug!("Getting status for rental: {}", owned_rental.rental_id);
 
-    let client = &state.validator_client;
-    let response = client.get_rental_status(&owned_rental.rental_id).await?;
+    // Extract the bearer token from the Authorization header
+    let auth_token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|header| header.to_str().ok())
+        .and_then(|auth_header| {
+            if auth_header.starts_with("Bearer ") {
+                Some(auth_header[7..].to_string())
+            } else {
+                None
+            }
+        });
+
+    // Create a new validator client with the auth token
+    let validator_client = if let Some(token) = auth_token {
+        basilica_validator::ValidatorClient::with_auth(
+            &state.validator_endpoint,
+            std::time::Duration::from_secs(30),
+            token,
+        ).map_err(|e| crate::error::ApiError::Internal {
+            message: format!("Failed to create authenticated validator client: {}", e),
+        })?
+    } else {
+        // Fall back to unauthenticated client
+        basilica_validator::ValidatorClient::new(
+            &state.validator_endpoint,
+            std::time::Duration::from_secs(30),
+        ).map_err(|e| crate::error::ApiError::Internal {
+            message: format!("Failed to create validator client: {}", e),
+        })?
+    };
+
+    let response = validator_client.get_rental_status(&owned_rental.rental_id).await?;
 
     Ok(Json(response))
 }
@@ -318,6 +349,7 @@ fn is_valid_ssh_public_key(key: &str) -> bool {
 pub async fn list_available_executors(
     State(state): State<AppState>,
     Query(mut query): Query<ListAvailableExecutorsQuery>,
+    headers: axum::http::HeaderMap,
     uri: Uri,
 ) -> Result<Json<ListAvailableExecutorsResponse>> {
     // Default to available=true for /executors endpoint
@@ -327,8 +359,38 @@ pub async fn list_available_executors(
 
     info!("Listing executors with filters: {:?}", query);
 
-    let response = state
-        .validator_client
+    // Extract the bearer token from the Authorization header
+    let auth_token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|header| header.to_str().ok())
+        .and_then(|auth_header| {
+            if auth_header.starts_with("Bearer ") {
+                Some(auth_header[7..].to_string())
+            } else {
+                None
+            }
+        });
+
+    // Create a new validator client with the auth token
+    let validator_client = if let Some(token) = auth_token {
+        basilica_validator::ValidatorClient::with_auth(
+            &state.validator_endpoint,
+            std::time::Duration::from_secs(30),
+            token,
+        ).map_err(|e| crate::error::ApiError::Internal {
+            message: format!("Failed to create authenticated validator client: {}", e),
+        })?
+    } else {
+        // Fall back to unauthenticated client
+        basilica_validator::ValidatorClient::new(
+            &state.validator_endpoint,
+            std::time::Duration::from_secs(30),
+        ).map_err(|e| crate::error::ApiError::Internal {
+            message: format!("Failed to create validator client: {}", e),
+        })?
+    };
+
+    let response = validator_client
         .list_available_executors(Some(query))
         .await?;
 

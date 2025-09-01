@@ -39,15 +39,15 @@ impl Default for ServiceClientConfig {
     fn default() -> Self {
         Self {
             auth_config: crate::models::auth::AuthConfig {
-                client_id: "basilica-client".to_string(),
-                auth_endpoint: "https://auth.basilica.io/oauth/authorize".to_string(),
-                token_endpoint: "https://auth.basilica.io/oauth/token".to_string(),
+                client_id: basilica_common::auth0_client_id().to_string(),
+                auth_endpoint: format!("https://{}/oauth/authorize", basilica_common::auth0_domain()),
+                token_endpoint: format!("https://{}/oauth/token", basilica_common::auth0_domain()),
                 device_auth_endpoint: Some(
-                    "https://auth.basilica.io/oauth/device/code".to_string(),
+                    format!("https://{}/oauth/device/code", basilica_common::auth0_domain()),
                 ),
-                revoke_endpoint: Some("https://auth.basilica.io/oauth/revoke".to_string()),
-                auth0_domain: Some("basilica.auth0.com".to_string()),
-                auth0_audience: Some("https://api.basilica.io".to_string()),
+                revoke_endpoint: Some(format!("https://{}/oauth/revoke", basilica_common::auth0_domain())),
+                auth0_domain: Some(basilica_common::auth0_domain().to_string()),
+                auth0_audience: Some(basilica_common::auth0_audience().to_string()),
                 redirect_uri: "http://localhost:8080/callback".to_string(),
                 scopes: vec![
                     "deployment:manage".to_string(),
@@ -82,6 +82,7 @@ impl ServiceClient {
             .cache_dir
             .clone()
             .unwrap_or_else(|| "/tmp/basilica-cache".to_string());
+        tracing::debug!("Using cache directory: {}", cache_dir);
         let cache_storage = FileCacheStorage::new(&cache_dir)
             .unwrap_or_else(|_| panic!("Failed to create cache directory: {}", cache_dir));
         let cache = Arc::new(CacheService::new(Box::new(cache_storage)));
@@ -102,10 +103,30 @@ impl ServiceClient {
             .clone()
             .unwrap_or_else(|| "https://api.basilica.io".to_string());
 
+        // Get auth token from auth service if available
+        let auth_token = futures::executor::block_on(async {
+            let token_result = auth_service.get_token().await;
+            match token_result {
+                Ok(Some(token)) => {
+                    tracing::debug!("Found auth token in cache: {}", &token.access_token[..20.min(token.access_token.len())]);
+                    Some(token.access_token)
+                },
+                Ok(None) => {
+                    tracing::debug!("No auth token found in cache");
+                    None
+                },
+                Err(e) => {
+                    tracing::debug!("Error retrieving auth token: {}", e);
+                    None
+                }
+            }
+        });
+        
         // Try to use DefaultExecutorService with validator API, fallback to Mock on error
-        let executor_service = match DefaultExecutorService::try_new(
+        let executor_service = match DefaultExecutorService::with_auth(
             api_base_url.clone(),
             cache.clone(),
+            auth_token,
         ) {
             Ok(service) => Arc::new(service) as Arc<dyn ExecutorService>,
             Err(_) => Arc::new(MockExecutorService::new(cache.clone())) as Arc<dyn ExecutorService>,
@@ -323,8 +344,29 @@ impl ServiceClient {
         &self,
         filters: Option<ExecutorFilters>,
     ) -> Result<Vec<Executor>, ServiceClientError> {
-        let response = self
-            .executor_service
+        // Try to get the auth token if available
+        let auth_token = match self.auth_service.get_token().await {
+            Ok(Some(token)) => Some(token.access_token),
+            Ok(None) => None,
+            Err(_) => None, // Continue without auth if there's an error
+        };
+        
+        // Create a new executor service with the auth token for this request
+        // This is a workaround until we can properly update the service
+        let executor_service = if let Some(token) = auth_token {
+            match DefaultExecutorService::with_auth(
+                self.config.api_base_url.clone().unwrap_or_else(|| "http://localhost:8000".to_string()),
+                self.cache.clone(),
+                Some(token),
+            ) {
+                Ok(service) => Arc::new(service) as Arc<dyn ExecutorService>,
+                Err(_) => self.executor_service.clone(), // Fall back to existing service
+            }
+        } else {
+            self.executor_service.clone()
+        };
+        
+        let response = executor_service
             .list_available(filters)
             .await
             .map_err(|e| ServiceClientError::ExecutorError(format!("{}", e)))?;

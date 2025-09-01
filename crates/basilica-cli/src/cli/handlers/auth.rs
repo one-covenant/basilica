@@ -13,19 +13,19 @@ use tracing::{debug, warn};
 /// Create auth config for CLI
 pub fn create_auth_config_for_cli() -> AuthConfig {
     AuthConfig {
-        client_id: "basilica-client".to_string(),
-        auth_endpoint: "https://auth.basilica.io/oauth/authorize".to_string(),
-        token_endpoint: "https://auth.basilica.io/oauth/token".to_string(),
-        device_auth_endpoint: Some("https://auth.basilica.io/oauth/device/code".to_string()),
-        revoke_endpoint: Some("https://auth.basilica.io/oauth/revoke".to_string()),
+        client_id: basilica_common::auth0_client_id().to_string(),
+        auth_endpoint: format!("https://{}/oauth/authorize", basilica_common::auth0_domain()),
+        token_endpoint: format!("https://{}/oauth/token", basilica_common::auth0_domain()),
+        device_auth_endpoint: Some(format!("https://{}/oauth/device/code", basilica_common::auth0_domain())),
+        revoke_endpoint: Some(format!("https://{}/oauth/revoke", basilica_common::auth0_domain())),
         redirect_uri: "http://localhost:8080/callback".to_string(),
         scopes: vec![
             "deployment:manage".to_string(),
             "rental:manage".to_string(),
             "executor:read".to_string(),
         ],
-        auth0_domain: Some("basilica.auth0.com".to_string()),
-        auth0_audience: Some("https://api.basilica.io".to_string()),
+        auth0_domain: Some(basilica_common::auth0_domain().to_string()),
+        auth0_audience: Some(basilica_common::auth0_audience().to_string()),
     }
 }
 
@@ -85,22 +85,47 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
 
         let spinner = create_spinner("Waiting for authentication...");
 
-        // Poll for completion
-        match auth_service
-            .poll_device_flow(&device_auth.device_code)
-            .await
-        {
-            Ok(tokens) => {
-                complete_spinner_and_clear(spinner);
-                tokens
-            }
-            Err(e) => {
-                complete_spinner_error(spinner, "Device authentication failed");
-                return Err(
-                    CliError::auth(format!("Device authentication failed: {}", e)).with_suggestion(
-                        "Please ensure you completed the authentication in your browser",
-                    ),
-                );
+        // Poll for completion with retry loop
+        let mut poll_attempts = 0;
+        let max_attempts = 60; // Max 5 minutes with 5 second intervals
+        let poll_interval = std::time::Duration::from_secs(device_auth.interval.max(5));
+        
+        loop {
+            poll_attempts += 1;
+            
+            match auth_service
+                .poll_device_flow(&device_auth.device_code)
+                .await
+            {
+                Ok(tokens) => {
+                    complete_spinner_and_clear(spinner);
+                    break tokens;
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
+                    
+                    // Check if it's just pending (user hasn't completed auth yet)
+                    if error_str.contains("Authorization pending") || error_str.contains("authorization_pending") {
+                        if poll_attempts >= max_attempts {
+                            complete_spinner_error(spinner, "Authentication timed out");
+                            return Err(
+                                CliError::auth("Device authentication timed out".to_string())
+                                    .with_suggestion("Please try again and complete authentication within 5 minutes"),
+                            );
+                        }
+                        
+                        // Wait before next poll
+                        tokio::time::sleep(poll_interval).await;
+                        continue;
+                    }
+                    
+                    // Any other error is a real failure
+                    complete_spinner_error(spinner, "Device authentication failed");
+                    return Err(
+                        CliError::auth(format!("Device authentication failed: {}", e))
+                            .with_suggestion("Please ensure you completed the authentication in your browser"),
+                    );
+                }
             }
         }
     } else {
@@ -145,21 +170,47 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
 
         let spinner = create_spinner("Waiting for authentication...");
 
-        // Poll for completion
-        match auth_service
-            .poll_device_flow(&device_auth.device_code)
-            .await
-        {
-            Ok(tokens) => {
-                complete_spinner_and_clear(spinner);
-                tokens
-            }
-            Err(e) => {
-                complete_spinner_error(spinner, "Authentication failed");
-                return Err(CliError::auth(format!("Authentication failed: {}", e))
-                    .with_suggestion(
-                        "Please ensure you completed the authentication in your browser",
-                    ));
+        // Poll for completion with retry loop
+        let mut poll_attempts = 0;
+        let max_attempts = 60; // Max 5 minutes with 5 second intervals
+        let poll_interval = std::time::Duration::from_secs(device_auth.interval.max(5));
+        
+        loop {
+            poll_attempts += 1;
+            
+            match auth_service
+                .poll_device_flow(&device_auth.device_code)
+                .await
+            {
+                Ok(tokens) => {
+                    complete_spinner_and_clear(spinner);
+                    break tokens;
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
+                    
+                    // Check if it's just pending (user hasn't completed auth yet)
+                    if error_str.contains("Authorization pending") || error_str.contains("authorization_pending") {
+                        if poll_attempts >= max_attempts {
+                            complete_spinner_error(spinner, "Authentication timed out");
+                            return Err(
+                                CliError::auth("Authentication timed out".to_string())
+                                    .with_suggestion("Please try again and complete authentication within 5 minutes"),
+                            );
+                        }
+                        
+                        // Wait before next poll
+                        tokio::time::sleep(poll_interval).await;
+                        continue;
+                    }
+                    
+                    // Any other error is a real failure
+                    complete_spinner_error(spinner, "Authentication failed");
+                    return Err(CliError::auth(format!("Authentication failed: {}", e))
+                        .with_suggestion(
+                            "Please ensure you completed the authentication in your browser",
+                        ));
+                }
             }
         }
     };
