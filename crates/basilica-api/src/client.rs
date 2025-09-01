@@ -26,10 +26,6 @@
 //!     .build()?;
 //!
 //!
-//! // Runtime token management
-//! client.set_bearer_token("new_auth0_token").await;
-//! let current_token = client.get_bearer_token().await;
-//! client.clear_bearer_token().await;
 //!
 //! # Ok(())
 //! # }
@@ -46,15 +42,13 @@ use basilica_validator::api::{
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 
 /// HTTP client for interacting with the Basilica API
 pub struct BasilicaClient {
     http_client: reqwest::Client,
     base_url: String,
-    bearer_token: Arc<RwLock<Option<String>>>,
+    bearer_token: Option<String>,
 }
 
 impl BasilicaClient {
@@ -68,23 +62,13 @@ impl BasilicaClient {
         Ok(Self {
             http_client,
             base_url: base_url.into(),
-            bearer_token: Arc::new(RwLock::new(None)),
+            bearer_token: None,
         })
     }
 
-    /// Get the current bearer token (if any)
-    pub async fn get_bearer_token(&self) -> Option<String> {
-        self.bearer_token.read().await.clone()
-    }
-
-    /// Set a new bearer token
-    pub async fn set_bearer_token(&self, token: impl Into<String>) {
-        *self.bearer_token.write().await = Some(token.into());
-    }
-
-    /// Clear the bearer token
-    pub async fn clear_bearer_token(&self) {
-        *self.bearer_token.write().await = None;
+    /// Get a reference to the bearer token (if any)
+    pub fn get_bearer_token(&self) -> Option<&str> {
+        self.bearer_token.as_deref()
     }
 
     // ===== Rentals =====
@@ -136,7 +120,7 @@ impl BasilicaClient {
             request = request.query(&params);
         }
 
-        let request = self.apply_auth(request).await;
+        let request = self.apply_auth(request);
         request.send().await.map_err(ApiError::HttpClient)
     }
 
@@ -152,7 +136,7 @@ impl BasilicaClient {
             request = request.query(&q);
         }
 
-        let request = self.apply_auth(request).await;
+        let request = self.apply_auth(request);
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         self.handle_response(response).await
     }
@@ -169,7 +153,7 @@ impl BasilicaClient {
             request = request.query(&q);
         }
 
-        let request = self.apply_auth(request).await;
+        let request = self.apply_auth(request);
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         self.handle_response(response).await
     }
@@ -185,9 +169,8 @@ impl BasilicaClient {
 
     /// Apply authentication to request if configured
     /// Uses Auth0 JWT Bearer token authentication
-    async fn apply_auth(&self, request: RequestBuilder) -> RequestBuilder {
-        let bearer_token = self.bearer_token.read().await;
-        if let Some(token) = bearer_token.as_ref() {
+    fn apply_auth(&self, request: RequestBuilder) -> RequestBuilder {
+        if let Some(token) = self.bearer_token.as_ref() {
             request.header("Authorization", format!("Bearer {}", token))
         } else {
             request
@@ -198,7 +181,7 @@ impl BasilicaClient {
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.get(&url);
-        let request = self.apply_auth(request).await;
+        let request = self.apply_auth(request);
 
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         self.handle_response(response).await
@@ -208,7 +191,7 @@ impl BasilicaClient {
     async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.post(&url).json(body);
-        let request = self.apply_auth(request).await;
+        let request = self.apply_auth(request);
 
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         self.handle_response(response).await
@@ -218,7 +201,7 @@ impl BasilicaClient {
     async fn delete_empty(&self, path: &str) -> Result<Response> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.delete(&url);
-        let request = self.apply_auth(request).await;
+        let request = self.apply_auth(request);
 
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         Ok(response)
@@ -358,7 +341,7 @@ impl ClientBuilder {
         Ok(BasilicaClient {
             http_client,
             base_url,
-            bearer_token: Arc::new(RwLock::new(self.bearer_token)),
+            bearer_token: self.bearer_token,
         })
     }
 }

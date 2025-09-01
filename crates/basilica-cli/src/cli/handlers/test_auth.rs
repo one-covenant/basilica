@@ -276,7 +276,7 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
     let http_client = reqwest::Client::new();
 
     // Get the bearer token from our client
-    let token = client.get_bearer_token().await.ok_or_else(|| {
+    let token = client.get_bearer_token().ok_or_else(|| {
         CliError::internal("No authentication token found. Please run 'basilica login' first")
     })?;
 
@@ -317,7 +317,7 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
         // Display OAuth scopes from the JWT token
         println!("\nToken Scopes:");
         println!("─────────────");
-        match decode_jwt_scopes(&token) {
+        match decode_jwt_scopes(token) {
             Some(scopes) => {
                 if scopes.is_empty() {
                     println!("  No scopes found in token");
