@@ -82,6 +82,9 @@ pub struct VerificationConfig {
     pub verification_interval: Duration,
     /// Maximum concurrent verifications
     pub max_concurrent_verifications: usize,
+    /// Maximum concurrent full validations (resource-intensive binary validations)
+    #[serde(default = "default_max_concurrent_full_validations")]
+    pub max_concurrent_full_validations: usize,
     /// Challenge timeout
     pub challenge_timeout: Duration,
     /// Minimum score threshold for miners
@@ -149,6 +152,10 @@ fn default_gpu_assignment_cleanup_ttl() -> Option<Duration> {
     Some(Duration::from_secs(120 * 60)) // 2 hours
 }
 
+fn default_max_concurrent_full_validations() -> usize {
+    1 // Conservative default: only 1 concurrent full validation to prevent resource contention
+}
+
 /// Configuration for binary validation using validator-binary and executor-binary
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinaryValidationConfig {
@@ -164,6 +171,13 @@ pub struct BinaryValidationConfig {
     pub enabled: bool,
     /// Binary validation weight in final score calculation
     pub score_weight: f64,
+    /// Default executor port for SSH tunnel cleanup
+    #[serde(default = "default_executor_port")]
+    pub executor_port: u16,
+}
+
+fn default_executor_port() -> u16 {
+    3000
 }
 
 impl Default for BinaryValidationConfig {
@@ -175,6 +189,7 @@ impl Default for BinaryValidationConfig {
             output_format: "json".to_string(),
             enabled: true,
             score_weight: 0.8,
+            executor_port: default_executor_port(),
         }
     }
 }
@@ -431,6 +446,7 @@ impl Default for ValidatorConfig {
             verification: VerificationConfig {
                 verification_interval: Duration::from_secs(600),
                 max_concurrent_verifications: 50,
+                max_concurrent_full_validations: default_max_concurrent_full_validations(),
                 challenge_timeout: Duration::from_secs(120),
                 min_score_threshold: 0.1,
                 max_miners_per_round: 20,
@@ -493,6 +509,17 @@ impl ConfigValidation for ValidatorConfig {
                 key: "verification.max_concurrent_verifications".to_string(),
                 value: self.verification.max_concurrent_verifications.to_string(),
                 reason: "Must allow at least 1 concurrent verification".to_string(),
+            });
+        }
+
+        if self.verification.max_concurrent_full_validations == 0 {
+            return Err(ConfigurationError::InvalidValue {
+                key: "verification.max_concurrent_full_validations".to_string(),
+                value: self
+                    .verification
+                    .max_concurrent_full_validations
+                    .to_string(),
+                reason: "Must allow at least 1 concurrent full validation".to_string(),
             });
         }
 

@@ -82,6 +82,7 @@ signature = "2.2"
 
 # System information and process management
 sysinfo = "0.30"
+libc = "0.2"
 
 # SSH key management
 ssh-key = { version = "0.6", features = ["ed25519", "std"] }

@@ -135,6 +135,8 @@ impl VerificationEngine {
 
         // Step 2: Execute SSH-based verification for each executor
         let mut executor_results = Vec::new();
+        let mut executors_skipped_for_strategy = 0;
+        let total_executors = executor_list.len();
 
         for executor_info in executor_list {
             info!(
@@ -169,11 +171,19 @@ impl VerificationEngine {
                     });
                 }
                 Err(e) if e.to_string().contains("Strategy mismatch") => {
+                    executors_skipped_for_strategy += 1;
                     debug!(
                         miner_uid = task.miner_uid,
                         executor_id = %executor_info.id,
-                        "[EVAL_FLOW] Executor handled by other pipeline"
+                        pipeline_type = ?task.intended_validation_strategy,
+                        "[EVAL_FLOW] Executor requires different validation type, will be handled by other pipeline"
                     );
+                    verification_steps.push(VerificationStep {
+                        step_name: format!("ssh_verification_{}", executor_info.id),
+                        status: StepStatus::Completed,
+                        duration: workflow_start.elapsed(),
+                        details: "Skipped - handled by other validation pipeline".to_string(),
+                    });
                 }
                 Err(e) => {
                     error!(
@@ -194,13 +204,35 @@ impl VerificationEngine {
 
         // Step 3: Calculate overall verification score
         let overall_score = if executor_results.is_empty() {
+            // Only return 0 if ALL executors were skipped for strategy mismatch
+            // If we have no results and all were skipped, this pipeline isn't responsible for this miner
+            if executors_skipped_for_strategy == total_executors && total_executors > 0 {
+                debug!(
+                    miner_uid = task.miner_uid,
+                    skipped_count = executors_skipped_for_strategy,
+                    pipeline_type = ?task.intended_validation_strategy,
+                    "[EVAL_FLOW] All executors require different validation type, score will come from other pipeline"
+                );
+            }
             0.0
         } else {
-            executor_results
+            let avg_score = executor_results
                 .iter()
                 .map(|r| r.verification_score)
                 .sum::<f64>()
-                / executor_results.len() as f64
+                / executor_results.len() as f64;
+
+            info!(
+                miner_uid = task.miner_uid,
+                validated_count = executor_results.len(),
+                skipped_count = executors_skipped_for_strategy,
+                total_executors = total_executors,
+                average_score = avg_score,
+                pipeline_type = ?task.intended_validation_strategy,
+                "[EVAL_FLOW] Partial validation completed for miner"
+            );
+
+            avg_score
         };
 
         // Step 4: Store individual executor verification results
@@ -236,10 +268,21 @@ impl VerificationEngine {
 
         info!(
             miner_uid = task.miner_uid,
-            "Automated verification workflow completed for miner {} in {:?}, score: {:.2}",
+            validated_executors = executor_results.len(),
+            skipped_executors = executors_skipped_for_strategy,
+            total_executors = total_executors,
+            pipeline_type = ?task.intended_validation_strategy,
+            overall_score = overall_score,
+            "[EVAL_FLOW] Verification workflow completed for miner {} in {:?}, score: {:.2} ({} of {} executors validated in {} pipeline)",
             task.miner_uid,
             workflow_start.elapsed(),
-            overall_score
+            overall_score,
+            executor_results.len(),
+            total_executors,
+            match task.intended_validation_strategy {
+                ValidationType::Full => "full",
+                ValidationType::Lightweight => "lightweight",
+            }
         );
 
         Ok(VerificationResult {
@@ -2286,15 +2329,18 @@ impl VerificationEngine {
         if !strategy_matches {
             debug!(
                 executor_id = %executor_info.id,
+                determined_strategy = ?strategy,
                 intended = ?intended_strategy,
-                "[EVAL_FLOW] Strategy mismatch - skipping executor in this pipeline"
+                "[EVAL_FLOW] Strategy mismatch - executor needs different validation type"
             );
 
             self.ssh_session_manager
                 .release_session(&executor_info.id.to_string())
                 .await;
 
-            return Err(anyhow::anyhow!("Strategy mismatch"));
+            return Err(anyhow::anyhow!(
+                "Strategy mismatch: executor needs different validation type"
+            ));
         }
 
         // Step 4: Execute validation based on strategy

@@ -9,8 +9,12 @@ use super::types::{
 };
 use anyhow::Result;
 use basilica_common::ssh::SshConnectionDetails;
+use std::process::Command;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
+
+// Import ProcessGroupManager from the parent crate
+use crate::process_group::ProcessGroupManager;
 
 /// Binary validation executor for running and parsing validator binaries
 pub struct BinaryValidator {
@@ -21,6 +25,28 @@ impl BinaryValidator {
     /// Create a new binary validator
     pub fn new(ssh_client: Arc<crate::ssh::ValidatorSshClient>) -> Self {
         Self { ssh_client }
+    }
+
+    /// Kill any zombie SSH tunnels from previous runs
+    fn cleanup_zombie_tunnels(&self, config: &crate::config::BinaryValidationConfig) -> Result<()> {
+        let kill_command = format!(
+            "pkill -f 'ssh.*:localhost:{}' || true",
+            config.executor_port
+        );
+
+        match Command::new("sh").arg("-c").arg(&kill_command).output() {
+            Ok(_) => {
+                debug!(
+                    "Cleaned up any zombie SSH tunnels for port {}",
+                    config.executor_port
+                );
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Failed to cleanup zombie tunnels: {}", e);
+                Ok(())
+            }
+        }
     }
 
     /// Execute validator-binary locally with SSH parameters
@@ -37,8 +63,11 @@ impl BinaryValidator {
             "[EVAL_FLOW] Executing validator binary locally"
         );
 
+        // Clean up any zombie SSH tunnels before starting
+        self.cleanup_zombie_tunnels(binary_config)?;
+
         self.ssh_client
-            .pre_accept_host_key(ssh_details)
+            .ensure_host_key_available(ssh_details)
             .await
             .map_err(|e| {
                 warn!("Failed to pre-accept SSH host key: {}.", e);
@@ -47,6 +76,14 @@ impl BinaryValidator {
             .ok();
 
         let mut command = tokio::process::Command::new(&binary_config.validator_binary_path);
+
+        // Configure for process group isolation to ensure all child processes can be cleaned up
+        ProcessGroupManager::configure_for_group(&mut command);
+
+        // Ensure proper output capture
+        command
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
 
         // Configure SSH parameters and executor binary path
         command
@@ -99,6 +136,10 @@ impl BinaryValidator {
 
         let child_pid = child.id();
 
+        // For process group management: on Unix, the process group ID equals the process ID for the group leader
+        #[cfg(unix)]
+        let pgid = child_pid.map(|pid| pid as i32);
+
         let output = match tokio::time::timeout(timeout_duration, child.wait_with_output()).await {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => {
@@ -117,32 +158,95 @@ impl BinaryValidator {
                     ssh_host = %ssh_details.host,
                     ssh_port = ssh_details.port,
                     ssh_user = %ssh_details.username,
-                    "[EVAL_FLOW] Validator binary execution timed out after {}s, killing process",
+                    "[EVAL_FLOW] Validator binary execution timed out after {}s, terminating process group",
                     timeout_duration.as_secs()
                 );
 
-                // Kill the process on timeout
+                // Terminate the entire process group on timeout
+                #[cfg(unix)]
+                if let Some(pgid) = pgid {
+                    info!(
+                        "[EVAL_FLOW] Terminating process group {} due to timeout",
+                        pgid
+                    );
+
+                    // Use graceful termination with 2-second grace period
+                    let terminate_result = ProcessGroupManager::terminate_process_group(
+                        pgid,
+                        std::time::Duration::from_secs(2),
+                    )
+                    .await;
+
+                    match terminate_result {
+                        Ok(_) => {
+                            info!("[EVAL_FLOW] Successfully terminated process group {} and all child processes", pgid);
+
+                            // Verify cleanup
+                            if let Some(pid) = child_pid {
+                                if ProcessGroupManager::verify_process_tree_terminated(pid) {
+                                    info!("[EVAL_FLOW] Verified: all processes in group {} terminated", pgid);
+                                } else {
+                                    warn!("[EVAL_FLOW] Some processes may still be running after termination attempt");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "[EVAL_FLOW] Failed to terminate process group {}: {}",
+                                pgid, e
+                            );
+
+                            // Fallback: try to kill just the main process
+                            if let Some(pid) = child_pid {
+                                warn!(
+                                    "[EVAL_FLOW] Attempting fallback kill of main process {}",
+                                    pid
+                                );
+                                let _ = std::process::Command::new("kill")
+                                    .arg("-9")
+                                    .arg(pid.to_string())
+                                    .output();
+                            }
+                        }
+                    }
+                }
+
+                // Windows fallback: kill process tree
+                #[cfg(not(unix))]
                 if let Some(pid) = child_pid {
-                    let kill_result = std::process::Command::new("kill")
-                        .arg("-9")
-                        .arg(pid.to_string())
+                    info!(
+                        "[EVAL_FLOW] Terminating Windows process tree for PID {}",
+                        pid
+                    );
+                    let kill_result = std::process::Command::new("taskkill")
+                        .args(&["/F", "/T", "/PID", &pid.to_string()])
                         .output();
 
                     match kill_result {
                         Ok(output) if output.status.success() => {
-                            info!("[EVAL_FLOW] Successfully killed timed out validator binary process {}", pid);
+                            info!(
+                                "[EVAL_FLOW] Successfully killed Windows process tree {}",
+                                pid
+                            );
                         }
-                        Ok(_) => {
-                            warn!("[EVAL_FLOW] Kill command failed for process {}", pid);
+                        Ok(output) => {
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            warn!(
+                                "[EVAL_FLOW] Taskkill command failed for process {}: {}",
+                                pid, stderr
+                            );
                         }
                         Err(e) => {
-                            warn!(
-                                "[EVAL_FLOW] Failed to execute kill command for process {}: {}",
+                            error!(
+                                "[EVAL_FLOW] Failed to execute taskkill for process {}: {}",
                                 pid, e
                             );
                         }
                     }
                 }
+
+                // Clean up SSH tunnels after timeout
+                let _ = self.cleanup_zombie_tunnels(binary_config);
 
                 return Err(anyhow::anyhow!(
                     "Validator binary execution timeout after {}s",
@@ -160,6 +264,12 @@ impl BinaryValidator {
         // Log stdout and stderr regardless of status
         let stdout_str = String::from_utf8_lossy(&output.stdout);
         let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+        info!(
+            "[EVAL_FLOW] Validator binary output - stdout: {} bytes, stderr: {} bytes",
+            output.stdout.len(),
+            output.stderr.len()
+        );
 
         if !stdout_str.is_empty() {
             info!(
@@ -188,6 +298,10 @@ impl BinaryValidator {
                 "[EVAL_FLOW] Validator binary execution failed with exit code: {}",
                 exit_code
             );
+
+            // Clean up SSH tunnels after failed execution
+            let _ = self.cleanup_zombie_tunnels(binary_config);
+
             return Err(anyhow::anyhow!(
                 "Validator binary execution failed with exit code {}: {}",
                 exit_code,
@@ -195,18 +309,50 @@ impl BinaryValidator {
             ));
         }
 
-        info!(
-            "[EVAL_FLOW] Validator binary execution successful, processing output ({} bytes)",
-            output.stdout.len()
-        );
-        Ok(output.stdout)
+        // Try to find JSON output in stdout first, then stderr as fallback
+        let output_bytes = if !output.stdout.is_empty() {
+            info!(
+                "[EVAL_FLOW] Validator binary execution successful, processing stdout output ({} bytes)",
+                output.stdout.len()
+            );
+            output.stdout
+        } else if !output.stderr.is_empty() {
+            warn!(
+                "[EVAL_FLOW] stdout empty, trying stderr for JSON output ({} bytes)",
+                output.stderr.len()
+            );
+            output.stderr
+        } else {
+            error!("[EVAL_FLOW] Both stdout and stderr are empty, no output to process");
+
+            // Clean up SSH tunnels after empty output
+            let _ = self.cleanup_zombie_tunnels(binary_config);
+
+            return Err(anyhow::anyhow!(
+                "Validator binary produced no output in stdout or stderr"
+            ));
+        };
+
+        // Clean up SSH tunnels after successful execution
+        let _ = self.cleanup_zombie_tunnels(binary_config);
+
+        Ok(output_bytes)
     }
 
     /// Parse validator binary output
     pub fn parse_validator_binary_output(&self, output: &[u8]) -> Result<ValidatorBinaryOutput> {
+        info!(
+            "[EVAL_FLOW] Parsing validator binary output ({} bytes)",
+            output.len()
+        );
+
         if output.is_empty() {
-            error!("[EVAL_FLOW] Validator binary output is empty");
-            return Err(anyhow::anyhow!("Validator binary produced no output"));
+            error!(
+                "[EVAL_FLOW] Validator binary output is empty - this indicates a capture problem"
+            );
+            return Err(anyhow::anyhow!(
+                "Validator binary produced no output - output capture failed"
+            ));
         }
 
         let output_str = String::from_utf8_lossy(output);
@@ -967,6 +1113,7 @@ impl BinaryValidator {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use tokio::process::Command;
 
     fn create_test_validator() -> BinaryValidator {
         let mock_ssh_client = Arc::new(crate::ssh::ValidatorSshClient::new());
@@ -1298,6 +1445,184 @@ mod tests {
             calculated_score <= 1.0,
             "Score should be <= 1.0, got {}",
             calculated_score
+        );
+    }
+
+    // Process Group Management Tests
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_process_group_creation() {
+        // Test that commands are properly configured for process group isolation
+        let mut command = Command::new("sh");
+        command.arg("-c").arg("sleep 0.1");
+
+        ProcessGroupManager::configure_for_group(&mut command);
+
+        let child = command.spawn().expect("Failed to spawn test process");
+        let pid = child.id().expect("Failed to get process ID");
+
+        // The process should be in its own process group
+        let pgid = unsafe { libc::getpgid(pid as i32) };
+        assert_eq!(
+            pgid, pid as i32,
+            "Process should be its own process group leader"
+        );
+
+        // Clean up
+        let _ = ProcessGroupManager::terminate_process_group(
+            pid as i32,
+            std::time::Duration::from_millis(100),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_process_group_with_children() {
+        // Create a process that spawns children
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("(sleep 60 & sleep 60 & sleep 60) & wait");
+
+        ProcessGroupManager::configure_for_group(&mut command);
+
+        let child = command.spawn().expect("Failed to spawn test process");
+        let pid = child.id().expect("Failed to get process ID");
+
+        // Give children time to spawn
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        // Check that children exist
+        let children_before = ProcessGroupManager::get_process_children(pid);
+        assert!(
+            !children_before.is_empty(),
+            "Process should have spawned children"
+        );
+
+        // Terminate the process group
+        let result = ProcessGroupManager::terminate_process_group(
+            pid as i32,
+            std::time::Duration::from_secs(1),
+        )
+        .await;
+
+        assert!(result.is_ok(), "Process group termination should succeed");
+
+        // Verify all processes are terminated
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        assert!(
+            ProcessGroupManager::verify_process_tree_terminated(pid),
+            "All processes in the group should be terminated"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validator_binary_timeout_cleanup() {
+        // This test simulates a timeout scenario with the validator binary
+        let validator = create_test_validator();
+
+        // Create a mock binary config with very short timeout
+        let binary_config = crate::config::BinaryValidationConfig {
+            validator_binary_path: "/usr/bin/sleep".into(), // Use sleep as mock binary
+            executor_binary_path: "/tmp/mock_executor".into(),
+            output_format: "json".to_string(),
+            execution_timeout_secs: 1, // Very short timeout to trigger cleanup
+            enabled: true,
+            score_weight: 1.0,
+            executor_port: 3000,
+        };
+
+        let ssh_details = SshConnectionDetails {
+            host: "localhost".to_string(),
+            port: 22,
+            username: "test".to_string(),
+            private_key_path: "/tmp/test_key".into(),
+            timeout: std::time::Duration::from_secs(10),
+        };
+
+        // This will timeout and trigger process group cleanup
+        let result = validator
+            .execute_validator_binary_locally(&ssh_details, &binary_config)
+            .await;
+
+        // Should fail due to timeout or execution error, but process should be cleaned up
+        assert!(
+            result.is_err(),
+            "Should fail due to timeout or invalid binary"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_ssh_process_cleanup() {
+        // Test that SSH processes spawned by a parent are properly cleaned up
+        // This simulates the validator-binary spawning SSH tunnels
+
+        // Create a process that spawns an SSH-like background process
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("sleep 60 & echo $! > /tmp/test_ssh_pid_$$ && sleep 60");
+
+        ProcessGroupManager::configure_for_group(&mut command);
+
+        let child = command.spawn().expect("Failed to spawn test process");
+        let pid = child.id().expect("Failed to get process ID");
+
+        // Give background process time to start
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        // Verify children exist
+        let children = ProcessGroupManager::get_process_children(pid);
+        assert!(
+            !children.is_empty(),
+            "Should have spawned background processes"
+        );
+
+        // Terminate the process group (simulating timeout)
+        let result = ProcessGroupManager::terminate_process_group(
+            pid as i32,
+            std::time::Duration::from_millis(500),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Should successfully terminate process group"
+        );
+
+        // Verify all processes including "SSH tunnels" are gone
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let remaining = ProcessGroupManager::get_process_children(pid);
+        assert_eq!(
+            remaining.len(),
+            0,
+            "All child processes should be terminated"
+        );
+
+        assert!(
+            ProcessGroupManager::verify_process_tree_terminated(pid),
+            "Process tree should be fully terminated"
+        );
+    }
+
+    #[test]
+    fn test_process_verification() {
+        // Test process verification with non-existent PID
+        let fake_pid = 2147483647u32; // Max u32, unlikely to exist
+
+        assert!(
+            ProcessGroupManager::verify_process_tree_terminated(fake_pid),
+            "Non-existent process should be considered terminated"
+        );
+
+        // Test with current process (should not be terminated)
+        let current_pid = std::process::id();
+        assert!(
+            !ProcessGroupManager::verify_process_tree_terminated(current_pid),
+            "Current process should not be considered terminated"
         );
     }
 }

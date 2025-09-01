@@ -2467,6 +2467,7 @@ dependencies = [
  "futures",
  "futures-util",
  "hex",
+ "libc",
  "metrics",
  "metrics-exporter-prometheus",
  "mockall 0.11.4",

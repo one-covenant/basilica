@@ -24,6 +24,7 @@ external_ip = "YOUR_PUBLIC_IP_HERE"
 
 [verification]
 max_concurrent_verifications = 50
+max_concurrent_full_validations = 1  # Limit resource-intensive full validations to 1 at a time
 min_score_threshold = 0.1
 verification_interval = { secs = 600 }
 challenge_timeout = { secs = 120 }
