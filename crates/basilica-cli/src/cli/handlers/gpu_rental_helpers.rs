@@ -68,49 +68,18 @@ pub async fn resolve_target_rental(
     selector.select_rental(&eligible_rentals)
 }
 
-/// Get SSH credentials from cache for a rental
-///
-/// # Arguments
-/// * `target` - Rental ID to look up
-/// * `cache` - Rental cache instance
-pub fn get_ssh_credentials_from_cache(target: &str, cache: &RentalCache) -> Result<String> {
-    let cached_rental = cache.get_rental(target).ok_or_else(|| {
-        CliError::rental_not_found(target)
-            .with_context("SSH credentials are only available for rentals created in this session")
-    })?;
-
-    cached_rental.ssh_credentials.clone().ok_or_else(|| {
-        CliError::not_supported(
-            "This rental does not have SSH access. Container was created without SSH port mapping.",
-        )
-    })
-}
-
-/// Filter rentals to only include those with SSH credentials in cache
+/// Filter rentals to only include those with SSH credentials
+/// Since SSH credentials are now stored in the API, this function
+/// currently returns all rentals and filtering should be done via API
 ///
 /// # Arguments
 /// * `rentals` - List of rentals to filter
-/// * `cache` - Rental cache instance
+/// * `_cache` - Rental cache instance (unused, kept for compatibility)
 pub fn filter_rentals_with_ssh(
     rentals: Vec<RentalListItem>,
-    cache: &RentalCache,
+    _cache: &RentalCache,
 ) -> Vec<RentalListItem> {
-    // Get all cached rentals that have SSH credentials
-    let ssh_rentals: Vec<String> = cache
-        .list_rentals()
-        .into_iter()
-        .filter_map(|r| {
-            if r.ssh_credentials.is_some() {
-                Some(r.rental_id.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Filter to only show rentals with SSH access
+    // TODO: In the future, we could make parallel API calls to check SSH availability
+    // For now, return all rentals and let the user attempt SSH connection
     rentals
-        .into_iter()
-        .filter(|r| ssh_rentals.contains(&r.rental_id))
-        .collect()
 }

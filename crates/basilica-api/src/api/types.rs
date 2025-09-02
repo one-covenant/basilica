@@ -68,3 +68,43 @@ pub struct LogStreamQuery {
     pub follow: Option<bool>,
     pub tail: Option<u32>,
 }
+
+/// Extended rental status response that includes SSH credentials from the database
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct RentalStatusWithSshResponse {
+    /// Rental ID
+    pub rental_id: String,
+
+    /// Current rental status
+    pub status: RentalStatus,
+
+    /// Executor details
+    pub executor: ExecutorDetails,
+
+    /// SSH credentials (from database, not validator)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_credentials: Option<String>,
+
+    /// Creation timestamp
+    pub created_at: chrono::DateTime<chrono::Utc>,
+
+    /// Last update timestamp
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl RentalStatusWithSshResponse {
+    /// Create from validator response and database SSH credentials
+    pub fn from_validator_response(
+        response: RentalStatusResponse,
+        ssh_credentials: Option<String>,
+    ) -> Self {
+        Self {
+            rental_id: response.rental_id,
+            status: response.status,
+            executor: response.executor,
+            ssh_credentials,
+            created_at: response.created_at,
+            updated_at: response.updated_at,
+        }
+    }
+}

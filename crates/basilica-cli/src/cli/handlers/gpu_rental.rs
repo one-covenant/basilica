@@ -2,9 +2,7 @@
 
 use crate::cache::{CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
-use crate::cli::handlers::gpu_rental_helpers::{
-    get_ssh_credentials_from_cache, resolve_target_rental,
-};
+use crate::cli::handlers::gpu_rental_helpers::resolve_target_rental;
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
@@ -13,12 +11,11 @@ use crate::output::{
 };
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
-use basilica_api::api::types::{
-    ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
-};
+use basilica_api::api::types::{ListRentalsQuery, ResourceRequirementsRequest, SshAccess};
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_validator::api::rental_routes::StartRentalRequest;
-use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
+use basilica_validator::api::types::ListAvailableExecutorsQuery;
+use basilica_validator::api::types::RentalStatusResponse;
 use basilica_validator::rental::types::RentalState;
 use console::style;
 use reqwest::StatusCode;
@@ -276,7 +273,6 @@ pub async fn handle_up(
     let mut cache = RentalCache::load().await.unwrap_or_default();
     cache.add_rental(CachedRental {
         rental_id: response.rental_id.clone(),
-        ssh_credentials: response.ssh_credentials.clone(),
         container_id: response.container_info.container_id.clone(),
         container_name: response.container_info.container_name.clone(),
         executor_id: target.clone(),
@@ -403,6 +399,7 @@ pub async fn handle_status(target: Option<String>, json: bool, config: &CliConfi
     complete_spinner_and_clear(spinner);
 
     // Check if rental is stopped and clean up cache
+    use basilica_api::api::types::RentalStatus;
     if matches!(
         status.status,
         RentalStatus::Terminated | RentalStatus::Failed
@@ -416,7 +413,15 @@ pub async fn handle_status(target: Option<String>, json: bool, config: &CliConfi
     if json {
         json_output(&status)?;
     } else {
-        display_rental_status(&status);
+        // Convert to validator's RentalStatusResponse for display (without SSH credentials)
+        let display_status = RentalStatusResponse {
+            rental_id: status.rental_id,
+            status: status.status,
+            executor: status.executor,
+            created_at: status.created_at,
+            updated_at: status.updated_at,
+        };
+        display_rental_status(&display_status);
     }
 
     Ok(())
@@ -569,19 +574,22 @@ pub async fn handle_exec(
     // Create API client to verify rental status
     let api_client = create_authenticated_client(config).await?;
 
-    // Load rental cache first to see what's available for SSH
-    let mut cache = RentalCache::load().await?;
-
     // Resolve target rental with SSH requirement
     let target = resolve_target_rental(target, &api_client, true).await?;
 
     debug!("Executing command on rental: {}", target);
 
-    // Get SSH credentials from cache
-    let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
+    // Get rental status from API which includes SSH credentials
+    let rental_status = api_client
+        .get_rental_status(&target)
+        .await
+        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
 
-    // Verify rental is still active before proceeding
-    verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
+    // Extract SSH credentials from response
+    let ssh_credentials = rental_status.ssh_credentials
+        .ok_or_else(|| CliError::not_supported(
+            "SSH credentials not available for this rental. This rental may have been created with --no-ssh flag."
+        ))?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -605,19 +613,22 @@ pub async fn handle_ssh(
     // Create API client to verify rental status
     let api_client = create_authenticated_client(config).await?;
 
-    // Load rental cache first to see what's available for SSH
-    let mut cache = RentalCache::load().await?;
-
     // Resolve target rental with SSH requirement
     let target = resolve_target_rental(target, &api_client, true).await?;
 
     debug!("Opening SSH connection to rental: {}", target);
 
-    // Get SSH credentials from cache
-    let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
+    // Get rental status from API which includes SSH credentials
+    let rental_status = api_client
+        .get_rental_status(&target)
+        .await
+        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
 
-    // Verify rental is still active before proceeding
-    verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
+    // Extract SSH credentials from response
+    let ssh_credentials = rental_status.ssh_credentials
+        .ok_or_else(|| CliError::not_supported(
+            "SSH credentials not available for this rental. This rental may have been created with --no-ssh flag."
+        ))?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -642,9 +653,6 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
 
     // Create API client
     let api_client = create_authenticated_client(config).await?;
-
-    // Load rental cache
-    let mut cache = RentalCache::load().await?;
 
     // Parse source and destination to check if rental ID is provided
     let (source_rental, source_path) = split_remote_path(&source);
@@ -685,15 +693,18 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
         }
     };
 
-    // Get SSH credentials from cache
-    let ssh_credentials = get_ssh_credentials_from_cache(&rental_id, &cache)
-        .map_err(|_e| CliError::not_found(format!(
-            "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
+    // Get rental status from API which includes SSH credentials
+    let rental_status = api_client
+        .get_rental_status(&rental_id)
+        .await
+        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
+
+    // Extract SSH credentials from response
+    let ssh_credentials = rental_status.ssh_credentials
+        .ok_or_else(|| CliError::not_supported(format!(
+            "SSH credentials not available for rental {}. This rental may have been created with --no-ssh flag.",
             rental_id
         )))?;
-
-    // Verify rental is still active before proceeding
-    verify_rental_status_and_cleanup_cache(&rental_id, &api_client, &mut cache).await?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -746,6 +757,7 @@ async fn poll_rental_status(
         // Check rental status
         match api_client.get_rental_status(rental_id).await {
             Ok(status) => {
+                use basilica_api::api::types::RentalStatus;
                 match status.status {
                     RentalStatus::Active => {
                         complete_spinner_and_clear(spinner);
@@ -827,33 +839,6 @@ fn display_ssh_connection_instructions(
         .cyan()
         .bold()
     );
-
-    Ok(())
-}
-
-/// Verify rental is still active and clean up cache if not
-async fn verify_rental_status_and_cleanup_cache(
-    rental_id: &str,
-    api_client: &basilica_api::client::BasilicaClient,
-    cache: &mut RentalCache,
-) -> Result<()> {
-    let status = api_client
-        .get_rental_status(rental_id)
-        .await
-        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
-
-    if matches!(
-        status.status,
-        RentalStatus::Terminated | RentalStatus::Failed
-    ) {
-        cache.remove_rental(rental_id);
-        cache.save().await?;
-        return Err(CliError::not_found(format!(
-            "Rental {} is no longer active (status: {:?})",
-            rental_id, status.status
-        ))
-        .with_suggestion("Run 'basilica ps' to see currently active rentals"));
-    }
 
     Ok(())
 }

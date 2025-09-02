@@ -32,7 +32,7 @@
 //! ```
 
 use crate::{
-    api::types::{HealthCheckResponse, ListRentalsQuery, RentalStatusResponse},
+    api::types::{HealthCheckResponse, ListRentalsQuery, RentalStatusWithSshResponse},
     error::{ApiError, ErrorResponse, Result},
 };
 use basilica_validator::api::{
@@ -73,8 +73,8 @@ impl BasilicaClient {
 
     // ===== Rentals =====
 
-    /// Get rental status
-    pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusResponse> {
+    /// Get rental status with SSH credentials included
+    pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusWithSshResponse> {
         let path = format!("/rentals/{rental_id}");
         self.get(&path).await
     }

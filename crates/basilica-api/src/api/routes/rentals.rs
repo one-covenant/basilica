@@ -6,7 +6,9 @@ use crate::{
             delete_rental_ownership, get_user_rental_ids, store_rental_ownership, OwnedRental,
         },
         middleware::Auth0Claims,
-        types::{ListRentalsQuery, LogStreamQuery, RentalStatusResponse, TerminateRentalRequest},
+        types::{
+            ListRentalsQuery, LogStreamQuery, RentalStatusWithSshResponse, TerminateRentalRequest,
+        },
     },
     error::Result,
     server::AppState,
@@ -46,13 +48,19 @@ static DOCKER_IMAGE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 pub async fn get_rental_status(
     State(state): State<AppState>,
     owned_rental: OwnedRental,
-) -> Result<Json<RentalStatusResponse>> {
+) -> Result<Json<RentalStatusWithSshResponse>> {
     debug!("Getting status for rental: {}", owned_rental.rental_id);
 
     let client = &state.validator_client;
-    let response = client.get_rental_status(&owned_rental.rental_id).await?;
+    let validator_response = client.get_rental_status(&owned_rental.rental_id).await?;
 
-    Ok(Json(response))
+    // Create extended response with SSH credentials from database
+    let response_with_ssh = RentalStatusWithSshResponse::from_validator_response(
+        validator_response,
+        owned_rental.ssh_credentials,
+    );
+
+    Ok(Json(response_with_ssh))
 }
 
 // ===== New Validator-Compatible Endpoints =====
@@ -104,8 +112,14 @@ pub async fn start_rental(
         .start_rental(validator_request)
         .await?;
 
-    // Store ownership record in database
-    if let Err(e) = store_rental_ownership(&state.db, &validator_response.rental_id, user_id).await
+    // Store ownership record in database with SSH credentials
+    if let Err(e) = store_rental_ownership(
+        &state.db,
+        &validator_response.rental_id,
+        user_id,
+        validator_response.ssh_credentials.as_deref(),
+    )
+    .await
     {
         error!(
             "Failed to store rental ownership for rental {}: {}. Rolling back rental creation.",

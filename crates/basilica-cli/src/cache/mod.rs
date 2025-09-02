@@ -11,7 +11,6 @@ use tracing::{debug, info};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedRental {
     pub rental_id: String,
-    pub ssh_credentials: Option<String>,
     pub container_id: String,
     pub container_name: String,
     pub executor_id: String,
