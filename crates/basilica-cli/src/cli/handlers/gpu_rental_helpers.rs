@@ -1,11 +1,9 @@
 //! Common helper functions for GPU rental operations
 
-use crate::cache::RentalCache;
 use crate::error::{CliError, Result};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
-use basilica_api::api::types::ListRentalsQuery;
+use basilica_api::api::types::{ApiRentalListItem, ListRentalsQuery};
 use basilica_api::client::BasilicaClient;
-use basilica_validator::api::types::RentalListItem;
 use basilica_validator::rental::types::RentalState;
 
 /// Resolve target rental ID - if not provided, fetch active rentals and prompt for selection
@@ -45,8 +43,7 @@ pub async fn resolve_target_rental(
 
     // Filter for SSH-enabled rentals if required
     let eligible_rentals = if require_ssh {
-        let cache = RentalCache::load().await?;
-        filter_rentals_with_ssh(rentals_list.rentals, &cache)
+        filter_rentals_with_ssh(rentals_list.rentals)
     } else {
         rentals_list.rentals
     };
@@ -74,11 +71,7 @@ pub async fn resolve_target_rental(
 ///
 /// # Arguments
 /// * `rentals` - List of rentals to filter
-/// * `_cache` - Rental cache instance (unused, kept for compatibility)
-pub fn filter_rentals_with_ssh(
-    rentals: Vec<RentalListItem>,
-    _cache: &RentalCache,
-) -> Vec<RentalListItem> {
+pub fn filter_rentals_with_ssh(rentals: Vec<ApiRentalListItem>) -> Vec<ApiRentalListItem> {
     // TODO: In the future, we could make parallel API calls to check SSH availability
     // For now, return all rentals and let the user attempt SSH connection
     rentals

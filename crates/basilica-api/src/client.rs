@@ -32,12 +32,14 @@
 //! ```
 
 use crate::{
-    api::types::{HealthCheckResponse, ListRentalsQuery, RentalStatusWithSshResponse},
+    api::types::{
+        ApiListRentalsResponse, HealthCheckResponse, ListRentalsQuery, RentalStatusWithSshResponse,
+    },
     error::{ApiError, ErrorResponse, Result},
 };
 use basilica_validator::api::{
     rental_routes::StartRentalRequest,
-    types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, ListRentalsResponse},
+    types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse},
 };
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -128,7 +130,7 @@ impl BasilicaClient {
     pub async fn list_rentals(
         &self,
         query: Option<ListRentalsQuery>,
-    ) -> Result<ListRentalsResponse> {
+    ) -> Result<ApiListRentalsResponse> {
         let url = format!("{}/rentals", self.base_url);
         let mut request = self.http_client.get(&url);
 

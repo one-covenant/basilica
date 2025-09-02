@@ -7,7 +7,8 @@ use crate::{
         },
         middleware::Auth0Claims,
         types::{
-            ListRentalsQuery, LogStreamQuery, RentalStatusWithSshResponse, TerminateRentalRequest,
+            ApiListRentalsResponse, ApiRentalListItem, ListRentalsQuery, LogStreamQuery,
+            RentalStatusWithSshResponse, TerminateRentalRequest,
         },
     },
     error::Result,
@@ -22,7 +23,7 @@ use axum::{
 use basilica_validator::{
     api::{
         rental_routes::StartRentalRequest,
-        types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, ListRentalsResponse},
+        types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse},
     },
     RentalResponse,
 };
@@ -263,7 +264,7 @@ pub async fn list_rentals_validator(
     State(state): State<AppState>,
     axum::Extension(claims): axum::Extension<Auth0Claims>,
     Query(query): Query<ListRentalsQuery>,
-) -> Result<Json<ListRentalsResponse>> {
+) -> Result<Json<ApiListRentalsResponse>> {
     info!("Listing rentals with state filter: {:?}", query.status);
 
     // Get user ID from auth claims (already extracted via Extension)
@@ -285,17 +286,60 @@ pub async fn list_rentals_validator(
             message: format!("Failed to list rentals: {e}"),
         })?;
 
-    // Filter to only include user's rentals
-    let filtered_rentals: Vec<_> = all_rentals
-        .rentals
-        .into_iter()
-        .filter(|rental| user_rental_ids.contains(&rental.rental_id))
-        .collect();
+    // Filter to only include user's rentals and fetch executor details
+    let mut api_rentals = Vec::new();
 
-    let filtered_count = filtered_rentals.len();
+    for rental in all_rentals.rentals {
+        if !user_rental_ids.contains(&rental.rental_id) {
+            continue;
+        }
 
-    let user_rentals = basilica_validator::api::types::ListRentalsResponse {
-        rentals: filtered_rentals,
+        // Get rental status to fetch executor details with GPU specs
+        let rental_status = match state
+            .validator_client
+            .get_rental_status(&rental.rental_id)
+            .await
+        {
+            Ok(status) => status,
+            Err(e) => {
+                // Log error but continue with other rentals
+                tracing::warn!(
+                    "Failed to get rental status for {}: {}",
+                    rental.rental_id,
+                    e
+                );
+                // Create rental item without GPU specs
+                api_rentals.push(ApiRentalListItem {
+                    rental_id: rental.rental_id,
+                    executor_id: rental.executor_id,
+                    container_id: rental.container_id,
+                    state: rental.state,
+                    created_at: rental.created_at,
+                    miner_id: rental.miner_id,
+                    container_image: rental.container_image,
+                    gpu_specs: vec![],
+                });
+                continue;
+            }
+        };
+
+        // Create API rental item with GPU specs from executor details
+        api_rentals.push(ApiRentalListItem {
+            rental_id: rental.rental_id,
+            executor_id: rental.executor_id,
+            container_id: rental.container_id,
+            state: rental.state,
+            created_at: rental.created_at,
+            miner_id: rental.miner_id,
+            container_image: rental.container_image,
+            gpu_specs: rental_status.executor.gpu_specs,
+        });
+    }
+
+    let filtered_count = api_rentals.len();
+
+    let user_rentals = ApiListRentalsResponse {
+        rentals: api_rentals,
         total_count: filtered_count,
     };
 

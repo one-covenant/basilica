@@ -1,7 +1,8 @@
 //! Interactive selection utilities
 
 use crate::error::{CliError, Result};
-use basilica_validator::api::types::{AvailableExecutor, RentalListItem};
+use basilica_api::api::types::ApiRentalListItem;
+use basilica_validator::api::types::AvailableExecutor;
 use console::Term;
 use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};
 
@@ -139,24 +140,40 @@ impl InteractiveSelector {
     }
 
     /// Let user select a single instance from active instances
-    pub fn select_rental(&self, rentals: &[RentalListItem]) -> Result<String> {
-        use crate::cache::RentalCache;
-
+    pub fn select_rental(&self, rentals: &[ApiRentalListItem]) -> Result<String> {
         if rentals.is_empty() {
             return Err(CliError::not_found("No active instances"));
         }
 
-        // Load cache to get GPU info
-        let cache = futures::executor::block_on(RentalCache::load()).unwrap_or_default();
-
         let items: Vec<String> = rentals
             .iter()
             .map(|rental| {
-                // Try to get GPU info from cache
-                let gpu = cache
-                    .get_rental(&rental.rental_id)
-                    .and_then(|cached| cached.gpu_info.clone())
-                    .unwrap_or_else(|| "Unknown GPU".to_string());
+                // Format GPU info from specs
+                let gpu = if rental.gpu_specs.is_empty() {
+                    "Unknown GPU".to_string()
+                } else {
+                    let first_gpu = &rental.gpu_specs[0];
+                    let all_same = rental
+                        .gpu_specs
+                        .iter()
+                        .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
+
+                    if all_same {
+                        format!(
+                            "{}x {} ({}GB)",
+                            rental.gpu_specs.len(),
+                            first_gpu.name,
+                            first_gpu.memory_gb
+                        )
+                    } else {
+                        rental
+                            .gpu_specs
+                            .iter()
+                            .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    }
+                };
 
                 // Format: "GPU Type    Container Image"
                 format!("{:<30} {}", gpu, rental.container_image)
@@ -185,25 +202,41 @@ impl InteractiveSelector {
     /// Let user select instance items for termination
     pub fn select_rental_items_for_termination(
         &self,
-        rentals: &[RentalListItem],
+        rentals: &[ApiRentalListItem],
     ) -> Result<Vec<String>> {
-        use crate::cache::RentalCache;
-
         if rentals.is_empty() {
             return Err(CliError::not_found("No active instances"));
         }
 
-        // Load cache to get GPU info
-        let cache = futures::executor::block_on(RentalCache::load()).unwrap_or_default();
-
         let items: Vec<String> = rentals
             .iter()
             .map(|rental| {
-                // Try to get GPU info from cache
-                let gpu = cache
-                    .get_rental(&rental.rental_id)
-                    .and_then(|cached| cached.gpu_info.clone())
-                    .unwrap_or_else(|| "Unknown GPU".to_string());
+                // Format GPU info from specs
+                let gpu = if rental.gpu_specs.is_empty() {
+                    "Unknown GPU".to_string()
+                } else {
+                    let first_gpu = &rental.gpu_specs[0];
+                    let all_same = rental
+                        .gpu_specs
+                        .iter()
+                        .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
+
+                    if all_same {
+                        format!(
+                            "{}x {} ({}GB)",
+                            rental.gpu_specs.len(),
+                            first_gpu.name,
+                            first_gpu.memory_gb
+                        )
+                    } else {
+                        rental
+                            .gpu_specs
+                            .iter()
+                            .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    }
+                };
 
                 // Format consistently with select_rental
                 format!("{:<30} {}", gpu, rental.container_image)

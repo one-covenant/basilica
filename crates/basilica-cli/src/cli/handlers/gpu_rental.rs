@@ -1,6 +1,5 @@
 //! GPU rental command handlers
 
-use crate::cache::{CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::cli::handlers::gpu_rental_helpers::resolve_target_rental;
 use crate::client::create_authenticated_client;
@@ -146,8 +145,8 @@ pub async fn handle_up(
     let api_client = create_authenticated_client(config).await?;
 
     // If no target provided, fetch available executors and prompt for selection
-    let (target, executor_details) = if let Some(t) = target {
-        (t, None)
+    let target = if let Some(t) = target {
+        t
     } else {
         let spinner = create_spinner("Fetching available executors...");
 
@@ -171,23 +170,7 @@ pub async fn handle_up(
 
         // Use interactive selector to choose an executor
         let selector = crate::interactive::InteractiveSelector::new();
-        let selected_id = selector.select_executor(&response.available_executors)?;
-
-        // Find the selected executor details
-        let selected_executor = response
-            .available_executors
-            .iter()
-            .find(|e| {
-                // Strip miner prefix from executor ID before comparing
-                let executor_id = match e.executor.id.split_once("__") {
-                    Some((_, second)) => second.to_string(),
-                    None => e.executor.id.clone(),
-                };
-                executor_id == selected_id
-            })
-            .map(|e| e.executor.clone());
-
-        (selected_id, selected_executor)
+        selector.select_executor(&response.available_executors)?
     };
 
     let spinner = create_spinner("Preparing rental request...");
@@ -247,40 +230,6 @@ pub async fn handle_up(
         CliError::api_request_failed("start rental", e.to_string())
             .with_suggestion("Ensure the executor is available and try again")
     })?;
-
-    spinner.set_message("Caching rental information...");
-
-    // Format GPU info if we have executor details
-    let gpu_info = executor_details.as_ref().and_then(|exec| {
-        if exec.gpu_specs.is_empty() {
-            None
-        } else {
-            let gpu = &exec.gpu_specs[0];
-            Some(if exec.gpu_specs.len() > 1 {
-                format!(
-                    "{}x {} ({}GB)",
-                    exec.gpu_specs.len(),
-                    gpu.name,
-                    gpu.memory_gb
-                )
-            } else {
-                format!("{} ({}GB)", gpu.name, gpu.memory_gb)
-            })
-        }
-    });
-
-    // Cache the rental information
-    let mut cache = RentalCache::load().await.unwrap_or_default();
-    cache.add_rental(CachedRental {
-        rental_id: response.rental_id.clone(),
-        container_id: response.container_info.container_id.clone(),
-        container_name: response.container_info.container_name.clone(),
-        executor_id: target.clone(),
-        gpu_info,
-        created_at: chrono::Utc::now(),
-        cached_at: chrono::Utc::now(),
-    });
-    cache.save().await?;
 
     complete_spinner_and_clear(spinner);
 
@@ -397,18 +346,6 @@ pub async fn handle_status(target: Option<String>, json: bool, config: &CliConfi
     })?;
 
     complete_spinner_and_clear(spinner);
-
-    // Check if rental is stopped and clean up cache
-    use basilica_api::api::types::RentalStatus;
-    if matches!(
-        status.status,
-        RentalStatus::Terminated | RentalStatus::Failed
-    ) {
-        let mut cache = RentalCache::load().await.unwrap_or_default();
-        if cache.remove_rental(&target).is_some() {
-            cache.save().await?;
-        }
-    }
 
     if json {
         json_output(&status)?;
@@ -537,9 +474,6 @@ pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<(
     // Resolve target rental (fetch and prompt if not provided)
     let rental_id = resolve_target_rental(target, &api_client, false).await?;
 
-    // Load rental cache
-    let mut cache = RentalCache::load().await.unwrap_or_default();
-
     // Single rental - use spinner
     let spinner = create_spinner(&format!("Terminating rental: {}", rental_id));
 
@@ -551,16 +485,12 @@ pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<(
         Ok(_) => {
             complete_spinner_and_clear(spinner);
             print_success(&format!("Successfully stopped rental: {}", rental_id));
-            cache.remove_rental(&rental_id);
         }
         Err(e) => {
             complete_spinner_error(spinner, "Failed to terminate rental");
             print_error(&format!("Failed to stop rental {}: {e}", rental_id));
         }
     }
-
-    // Save updated cache
-    cache.save().await?;
 
     Ok(())
 }

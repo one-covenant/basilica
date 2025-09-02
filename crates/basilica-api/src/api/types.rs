@@ -20,6 +20,27 @@ use basilica_validator::rental::types::RentalState;
 
 // API-specific types that don't exist in validator
 
+/// API rental list item with GPU information
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ApiRentalListItem {
+    pub rental_id: String,
+    pub executor_id: String,
+    pub container_id: String,
+    pub state: RentalState,
+    pub created_at: String,
+    pub miner_id: String,
+    pub container_image: String,
+    /// GPU specifications for this rental
+    pub gpu_specs: Vec<GpuSpec>,
+}
+
+/// API list rentals response with GPU information
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ApiListRentalsResponse {
+    pub rentals: Vec<ApiRentalListItem>,
+    pub total_count: usize,
+}
+
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct HealthCheckResponse {
