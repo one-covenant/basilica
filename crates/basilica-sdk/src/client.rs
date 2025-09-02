@@ -35,7 +35,7 @@ use crate::{
     auth::{
         types::AuthConfig, 
         TokenManager,
-        OAuth2Provider, DeviceFlowProvider,
+        OAuth2Provider, DeviceFlowProvider, ApiKeyProvider,
     },
     error::{ApiError, ErrorResponse, Result},
     types::{HealthCheckResponse, ListRentalsQuery, RentalStatusResponse},
@@ -383,6 +383,45 @@ impl ClientBuilder {
         // Pre-fetch token to ensure authentication works
         token_manager.get_access_token().await.map_err(|e| ApiError::Internal {
             message: format!("Device authentication failed: {}", e),
+        })?;
+        
+        // Build client with token manager
+        let mut client = self.build()?;
+        client.token_manager = Some(Arc::new(token_manager));
+        Ok(client)
+    }
+
+    /// Build the client with M2M authentication using client credentials
+    /// 
+    /// This method is for machine-to-machine authentication using a client ID and secret.
+    /// Perfect for server applications, CI/CD, and automated systems.
+    pub async fn build_with_m2m_auth(self, client_id: String, client_secret: String) -> Result<BasilicaClient> {
+        // Create M2M auth config
+        let auth_config = AuthConfig {
+            client_id: client_id.clone(),
+            auth_endpoint: "https://auth.basilica.ai/authorize".to_string(),
+            token_endpoint: "https://auth.basilica.ai/oauth/token".to_string(),
+            device_auth_endpoint: None,
+            revoke_endpoint: None,
+            redirect_uri: String::new(), // Not needed for M2M
+            scopes: vec![
+                "read:rentals".to_string(),
+                "write:rentals".to_string(),
+                "execute:commands".to_string(),
+            ],
+            additional_params: std::collections::HashMap::new(),
+        };
+
+        // Create API key provider and token manager
+        let provider = Box::new(ApiKeyProvider::from_config(auth_config, client_secret));
+        let token_manager = TokenManager::new(provider, "basilica-sdk-m2m")
+            .map_err(|e| ApiError::Internal {
+                message: format!("Failed to create token manager: {}", e),
+            })?;
+        
+        // Pre-fetch token to ensure authentication works
+        token_manager.get_access_token().await.map_err(|e| ApiError::Internal {
+            message: format!("M2M authentication failed: {}", e),
         })?;
         
         // Build client with token manager

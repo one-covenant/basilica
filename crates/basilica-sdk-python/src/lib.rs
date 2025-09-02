@@ -138,6 +138,34 @@ impl BasilicaClient {
             runtime,
         })
     }
+
+    /// Create a new client with machine-to-machine authentication
+    ///
+    /// Args:
+    ///     base_url: The base URL of the Basilica API
+    ///     client_id: Auth0 M2M application client ID
+    ///     client_secret: Auth0 M2M application client secret
+    ///     timeout_secs: Request timeout in seconds (default: 30)
+    #[staticmethod]
+    #[pyo3(signature = (base_url, client_id, client_secret, timeout_secs=30))]
+    fn with_m2m_auth(base_url: String, client_id: String, client_secret: String, timeout_secs: u64) -> PyResult<Self> {
+        let runtime = Runtime::new()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
+
+        let client = runtime.block_on(async {
+            ClientBuilder::default()
+                .base_url(base_url)
+                .timeout(Duration::from_secs(timeout_secs))
+                .build_with_m2m_auth(client_id, client_secret)
+                .await
+        })
+        .map_err(|e| PyRuntimeError::new_err(format!("M2M authentication failed: {}", e)))?;
+
+        Ok(Self {
+            inner: Arc::new(client),
+            runtime,
+        })
+    }
     
     /// Check the health of the API
     fn health_check(&self, py: Python) -> PyResult<PyObject> {

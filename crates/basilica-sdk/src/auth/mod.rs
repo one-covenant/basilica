@@ -25,7 +25,7 @@ pub use token_store::TokenStore;
 pub use types::{AuthConfig, AuthError, AuthResult, TokenSet};
 pub use provider::AuthProvider;
 pub use manager::TokenManager;
-pub use providers::{OAuth2Provider, DeviceFlowProvider};
+pub use providers::{OAuth2Provider, DeviceFlowProvider, ApiKeyProvider};
 
 /// Environment detection utilities for determining authentication flow
 /// Detect if running in Windows Subsystem for Linux (WSL)
