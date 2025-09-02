@@ -24,6 +24,7 @@ external_ip = "160.202.129.15"
 
 [verification]
 max_concurrent_verifications = 50
+max_concurrent_full_validations = 1
 min_score_threshold = 0.1
 verification_interval = { secs = 600 }
 challenge_timeout = { secs = 120 }

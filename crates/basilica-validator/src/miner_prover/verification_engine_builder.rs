@@ -186,6 +186,7 @@ mod tests {
         let verification_config = VerificationConfig {
             verification_interval: Duration::from_secs(600),
             max_concurrent_verifications: 5,
+            max_concurrent_full_validations: 1,
             challenge_timeout: Duration::from_secs(30),
             min_score_threshold: 0.5,
             max_miners_per_round: 10,
@@ -339,6 +340,7 @@ mod tests {
         let verification_config = VerificationConfig {
             verification_interval: Duration::from_secs(600),
             max_concurrent_verifications: 5,
+            max_concurrent_full_validations: 1,
             challenge_timeout: Duration::from_secs(30),
             min_score_threshold: 0.5,
             max_miners_per_round: 10,

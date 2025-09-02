@@ -22,6 +22,7 @@ weight_interval_secs = 300
 
 [verification]
 max_concurrent_verifications = 50
+max_concurrent_full_validations = 1
 min_score_threshold = 0.01
 min_stake_threshold = 1.0
 max_miners_per_round = 10

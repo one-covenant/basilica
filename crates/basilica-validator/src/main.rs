@@ -17,6 +17,7 @@ mod journal;
 mod metrics;
 mod miner_prover;
 mod persistence;
+mod os_process;
 mod rental;
 mod ssh;
 

@@ -13,6 +13,7 @@ pub mod journal;
 pub mod metrics;
 pub mod miner_prover;
 pub mod persistence;
+pub mod os_process;
 pub mod rental;
 pub mod ssh;
 
