@@ -13,7 +13,7 @@ use crate::output::{
 };
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
-use basilica_api::api::types::{
+use basilica_sdk::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
 };
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
@@ -210,7 +210,7 @@ pub async fn handle_up(
         })?;
 
     // Parse port mappings if provided
-    let port_mappings: Vec<basilica_api::api::types::PortMappingRequest> =
+    let port_mappings: Vec<basilica_sdk::types::PortMappingRequest> =
         parse_port_mappings(&options.ports)
             .map_err(|e| CliError::invalid_argument(e.to_string()))
             .inspect_err(|_e| {
@@ -722,7 +722,7 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
 /// Poll rental status until it becomes active or timeout
 async fn poll_rental_status(
     rental_id: &str,
-    api_client: &basilica_api::client::BasilicaClient,
+    api_client: &basilica_sdk::BasilicaClient,
 ) -> Result<bool> {
     const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
     const INITIAL_INTERVAL: Duration = Duration::from_secs(2);
@@ -834,7 +834,7 @@ fn display_ssh_connection_instructions(
 /// Verify rental is still active and clean up cache if not
 async fn verify_rental_status_and_cleanup_cache(
     rental_id: &str,
-    api_client: &basilica_api::client::BasilicaClient,
+    api_client: &basilica_sdk::BasilicaClient,
     cache: &mut RentalCache,
 ) -> Result<()> {
     let status = api_client

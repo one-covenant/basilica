@@ -1,21 +1,13 @@
-//! API types for the Basilica API Gateway
+//! Type definitions for the Basilica SDK
 
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
-// Re-export types from SDK when client feature is enabled
-#[cfg(feature = "client")]
-pub use basilica_sdk::types::{
-    HealthCheckResponse as SdkHealthCheckResponse,
-    ListRentalsQuery as SdkListRentalsQuery,
-    RentalStatusResponse as SdkRentalStatusResponse,
-};
-
-// Re-export common types from validator that now have ToSchema support
+// Re-export types from basilica-validator that are used by the client
 pub use basilica_validator::api::types::{
     AvailabilityInfo, AvailableExecutor, CpuSpec, ExecutorDetails, GpuRequirements, GpuSpec,
     ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, RentCapacityRequest,
-    RentCapacityResponse, RentalStatus, RentalStatusResponse, SshAccess, TerminateRentalRequest,
+    RentCapacityResponse, RentalStatus as ValidatorRentalStatus, RentalStatusResponse as ValidatorRentalStatusResponse, 
+    SshAccess, TerminateRentalRequest,
 };
 
 // Re-export rental-specific types from validator
@@ -26,52 +18,48 @@ pub use basilica_validator::api::rental_routes::{
 // Import RentalState from validator
 use basilica_validator::rental::types::RentalState;
 
-// API-specific types that don't exist in validator
+// SDK-specific types
 
 /// Health check response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HealthCheckResponse {
     /// Service status
     pub status: String,
-
+    
     /// Service version
     pub version: String,
-
+    
     /// Timestamp
     pub timestamp: chrono::DateTime<chrono::Utc>,
-
+    
     /// Healthy validators count
     pub healthy_validators: usize,
-
+    
     /// Total validators count
     pub total_validators: usize,
 }
 
 /// List rentals query
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct ListRentalsQuery {
     /// Status filter
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<RentalState>,
-
+    
     /// GPU type filter
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_type: Option<String>,
-
+    
     /// Minimum GPU count
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_count: Option<u32>,
 }
 
-/// Rental status query parameters
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct RentalStatusQuery {
-    #[allow(dead_code)]
-    pub include_resource_usage: Option<bool>,
-}
+/// Rental status response (alias for compatibility)
+pub type RentalStatusResponse = ValidatorRentalStatusResponse;
 
 /// Log streaming query parameters
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LogStreamQuery {
     pub follow: Option<bool>,
     pub tail: Option<u32>,

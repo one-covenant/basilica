@@ -92,6 +92,10 @@ pub enum ApiError {
 /// Result type alias
 pub type Result<T> = std::result::Result<T, ApiError>;
 
+/// Re-export SDK error types when client feature is enabled
+#[cfg(feature = "client")]
+pub use basilica_sdk::{ApiError as SdkError, ErrorResponse as SdkErrorResponse};
+
 impl BasilicaError for ApiError {}
 
 impl ApiError {

@@ -3,8 +3,8 @@
 use crate::cache::RentalCache;
 use crate::error::{CliError, Result};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
-use basilica_api::api::types::ListRentalsQuery;
-use basilica_api::client::BasilicaClient;
+use basilica_sdk::types::ListRentalsQuery;
+use basilica_sdk::BasilicaClient;
 use basilica_validator::api::types::RentalListItem;
 use basilica_validator::rental::types::RentalState;
 

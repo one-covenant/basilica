@@ -11,7 +11,7 @@ use std::time::Duration;
 use crate::auth::{OAuthFlow, TokenStore};
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
-use basilica_api::client::{BasilicaClient, ClientBuilder};
+use basilica_sdk::{BasilicaClient, ClientBuilder};
 use tracing::{debug, warn};
 
 /// Creates an authenticated BasilicaClient with JWT

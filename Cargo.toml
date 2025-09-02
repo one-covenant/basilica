@@ -10,6 +10,8 @@ members = [
   "crates/bittensor",
   "crates/basilica-api",
   "crates/basilica-cli",
+  "crates/basilica-sdk",
+  "crates/basilica-sdk-python",
   "crates/integration-tests",
   "crates/collateral-contract",
 ]

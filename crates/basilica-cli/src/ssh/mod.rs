@@ -2,7 +2,7 @@
 
 use crate::config::SshConfig;
 use crate::error::{CliError, Result};
-use basilica_api::api::types::{RentalStatusResponse, SshAccess};
+use basilica_sdk::types::{RentalStatusResponse, SshAccess};
 use basilica_common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, SshFileTransferManager,
     StandardSshClient,

@@ -1,0 +1,24 @@
+[package]
+name = "basilica-sdk-python"
+version = "0.1.0"
+edition = "2021"
+authors = ["Basilica Team"]
+description = "Python bindings for the Basilica SDK"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "basilica"
+crate-type = ["cdylib"]
+
+[dependencies]
+basilica-sdk = { path = "../basilica-sdk" }
+basilica-validator = { path = "../basilica-validator", features = ["client", "openapi"] }
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+pythonize = "0.20"
+futures = "0.3"
+
+[build-dependencies]
+pyo3-build-config = "0.20"
