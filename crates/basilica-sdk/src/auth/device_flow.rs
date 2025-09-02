@@ -5,9 +5,9 @@
 
 use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
 use console::{style, Term};
-use tracing::info;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
+use tracing::info;
 
 /// Device authorization response from the OAuth provider
 #[derive(Debug, Clone, Deserialize)]

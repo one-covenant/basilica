@@ -13,10 +13,10 @@ use crate::output::{
 };
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
+use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_sdk::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
 };
-use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
 use basilica_validator::rental::types::RentalState;

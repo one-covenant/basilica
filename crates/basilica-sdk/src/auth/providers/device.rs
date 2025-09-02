@@ -30,12 +30,12 @@ impl AuthProvider for DeviceFlowProvider {
         let flow = DeviceFlow::new(self.config.clone());
         flow.start_flow().await
     }
-    
+
     async fn get_token(&self) -> AuthResult<String> {
         // This is typically handled by TokenManager
         Err(AuthError::AuthenticationRequired)
     }
-    
+
     async fn refresh(&self, refresh_token: &str) -> AuthResult<TokenSet> {
         debug!("Refreshing device flow token");
         // Device flow uses the same OAuth2 refresh mechanism
@@ -43,26 +43,20 @@ impl AuthProvider for DeviceFlowProvider {
         let flow = OAuthFlow::new(self.config.clone());
         flow.refresh_access_token(refresh_token).await
     }
-    
+
     async fn revoke(&self, token: &str) -> AuthResult<()> {
         debug!("Revoking device flow token");
         // Device flow uses the same OAuth2 revocation mechanism
         use crate::auth::oauth_flow::OAuthFlow;
-        let token_set = TokenSet::new(
-            token.to_string(),
-            None,
-            "Bearer".to_string(),
-            None,
-            vec![],
-        );
+        let token_set = TokenSet::new(token.to_string(), None, "Bearer".to_string(), None, vec![]);
         let flow = OAuthFlow::new(self.config.clone());
         flow.revoke_token(&token_set).await
     }
-    
+
     fn supports_refresh(&self) -> bool {
         true
     }
-    
+
     fn name(&self) -> &str {
         "Device Flow"
     }

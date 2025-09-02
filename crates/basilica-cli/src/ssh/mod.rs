@@ -2,11 +2,11 @@
 
 use crate::config::SshConfig;
 use crate::error::{CliError, Result};
-use basilica_sdk::types::{RentalStatusResponse, SshAccess};
 use basilica_common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, SshFileTransferManager,
     StandardSshClient,
 };
+use basilica_sdk::types::{RentalStatusResponse, SshAccess};
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, info, warn};

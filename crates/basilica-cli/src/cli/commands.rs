@@ -115,6 +115,17 @@ pub enum Commands {
     /// Log out of Basilica
     Logout,
 
+    /// Export authentication token for automation
+    ExportToken {
+        /// Name for the token (for documentation)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Output format (env, json, or shell)
+        #[arg(long, default_value = "env")]
+        format: String,
+    },
+
     /// Test authentication token
     #[cfg(debug_assertions)]
     TestAuth {

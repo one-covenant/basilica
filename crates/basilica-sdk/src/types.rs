@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 pub use basilica_validator::api::types::{
     AvailabilityInfo, AvailableExecutor, CpuSpec, ExecutorDetails, GpuRequirements, GpuSpec,
     ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, RentCapacityRequest,
-    RentCapacityResponse, RentalStatus as ValidatorRentalStatus, RentalStatusResponse as ValidatorRentalStatusResponse, 
-    SshAccess, TerminateRentalRequest,
+    RentCapacityResponse, RentalStatus as ValidatorRentalStatus,
+    RentalStatusResponse as ValidatorRentalStatusResponse, SshAccess, TerminateRentalRequest,
 };
 
 // Re-export rental-specific types from validator
@@ -25,16 +25,16 @@ use basilica_validator::rental::types::RentalState;
 pub struct HealthCheckResponse {
     /// Service status
     pub status: String,
-    
+
     /// Service version
     pub version: String,
-    
+
     /// Timestamp
     pub timestamp: chrono::DateTime<chrono::Utc>,
-    
+
     /// Healthy validators count
     pub healthy_validators: usize,
-    
+
     /// Total validators count
     pub total_validators: usize,
 }
@@ -45,11 +45,11 @@ pub struct ListRentalsQuery {
     /// Status filter
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<RentalState>,
-    
+
     /// GPU type filter
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_type: Option<String>,
-    
+
     /// Minimum GPU count
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_count: Option<u32>,

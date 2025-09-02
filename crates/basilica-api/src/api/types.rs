@@ -6,8 +6,7 @@ use utoipa::ToSchema;
 // Re-export types from SDK when client feature is enabled
 #[cfg(feature = "client")]
 pub use basilica_sdk::types::{
-    HealthCheckResponse as SdkHealthCheckResponse,
-    ListRentalsQuery as SdkListRentalsQuery,
+    HealthCheckResponse as SdkHealthCheckResponse, ListRentalsQuery as SdkListRentalsQuery,
     RentalStatusResponse as SdkRentalStatusResponse,
 };
 

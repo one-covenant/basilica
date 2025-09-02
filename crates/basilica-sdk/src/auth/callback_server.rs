@@ -16,7 +16,6 @@ use std::net::{SocketAddr, TcpListener};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener as TokioTcpListener;
-// CORS not needed for localhost callback server
 
 /// Authorization callback data received from OAuth provider
 #[derive(Debug, Clone)]
@@ -27,7 +26,13 @@ pub struct CallbackData {
     pub error_description: Option<String>,
 }
 
-/// Query parameters from OAuth callback
+/// Callback state shared between server and main flow
+struct CallbackState {
+    sender: mpsc::Sender<CallbackData>,
+    expected_state: String,
+}
+
+/// OAuth callback query parameters
 #[derive(Debug, Deserialize)]
 struct CallbackQuery {
     code: Option<String>,
@@ -36,96 +41,79 @@ struct CallbackQuery {
     error_description: Option<String>,
 }
 
-/// Shared state for callback handling
-#[derive(Debug)]
-struct CallbackState {
-    sender: mpsc::Sender<CallbackData>,
-    expected_state: String,
-}
-
-/// Local HTTP server for OAuth callbacks
+/// Local HTTP server for handling OAuth callbacks
 pub struct CallbackServer {
     port: u16,
     timeout: Duration,
 }
 
 impl CallbackServer {
-    /// Create a new callback server
+    /// Create a new callback server on the specified port
     pub fn new(port: u16, timeout: Duration) -> Self {
         Self { port, timeout }
     }
 
-    /// Find an available port for the callback server
+    /// Find an available port in the typical OAuth callback range
     pub fn find_available_port() -> AuthResult<u16> {
-        // Try port 8080 first, then find any available port
-        let preferred_port = 8080;
-
-        match TcpListener::bind(("127.0.0.1", preferred_port)) {
-            Ok(listener) => {
-                let port = listener.local_addr()?.port();
-                drop(listener);
-                Ok(port)
-            }
-            Err(_) => {
-                // Port 8080 is occupied, find any available port
-                let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| {
-                    AuthError::CallbackServerError(format!("Failed to bind to any port: {}", e))
-                })?;
-                let port = listener.local_addr()?.port();
-                drop(listener);
-                Ok(port)
+        // Try common OAuth callback ports
+        for port in [8080, 8081, 8082, 3000, 3001, 9000].iter() {
+            if Self::is_port_available(*port) {
+                return Ok(*port);
             }
         }
+
+        // Try any available port
+        for port in 8083..9000 {
+            if Self::is_port_available(port) {
+                return Ok(port);
+            }
+        }
+
+        Err(AuthError::CallbackServerError(
+            "No available ports for callback server".to_string(),
+        ))
     }
 
-    /// Start the callback server and wait for OAuth response
-    pub async fn start_and_wait(&self, expected_state: &str) -> AuthResult<CallbackData> {
+    /// Check if a port is available
+    fn is_port_available(port: u16) -> bool {
+        TcpListener::bind(("127.0.0.1", port)).is_ok()
+    }
+
+    /// Start the server and wait for callback
+    pub async fn start_and_wait(&self, expected_state: String) -> AuthResult<CallbackData> {
         let (tx, rx) = mpsc::channel();
 
-        // Create shared state
-        let callback_state = Arc::new(Mutex::new(CallbackState {
+        let state = Arc::new(Mutex::new(CallbackState {
             sender: tx,
-            expected_state: expected_state.to_string(),
+            expected_state,
         }));
 
-        // Create the router - CORS not needed for localhost
+        // Create router
         let app = Router::new()
             .route("/callback", get(handle_callback))
-            .route("/auth/callback", get(handle_callback))
-            .with_state(callback_state.clone());
+            .with_state(state);
 
-        // Create the server address
+        // Bind to address
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
-
-        // Start the server
-        let listener = TokioTcpListener::bind(&addr).await.map_err(|e| {
+        let listener = TokioTcpListener::bind(addr).await.map_err(|e| {
             AuthError::CallbackServerError(format!("Failed to bind to {}: {}", addr, e))
         })?;
 
-        tracing::info!("OAuth callback server listening on http://{}", addr);
-
-        // Start the server in a background task
-        let server_handle = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .map_err(|e| AuthError::CallbackServerError(format!("Server error: {}", e)))
-        });
+        // Run server in background
+        let server_handle = tokio::spawn(async move { axum::serve(listener, app).await });
 
         // Wait for callback with timeout
-        let result = tokio::select! {
-            callback_result = tokio::task::spawn_blocking(move || rx.recv()) => {
-                match callback_result {
-                    Ok(Ok(data)) => Ok(data),
-                    Ok(Err(_)) => Err(AuthError::CallbackServerError("Channel closed unexpectedly".to_string())),
-                    Err(e) => Err(AuthError::CallbackServerError(format!("Task join error: {}", e))),
-                }
-            },
-            _ = tokio::time::sleep(self.timeout) => {
-                Err(AuthError::Timeout)
-            }
-        };
+        let timeout = self.timeout;
+        let result = tokio::task::spawn_blocking(move || {
+            rx.recv_timeout(timeout)
+                .map_err(|_| AuthError::CallbackServerError("Callback timeout".to_string()))
+        })
+        .await
+        .map_err(|e| {
+            AuthError::CallbackServerError(format!("Failed to wait for callback: {}", e))
+        })?;
 
-        // Abort the server
+        // Shutdown server
         server_handle.abort();
 
         result
@@ -139,7 +127,7 @@ impl CallbackServer {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Authorization Successful - Basilica CLI</title>
+    <title>Authorization Successful - Basilica</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -156,7 +144,7 @@ impl CallbackServer {
             padding: 48px;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            max-width: 400px;
+            max-width: 500px;
             width: 100%;
             text-align: center;
         }
@@ -201,13 +189,13 @@ impl CallbackServer {
     <div class="container">
         <img src="https://www.synapz.org/assets/basilica/basilica_logo200x200.png" alt="Basilica" class="logo">
         <div class="success-icon">✓</div>
-        <h1>Welcome to Basilica CLI</h1>
+        <h1>Welcome to Basilica</h1>
+        <p>Authentication successful!</p>
         <p class="close-instruction">You can now close this window and return to the CLI.</p>
     </div>
 </body>
 </html>
-        "#
-        .to_string()
+        "#.to_string()
     }
 
     /// Generate error HTML page to display to user

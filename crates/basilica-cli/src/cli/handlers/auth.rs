@@ -181,3 +181,70 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
     print_success("⛪ Logout successful!");
     Ok(())
 }
+
+/// Handle token export command for automation
+pub async fn handle_export_token(
+    name: Option<String>,
+    format: &str,
+    _config: &CliConfig,
+) -> Result<()> {
+    debug!("Exporting token for automation, format: {}", format);
+
+    // Initialize token store
+    let token_store = TokenStore::new()
+        .map_err(|e| CliError::internal(format!("Failed to initialize token store: {}", e)))?;
+
+    // Get current tokens
+    let tokens = token_store
+        .get_tokens(SERVICE_NAME)
+        .await
+        .map_err(|e| CliError::internal(format!("Failed to retrieve tokens: {}", e)))?
+        .ok_or_else(|| {
+            CliError::auth("Not authenticated. Please run 'basilica login' first".to_string())
+        })?;
+
+    if tokens.is_expired() {
+        return Err(CliError::auth(
+            "Authentication expired. Please run 'basilica login' to refresh".to_string(),
+        ));
+    }
+
+    // Format output based on requested format
+    match format {
+        "env" => {
+            println!("# Basilica authentication token");
+            if let Some(name) = name {
+                println!("# Name: {}", name);
+            }
+            println!("# Generated: {}", chrono::Utc::now().to_rfc3339());
+            println!("export BASILICA_ACCESS_TOKEN=\"{}\"", tokens.access_token);
+            if let Some(refresh) = &tokens.refresh_token {
+                println!("export BASILICA_REFRESH_TOKEN=\"{}\"", refresh);
+            }
+        }
+        "json" => {
+            let output = serde_json::json!({
+                "name": name,
+                "access_token": tokens.access_token,
+                "refresh_token": tokens.refresh_token,
+                "expires_at": tokens.expires_at.and_then(|e| chrono::DateTime::<chrono::Utc>::from_timestamp(e as i64, 0).map(|dt| dt.to_rfc3339())),
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+            });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        "shell" => {
+            println!("BASILICA_ACCESS_TOKEN=\"{}\"", tokens.access_token);
+            if let Some(refresh) = &tokens.refresh_token {
+                println!("BASILICA_REFRESH_TOKEN=\"{}\"", refresh);
+            }
+        }
+        _ => {
+            return Err(CliError::invalid_argument(format!(
+                "Unknown format: {}. Use 'env', 'json', or 'shell'",
+                format
+            )));
+        }
+    }
+
+    Ok(())
+}

@@ -162,7 +162,7 @@ pub enum AuthError {
     /// Invalid token format
     #[error("Invalid token: {0}")]
     InvalidToken(String),
-    
+
     /// Authentication required
     #[error("Authentication required")]
     AuthenticationRequired,

@@ -10,22 +10,23 @@
 
 pub mod callback_server;
 pub mod device_flow;
+pub mod manager;
 pub mod oauth_flow;
+pub mod provider;
+pub mod providers;
+pub mod token_resolver;
 pub mod token_store;
 pub mod types;
-pub mod provider;
-pub mod manager;
-pub mod providers;
 
 // Re-export commonly used types and functions
 pub use callback_server::CallbackServer;
 pub use device_flow::DeviceFlow;
+pub use manager::TokenManager;
 pub use oauth_flow::OAuthFlow;
+pub use provider::AuthProvider;
+pub use providers::{DeviceFlowProvider, ExistingTokenProvider, OAuth2Provider};
 pub use token_store::TokenStore;
 pub use types::{AuthConfig, AuthError, AuthResult, TokenSet};
-pub use provider::AuthProvider;
-pub use manager::TokenManager;
-pub use providers::{OAuth2Provider, DeviceFlowProvider, ApiKeyProvider};
 
 /// Environment detection utilities for determining authentication flow
 /// Detect if running in Windows Subsystem for Linux (WSL)

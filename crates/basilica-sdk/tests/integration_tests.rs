@@ -12,7 +12,7 @@ async fn test_client_creation() {
         .base_url("https://api.basilica.ai")
         .timeout(Duration::from_secs(30))
         .build();
-    
+
     assert!(client.is_ok());
 }
 
@@ -23,7 +23,7 @@ async fn test_client_with_auth() {
         .with_bearer_token("test-token")
         .timeout(Duration::from_secs(30))
         .build();
-    
+
     assert!(client.is_ok());
     let client = client.unwrap();
     assert_eq!(client.get_bearer_token(), Some("test-token"));
@@ -32,7 +32,7 @@ async fn test_client_with_auth() {
 #[tokio::test]
 async fn test_health_check_success() {
     let mock_server = MockServer::start().await;
-    
+
     Mock::given(method("GET"))
         .and(path("/health"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -44,10 +44,10 @@ async fn test_health_check_success() {
         })))
         .mount(&mock_server)
         .await;
-    
+
     let client = BasilicaClient::new(mock_server.uri(), Duration::from_secs(30)).unwrap();
     let health = client.health_check().await.unwrap();
-    
+
     assert_eq!(health.status, "healthy");
     assert_eq!(health.version, "1.0.0");
     assert_eq!(health.healthy_validators, 5);
@@ -56,7 +56,7 @@ async fn test_health_check_success() {
 #[tokio::test]
 async fn test_authentication_required() {
     let mock_server = MockServer::start().await;
-    
+
     Mock::given(method("GET"))
         .and(path("/rentals"))
         .respond_with(ResponseTemplate::new(401).set_body_json(json!({
@@ -69,10 +69,10 @@ async fn test_authentication_required() {
         })))
         .mount(&mock_server)
         .await;
-    
+
     let client = BasilicaClient::new(mock_server.uri(), Duration::from_secs(30)).unwrap();
     let result = client.list_rentals(None).await;
-    
+
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
@@ -83,7 +83,7 @@ async fn test_authentication_required() {
 #[tokio::test]
 async fn test_rate_limit_exceeded() {
     let mock_server = MockServer::start().await;
-    
+
     Mock::given(method("GET"))
         .and(path("/executors"))
         .respond_with(ResponseTemplate::new(429).set_body_json(json!({
@@ -96,15 +96,15 @@ async fn test_rate_limit_exceeded() {
         })))
         .mount(&mock_server)
         .await;
-    
+
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
         .with_bearer_token("test-token")
         .build()
         .unwrap();
-    
+
     let result = client.list_available_executors(None).await;
-    
+
     assert!(result.is_err());
     assert!(matches!(result.unwrap_err(), ApiError::RateLimitExceeded));
 }
@@ -112,7 +112,7 @@ async fn test_rate_limit_exceeded() {
 #[tokio::test]
 async fn test_list_executors_with_auth() {
     let mock_server = MockServer::start().await;
-    
+
     Mock::given(method("GET"))
         .and(path("/executors"))
         .and(header("Authorization", "Bearer test-token"))
@@ -122,13 +122,13 @@ async fn test_list_executors_with_auth() {
         })))
         .mount(&mock_server)
         .await;
-    
+
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
         .with_bearer_token("test-token")
         .build()
         .unwrap();
-    
+
     let result = client.list_available_executors(None).await;
     assert!(result.is_ok());
 }
@@ -136,7 +136,7 @@ async fn test_list_executors_with_auth() {
 #[tokio::test]
 async fn test_not_found_error() {
     let mock_server = MockServer::start().await;
-    
+
     Mock::given(method("GET"))
         .and(path("/rentals/nonexistent"))
         .respond_with(ResponseTemplate::new(404).set_body_json(json!({
@@ -149,15 +149,15 @@ async fn test_not_found_error() {
         })))
         .mount(&mock_server)
         .await;
-    
+
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
         .with_bearer_token("test-token")
         .build()
         .unwrap();
-    
+
     let result = client.get_rental_status("nonexistent").await;
-    
+
     assert!(result.is_err());
     assert!(matches!(result.unwrap_err(), ApiError::NotFound { .. }));
 }
@@ -167,7 +167,7 @@ async fn test_builder_configuration() {
     // Test that builder requires base_url
     let result = ClientBuilder::default().build();
     assert!(result.is_err());
-    
+
     // Test with all options
     let client = ClientBuilder::default()
         .base_url("https://api.basilica.ai")
@@ -176,7 +176,7 @@ async fn test_builder_configuration() {
         .connect_timeout(Duration::from_secs(10))
         .pool_max_idle_per_host(50)
         .build();
-    
+
     assert!(client.is_ok());
 }
 
@@ -189,7 +189,7 @@ async fn test_error_properties() {
         message: "Invalid token".to_string()
     }
     .is_retryable());
-    
+
     // Test client errors
     assert!(ApiError::BadRequest {
         message: "Invalid input".to_string()
@@ -200,7 +200,7 @@ async fn test_error_properties() {
         message: "Server error".to_string()
     }
     .is_client_error());
-    
+
     // Test error codes
     assert_eq!(
         ApiError::RateLimitExceeded.error_code(),

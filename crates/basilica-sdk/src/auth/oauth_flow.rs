@@ -218,7 +218,9 @@ impl OAuthFlow {
         println!("Waiting for authentication...");
 
         // Wait for callback with authorization code
-        let callback_data = callback_server.start_and_wait(expected_state).await?;
+        let callback_data = callback_server
+            .start_and_wait(expected_state.clone())
+            .await?;
 
         // Clear the last lines (including "Opening browser" and "Browser didn't open")
         let term = Term::stdout();

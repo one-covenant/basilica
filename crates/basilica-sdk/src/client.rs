@@ -33,9 +33,8 @@
 
 use crate::{
     auth::{
-        types::AuthConfig, 
+        token_resolver::TokenResolver, types::AuthConfig, DeviceFlowProvider, OAuth2Provider,
         TokenManager,
-        OAuth2Provider, DeviceFlowProvider, ApiKeyProvider,
     },
     error::{ApiError, ErrorResponse, Result},
     types::{HealthCheckResponse, ListRentalsQuery, RentalStatusResponse},
@@ -74,6 +73,35 @@ impl BasilicaClient {
         })
     }
 
+    /// Create a new client with automatic token resolution
+    /// This will find tokens from:
+    /// 1. Environment variables (BASILICA_ACCESS_TOKEN)
+    /// 2. CLI keyring (if logged in via CLI)
+    /// 3. Config file (~/.basilica/credentials)
+    pub async fn new_with_auto_auth(
+        base_url: impl Into<String>,
+        timeout: Duration,
+    ) -> Result<Self> {
+        let mut client = Self::new(base_url, timeout)?;
+
+        // Try to resolve tokens
+        if let Some(token_set) = TokenResolver::resolve().await {
+            client.bearer_token = Some(token_set.access_token.clone());
+
+            // If we have a refresh token, set up token manager for auto-refresh
+            if token_set.refresh_token.is_some() {
+                // Use "basilica-cli" as storage key to update CLI tokens when refreshed
+                let token_manager = TokenManager::from_token_set(token_set, "basilica-cli")
+                    .map_err(|e| ApiError::Internal {
+                        message: format!("Failed to create token manager: {}", e),
+                    })?;
+                client.token_manager = Some(Arc::new(token_manager));
+            }
+        }
+
+        Ok(client)
+    }
+
     /// Get a reference to the bearer token (if any)
     pub fn get_bearer_token(&self) -> Option<&str> {
         self.bearer_token.as_deref()
@@ -83,7 +111,6 @@ impl BasilicaClient {
     pub fn set_bearer_token(&mut self, token: String) {
         self.bearer_token = Some(token);
     }
-
 
     // ===== Rentals =====
 
@@ -187,9 +214,12 @@ impl BasilicaClient {
     async fn apply_auth(&self, request: RequestBuilder) -> Result<RequestBuilder> {
         // First check if we have a token manager for automatic refresh
         if let Some(manager) = &self.token_manager {
-            let token = manager.get_access_token().await.map_err(|e| ApiError::Internal {
-                message: format!("Failed to get access token: {}", e),
-            })?;
+            let token = manager
+                .get_access_token()
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: format!("Failed to get access token: {}", e),
+                })?;
             Ok(request.header("Authorization", format!("Bearer {}", token)))
         } else if let Some(token) = self.bearer_token.as_ref() {
             // Fall back to static token if no manager
@@ -345,22 +375,29 @@ impl ClientBuilder {
 
     /// Build the client with Auth0 authentication using OAuth flow
     pub async fn build_with_oauth_auth(self) -> Result<BasilicaClient> {
-        let auth_config = self.auth_config.as_ref().ok_or_else(|| ApiError::InvalidRequest {
-            message: "auth_config is required for OAuth authentication".into(),
-        })?.clone();
+        let auth_config = self
+            .auth_config
+            .as_ref()
+            .ok_or_else(|| ApiError::InvalidRequest {
+                message: "auth_config is required for OAuth authentication".into(),
+            })?
+            .clone();
 
         // Create OAuth provider and token manager
         let provider = Box::new(OAuth2Provider::new(auth_config));
-        let token_manager = TokenManager::new(provider, "basilica-sdk")
-            .map_err(|e| ApiError::Internal {
+        let token_manager =
+            TokenManager::new(provider, "basilica-sdk").map_err(|e| ApiError::Internal {
                 message: format!("Failed to create token manager: {}", e),
             })?;
-        
+
         // Pre-fetch token to ensure authentication works
-        token_manager.get_access_token().await.map_err(|e| ApiError::Internal {
-            message: format!("OAuth authentication failed: {}", e),
-        })?;
-        
+        token_manager
+            .get_access_token()
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: format!("OAuth authentication failed: {}", e),
+            })?;
+
         // Build client with token manager
         let mut client = self.build()?;
         client.token_manager = Some(Arc::new(token_manager));
@@ -369,64 +406,85 @@ impl ClientBuilder {
 
     /// Build the client with Auth0 authentication using device flow
     pub async fn build_with_device_auth(self) -> Result<BasilicaClient> {
-        let auth_config = self.auth_config.as_ref().ok_or_else(|| ApiError::InvalidRequest {
-            message: "auth_config is required for device authentication".into(),
-        })?.clone();
+        let auth_config = self
+            .auth_config
+            .as_ref()
+            .ok_or_else(|| ApiError::InvalidRequest {
+                message: "auth_config is required for device authentication".into(),
+            })?
+            .clone();
 
         // Create device flow provider and token manager
         let provider = Box::new(DeviceFlowProvider::new(auth_config));
-        let token_manager = TokenManager::new(provider, "basilica-sdk")
-            .map_err(|e| ApiError::Internal {
+        let token_manager =
+            TokenManager::new(provider, "basilica-sdk").map_err(|e| ApiError::Internal {
                 message: format!("Failed to create token manager: {}", e),
             })?;
-        
+
         // Pre-fetch token to ensure authentication works
-        token_manager.get_access_token().await.map_err(|e| ApiError::Internal {
-            message: format!("Device authentication failed: {}", e),
-        })?;
-        
+        token_manager
+            .get_access_token()
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: format!("Device authentication failed: {}", e),
+            })?;
+
         // Build client with token manager
         let mut client = self.build()?;
         client.token_manager = Some(Arc::new(token_manager));
         Ok(client)
     }
 
-    /// Build the client with M2M authentication using client credentials
-    /// 
-    /// This method is for machine-to-machine authentication using a client ID and secret.
-    /// Perfect for server applications, CI/CD, and automated systems.
-    pub async fn build_with_m2m_auth(self, client_id: String, client_secret: String) -> Result<BasilicaClient> {
-        // Create M2M auth config
-        let auth_config = AuthConfig {
-            client_id: client_id.clone(),
-            auth_endpoint: "https://auth.basilica.ai/authorize".to_string(),
-            token_endpoint: "https://auth.basilica.ai/oauth/token".to_string(),
-            device_auth_endpoint: None,
-            revoke_endpoint: None,
-            redirect_uri: String::new(), // Not needed for M2M
-            scopes: vec![
-                "read:rentals".to_string(),
-                "write:rentals".to_string(),
-                "execute:commands".to_string(),
-            ],
-            additional_params: std::collections::HashMap::new(),
+    /// Build the client with automatic authentication detection
+    /// This will automatically find and use CLI tokens if available
+    pub async fn build_auto(self) -> Result<BasilicaClient> {
+        let base_url = self.base_url.ok_or_else(|| ApiError::InvalidRequest {
+            message: "base_url is required".into(),
+        })?;
+
+        // Build HTTP client
+        let mut client_builder = reqwest::Client::builder();
+
+        if let Some(timeout) = self.timeout {
+            client_builder = client_builder.timeout(timeout);
+        } else {
+            client_builder = client_builder.timeout(Duration::from_secs(30));
+        }
+
+        if let Some(timeout) = self.connect_timeout {
+            client_builder = client_builder.connect_timeout(timeout);
+        }
+
+        if let Some(max) = self.pool_max_idle_per_host {
+            client_builder = client_builder.pool_max_idle_per_host(max);
+        }
+
+        let http_client = client_builder.build().map_err(ApiError::HttpClient)?;
+
+        let mut client = BasilicaClient {
+            http_client,
+            base_url,
+            bearer_token: self.bearer_token,
+            token_manager: None,
         };
 
-        // Create API key provider and token manager
-        let provider = Box::new(ApiKeyProvider::from_config(auth_config, client_secret));
-        let token_manager = TokenManager::new(provider, "basilica-sdk-m2m")
-            .map_err(|e| ApiError::Internal {
-                message: format!("Failed to create token manager: {}", e),
-            })?;
-        
-        // Pre-fetch token to ensure authentication works
-        token_manager.get_access_token().await.map_err(|e| ApiError::Internal {
-            message: format!("M2M authentication failed: {}", e),
-        })?;
-        
-        // Build client with token manager
-        let mut client = self.build()?;
-        client.token_manager = Some(Arc::new(token_manager));
+        // If no explicit bearer token was provided, try automatic resolution
+        if client.bearer_token.is_none() {
+            if let Some(token_set) = TokenResolver::resolve().await {
+                client.bearer_token = Some(token_set.access_token.clone());
+
+                // Set up token manager for auto-refresh if we have a refresh token
+                if token_set.refresh_token.is_some() {
+                    // Use "basilica-cli" as storage key to update CLI tokens when refreshed
+                    let token_manager = TokenManager::from_token_set(token_set, "basilica-cli")
+                        .map_err(|e| ApiError::Internal {
+                            message: format!("Failed to create token manager: {}", e),
+                        })?;
+                    client.token_manager = Some(Arc::new(token_manager));
+                }
+            }
+        }
+
         Ok(client)
     }
 

@@ -9,47 +9,47 @@ pub enum ApiError {
     /// HTTP client error
     #[error("HTTP client error: {0}")]
     HttpClient(#[from] reqwest::Error),
-    
+
     /// Missing authentication (no token provided)
     #[error("Authentication required: {message}")]
     MissingAuthentication { message: String },
-    
+
     /// Authentication error (expired/invalid token)
     #[error("Authentication error: {message}")]
     Authentication { message: String },
-    
+
     /// Authorization error
     #[error("Authorization error: {message}")]
     Authorization { message: String },
-    
+
     /// Rate limit exceeded
     #[error("Rate limit exceeded")]
     RateLimitExceeded,
-    
+
     /// Invalid request
     #[error("Invalid request: {message}")]
     InvalidRequest { message: String },
-    
+
     /// Not found
     #[error("Resource not found: {resource}")]
     NotFound { resource: String },
-    
+
     /// Bad request with message
     #[error("Bad request: {message}")]
     BadRequest { message: String },
-    
+
     /// Internal server error
     #[error("Internal server error: {message}")]
     Internal { message: String },
-    
+
     /// Service unavailable
     #[error("Service temporarily unavailable")]
     ServiceUnavailable,
-    
+
     /// Timeout error
     #[error("Request timeout")]
     Timeout,
-    
+
     /// Validator communication error
     #[error("Validator communication error: {message}")]
     ValidatorCommunication { message: String },
@@ -76,7 +76,7 @@ impl ApiError {
             ApiError::ValidatorCommunication { .. } => "BASILICA_API_VALIDATOR_COMM_ERROR",
         }
     }
-    
+
     /// Check if error is retryable
     pub fn is_retryable(&self) -> bool {
         matches!(
@@ -87,7 +87,7 @@ impl ApiError {
                 | ApiError::ServiceUnavailable
         )
     }
-    
+
     /// Check if error is a client error
     pub fn is_client_error(&self) -> bool {
         matches!(
@@ -115,13 +115,13 @@ pub struct ErrorResponse {
 pub struct ErrorDetails {
     /// Error code
     pub code: String,
-    
+
     /// Human-readable error message
     pub message: String,
-    
+
     /// ISO 8601 timestamp
     pub timestamp: chrono::DateTime<chrono::Utc>,
-    
+
     /// Whether the error is retryable
     pub retryable: bool,
 }
