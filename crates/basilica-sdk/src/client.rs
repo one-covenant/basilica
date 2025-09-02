@@ -32,7 +32,11 @@
 //! ```
 
 use crate::{
-    auth::{oauth_flow::OAuthFlow, device_flow::DeviceFlow, token_store::TokenStore, types::AuthConfig},
+    auth::{
+        types::AuthConfig, 
+        TokenManager,
+        OAuth2Provider, DeviceFlowProvider,
+    },
     error::{ApiError, ErrorResponse, Result},
     types::{HealthCheckResponse, ListRentalsQuery, RentalStatusResponse},
 };
@@ -43,6 +47,7 @@ use basilica_validator::api::{
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// HTTP client for interacting with the Basilica API
@@ -50,6 +55,7 @@ pub struct BasilicaClient {
     http_client: reqwest::Client,
     base_url: String,
     bearer_token: Option<String>,
+    token_manager: Option<Arc<TokenManager>>,
 }
 
 impl BasilicaClient {
@@ -64,6 +70,7 @@ impl BasilicaClient {
             http_client,
             base_url: base_url.into(),
             bearer_token: None,
+            token_manager: None,
         })
     }
 
@@ -77,37 +84,6 @@ impl BasilicaClient {
         self.bearer_token = Some(token);
     }
 
-    /// Refresh the access token using the stored refresh token
-    pub async fn refresh_auth_token(&mut self, auth_config: &AuthConfig) -> Result<()> {
-        let token_store = TokenStore::new().map_err(|e| ApiError::Internal {
-            message: format!("Failed to initialize token store: {}", e),
-        })?;
-
-        let tokens = token_store.retrieve("basilica-sdk").await.map_err(|e| ApiError::Internal {
-            message: format!("Failed to retrieve token: {}", e),
-        })?
-        .ok_or_else(|| ApiError::InvalidRequest {
-            message: "No stored tokens found".into(),
-        })?;
-
-        if let Some(refresh_token) = &tokens.refresh_token {
-            let oauth = OAuthFlow::new(auth_config.clone());
-            let new_tokens = oauth.refresh_access_token(refresh_token).await.map_err(|e| ApiError::Internal {
-                message: format!("Token refresh failed: {}", e),
-            })?;
-
-            token_store.store("basilica-sdk", &new_tokens).await.map_err(|e| ApiError::Internal {
-                message: format!("Failed to store refreshed token: {}", e),
-            })?;
-
-            self.bearer_token = Some(new_tokens.access_token);
-            Ok(())
-        } else {
-            Err(ApiError::InvalidRequest {
-                message: "No refresh token available".into(),
-            })
-        }
-    }
 
     // ===== Rentals =====
 
@@ -158,7 +134,7 @@ impl BasilicaClient {
             request = request.query(&params);
         }
 
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await?;
         request.send().await.map_err(ApiError::HttpClient)
     }
 
@@ -174,7 +150,7 @@ impl BasilicaClient {
             request = request.query(&q);
         }
 
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await?;
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         self.handle_response(response).await
     }
@@ -191,7 +167,7 @@ impl BasilicaClient {
             request = request.query(&q);
         }
 
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await?;
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         self.handle_response(response).await
     }
@@ -207,11 +183,19 @@ impl BasilicaClient {
 
     /// Apply authentication to request if configured
     /// Uses Auth0 JWT Bearer token authentication
-    fn apply_auth(&self, request: RequestBuilder) -> RequestBuilder {
-        if let Some(token) = self.bearer_token.as_ref() {
-            request.header("Authorization", format!("Bearer {}", token))
+    /// If TokenManager is configured, it will handle automatic token refresh
+    async fn apply_auth(&self, request: RequestBuilder) -> Result<RequestBuilder> {
+        // First check if we have a token manager for automatic refresh
+        if let Some(manager) = &self.token_manager {
+            let token = manager.get_access_token().await.map_err(|e| ApiError::Internal {
+                message: format!("Failed to get access token: {}", e),
+            })?;
+            Ok(request.header("Authorization", format!("Bearer {}", token)))
+        } else if let Some(token) = self.bearer_token.as_ref() {
+            // Fall back to static token if no manager
+            Ok(request.header("Authorization", format!("Bearer {}", token)))
         } else {
-            request
+            Ok(request)
         }
     }
 
@@ -219,7 +203,7 @@ impl BasilicaClient {
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.get(&url);
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await?;
 
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         self.handle_response(response).await
@@ -229,7 +213,7 @@ impl BasilicaClient {
     async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.post(&url).json(body);
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await?;
 
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         self.handle_response(response).await
@@ -239,7 +223,7 @@ impl BasilicaClient {
     async fn delete_empty(&self, path: &str) -> Result<Response> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.delete(&url);
-        let request = self.apply_auth(request);
+        let request = self.apply_auth(request).await?;
 
         let response = request.send().await.map_err(ApiError::HttpClient)?;
         Ok(response)
@@ -360,67 +344,51 @@ impl ClientBuilder {
     }
 
     /// Build the client with Auth0 authentication using OAuth flow
-    pub async fn build_with_oauth_auth(mut self) -> Result<BasilicaClient> {
+    pub async fn build_with_oauth_auth(self) -> Result<BasilicaClient> {
         let auth_config = self.auth_config.as_ref().ok_or_else(|| ApiError::InvalidRequest {
             message: "auth_config is required for OAuth authentication".into(),
         })?.clone();
 
-        // Check for existing token in store
-        let token_store = TokenStore::new().map_err(|e| ApiError::Internal {
-            message: format!("Failed to initialize token store: {}", e),
+        // Create OAuth provider and token manager
+        let provider = Box::new(OAuth2Provider::new(auth_config));
+        let token_manager = TokenManager::new(provider, "basilica-sdk")
+            .map_err(|e| ApiError::Internal {
+                message: format!("Failed to create token manager: {}", e),
+            })?;
+        
+        // Pre-fetch token to ensure authentication works
+        token_manager.get_access_token().await.map_err(|e| ApiError::Internal {
+            message: format!("OAuth authentication failed: {}", e),
         })?;
         
-        let token = match token_store.retrieve("basilica-sdk").await.map_err(|e| ApiError::Internal {
-            message: format!("Failed to retrieve token: {}", e),
-        })? {
-            Some(tokens) if !tokens.is_expired() => tokens.access_token,
-            _ => {
-                // Trigger OAuth flow
-                let mut oauth = OAuthFlow::new(auth_config);
-                let tokens = oauth.start_flow().await.map_err(|e| ApiError::Internal {
-                    message: format!("OAuth flow failed: {}", e),
-                })?;
-                token_store.store("basilica-sdk", &tokens).await.map_err(|e| ApiError::Internal {
-                    message: format!("Failed to store token: {}", e),
-                })?;
-                tokens.access_token
-            }
-        };
-        
-        self.bearer_token = Some(token);
-        self.build()
+        // Build client with token manager
+        let mut client = self.build()?;
+        client.token_manager = Some(Arc::new(token_manager));
+        Ok(client)
     }
 
     /// Build the client with Auth0 authentication using device flow
-    pub async fn build_with_device_auth(mut self) -> Result<BasilicaClient> {
+    pub async fn build_with_device_auth(self) -> Result<BasilicaClient> {
         let auth_config = self.auth_config.as_ref().ok_or_else(|| ApiError::InvalidRequest {
             message: "auth_config is required for device authentication".into(),
         })?.clone();
 
-        // Check for existing token in store
-        let token_store = TokenStore::new().map_err(|e| ApiError::Internal {
-            message: format!("Failed to initialize token store: {}", e),
+        // Create device flow provider and token manager
+        let provider = Box::new(DeviceFlowProvider::new(auth_config));
+        let token_manager = TokenManager::new(provider, "basilica-sdk")
+            .map_err(|e| ApiError::Internal {
+                message: format!("Failed to create token manager: {}", e),
+            })?;
+        
+        // Pre-fetch token to ensure authentication works
+        token_manager.get_access_token().await.map_err(|e| ApiError::Internal {
+            message: format!("Device authentication failed: {}", e),
         })?;
         
-        let token = match token_store.retrieve("basilica-sdk").await.map_err(|e| ApiError::Internal {
-            message: format!("Failed to retrieve token: {}", e),
-        })? {
-            Some(tokens) if !tokens.is_expired() => tokens.access_token,
-            _ => {
-                // Trigger device flow
-                let device_flow = DeviceFlow::new(auth_config);
-                let tokens = device_flow.start_flow().await.map_err(|e| ApiError::Internal {
-                    message: format!("Device flow failed: {}", e),
-                })?;
-                token_store.store("basilica-sdk", &tokens).await.map_err(|e| ApiError::Internal {
-                    message: format!("Failed to store token: {}", e),
-                })?;
-                tokens.access_token
-            }
-        };
-        
-        self.bearer_token = Some(token);
-        self.build()
+        // Build client with token manager
+        let mut client = self.build()?;
+        client.token_manager = Some(Arc::new(token_manager));
+        Ok(client)
     }
 
     /// Build the client
@@ -451,6 +419,7 @@ impl ClientBuilder {
             http_client,
             base_url,
             bearer_token: self.bearer_token,
+            token_manager: None,
         })
     }
 }

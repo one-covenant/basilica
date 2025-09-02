@@ -1,16 +1,21 @@
-//! Authentication module for Basilica CLI
+//! Authentication module for Basilica SDK
 //!
 //! This module provides OAuth 2.0 authentication capabilities including:
 //! - PKCE (Proof Key for Code Exchange) flow
 //! - Device authorization flow
 //! - Secure token storage and management
 //! - Local HTTP callback server for authorization
+//! - Provider trait abstraction for extensibility
+//! - Automatic token management with refresh
 
 pub mod callback_server;
 pub mod device_flow;
 pub mod oauth_flow;
 pub mod token_store;
 pub mod types;
+pub mod provider;
+pub mod manager;
+pub mod providers;
 
 // Re-export commonly used types and functions
 pub use callback_server::CallbackServer;
@@ -18,6 +23,9 @@ pub use device_flow::DeviceFlow;
 pub use oauth_flow::OAuthFlow;
 pub use token_store::TokenStore;
 pub use types::{AuthConfig, AuthError, AuthResult, TokenSet};
+pub use provider::AuthProvider;
+pub use manager::TokenManager;
+pub use providers::{OAuth2Provider, DeviceFlowProvider};
 
 /// Environment detection utilities for determining authentication flow
 /// Detect if running in Windows Subsystem for Linux (WSL)
