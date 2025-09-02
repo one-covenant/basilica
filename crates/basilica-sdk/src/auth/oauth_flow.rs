@@ -5,7 +5,6 @@
 
 use super::callback_server::CallbackServer;
 use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
-use crate::output::print_info;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use console::{style, Term};
@@ -205,8 +204,9 @@ impl OAuthFlow {
             .ok_or_else(|| AuthError::ConfigError("State not set for OAuth flow".to_string()))?;
 
         // Open browser to authorization URL
-        print_info("Opening browser for sign in...");
-        print_info("Browser didn't open? Use the URL below to sign in:");
+        info!("Opening browser for sign in...");
+        println!("Opening browser for sign in...");
+        println!("Browser didn't open? Use the URL below to sign in:");
 
         // Use console's style for dimmed text instead of ANSI codes
         println!("{}", style(&auth_url).dim());
@@ -214,7 +214,8 @@ impl OAuthFlow {
         webbrowser::open(&auth_url)
             .map_err(|e| AuthError::ConfigError(format!("Failed to open browser: {}", e)))?;
 
-        print_info("Waiting for authentication...");
+        info!("Waiting for authentication...");
+        println!("Waiting for authentication...");
 
         // Wait for callback with authorization code
         let callback_data = callback_server.start_and_wait(expected_state).await?;

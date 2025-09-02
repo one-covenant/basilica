@@ -15,7 +15,8 @@
 //! - Shared configuration and error handling
 //! - Integration with existing basilica-common utilities
 
-pub mod auth;
+// Use auth from SDK instead of local module
+pub use basilica_sdk::auth;
 pub mod cache;
 pub mod cli;
 pub mod client;
