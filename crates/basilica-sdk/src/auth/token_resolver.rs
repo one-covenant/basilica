@@ -132,14 +132,12 @@ impl TokenResolver {
         }
 
         if let Ok(store) = TokenStore::new() {
-            if store
-                .get_tokens("basilica-cli")
-                .await
-                .ok()
-                .flatten()
-                .is_some()
-            {
-                return Some("cli-keyring".to_string());
+            if let Ok(Some(tokens)) = store.get_tokens("basilica-cli").await {
+                if !tokens.is_expired() {
+                    return Some("cli-keyring".to_string());
+                }
+            } else {
+                // fall through
             }
         }
 
