@@ -53,8 +53,8 @@ pub fn init_logging<L: LogLevel>(
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true) // Show module path
-                .with_file(true) // Show source file
-                .with_line_number(true) // Show line number
+                // .with_file(true) // Show source file
+                // .with_line_number(true) // Show line number
                 .compact(), // Use compact format
         )
         .init();
