@@ -9,6 +9,7 @@ use super::types::{ExecutorInfoDetailed, ExecutorVerificationResult, GpuInfo, Va
 use super::validation_strategy::{
     ValidationExecutor, ValidationStrategy, ValidationStrategySelector,
 };
+use super::validation_worker::{ValidationWorkerQueue, WorkerQueueConfig};
 use crate::config::VerificationConfig;
 use crate::gpu::{categorization::GpuCategorizer, MinerGpuProfile};
 use crate::metrics::ValidatorMetrics;
@@ -25,6 +26,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 #[derive(Clone)]
@@ -48,6 +50,8 @@ pub struct VerificationEngine {
     validation_strategy_selector: Arc<ValidationStrategySelector>,
     /// Validation executor for running validation strategies
     validation_executor: Arc<ValidationExecutor>,
+    /// Optional worker queue for decoupled execution
+    worker_queue: Option<Arc<ValidationWorkerQueue>>,
 }
 
 impl VerificationEngine {
@@ -119,6 +123,11 @@ impl VerificationEngine {
         });
 
         if executor_list.is_empty() {
+            info!(
+                miner_uid = task.miner_uid,
+                "[EVAL_FLOW] No executors found for miner {}", task.miner_uid
+            );
+
             return Ok(VerificationResult {
                 miner_uid: task.miner_uid,
                 overall_score: 0.0,
@@ -128,8 +137,30 @@ impl VerificationEngine {
             });
         }
 
+        // Route to worker queue if enabled
+        if let Some(ref worker_queue) = self.worker_queue {
+            info!(
+                miner_uid = task.miner_uid,
+                executor_count = executor_list.len(),
+                "[EVAL_FLOW] Routing {} executors to worker queue for miner {}",
+                executor_list.len(),
+                task.miner_uid
+            );
+            return self
+                .route_to_worker_queue(
+                    executor_list,
+                    task,
+                    worker_queue,
+                    &mut verification_steps,
+                    workflow_start,
+                )
+                .await;
+        }
+
         // Step 2: Execute SSH-based verification for each executor
         let mut executor_results = Vec::new();
+        let mut executors_skipped_for_strategy = 0;
+        let total_executors = executor_list.len();
 
         for executor_info in executor_list {
             info!(
@@ -164,11 +195,19 @@ impl VerificationEngine {
                     });
                 }
                 Err(e) if e.to_string().contains("Strategy mismatch") => {
+                    executors_skipped_for_strategy += 1;
                     debug!(
                         miner_uid = task.miner_uid,
                         executor_id = %executor_info.id,
-                        "[EVAL_FLOW] Executor handled by other pipeline"
+                        pipeline_type = ?task.intended_validation_strategy,
+                        "[EVAL_FLOW] Executor requires different validation type, will be handled by other pipeline"
                     );
+                    verification_steps.push(VerificationStep {
+                        step_name: format!("ssh_verification_{}", executor_info.id),
+                        status: StepStatus::Completed,
+                        duration: workflow_start.elapsed(),
+                        details: "Skipped - handled by other validation pipeline".to_string(),
+                    });
                 }
                 Err(e) => {
                     error!(
@@ -189,13 +228,35 @@ impl VerificationEngine {
 
         // Step 3: Calculate overall verification score
         let overall_score = if executor_results.is_empty() {
+            // Only return 0 if ALL executors were skipped for strategy mismatch
+            // If we have no results and all were skipped, this pipeline isn't responsible for this miner
+            if executors_skipped_for_strategy == total_executors && total_executors > 0 {
+                debug!(
+                    miner_uid = task.miner_uid,
+                    skipped_count = executors_skipped_for_strategy,
+                    pipeline_type = ?task.intended_validation_strategy,
+                    "[EVAL_FLOW] All executors require different validation type, score will come from other pipeline"
+                );
+            }
             0.0
         } else {
-            executor_results
+            let avg_score = executor_results
                 .iter()
                 .map(|r| r.verification_score)
                 .sum::<f64>()
-                / executor_results.len() as f64
+                / executor_results.len() as f64;
+
+            info!(
+                miner_uid = task.miner_uid,
+                validated_count = executor_results.len(),
+                skipped_count = executors_skipped_for_strategy,
+                total_executors = total_executors,
+                average_score = avg_score,
+                pipeline_type = ?task.intended_validation_strategy,
+                "[EVAL_FLOW] Partial validation completed for miner"
+            );
+
+            avg_score
         };
 
         // Step 4: Store individual executor verification results
@@ -231,10 +292,21 @@ impl VerificationEngine {
 
         info!(
             miner_uid = task.miner_uid,
-            "Automated verification workflow completed for miner {} in {:?}, score: {:.2}",
+            validated_executors = executor_results.len(),
+            skipped_executors = executors_skipped_for_strategy,
+            total_executors = total_executors,
+            pipeline_type = ?task.intended_validation_strategy,
+            overall_score = overall_score,
+            "[EVAL_FLOW] Verification workflow completed for miner {} in {:?}, score: {:.2} ({} of {} executors validated in {} pipeline)",
             task.miner_uid,
             workflow_start.elapsed(),
-            overall_score
+            overall_score,
+            executor_results.len(),
+            total_executors,
+            match task.intended_validation_strategy {
+                ValidationType::Full => "full",
+                ValidationType::Lightweight => "lightweight",
+            }
         );
 
         Ok(VerificationResult {
@@ -243,6 +315,58 @@ impl VerificationEngine {
             verification_steps,
             completed_at: chrono::Utc::now(),
             error: None,
+        })
+    }
+
+    /// Route executors to worker queue for parallel processing
+    async fn route_to_worker_queue(
+        &self,
+        executors: Vec<ExecutorInfoDetailed>,
+        task: &super::scheduler::VerificationTask,
+        worker_queue: &Arc<ValidationWorkerQueue>,
+        verification_steps: &mut Vec<VerificationStep>,
+        workflow_start: std::time::Instant,
+    ) -> Result<VerificationResult> {
+        // Publish all executors to the appropriate queue
+        let mut published_count = 0;
+        let mut failed_count = 0;
+
+        for executor in executors {
+            match worker_queue.publish(executor, task.clone()).await {
+                Ok(_) => published_count += 1,
+                Err(e) => {
+                    warn!("Failed to publish executor to queue: {}", e);
+                    failed_count += 1;
+                }
+            }
+        }
+
+        verification_steps.push(VerificationStep {
+            step_name: "queue_dispatch".to_string(),
+            status: if failed_count == 0 {
+                StepStatus::Completed
+            } else {
+                StepStatus::PartialSuccess
+            },
+            duration: workflow_start.elapsed(),
+            details: format!(
+                "Published {} executors to queue ({} failed)",
+                published_count, failed_count
+            ),
+        });
+
+        // Return result indicating work was queued
+        // Actual scores will be updated asynchronously by workers
+        Ok(VerificationResult {
+            miner_uid: task.miner_uid,
+            overall_score: 0.0,
+            verification_steps: verification_steps.clone(),
+            completed_at: chrono::Utc::now(),
+            error: if published_count == 0 {
+                Some("Failed to publish any executors to queue".to_string())
+            } else {
+                None
+            },
         })
     }
 
@@ -423,7 +547,7 @@ impl VerificationEngine {
     }
 
     /// Store executor verification result with actual miner information
-    async fn store_executor_verification_result_with_miner_info(
+    pub async fn store_executor_verification_result_with_miner_info(
         &self,
         miner_uid: u16,
         executor_result: &ExecutorVerificationResult,
@@ -1774,6 +1898,7 @@ impl VerificationEngine {
                 persistence,
             )),
             validation_executor: Arc::new(ValidationExecutor::new(ssh_client, metrics)),
+            worker_queue: None, // Will be set separately if needed
         })
     }
 
@@ -1800,11 +1925,38 @@ impl VerificationEngine {
     /// Get configuration summary for debugging
     pub fn get_config_summary(&self) -> String {
         format!(
-            "VerificationEngine[dynamic_discovery={}, ssh_key_manager={}, bittensor_service={}]",
+            "VerificationEngine[dynamic_discovery={}, ssh_key_manager={}, bittensor_service={}, worker_queue={}]",
             self.use_dynamic_discovery(),
             self.ssh_key_manager().is_some(),
-            self.bittensor_service().is_some()
+            self.bittensor_service().is_some(),
+            self.worker_queue.is_some()
         )
+    }
+
+    /// Set worker queue for decoupled execution
+    pub fn set_worker_queue(&mut self, queue: Arc<ValidationWorkerQueue>) {
+        self.worker_queue = Some(queue);
+    }
+
+    /// Check if worker queue is enabled
+    pub fn has_worker_queue(&self) -> bool {
+        self.worker_queue.is_some()
+    }
+
+    /// Initialize and start worker queue
+    pub async fn init_worker_queue(&mut self, semaphore: Arc<Semaphore>) -> Result<()> {
+        let config = WorkerQueueConfig::default();
+        let queue = Arc::new(ValidationWorkerQueue::new(
+            config,
+            Arc::new(self.clone()),
+            semaphore,
+        ));
+
+        queue.start().await?;
+        self.worker_queue = Some(queue);
+
+        info!("Worker queue initialized and started");
+        Ok(())
     }
 
     /// Clean up executors that have consecutive failed validations
@@ -2069,16 +2221,31 @@ impl VerificationEngine {
         }
 
         // Step 3: Delete stale offline executors
-        let stale_delete_query = r#"
+        let cleanup_minutes = self
+            .config
+            .gpu_assignment_cleanup_ttl
+            .map(|d| d.as_secs() / 60)
+            .unwrap_or(120)
+            .max(120);
+
+        let stale_delete_query = format!(
+            r#"
             DELETE FROM miner_executors
             WHERE status = 'offline'
             AND (
-                last_health_check < datetime('now', '-10 minutes')
-                OR (last_health_check IS NULL AND updated_at < datetime('now', '-10 minutes'))
+                last_health_check < datetime('now', '-{} minutes')
+                OR (last_health_check IS NULL AND updated_at < datetime('now', '-{} minutes'))
             )
-        "#;
+            "#,
+            cleanup_minutes, cleanup_minutes
+        );
 
-        let stale_result = sqlx::query(stale_delete_query)
+        info!(
+            "Deleting stale offline executors using {}min timeout (configurable via gpu_assignment_cleanup_ttl)",
+            cleanup_minutes
+        );
+
+        let stale_result = sqlx::query(&stale_delete_query)
             .execute(self.persistence.pool())
             .await?;
 
@@ -2190,7 +2357,7 @@ impl VerificationEngine {
     }
 
     /// Enhanced verify executor with SSH automation and binary validation
-    async fn verify_executor(
+    pub async fn verify_executor(
         &self,
         miner_endpoint: &str,
         executor_info: &ExecutorInfoDetailed,
@@ -2266,15 +2433,18 @@ impl VerificationEngine {
         if !strategy_matches {
             debug!(
                 executor_id = %executor_info.id,
+                determined_strategy = ?strategy,
                 intended = ?intended_strategy,
-                "[EVAL_FLOW] Strategy mismatch - skipping executor in this pipeline"
+                "[EVAL_FLOW] Strategy mismatch - executor needs different validation type"
             );
 
             self.ssh_session_manager
                 .release_session(&executor_info.id.to_string())
                 .await;
 
-            return Err(anyhow::anyhow!("Strategy mismatch"));
+            return Err(anyhow::anyhow!(
+                "Strategy mismatch: executor needs different validation type"
+            ));
         }
 
         // Step 4: Execute validation based on strategy
@@ -2424,6 +2594,7 @@ pub enum StepStatus {
     InProgress,
     Completed,
     Failed,
+    PartialSuccess,
 }
 
 /// Enhanced verification result structure

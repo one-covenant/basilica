@@ -23,14 +23,18 @@ struct SchedulerSharedState {
         Arc<RwLock<HashMap<Uuid, JoinHandle<Result<super::verification::VerificationResult>>>>>,
     active_full_tasks: Arc<RwLock<HashMap<Uuid, VerificationTask>>>,
     active_lightweight_tasks: Arc<RwLock<HashMap<Uuid, VerificationTask>>>,
+    full_validation_semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl SchedulerSharedState {
-    fn new() -> Self {
+    fn new(max_concurrent_full_validations: usize) -> Self {
         Self {
             verification_handles: Arc::new(RwLock::new(HashMap::new())),
             active_full_tasks: Arc::new(RwLock::new(HashMap::new())),
             active_lightweight_tasks: Arc::new(RwLock::new(HashMap::new())),
+            full_validation_semaphore: Arc::new(tokio::sync::Semaphore::new(
+                max_concurrent_full_validations,
+            )),
         }
     }
 }
@@ -42,9 +46,14 @@ pub struct VerificationScheduler {
 
 impl VerificationScheduler {
     pub fn new(config: VerificationConfig) -> Self {
+        let max_concurrent_full_validations = config.max_concurrent_full_validations;
+        info!(
+            "[EVAL_FLOW] Initializing VerificationScheduler with max_concurrent_full_validations: {}",
+            max_concurrent_full_validations
+        );
         Self {
             config,
-            shared_state: SchedulerSharedState::new(),
+            shared_state: SchedulerSharedState::new(max_concurrent_full_validations),
         }
     }
 
@@ -52,11 +61,27 @@ impl VerificationScheduler {
     pub async fn start(
         self,
         discovery: MinerDiscovery,
-        verification: VerificationEngine,
+        mut verification: VerificationEngine,
     ) -> Result<()> {
         let shared_state = self.shared_state.clone();
         let config = self.config.clone();
         let discovery = Arc::new(discovery);
+
+        // Initialize worker queue with the semaphore from shared state only if enabled
+        if config.enable_worker_queue {
+            info!("Worker queue is enabled in config - initializing worker queue for decoupled execution");
+            verification
+                .init_worker_queue(shared_state.full_validation_semaphore.clone())
+                .await
+                .map_err(|e| {
+                    error!("Failed to initialize worker queue: {}", e);
+                    e
+                })?;
+            info!("Worker queue initialized successfully");
+        } else {
+            info!("Worker queue is disabled in config - using direct execution mode");
+        }
+
         let verification = Arc::new(verification);
 
         info!("Starting verification scheduler");
@@ -363,7 +388,56 @@ async fn spawn_verification_task(
     }
 
     info!("[EVAL_FLOW] Spawning tokio task for verification workflow execution");
+
+    // Clone the semaphore reference for use in the spawned task
+    let semaphore = shared_state.full_validation_semaphore.clone();
+    let is_full_validation = matches!(task.intended_validation_strategy, ValidationType::Full);
+
     let verification_handle = tokio::spawn(async move {
+        // Check if worker queue is enabled
+        let has_worker_queue = verification_engine.has_worker_queue();
+
+        // Only acquire semaphore permit for full validations when NOT using worker queue
+        // Worker queue will handle its own permit acquisition
+        let _permit = if is_full_validation && !has_worker_queue {
+            info!(
+                "[EVAL_FLOW] Direct execution mode - acquiring full validation permit for miner {} (task: {}), permits before acquire: {}",
+                task.miner_uid, task_id, semaphore.available_permits()
+            );
+            match semaphore.acquire().await {
+                Ok(permit) => {
+                    info!(
+                        "[EVAL_FLOW] Full validation permit acquired for miner {} (task: {}), available permits: {}",
+                        task.miner_uid, task_id, semaphore.available_permits()
+                    );
+                    Some(permit)
+                }
+                Err(e) => {
+                    error!(
+                        "[EVAL_FLOW] Failed to acquire full validation permit for miner {} (task: {}): {}",
+                        task.miner_uid, task_id, e
+                    );
+                    return Err(anyhow::anyhow!(
+                        "Failed to acquire full validation permit: {}",
+                        e
+                    ));
+                }
+            }
+        } else {
+            if is_full_validation && has_worker_queue {
+                info!(
+                    "[EVAL_FLOW] Worker queue mode - skipping permit acquisition in scheduler for miner {} (task: {}), worker will handle it",
+                    task.miner_uid, task_id
+                );
+            } else {
+                debug!(
+                    "[EVAL_FLOW] Lightweight validation - no permit required for miner {} (task: {})",
+                    task.miner_uid, task_id
+                );
+            }
+            None
+        };
+
         info!(
             "[EVAL_FLOW] Starting automated verification workflow for miner {} in task {}",
             task.miner_uid, task_id
@@ -373,6 +447,14 @@ async fn spawn_verification_task(
         let result = verification_engine
             .execute_verification_workflow(&task)
             .await;
+
+        // Permit is automatically released when _permit goes out of scope
+        if is_full_validation && !has_worker_queue {
+            info!(
+                "[EVAL_FLOW] Full validation completing for miner {} (task: {}), about to release permit, current available: {}",
+                task.miner_uid, task_id, semaphore.available_permits()
+            );
+        }
 
         match result {
             Ok(verification_result) => {
@@ -500,4 +582,314 @@ pub enum VerificationType {
     Manual,
     AutomatedWithSsh,
     ScheduledRoutine,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    fn create_test_config(max_concurrent_full_validations: usize) -> VerificationConfig {
+        VerificationConfig {
+            verification_interval: Duration::from_secs(60),
+            max_concurrent_verifications: 50,
+            max_concurrent_full_validations,
+            challenge_timeout: Duration::from_secs(120),
+            min_score_threshold: 0.1,
+            max_miners_per_round: 20,
+            min_verification_interval: Duration::from_secs(1800),
+            netuid: 39,
+            use_dynamic_discovery: true,
+            discovery_timeout: Duration::from_secs(30),
+            fallback_to_static: true,
+            cache_miner_info_ttl: Duration::from_secs(300),
+            grpc_port_offset: None,
+            binary_validation: crate::config::BinaryValidationConfig::default(),
+            collateral_event_scan_interval: Duration::from_secs(12),
+            executor_validation_interval: Duration::from_secs(6 * 3600),
+            gpu_assignment_cleanup_ttl: Some(Duration::from_secs(120 * 60)),
+            enable_worker_queue: false,
+        }
+    }
+
+    fn create_test_task(miner_uid: u16, validation_strategy: ValidationType) -> VerificationTask {
+        VerificationTask {
+            miner_uid,
+            miner_hotkey: format!("hotkey_{}", miner_uid),
+            miner_endpoint: format!("http://miner-{}.example.com:8091", miner_uid),
+            stake_tao: 100.0,
+            is_validator: false,
+            verification_type: VerificationType::AutomatedWithSsh,
+            intended_validation_strategy: validation_strategy,
+            created_at: chrono::Utc::now(),
+            timeout: Duration::from_secs(300),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_shared_state_initialization() {
+        let max_concurrent_full_validations = 3;
+        let shared_state = SchedulerSharedState::new(max_concurrent_full_validations);
+
+        // Verify semaphore is initialized with correct permit count
+        assert_eq!(
+            shared_state.full_validation_semaphore.available_permits(),
+            max_concurrent_full_validations
+        );
+
+        // Verify other components are initialized
+        assert_eq!(shared_state.verification_handles.read().await.len(), 0);
+        assert_eq!(shared_state.active_full_tasks.read().await.len(), 0);
+        assert_eq!(shared_state.active_lightweight_tasks.read().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_verification_scheduler_initialization() {
+        let config = create_test_config(2);
+        let scheduler = VerificationScheduler::new(config.clone());
+
+        // Verify scheduler uses config value for semaphore initialization
+        assert_eq!(
+            scheduler
+                .shared_state
+                .full_validation_semaphore
+                .available_permits(),
+            config.max_concurrent_full_validations
+        );
+    }
+
+    #[tokio::test]
+    async fn test_full_validation_concurrency_limit() {
+        let max_concurrent = 1;
+        let shared_state = SchedulerSharedState::new(max_concurrent);
+
+        // Create a mock verification engine that simulates work
+        let execution_count = Arc::new(AtomicUsize::new(0));
+        let max_concurrent_executions = Arc::new(AtomicUsize::new(0));
+
+        let mut handles = Vec::new();
+
+        // Spawn multiple full validation tasks
+        for i in 1..=3 {
+            let _task = create_test_task(i, ValidationType::Full);
+            let semaphore = shared_state.full_validation_semaphore.clone();
+            let exec_count = execution_count.clone();
+            let max_concurrent_exec = max_concurrent_executions.clone();
+
+            let handle = tokio::spawn(async move {
+                let _permit = semaphore.acquire().await.unwrap();
+
+                // Track concurrent executions
+                let current = exec_count.fetch_add(1, Ordering::SeqCst) + 1;
+                let max = max_concurrent_exec.load(Ordering::SeqCst);
+                if current > max {
+                    max_concurrent_exec.store(current, Ordering::SeqCst);
+                }
+
+                // Simulate work
+                tokio::time::sleep(Duration::from_millis(100)).await;
+
+                exec_count.fetch_sub(1, Ordering::SeqCst);
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // Verify that only 1 task ran concurrently at any time
+        assert_eq!(
+            max_concurrent_executions.load(Ordering::SeqCst),
+            max_concurrent
+        );
+
+        // Verify semaphore is back to full capacity
+        assert_eq!(
+            shared_state.full_validation_semaphore.available_permits(),
+            max_concurrent
+        );
+    }
+
+    #[tokio::test]
+    async fn test_lightweight_validation_not_limited() {
+        let shared_state = SchedulerSharedState::new(1); // Only 1 full validation permit
+
+        // Create multiple lightweight validation tasks
+        let mut handles = Vec::new();
+        let execution_count = Arc::new(AtomicUsize::new(0));
+        let max_concurrent_executions = Arc::new(AtomicUsize::new(0));
+
+        for i in 1..=5 {
+            let _task = create_test_task(i, ValidationType::Lightweight);
+            let exec_count = execution_count.clone();
+            let max_concurrent_exec = max_concurrent_executions.clone();
+
+            let handle = tokio::spawn(async move {
+                // Lightweight validations don't use semaphore
+                let current = exec_count.fetch_add(1, Ordering::SeqCst) + 1;
+                let max = max_concurrent_exec.load(Ordering::SeqCst);
+                if current > max {
+                    max_concurrent_exec.store(current, Ordering::SeqCst);
+                }
+
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                exec_count.fetch_sub(1, Ordering::SeqCst);
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // Verify that multiple lightweight validations can run concurrently
+        assert!(max_concurrent_executions.load(Ordering::SeqCst) > 1);
+
+        // Verify semaphore is unaffected
+        assert_eq!(
+            shared_state.full_validation_semaphore.available_permits(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mixed_validation_types() {
+        let shared_state = SchedulerSharedState::new(1); // Only 1 full validation permit
+
+        let mut handles = Vec::new();
+        let full_exec_count = Arc::new(AtomicUsize::new(0));
+        let lightweight_exec_count = Arc::new(AtomicUsize::new(0));
+
+        // Spawn full validation tasks (should be limited to 1)
+        for i in 1..=2 {
+            let _task = create_test_task(i, ValidationType::Full);
+            let semaphore = shared_state.full_validation_semaphore.clone();
+            let exec_count = full_exec_count.clone();
+
+            let handle = tokio::spawn(async move {
+                let _permit = semaphore.acquire().await.unwrap();
+                exec_count.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                exec_count.fetch_sub(1, Ordering::SeqCst);
+            });
+
+            handles.push(handle);
+        }
+
+        // Spawn lightweight validation tasks (should not be limited)
+        for i in 3..=5 {
+            let _task = create_test_task(i, ValidationType::Lightweight);
+            let exec_count = lightweight_exec_count.clone();
+
+            let handle = tokio::spawn(async move {
+                exec_count.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                exec_count.fetch_sub(1, Ordering::SeqCst);
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // Verify semaphore is back to full capacity
+        assert_eq!(
+            shared_state.full_validation_semaphore.available_permits(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_semaphore_permit_timeout_behavior() {
+        let shared_state = SchedulerSharedState::new(1);
+
+        // Acquire the only permit
+        let _permit1 = shared_state
+            .full_validation_semaphore
+            .acquire()
+            .await
+            .unwrap();
+
+        // Try to acquire another permit with timeout - should fail
+        let result = timeout(
+            Duration::from_millis(100),
+            shared_state.full_validation_semaphore.acquire(),
+        )
+        .await;
+
+        assert!(result.is_err(), "Second permit acquisition should timeout");
+
+        // Verify permit count is still 0
+        assert_eq!(
+            shared_state.full_validation_semaphore.available_permits(),
+            0
+        );
+
+        // Drop the first permit
+        drop(_permit1);
+
+        // Now permit should be available again
+        assert_eq!(
+            shared_state.full_validation_semaphore.available_permits(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_arc_semaphore_cloning_shares_permits() {
+        let shared_state = SchedulerSharedState::new(1);
+
+        // Clone the semaphore (like we do in spawn_verification_task)
+        let cloned_semaphore1 = shared_state.full_validation_semaphore.clone();
+        let cloned_semaphore2 = shared_state.full_validation_semaphore.clone();
+
+        // All should show 1 available permit initially
+        assert_eq!(
+            shared_state.full_validation_semaphore.available_permits(),
+            1
+        );
+        assert_eq!(cloned_semaphore1.available_permits(), 1);
+        assert_eq!(cloned_semaphore2.available_permits(), 1);
+
+        // Acquire permit from first clone
+        let _permit1 = cloned_semaphore1.acquire().await.unwrap();
+
+        // All should show 0 available permits (proving they share the same semaphore)
+        assert_eq!(
+            shared_state.full_validation_semaphore.available_permits(),
+            0
+        );
+        assert_eq!(cloned_semaphore1.available_permits(), 0);
+        assert_eq!(cloned_semaphore2.available_permits(), 0);
+
+        // Try to acquire from second clone - should block
+        let result = timeout(Duration::from_millis(50), cloned_semaphore2.acquire()).await;
+
+        assert!(
+            result.is_err(),
+            "Second clone should not be able to acquire permit"
+        );
+
+        // Release permit
+        drop(_permit1);
+
+        // All should show 1 available permit again
+        assert_eq!(
+            shared_state.full_validation_semaphore.available_permits(),
+            1
+        );
+        assert_eq!(cloned_semaphore1.available_permits(), 1);
+        assert_eq!(cloned_semaphore2.available_permits(), 1);
+    }
 }

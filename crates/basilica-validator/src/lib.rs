@@ -12,6 +12,7 @@ pub mod gpu;
 pub mod journal;
 pub mod metrics;
 pub mod miner_prover;
+pub mod os_process;
 pub mod persistence;
 pub mod rental;
 pub mod ssh;

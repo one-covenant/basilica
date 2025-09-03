@@ -16,6 +16,7 @@ mod gpu;
 mod journal;
 mod metrics;
 mod miner_prover;
+mod os_process;
 mod persistence;
 mod rental;
 mod ssh;

@@ -140,6 +140,11 @@ impl Default for SshSessionStats {
 }
 
 impl ValidatorSshClient {
+    /// Ensure host key is available
+    pub async fn ensure_host_key_available(&self, details: &SshConnectionDetails) -> Result<()> {
+        self.client.ensure_host_key_available(details).await
+    }
+
     /// Create a new validator SSH client with default configuration
     pub fn new() -> Self {
         Self {
