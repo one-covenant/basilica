@@ -15,9 +15,8 @@ pub use basilica_validator::api::rental_routes::{
     PortMappingRequest, ResourceRequirementsRequest, VolumeMountRequest,
 };
 
-// Import RentalState from validator
-use basilica_validator::rental::types::RentalState;
-
+// Re-export RentalState from validator for SDK consumers
+pub use basilica_validator::rental::types::RentalState;
 // SDK-specific types
 
 /// Health check response
