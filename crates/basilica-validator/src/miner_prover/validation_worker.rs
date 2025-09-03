@@ -16,7 +16,10 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 const DEFAULT_MAX_PENDING_ITEMS: usize = 1000;
-const DEFAULT_MAX_PROCESSING_TIME_SECS: u64 = 1200; // 20 minutes
+const DEFAULT_MAX_PROCESSING_TIME_SECS: u64 = 2400; // 40 minutes
+const DEFAULT_LIGHTWEIGHT_PROCESSING_TIME_SECS: u64 = 480; // 8 minutes
+const DEFAULT_FULL_STALE_TIMEOUT_SECS: u64 = 1200; // 20 minutes
+const DEFAULT_LIGHTWEIGHT_STALE_TIMEOUT_SECS: u64 = 120; // 2 minutes
 const DEFAULT_COMPLETED_ITEM_TTL_SECS: u64 = 3600; // 1 hour
 const DEFAULT_RETRY_BACKOFF_BASE_SECS: u64 = 60;
 const DEFAULT_MAX_RETRIES: u8 = 3;
@@ -26,6 +29,9 @@ const DEFAULT_HEALTH_CHECK_INTERVAL_SECS: u64 = 30;
 pub struct WorkerQueueConfig {
     pub max_pending_items: usize,
     pub max_processing_time_secs: u64,
+    pub lightweight_processing_time_secs: u64,
+    pub full_stale_timeout_secs: u64,
+    pub lightweight_stale_timeout_secs: u64,
     pub completed_item_ttl_secs: u64,
     pub full_worker_count: usize,
     pub lightweight_worker_count: usize,
@@ -39,6 +45,9 @@ impl Default for WorkerQueueConfig {
         Self {
             max_pending_items: DEFAULT_MAX_PENDING_ITEMS,
             max_processing_time_secs: DEFAULT_MAX_PROCESSING_TIME_SECS,
+            lightweight_processing_time_secs: DEFAULT_LIGHTWEIGHT_PROCESSING_TIME_SECS,
+            full_stale_timeout_secs: DEFAULT_FULL_STALE_TIMEOUT_SECS,
+            lightweight_stale_timeout_secs: DEFAULT_LIGHTWEIGHT_STALE_TIMEOUT_SECS,
             completed_item_ttl_secs: DEFAULT_COMPLETED_ITEM_TTL_SECS,
             full_worker_count: 1,
             lightweight_worker_count: num_cpus::get().min(4),
@@ -285,12 +294,15 @@ impl ValidationWorkerQueue {
     }
 
     pub async fn start(&self) -> Result<()> {
-        if self.running.load(AtomicOrdering::SeqCst) > 0 {
-            return Err(anyhow::anyhow!("Worker queue already running"));
+        match self
+            .running
+            .compare_exchange(0, 1, AtomicOrdering::SeqCst, AtomicOrdering::SeqCst)
+        {
+            Ok(_) => {}
+            Err(_) => return Err(anyhow::anyhow!("Worker queue already running")),
         }
 
         info!("Starting validation worker queue");
-        self.running.store(1, AtomicOrdering::SeqCst);
 
         self.start_full_workers().await?;
         self.start_lightweight_workers().await?;
@@ -332,6 +344,7 @@ impl ValidationWorkerQueue {
         let verification_engine = self.verification_engine.clone();
         let metrics = self.metrics.clone();
         let shutdown = self.shutdown.clone();
+        let config = self.config.clone();
         let max_processing_time = Duration::from_secs(self.config.max_processing_time_secs);
         let worker_uuid = Uuid::new_v4();
 
@@ -351,6 +364,7 @@ impl ValidationWorkerQueue {
                         metrics.clone(),
                         worker_uuid,
                         max_processing_time,
+                        config.clone(),
                     ) => {}
                 }
 
@@ -366,7 +380,8 @@ impl ValidationWorkerQueue {
         let verification_engine = self.verification_engine.clone();
         let metrics = self.metrics.clone();
         let shutdown = self.shutdown.clone();
-        let max_processing_time = Duration::from_secs(240);
+        let config = self.config.clone();
+        let max_processing_time = Duration::from_secs(self.config.lightweight_processing_time_secs);
         let worker_uuid = Uuid::new_v4();
 
         let handle = tokio::spawn(async move {
@@ -384,6 +399,7 @@ impl ValidationWorkerQueue {
                         metrics.clone(),
                         worker_uuid,
                         max_processing_time,
+                        config.clone(),
                     ) => {}
                 }
 
@@ -401,6 +417,7 @@ impl ValidationWorkerQueue {
         metrics: Arc<QueueMetrics>,
         worker_id: Uuid,
         max_processing_time: Duration,
+        config: WorkerQueueConfig,
     ) {
         let work_item = {
             let mut state = queue.write().await;
@@ -517,13 +534,15 @@ impl ValidationWorkerQueue {
                         .processing_full
                         .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < 2 {
+                    if item.retry_count < config.max_retries {
                         item.retry_count += 1;
                         item.priority = Priority::Low;
                         drop(state);
 
-                        tokio::time::sleep(Duration::from_secs(60 * (item.retry_count as u64)))
-                            .await;
+                        let delay_seconds = config
+                            .retry_backoff_base_secs
+                            .saturating_pow(item.retry_count as u32);
+                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
                         Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
@@ -540,13 +559,15 @@ impl ValidationWorkerQueue {
                         .processing_full
                         .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < 2 {
+                    if item.retry_count < config.max_retries {
                         item.retry_count += 1;
                         item.priority = Priority::Low;
                         drop(state);
 
-                        tokio::time::sleep(Duration::from_secs(60 * (item.retry_count as u64)))
-                            .await;
+                        let delay_seconds = config
+                            .retry_backoff_base_secs
+                            .saturating_pow(item.retry_count as u32);
+                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
                         Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
@@ -567,6 +588,7 @@ impl ValidationWorkerQueue {
         metrics: Arc<QueueMetrics>,
         worker_id: Uuid,
         max_processing_time: Duration,
+        config: WorkerQueueConfig,
     ) {
         let work_item = {
             let mut state = queue.write().await;
@@ -674,10 +696,14 @@ impl ValidationWorkerQueue {
                         .processing_lightweight
                         .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < 3 {
+                    if item.retry_count < config.max_retries {
                         item.retry_count += 1;
                         drop(state);
 
+                        let delay_seconds = config
+                            .retry_backoff_base_secs
+                            .saturating_pow(item.retry_count as u32);
+                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
                         Self::requeue_item(queue, item, &metrics, ValidationType::Lightweight)
                             .await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
@@ -695,10 +721,14 @@ impl ValidationWorkerQueue {
                         .processing_lightweight
                         .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < 3 {
+                    if item.retry_count < config.max_retries {
                         item.retry_count += 1;
                         drop(state);
 
+                        let delay_seconds = config
+                            .retry_backoff_base_secs
+                            .saturating_pow(item.retry_count as u32);
+                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
                         Self::requeue_item(queue, item, &metrics, ValidationType::Lightweight)
                             .await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
@@ -736,6 +766,8 @@ impl ValidationWorkerQueue {
     async fn start_health_monitor(&self) -> Result<()> {
         let metrics = self.metrics.clone();
         let interval_secs = self.config.health_check_interval_secs;
+        let full_stale_timeout_secs = self.config.full_stale_timeout_secs;
+        let lightweight_stale_timeout_secs = self.config.lightweight_stale_timeout_secs;
         let full_queue = self.full_queue.clone();
         let lightweight_queue = self.lightweight_queue.clone();
         let shutdown = self.shutdown.clone();
@@ -750,8 +782,8 @@ impl ValidationWorkerQueue {
                         break;
                     }
                     _ = health_interval.tick() => {
-                        Self::check_stale_items(full_queue.clone(), Duration::from_secs(600)).await;
-                        Self::check_stale_items(lightweight_queue.clone(), Duration::from_secs(60)).await;
+                        Self::check_stale_items(full_queue.clone(), Duration::from_secs(full_stale_timeout_secs)).await;
+                        Self::check_stale_items(lightweight_queue.clone(), Duration::from_secs(lightweight_stale_timeout_secs)).await;
                         metrics.report();
                     }
                 }
