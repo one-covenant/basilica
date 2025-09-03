@@ -129,13 +129,17 @@ impl BasilicaClient {
     pub async fn stop_rental(&self, rental_id: &str) -> Result<()> {
         let path = format!("/rentals/{rental_id}");
         let response: Response = self.delete_empty(&path).await?;
-
-        if response.status() == StatusCode::NO_CONTENT {
+        if response.status().is_success() {
             Ok(())
         } else {
-            Err(ApiError::Internal {
-                message: format!("Unexpected status code: {}", response.status()),
-            })
+            let err = self
+                .handle_error_response::<serde_json::Value>(response)
+                .await
+                .err()
+                .unwrap_or(ApiError::Internal {
+                    message: "Unknown error".into(),
+                });
+            Err(err)
         }
     }
 
