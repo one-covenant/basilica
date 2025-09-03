@@ -417,12 +417,6 @@ impl CliConfig {
         Ok(config_dir.join("cache.json"))
     }
 
-    /// Get rental cache file path
-    pub fn rental_cache_path() -> Result<PathBuf> {
-        let data_dir = Self::data_dir()?;
-        Ok(data_dir.join("rentals").join("cache.json"))
-    }
-
     /// Get default config file path
     pub fn default_config_path() -> Result<PathBuf> {
         let config_dir = Self::config_dir()?;

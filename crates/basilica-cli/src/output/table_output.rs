@@ -1,8 +1,7 @@
 //! Table formatting for CLI output
 
 use crate::error::Result;
-use basilica_api::api::types::{ExecutorDetails, RentalStatusResponse};
-use basilica_validator::api::types::RentalListItem;
+use basilica_api::api::types::{ApiRentalListItem, ExecutorDetails, RentalStatusResponse};
 use chrono::{DateTime, Local};
 use std::collections::HashMap;
 use tabled::{settings::Style, Table, Tabled};
@@ -100,9 +99,7 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
 }
 
 /// Display rental items in table format
-pub fn display_rental_items(rentals: &[RentalListItem]) -> Result<()> {
-    use crate::cache::RentalCache;
-
+pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
     #[derive(Tabled)]
     struct RentalRow {
         #[tabled(rename = "GPU")]
@@ -111,28 +108,55 @@ pub fn display_rental_items(rentals: &[RentalListItem]) -> Result<()> {
         rental_id: String,
         #[tabled(rename = "State")]
         state: String,
+        #[tabled(rename = "SSH")]
+        ssh: String,
         #[tabled(rename = "Image")]
         image: String,
         #[tabled(rename = "Created")]
         created: String,
     }
 
-    // Load cache to get GPU info
-    let cache = futures::executor::block_on(RentalCache::load()).unwrap_or_default();
-
     let rows: Vec<RentalRow> = rentals
         .iter()
         .map(|rental| {
-            // Try to get GPU info from cache
-            let gpu = cache
-                .get_rental(&rental.rental_id)
-                .and_then(|cached| cached.gpu_info.clone())
-                .unwrap_or_else(|| "Unknown".to_string());
+            // Format GPU info from specs
+            let gpu = if rental.gpu_specs.is_empty() {
+                "Unknown".to_string()
+            } else {
+                // Format like "2x H100 (80GB)" if all GPUs are the same,
+                // otherwise list them separately
+                let first_gpu = &rental.gpu_specs[0];
+                let all_same = rental
+                    .gpu_specs
+                    .iter()
+                    .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
+
+                if all_same {
+                    format!(
+                        "{}x {} ({}GB)",
+                        rental.gpu_specs.len(),
+                        first_gpu.name,
+                        first_gpu.memory_gb
+                    )
+                } else {
+                    // List each GPU
+                    rental
+                        .gpu_specs
+                        .iter()
+                        .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
+            };
+
+            // Format SSH availability
+            let ssh = if rental.has_ssh { "✓" } else { "✗" };
 
             RentalRow {
                 gpu,
                 rental_id: rental.rental_id.clone(),
                 state: rental.state.to_string(),
+                ssh: ssh.to_string(),
                 image: rental.container_image.clone(),
                 created: format_timestamp(&rental.created_at),
             }

@@ -1,11 +1,9 @@
 //! Common helper functions for GPU rental operations
 
-use crate::cache::RentalCache;
 use crate::error::{CliError, Result};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use basilica_api::api::types::ListRentalsQuery;
 use basilica_api::client::BasilicaClient;
-use basilica_validator::api::types::RentalListItem;
 use basilica_validator::rental::types::RentalState;
 
 /// Resolve target rental ID - if not provided, fetch active rentals and prompt for selection
@@ -45,8 +43,11 @@ pub async fn resolve_target_rental(
 
     // Filter for SSH-enabled rentals if required
     let eligible_rentals = if require_ssh {
-        let cache = RentalCache::load().await?;
-        filter_rentals_with_ssh(rentals_list.rentals, &cache)
+        rentals_list
+            .rentals
+            .into_iter()
+            .filter(|r| r.has_ssh)
+            .collect()
     } else {
         rentals_list.rentals
     };
@@ -66,51 +67,4 @@ pub async fn resolve_target_rental(
     // Use interactive selector to choose a rental
     let selector = crate::interactive::InteractiveSelector::new();
     selector.select_rental(&eligible_rentals)
-}
-
-/// Get SSH credentials from cache for a rental
-///
-/// # Arguments
-/// * `target` - Rental ID to look up
-/// * `cache` - Rental cache instance
-pub fn get_ssh_credentials_from_cache(target: &str, cache: &RentalCache) -> Result<String> {
-    let cached_rental = cache.get_rental(target).ok_or_else(|| {
-        CliError::rental_not_found(target)
-            .with_context("SSH credentials are only available for rentals created in this session")
-    })?;
-
-    cached_rental.ssh_credentials.clone().ok_or_else(|| {
-        CliError::not_supported(
-            "This rental does not have SSH access. Container was created without SSH port mapping.",
-        )
-    })
-}
-
-/// Filter rentals to only include those with SSH credentials in cache
-///
-/// # Arguments
-/// * `rentals` - List of rentals to filter
-/// * `cache` - Rental cache instance
-pub fn filter_rentals_with_ssh(
-    rentals: Vec<RentalListItem>,
-    cache: &RentalCache,
-) -> Vec<RentalListItem> {
-    // Get all cached rentals that have SSH credentials
-    let ssh_rentals: Vec<String> = cache
-        .list_rentals()
-        .into_iter()
-        .filter_map(|r| {
-            if r.ssh_credentials.is_some() {
-                Some(r.rental_id.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Filter to only show rentals with SSH access
-    rentals
-        .into_iter()
-        .filter(|r| ssh_rentals.contains(&r.rental_id))
-        .collect()
 }
