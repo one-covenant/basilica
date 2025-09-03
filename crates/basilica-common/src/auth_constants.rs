@@ -43,3 +43,13 @@ pub fn auth0_issuer() -> &'static str {
 
     RUNTIME_VALUE.as_deref().unwrap_or(AUTH0_ISSUER)
 }
+
+/// Default callback ports for OAuth flow
+/// These are non-standard ports that should be registered in Auth0's Allowed Callback URLs
+/// Using less common ports to avoid conflicts with typical development services
+pub const AUTH_CALLBACK_PORTS: &[u16] = &[34521, 45632, 23457, 51234, 38901];
+
+/// Get Auth0 callback ports
+pub fn auth0_callback_ports() -> &'static [u16] {
+    AUTH_CALLBACK_PORTS
+}

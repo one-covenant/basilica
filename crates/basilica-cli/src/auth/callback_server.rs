@@ -55,27 +55,31 @@ impl CallbackServer {
         Self { port, timeout }
     }
 
-    /// Find an available port for the callback server
+    /// Find an available port for the callback server from a list of registered ports
     pub fn find_available_port() -> AuthResult<u16> {
-        // Try port 8080 first, then find any available port
-        let preferred_port = 8080;
+        let allowed_ports = basilica_common::auth0_callback_ports();
 
-        match TcpListener::bind(("127.0.0.1", preferred_port)) {
-            Ok(listener) => {
-                let port = listener.local_addr()?.port();
-                drop(listener);
-                Ok(port)
-            }
-            Err(_) => {
-                // Port 8080 is occupied, find any available port
-                let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| {
-                    AuthError::CallbackServerError(format!("Failed to bind to any port: {}", e))
-                })?;
-                let port = listener.local_addr()?.port();
-                drop(listener);
-                Ok(port)
+        // Try each port in the list until we find an available one
+        for &port in allowed_ports {
+            match TcpListener::bind(("127.0.0.1", port)) {
+                Ok(listener) => {
+                    let actual_port = listener.local_addr()?.port();
+
+                    drop(listener); // Release the port immediately
+                    tracing::debug!("Found available callback port: {}", actual_port);
+                    return Ok(actual_port);
+                }
+                Err(e) => {
+                    tracing::debug!("Port {} is not available: {}", port, e);
+                    continue;
+                }
             }
         }
+
+        // No registered ports are available
+        Err(AuthError::CallbackServerError(
+            "No registered callback ports are available".to_string(),
+        ))
     }
 
     /// Start the callback server and wait for OAuth response
