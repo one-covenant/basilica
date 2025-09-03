@@ -18,8 +18,8 @@ use uuid::Uuid;
 const DEFAULT_MAX_PENDING_ITEMS: usize = 1000;
 const DEFAULT_MAX_PROCESSING_TIME_SECS: u64 = 2400; // 40 minutes
 const DEFAULT_LIGHTWEIGHT_PROCESSING_TIME_SECS: u64 = 480; // 8 minutes
-const DEFAULT_FULL_STALE_TIMEOUT_SECS: u64 = 1200; // 20 minutes
-const DEFAULT_LIGHTWEIGHT_STALE_TIMEOUT_SECS: u64 = 120; // 2 minutes
+const DEFAULT_FULL_STALE_TIMEOUT_SECS: u64 = DEFAULT_MAX_PROCESSING_TIME_SECS + 600; // 50 minutes
+const DEFAULT_LIGHTWEIGHT_STALE_TIMEOUT_SECS: u64 = DEFAULT_LIGHTWEIGHT_PROCESSING_TIME_SECS + 180; // 11 minutes
 const DEFAULT_COMPLETED_ITEM_TTL_SECS: u64 = 3600; // 1 hour
 const DEFAULT_RETRY_BACKOFF_BASE_SECS: u64 = 60;
 const DEFAULT_MAX_RETRIES: u8 = 3;
@@ -539,9 +539,14 @@ impl ValidationWorkerQueue {
                         item.priority = Priority::Low;
                         drop(state);
 
-                        let delay_seconds = config
-                            .retry_backoff_base_secs
-                            .saturating_pow(item.retry_count as u32);
+                        let attempt = item.retry_count as u32;
+                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                        let mut delay_seconds =
+                            config.retry_backoff_base_secs.saturating_mul(factor);
+                        let cap = config.max_processing_time_secs / 2;
+                        if cap > 0 {
+                            delay_seconds = delay_seconds.min(cap);
+                        }
                         tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
                         Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
@@ -564,9 +569,14 @@ impl ValidationWorkerQueue {
                         item.priority = Priority::Low;
                         drop(state);
 
-                        let delay_seconds = config
-                            .retry_backoff_base_secs
-                            .saturating_pow(item.retry_count as u32);
+                        let attempt = item.retry_count as u32;
+                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                        let mut delay_seconds =
+                            config.retry_backoff_base_secs.saturating_mul(factor);
+                        let cap = config.max_processing_time_secs / 2;
+                        if cap > 0 {
+                            delay_seconds = delay_seconds.min(cap);
+                        }
                         tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
                         Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
@@ -700,9 +710,14 @@ impl ValidationWorkerQueue {
                         item.retry_count += 1;
                         drop(state);
 
-                        let delay_seconds = config
-                            .retry_backoff_base_secs
-                            .saturating_pow(item.retry_count as u32);
+                        let attempt = item.retry_count as u32;
+                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                        let mut delay_seconds =
+                            config.retry_backoff_base_secs.saturating_mul(factor);
+                        let cap = config.lightweight_processing_time_secs / 2;
+                        if cap > 0 {
+                            delay_seconds = delay_seconds.min(cap);
+                        }
                         tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
                         Self::requeue_item(queue, item, &metrics, ValidationType::Lightweight)
                             .await;
@@ -725,9 +740,14 @@ impl ValidationWorkerQueue {
                         item.retry_count += 1;
                         drop(state);
 
-                        let delay_seconds = config
-                            .retry_backoff_base_secs
-                            .saturating_pow(item.retry_count as u32);
+                        let attempt = item.retry_count as u32;
+                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                        let mut delay_seconds =
+                            config.retry_backoff_base_secs.saturating_mul(factor);
+                        let cap = config.lightweight_processing_time_secs / 2;
+                        if cap > 0 {
+                            delay_seconds = delay_seconds.min(cap);
+                        }
                         tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
                         Self::requeue_item(queue, item, &metrics, ValidationType::Lightweight)
                             .await;
@@ -782,8 +802,18 @@ impl ValidationWorkerQueue {
                         break;
                     }
                     _ = health_interval.tick() => {
-                        Self::check_stale_items(full_queue.clone(), Duration::from_secs(full_stale_timeout_secs)).await;
-                        Self::check_stale_items(lightweight_queue.clone(), Duration::from_secs(lightweight_stale_timeout_secs)).await;
+                        Self::check_stale_items(
+                            full_queue.clone(),
+                            Duration::from_secs(full_stale_timeout_secs),
+                            metrics.clone(),
+                            ValidationType::Full
+                        ).await;
+                        Self::check_stale_items(
+                            lightweight_queue.clone(),
+                            Duration::from_secs(lightweight_stale_timeout_secs),
+                            metrics.clone(),
+                            ValidationType::Lightweight
+                        ).await;
                         metrics.report();
                     }
                 }
@@ -793,7 +823,12 @@ impl ValidationWorkerQueue {
         Ok(())
     }
 
-    async fn check_stale_items(queue: Arc<RwLock<QueueState>>, max_age: Duration) {
+    async fn check_stale_items(
+        queue: Arc<RwLock<QueueState>>,
+        max_age: Duration,
+        metrics: Arc<QueueMetrics>,
+        validation_type: ValidationType,
+    ) {
         let mut state = queue.write().await;
         let now = Instant::now();
 
@@ -809,6 +844,19 @@ impl ValidationWorkerQueue {
             if let Some(_entry) = state.rollback(key.clone()) {
                 let status = CompletionStatus::Failed { completed_at: now };
                 state.completed.put(key, status);
+                match validation_type {
+                    ValidationType::Full => {
+                        metrics
+                            .processing_full
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
+                    }
+                    ValidationType::Lightweight => {
+                        metrics
+                            .processing_lightweight
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
+                    }
+                }
+                metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
             }
         }
     }
