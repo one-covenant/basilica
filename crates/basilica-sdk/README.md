@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Starting a Rental
 
 ```rust
-use basilica_validator::api::rental_routes::StartRentalRequest;
+use basilica_sdk::types::{StartRentalRequest, ResourceRequirementsRequest};
 
 let request = StartRentalRequest {
     executor_id: None,  // Let the system choose
@@ -71,7 +71,6 @@ let request = StartRentalRequest {
 
 let rental = client.start_rental(request).await?;
 println!("Started rental: {}", rental.rental_id);
-```
 
 ## API Reference
 
