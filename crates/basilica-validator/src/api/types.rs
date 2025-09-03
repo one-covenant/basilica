@@ -71,7 +71,7 @@ pub struct SshAccess {
 }
 
 /// Request to terminate a rental
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct TerminateRentalRequest {
     pub reason: Option<String>,

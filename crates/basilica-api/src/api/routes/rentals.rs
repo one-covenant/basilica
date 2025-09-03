@@ -3,7 +3,7 @@
 use crate::{
     api::{
         extractors::ownership::{
-            delete_rental_ownership, get_user_rental_ids, store_rental_ownership, OwnedRental,
+            archive_rental_ownership, get_user_rental_ids, store_rental_ownership, OwnedRental,
         },
         middleware::Auth0Claims,
         types::{
@@ -179,13 +179,19 @@ pub async fn stop_rental(
 
     state
         .validator_client
-        .terminate_rental(&owned_rental.rental_id, request)
+        .terminate_rental(&owned_rental.rental_id, request.clone())
         .await?;
 
-    // Delete ownership record from database
-    if let Err(e) = delete_rental_ownership(&state.db, &owned_rental.rental_id).await {
-        error!("Failed to delete rental ownership record: {}", e);
-        // Note: We don't fail the request if ownership deletion fails
+    // Archive ownership record to terminated_user_rentals table
+    if let Err(e) = archive_rental_ownership(
+        &state.db,
+        &owned_rental.rental_id,
+        request.reason.as_deref(),
+    )
+    .await
+    {
+        error!("Failed to archive rental ownership record: {}", e);
+        // Note: We don't fail the request if ownership archiving fails
     }
 
     Ok(axum::http::StatusCode::NO_CONTENT.into_response())
