@@ -111,7 +111,7 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang
+          packages: pkg-config libssl-dev xxd mold clang python3-dev python3-dev
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -152,7 +152,7 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang
+          packages: pkg-config libssl-dev xxd mold clang python3-dev python3-dev
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -205,7 +205,7 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang
+          packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -320,7 +320,7 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang
+          packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -379,7 +379,7 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang
+          packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -438,7 +438,7 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang
+          packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -494,7 +494,7 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang postgresql-client
+          packages: pkg-config libssl-dev xxd mold clang python3-dev postgresql-client python3-dev
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -599,7 +599,7 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang postgresql-client
+          packages: pkg-config libssl-dev xxd mold clang python3-dev postgresql-client python3-dev
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
