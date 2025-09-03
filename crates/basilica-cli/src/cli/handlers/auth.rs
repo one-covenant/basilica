@@ -31,8 +31,10 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
         crate::config::create_auth_config_with_port(0)
     } else {
         // Find available port for OAuth callback server
-        let port = CallbackServer::find_available_port()
-            .map_err(|e| CliError::internal(format!("Failed to find available port: {}", e)))?;
+        let port = CallbackServer::find_available_port().map_err(|e| {
+            CliError::internal(format!("Failed to find available port: {}", e))
+                .with_suggestion("Try 'basilica login --device-code' for device flow")
+        })?;
         crate::config::create_auth_config_with_port(port)
     };
 

@@ -127,7 +127,21 @@ impl Default for WalletConfig {
 
 /// Create auth configuration for OAuth flows with specific port
 /// This bridges the gap between constants and the auth module's requirements
+/// The port must be one of the registered callback ports
 pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig {
+    // Validate that the port is in the allowed list (for OAuth flow)
+    // Device flow uses port 0 and doesn't need validation
+    if port != 0 {
+        let allowed_ports = basilica_common::auth0_callback_ports();
+        if !allowed_ports.contains(&port) {
+            tracing::warn!(
+                "Port {} is not in the list of registered callback ports: {:?}",
+                port,
+                allowed_ports
+            );
+        }
+    }
+
     // Use constants from basilica-common
     let domain = basilica_common::auth0_domain();
 
