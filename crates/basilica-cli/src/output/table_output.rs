@@ -108,6 +108,8 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
         rental_id: String,
         #[tabled(rename = "State")]
         state: String,
+        #[tabled(rename = "SSH")]
+        ssh: String,
         #[tabled(rename = "Image")]
         image: String,
         #[tabled(rename = "Created")]
@@ -147,10 +149,14 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
                 }
             };
 
+            // Format SSH availability
+            let ssh = if rental.has_ssh { "✓" } else { "✗" };
+
             RentalRow {
                 gpu,
                 rental_id: rental.rental_id.clone(),
                 state: rental.state.to_string(),
+                ssh: ssh.to_string(),
                 image: rental.container_image.clone(),
                 created: format_timestamp(&rental.created_at),
             }

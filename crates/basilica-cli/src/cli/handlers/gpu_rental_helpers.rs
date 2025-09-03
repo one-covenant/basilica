@@ -2,7 +2,7 @@
 
 use crate::error::{CliError, Result};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
-use basilica_api::api::types::{ApiRentalListItem, ListRentalsQuery};
+use basilica_api::api::types::ListRentalsQuery;
 use basilica_api::client::BasilicaClient;
 use basilica_validator::rental::types::RentalState;
 
@@ -43,7 +43,11 @@ pub async fn resolve_target_rental(
 
     // Filter for SSH-enabled rentals if required
     let eligible_rentals = if require_ssh {
-        filter_rentals_with_ssh(rentals_list.rentals)
+        rentals_list
+            .rentals
+            .into_iter()
+            .filter(|r| r.has_ssh)
+            .collect()
     } else {
         rentals_list.rentals
     };
@@ -63,16 +67,4 @@ pub async fn resolve_target_rental(
     // Use interactive selector to choose a rental
     let selector = crate::interactive::InteractiveSelector::new();
     selector.select_rental(&eligible_rentals)
-}
-
-/// Filter rentals to only include those with SSH credentials
-/// Since SSH credentials are now stored in the API, this function
-/// currently returns all rentals and filtering should be done via API
-///
-/// # Arguments
-/// * `rentals` - List of rentals to filter
-pub fn filter_rentals_with_ssh(rentals: Vec<ApiRentalListItem>) -> Vec<ApiRentalListItem> {
-    // TODO: In the future, we could make parallel API calls to check SSH availability
-    // For now, return all rentals and let the user attempt SSH connection
-    rentals
 }

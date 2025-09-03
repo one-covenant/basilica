@@ -3,7 +3,8 @@
 use crate::{
     api::{
         extractors::ownership::{
-            archive_rental_ownership, get_user_rental_ids, store_rental_ownership, OwnedRental,
+            archive_rental_ownership, get_user_rentals_with_ssh, store_rental_ownership,
+            OwnedRental,
         },
         middleware::Auth0Claims,
         types::{
@@ -276,12 +277,18 @@ pub async fn list_rentals_validator(
     // Get user ID from auth claims (already extracted via Extension)
     let user_id = &claims.sub;
 
-    // Get user's rental IDs from database
-    let user_rental_ids = get_user_rental_ids(&state.db, user_id).await.map_err(|e| {
-        crate::error::ApiError::Internal {
+    // Get user's rental IDs with SSH status from database
+    let user_rentals_with_ssh = get_user_rentals_with_ssh(&state.db, user_id)
+        .await
+        .map_err(|e| crate::error::ApiError::Internal {
             message: format!("Failed to get user rentals: {}", e),
-        }
-    })?;
+        })?;
+
+    // Create a map for quick lookup of SSH status
+    let mut ssh_status_map = std::collections::HashMap::new();
+    for rental in &user_rentals_with_ssh {
+        ssh_status_map.insert(rental.rental_id.clone(), rental.has_ssh);
+    }
 
     // Get all rentals from validator
     let all_rentals = state
@@ -296,11 +303,14 @@ pub async fn list_rentals_validator(
     let mut api_rentals = Vec::new();
 
     for rental in all_rentals.rentals {
-        if !user_rental_ids.contains(&rental.rental_id) {
-            continue;
-        }
+        // Check if user owns this rental and get SSH status
+        let has_ssh = match ssh_status_map.get(&rental.rental_id) {
+            Some(&has_ssh) => has_ssh,
+            None => continue, // User doesn't own this rental
+        };
 
         // Get rental status to fetch executor details with GPU specs
+        // TODO: fix n+1 api requests. we should get the status while listing rentals.
         let rental_status = match state
             .validator_client
             .get_rental_status(&rental.rental_id)
@@ -324,6 +334,7 @@ pub async fn list_rentals_validator(
                     miner_id: rental.miner_id,
                     container_image: rental.container_image,
                     gpu_specs: vec![],
+                    has_ssh,
                 });
                 continue;
             }
@@ -339,6 +350,7 @@ pub async fn list_rentals_validator(
             miner_id: rental.miner_id,
             container_image: rental.container_image,
             gpu_specs: rental_status.executor.gpu_specs,
+            has_ssh,
         });
     }
 

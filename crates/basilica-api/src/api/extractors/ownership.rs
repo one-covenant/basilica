@@ -156,6 +156,39 @@ pub async fn get_user_rental_ids(db: &PgPool, user_id: &str) -> Result<Vec<Strin
     Ok(records.into_iter().map(|(rental_id,)| rental_id).collect())
 }
 
+/// Struct to hold rental ID with SSH availability status
+#[derive(Debug)]
+pub struct RentalWithSshStatus {
+    pub rental_id: String,
+    pub has_ssh: bool,
+}
+
+/// Get all rentals owned by a specific user with SSH availability status
+pub async fn get_user_rentals_with_ssh(
+    db: &PgPool,
+    user_id: &str,
+) -> Result<Vec<RentalWithSshStatus>, sqlx::Error> {
+    let records: Vec<(String, Option<String>)> = sqlx::query_as(
+        r#"
+        SELECT rental_id, ssh_credentials
+        FROM user_rentals
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(db)
+    .await?;
+
+    Ok(records
+        .into_iter()
+        .map(|(rental_id, ssh_credentials)| RentalWithSshStatus {
+            rental_id,
+            has_ssh: ssh_credentials.is_some(),
+        })
+        .collect())
+}
+
 /// Structure for historical rental records
 #[derive(Debug, FromRow)]
 pub struct TerminatedUserRentalRow {
@@ -214,6 +247,7 @@ pub async fn archive_rental_ownership(
 }
 
 /// Get historical rentals for a specific user
+#[cfg(test)]
 pub async fn get_user_rental_history(
     db: &PgPool,
     user_id: &str,
@@ -251,6 +285,7 @@ pub async fn get_user_rental_history(
 }
 
 /// Get a specific historical rental by ID
+#[cfg(test)]
 pub async fn get_rental_history_by_id(
     db: &PgPool,
     rental_id: &str,
@@ -258,7 +293,7 @@ pub async fn get_rental_history_by_id(
     let record = sqlx::query_as::<_, TerminatedUserRentalRow>(
         r#"
         SELECT rental_id, user_id, ssh_credentials, created_at, stopped_at, stop_reason
-        FROM old_user_rentals
+        FROM terminated_user_rentals
         WHERE rental_id = $1
         "#,
     )
@@ -270,6 +305,7 @@ pub async fn get_rental_history_by_id(
 }
 
 /// Get all rental IDs (both active and historical) for a user
+#[cfg(test)]
 pub async fn get_all_user_rental_ids(
     db: &PgPool,
     user_id: &str,

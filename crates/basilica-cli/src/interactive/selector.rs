@@ -176,7 +176,7 @@ impl InteractiveSelector {
                 };
 
                 // Format: "GPU Type    Container Image"
-                format!("{:<30} {}", gpu, rental.container_image)
+                format!("{:<30} {:<30}", gpu, rental.container_image)
             })
             .collect();
 
@@ -239,7 +239,7 @@ impl InteractiveSelector {
                 };
 
                 // Format consistently with select_rental
-                format!("{:<30} {}", gpu, rental.container_image)
+                format!("{:<30} {:<30}", gpu, rental.container_image)
             })
             .collect();
 

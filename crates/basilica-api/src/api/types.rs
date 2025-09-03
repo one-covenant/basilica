@@ -32,6 +32,8 @@ pub struct ApiRentalListItem {
     pub container_image: String,
     /// GPU specifications for this rental
     pub gpu_specs: Vec<GpuSpec>,
+    /// Whether SSH credentials are available for this rental
+    pub has_ssh: bool,
 }
 
 /// API list rentals response with GPU information
