@@ -14,6 +14,9 @@ pub mod simple;
 pub mod traits;
 pub mod types;
 
+#[cfg(test)]
+mod tests;
+
 pub use config::*;
 pub use connection::*;
 pub use manager::*;
