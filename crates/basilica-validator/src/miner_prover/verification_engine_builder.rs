@@ -60,6 +60,28 @@ impl VerificationEngineBuilder {
         self
     }
 
+    #[cfg(test)]
+    pub async fn build_for_testing(self) -> Result<VerificationEngine> {
+        let miner_client_config = self.build_miner_client_config();
+        let ssh_client = self
+            .ssh_client
+            .unwrap_or_else(|| Arc::new(ValidatorSshClient::new()));
+
+        let verification_engine = VerificationEngine::with_ssh_automation(
+            self.config.clone(),
+            miner_client_config,
+            self.validator_hotkey.clone(),
+            ssh_client,
+            self.persistence.clone(),
+            false,
+            None,
+            self.bittensor_service,
+            self.metrics,
+        )?;
+
+        Ok(verification_engine)
+    }
+
     /// Build VerificationEngine with guaranteed SSH automation components
     pub async fn build(self) -> Result<VerificationEngine> {
         info!(
@@ -186,6 +208,7 @@ mod tests {
         let verification_config = VerificationConfig {
             verification_interval: Duration::from_secs(600),
             max_concurrent_verifications: 5,
+            max_concurrent_full_validations: 1,
             challenge_timeout: Duration::from_secs(30),
             min_score_threshold: 0.5,
             max_miners_per_round: 10,
@@ -200,6 +223,7 @@ mod tests {
             collateral_event_scan_interval: Duration::from_secs(12),
             executor_validation_interval: Duration::from_secs(12 * 3600),
             gpu_assignment_cleanup_ttl: Some(Duration::from_secs(30 * 60)),
+            enable_worker_queue: false,
         };
 
         let automatic_verification_config = AutomaticVerificationConfig {
@@ -339,6 +363,7 @@ mod tests {
         let verification_config = VerificationConfig {
             verification_interval: Duration::from_secs(600),
             max_concurrent_verifications: 5,
+            max_concurrent_full_validations: 1,
             challenge_timeout: Duration::from_secs(30),
             min_score_threshold: 0.5,
             max_miners_per_round: 10,
@@ -353,6 +378,7 @@ mod tests {
             collateral_event_scan_interval: Duration::from_secs(12),
             executor_validation_interval: Duration::from_secs(12 * 3600),
             gpu_assignment_cleanup_ttl: Some(Duration::from_secs(30 * 60)),
+            enable_worker_queue: false,
         };
 
         let miner_client_config = MinerClientConfig::default();

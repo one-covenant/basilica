@@ -48,6 +48,8 @@ toml = "0.8"
 url = "2.5"
 prost-types = { workspace = true }
 async-stream = "0.3"
+num_cpus = "1.16"
+lru = "0.12"
 eventsource-stream = "0.2"
 regex = "1.10"
 

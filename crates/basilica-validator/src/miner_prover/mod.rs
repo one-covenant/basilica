@@ -9,6 +9,7 @@ pub mod scheduler;
 pub mod types;
 pub mod validation_binary;
 pub mod validation_strategy;
+pub mod validation_worker;
 pub mod verification;
 pub mod verification_engine_builder;
 

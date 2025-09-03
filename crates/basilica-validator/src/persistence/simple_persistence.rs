@@ -47,6 +47,26 @@ impl SimplePersistence {
         Self { pool }
     }
 
+    #[cfg(test)]
+    pub async fn for_testing() -> Result<Self, anyhow::Error> {
+        let pool = SqlitePool::connect(":memory:").await?;
+
+        sqlx::query("PRAGMA journal_mode = WAL")
+            .execute(&pool)
+            .await?;
+        sqlx::query("PRAGMA busy_timeout = 5000")
+            .execute(&pool)
+            .await?;
+        sqlx::query("PRAGMA synchronous = NORMAL")
+            .execute(&pool)
+            .await?;
+
+        let instance = Self { pool };
+        instance.run_migrations().await?;
+
+        Ok(instance)
+    }
+
     pub async fn new(
         database_path: &str,
         _validator_hotkey: String,
