@@ -155,27 +155,9 @@ impl HardwareCollector {
             .ensure_command_installed(ssh_details, "lshw", "lshw")
             .await?;
 
-        // Determine if we need sudo based on current user
-        let check_root = self
-            .ssh_client
-            .execute_command(ssh_details, "id -u", true)
-            .await
-            .unwrap_or_default()
-            .trim()
-            .to_string();
-
-        let lshw_command = if check_root == "0" {
-            // Running as root, no sudo needed
-            "lshw -json -quiet -sanitize"
-        } else {
-            // Non-root user, try with sudo
-            "sudo lshw -json -quiet -sanitize"
-        };
-
-        // Execute lshw and collect hardware information
         let lshw_output = self
             .ssh_client
-            .execute_command(ssh_details, lshw_command, true)
+            .execute_command(ssh_details, "lshw -json -quiet -sanitize", true)
             .await?;
 
         // Parse the output
