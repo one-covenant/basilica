@@ -255,7 +255,12 @@ pub async fn handle_up(
 
     if options.detach {
         // Detached mode: just show instructions and exit
-        display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+        display_ssh_connection_instructions(
+            &response.rental_id,
+            ssh_creds,
+            config,
+            "SSH connection options:",
+        )?;
     } else {
         // Auto-SSH mode: wait for rental to be active and connect
         print_info("Waiting for rental to become active...");
@@ -279,20 +284,32 @@ pub async fn handle_up(
                 Ok(_) => {
                     // SSH session ended normally
                     print_info("SSH session closed");
+                    display_ssh_connection_instructions(
+                        &response.rental_id,
+                        ssh_creds,
+                        config,
+                        "To reconnect to this rental:",
+                    )?;
                 }
                 Err(e) => {
                     print_error(&format!("SSH connection failed: {}", e));
-                    println!();
-                    print_info("You can manually connect using:");
-                    display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+                    display_ssh_connection_instructions(
+                        &response.rental_id,
+                        ssh_creds,
+                        config,
+                        "Try manually connecting using:",
+                    )?;
                 }
             }
         } else {
             // Timeout or error - show manual instructions
             print_info("Rental is taking longer than expected to become active");
-            println!();
-            print_info("You can manually connect once it's ready using:");
-            display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+            display_ssh_connection_instructions(
+                &response.rental_id,
+                ssh_creds,
+                config,
+                "You can manually connect once it's ready using:",
+            )?
         }
     }
 
@@ -734,6 +751,7 @@ fn display_ssh_connection_instructions(
     rental_id: &str,
     ssh_credentials: &str,
     config: &CliConfig,
+    message: &str,
 ) -> Result<()> {
     // Parse SSH credentials to get components
     let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
@@ -742,7 +760,7 @@ fn display_ssh_connection_instructions(
     let private_key_path = &config.ssh.private_key_path;
 
     println!();
-    print_info("SSH connection options:");
+    print_info(message);
     println!();
 
     // Option 1: Using basilica CLI (simplest)
