@@ -65,14 +65,12 @@ pub(crate) fn extract_miner_uid(miner_id: &str) -> Option<u16> {
 }
 
 /// Get normalized GPU type from executor details
-pub(crate) fn get_gpu_type(
-    executor_details: &Option<crate::api::types::ExecutorDetails>,
-) -> String {
+pub(crate) fn get_gpu_type(executor_details: &crate::api::types::ExecutorDetails) -> String {
     use crate::gpu::categorization::GpuCategorizer;
 
     executor_details
-        .as_ref()
-        .and_then(|details| details.gpu_specs.first())
+        .gpu_specs
+        .first()
         .map(|gpu| GpuCategorizer::normalize_gpu_model(&gpu.name))
         .unwrap_or_else(|| "unknown".to_string())
 }
@@ -243,13 +241,23 @@ impl RentalManager {
             .get_executor_details(&request.executor_id, &request.miner_id)
             .await
         {
-            Ok(Some(details)) => Some(details),
+            Ok(Some(details)) => details,
             Ok(None) => {
                 tracing::warn!(
-                    "Executor details not found for executor_id: {}",
+                    "Executor details not found for executor_id: {}, using defaults",
                     request.executor_id
                 );
-                None
+                // Provide default executor details
+                crate::api::types::ExecutorDetails {
+                    id: request.executor_id.clone(),
+                    gpu_specs: vec![],
+                    cpu_specs: crate::api::types::CpuSpec {
+                        cores: 0,
+                        model: "Unknown".to_string(),
+                        memory_gb: 0,
+                    },
+                    location: None,
+                }
             }
             Err(e) => {
                 tracing::error!(

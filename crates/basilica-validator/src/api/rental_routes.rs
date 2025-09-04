@@ -368,32 +368,10 @@ pub async fn get_rental_status(
         })?;
 
     // Convert RentalStatus to RentalStatusResponse
-    use crate::api::types::{
-        CpuSpec, ExecutorDetails, RentalStatus as ApiRentalStatus, RentalStatusResponse,
-    };
+    use crate::api::types::{RentalStatus as ApiRentalStatus, RentalStatusResponse};
 
-    // Use executor details from rental info if available, otherwise fetch from database
-    let executor = if let Some(executor_details) = rental_info.executor_details {
-        executor_details
-    } else {
-        // Try to fetch executor details from database
-        state
-            .persistence
-            .get_executor_details(&rental_info.executor_id, &rental_info.miner_id)
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| ExecutorDetails {
-                id: rental_info.executor_id.clone(),
-                gpu_specs: vec![],
-                cpu_specs: CpuSpec {
-                    cores: 0,
-                    model: "unknown".to_string(),
-                    memory_gb: 0,
-                },
-                location: None,
-            })
-    };
+    // Use executor details from rental info directly
+    let executor = rental_info.executor_details.clone();
 
     let response = RentalStatusResponse {
         rental_id: status.rental_id,
