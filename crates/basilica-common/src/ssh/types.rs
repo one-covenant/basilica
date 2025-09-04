@@ -9,8 +9,10 @@ use std::time::{Duration, SystemTime};
 pub enum PackageManager {
     /// APT package manager (Debian/Ubuntu)
     Apt,
-    /// YUM package manager (RHEL/CentOS/Fedora)
+    /// YUM package manager (RHEL/CentOS/Fedora older versions)
     Yum,
+    /// DNF package manager (Fedora/RHEL 8+)
+    Dnf,
     /// APK package manager (Alpine Linux)
     Apk,
 }
@@ -20,6 +22,7 @@ impl fmt::Display for PackageManager {
         match self {
             PackageManager::Apt => write!(f, "apt"),
             PackageManager::Yum => write!(f, "yum"),
+            PackageManager::Dnf => write!(f, "dnf"),
             PackageManager::Apk => write!(f, "apk"),
         }
     }
@@ -31,15 +34,21 @@ impl PackageManager {
         match self {
             PackageManager::Apt => {
                 format!(
-                    "sudo apt-get update && sudo apt-get install -y {}",
+                    "DEBIAN_FRONTEND=noninteractive sudo -E apt-get update && DEBIAN_FRONTEND=noninteractive sudo -E apt-get install -y --no-install-recommends {}",
                     package_name
                 )
             }
             PackageManager::Yum => {
                 format!("sudo yum install -y {}", package_name)
             }
+            PackageManager::Dnf => {
+                format!(
+                    "sudo dnf install -y --setopt=install_weak_deps=False {}",
+                    package_name
+                )
+            }
             PackageManager::Apk => {
-                format!("sudo apk add {}", package_name)
+                format!("sudo apk add --no-cache {}", package_name)
             }
         }
     }
@@ -49,6 +58,7 @@ impl PackageManager {
         match self {
             PackageManager::Apt => "command -v apt-get",
             PackageManager::Yum => "command -v yum",
+            PackageManager::Dnf => "command -v dnf",
             PackageManager::Apk => "command -v apk",
         }
     }

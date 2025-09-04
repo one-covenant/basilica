@@ -801,6 +801,25 @@ impl ValidatorSshClient {
             }
         }
 
+        // Check if we're running as root or if sudo is available
+        let is_root = self
+            .execute_command(ssh_details, "test \"$(id -u)\" -eq 0", false)
+            .await
+            .is_ok();
+        let has_sudo = if is_root {
+            false // If we're root, we don't need sudo
+        } else {
+            self.execute_command(ssh_details, "command -v sudo", false)
+                .await
+                .is_ok()
+        };
+
+        debug!(
+            is_root = is_root,
+            has_sudo = has_sudo,
+            "Detected privilege level for package installation"
+        );
+
         // Detect package manager
         let package_manager = self.detect_package_manager(ssh_details).await?;
 
@@ -808,11 +827,26 @@ impl ValidatorSshClient {
         info!(
             package = package_name,
             package_manager = %package_manager,
+            is_root = is_root,
+            has_sudo = has_sudo,
             "Installing package"
         );
 
-        let install_cmd = package_manager.install_command(package_name);
-        self.execute_command(ssh_details, &install_cmd, true)
+        // Get the install command and potentially strip sudo if we're root or sudo is not available
+        let mut install_cmd = package_manager.install_command(package_name);
+        if is_root || !has_sudo {
+            // Remove sudo from the command
+            install_cmd = install_cmd.replace("sudo -E ", "").replace("sudo ", "");
+            if !is_root && !has_sudo {
+                warn!("Neither root access nor sudo is available - package installation may fail");
+            }
+        }
+
+        // Use a longer timeout for package installation operations (5 minutes)
+        let mut install_details = ssh_details.clone();
+        install_details.timeout = Duration::from_secs(300);
+
+        self.execute_command(&install_details, &install_cmd, true)
             .await
             .map_err(|e| {
                 anyhow::anyhow!(
@@ -857,7 +891,16 @@ impl ValidatorSshClient {
             return Ok(PackageManager::Apt);
         }
 
-        // Check for yum (RHEL/CentOS/Fedora)
+        // Check for dnf first (newer Fedora/RHEL 8+)
+        if self
+            .execute_command(ssh_details, PackageManager::Dnf.check_command(), true)
+            .await
+            .is_ok()
+        {
+            return Ok(PackageManager::Dnf);
+        }
+
+        // Check for yum (older RHEL/CentOS/Fedora)
         if self
             .execute_command(ssh_details, PackageManager::Yum.check_command(), true)
             .await
@@ -876,7 +919,7 @@ impl ValidatorSshClient {
         }
 
         Err(anyhow::anyhow!(
-            "Could not detect a supported package manager (apt, yum, or apk)"
+            "Could not detect a supported package manager (apt, dnf, yum, or apk)"
         ))
     }
 }
