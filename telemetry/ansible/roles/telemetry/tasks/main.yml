@@ -133,11 +133,3 @@
     msg: "{{ item.item.name }}: {{ 'HEALTHY' if item.status == 200 else 'UNHEALTHY' }}"
   loop: "{{ health_checks.results }}"
 
-- name: Get running containers
-  shell: docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-  register: running_containers
-  changed_when: false
-
-- name: Display running containers
-  debug:
-    var: running_containers.stdout_lines
