@@ -152,7 +152,7 @@ impl HardwareCollector {
 
         // Ensure lshw is installed
         self.ssh_client
-            .ensure_command_installed(ssh_details, "lshw", "lshw")
+            .ensure_installed(ssh_details, "lshw", "lshw")
             .await?;
 
         let lshw_output = self

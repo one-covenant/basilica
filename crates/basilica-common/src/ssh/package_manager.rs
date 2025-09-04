@@ -32,25 +32,34 @@ impl fmt::Display for PackageManager {
 
 impl PackageManager {
     /// Get the install command for this package manager
-    pub fn install_command(&self, package_name: &str) -> String {
+    pub fn install_command(&self, package_name: &str, use_sudo: bool) -> String {
+        let sudo_prefix = if use_sudo { "sudo " } else { "" };
+
         match self {
             PackageManager::Apt => {
-                format!(
-                    "DEBIAN_FRONTEND=noninteractive sudo -E apt-get update && DEBIAN_FRONTEND=noninteractive sudo -E apt-get install -y --no-install-recommends {}",
-                    package_name
-                )
+                if use_sudo {
+                    format!(
+                        "DEBIAN_FRONTEND=noninteractive sudo -E apt-get update && DEBIAN_FRONTEND=noninteractive sudo -E apt-get install -y --no-install-recommends {}",
+                        package_name
+                    )
+                } else {
+                    format!(
+                        "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends {}",
+                        package_name
+                    )
+                }
             }
             PackageManager::Yum => {
-                format!("sudo yum install -y {}", package_name)
+                format!("{}yum install -y {}", sudo_prefix, package_name)
             }
             PackageManager::Dnf => {
                 format!(
-                    "sudo dnf install -y --setopt=install_weak_deps=False {}",
-                    package_name
+                    "{}dnf install -y --setopt=install_weak_deps=False {}",
+                    sudo_prefix, package_name
                 )
             }
             PackageManager::Apk => {
-                format!("sudo apk add --no-cache {}", package_name)
+                format!("{}apk add --no-cache {}", sudo_prefix, package_name)
             }
         }
     }

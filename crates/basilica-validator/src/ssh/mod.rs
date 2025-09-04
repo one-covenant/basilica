@@ -764,12 +764,12 @@ impl ValidatorSshClient {
     /// # Example
     /// ```
     /// // Ensure lshw is installed (command and package have same name)
-    /// client.ensure_command_installed(ssh_details, "lshw", "lshw").await?;
+    /// client.ensure_installed(ssh_details, "lshw", "lshw").await?;
     ///
     /// // Ensure sshd is installed (command and package have different names)
-    /// client.ensure_command_installed(ssh_details, "sshd", "openssh-server").await?;
+    /// client.ensure_installed(ssh_details, "sshd", "openssh-server").await?;
     /// ```
-    pub async fn ensure_command_installed(
+    pub async fn ensure_installed(
         &self,
         ssh_details: &SshConnectionDetails,
         command_name: &str,
@@ -832,15 +832,14 @@ impl ValidatorSshClient {
             "Installing package"
         );
 
-        // Get the install command and potentially strip sudo if we're root or sudo is not available
-        let mut install_cmd = package_manager.install_command(package_name);
-        if is_root || !has_sudo {
-            // Remove sudo from the command
-            install_cmd = install_cmd.replace("sudo -E ", "").replace("sudo ", "");
-            if !is_root && !has_sudo {
-                warn!("Neither root access nor sudo is available - package installation may fail");
-            }
+        // Determine if we should use sudo based on root status and sudo availability
+        let use_sudo = !is_root && has_sudo;
+
+        if !is_root && !has_sudo {
+            warn!("Neither root access nor sudo is available - package installation may fail");
         }
+
+        let install_cmd = package_manager.install_command(package_name, use_sudo);
 
         // Use a longer timeout for package installation operations (5 minutes)
         let mut install_details = ssh_details.clone();
