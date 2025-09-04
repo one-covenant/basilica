@@ -10,6 +10,7 @@
 pub mod config;
 pub mod connection;
 pub mod manager;
+pub mod package_manager;
 pub mod simple;
 pub mod traits;
 pub mod types;
@@ -20,6 +21,7 @@ mod tests;
 pub use config::*;
 pub use connection::*;
 pub use manager::*;
+pub use package_manager::*;
 pub use simple::*;
 pub use traits::*;
 pub use types::*;
