@@ -277,6 +277,40 @@ impl HardwareCollector {
             }
         }
     }
+
+    /// Retrieve hardware profile from database
+    pub async fn retrieve(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<Option<HardwareProfile>> {
+        let result = self
+            .persistence
+            .get_executor_hardware_profile(miner_uid, executor_id)
+            .await?;
+
+        match result {
+            Some((full_json, _cpu_model, _cpu_cores, _ram_gb, _disk_gb)) => {
+                let profile = HardwareProfile::from_lshw_json(&full_json)?;
+
+                info!(
+                    miner_uid = miner_uid,
+                    executor_id = executor_id,
+                    "[HARDWARE_PROFILE] Retrieved hardware profile from database"
+                );
+
+                Ok(Some(profile))
+            }
+            None => {
+                info!(
+                    miner_uid = miner_uid,
+                    executor_id = executor_id,
+                    "[HARDWARE_PROFILE] No hardware profile found in database"
+                );
+                Ok(None)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
