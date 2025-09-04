@@ -139,16 +139,14 @@ impl HardwareCollector {
         }
     }
 
-    /// Collect hardware profile from executor and store in database
-    pub async fn collect_and_store(
+    /// Collect hardware profile from executor
+    pub async fn collect(
         &self,
         executor_id: &str,
-        miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Result<HardwareProfile> {
         info!(
             executor_id = executor_id,
-            miner_uid = miner_uid,
             "[HARDWARE_PROFILE] Starting hardware profile collection"
         );
 
@@ -157,17 +155,33 @@ impl HardwareCollector {
             .ensure_command_installed(ssh_details, "lshw", "lshw")
             .await?;
 
+        // Determine if we need sudo based on current user
+        let check_root = self
+            .ssh_client
+            .execute_command(ssh_details, "id -u", true)
+            .await
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
+        let lshw_command = if check_root == "0" {
+            // Running as root, no sudo needed
+            "lshw -json -quiet -sanitize"
+        } else {
+            // Non-root user, try with sudo
+            "sudo lshw -json -quiet -sanitize"
+        };
+
         // Execute lshw and collect hardware information
-        // Using -sanitize flag to remove sensitive information like serial numbers
         let lshw_output = self
             .ssh_client
-            .execute_command(ssh_details, "sudo lshw -json -quiet -sanitize", true)
+            .execute_command(ssh_details, lshw_command, true)
             .await?;
 
         // Parse the output
         let hardware_profile = HardwareProfile::from_lshw_json(&lshw_output)?;
 
-        // Create formatted hardware info strings for logging
+        // Log the collected information
         let cpu_info = format!(
             "{} ({} cores)",
             hardware_profile
@@ -183,16 +197,23 @@ impl HardwareCollector {
             hardware_profile.disk_gb.unwrap_or(0)
         );
 
-        // Log the collected information before storing
         info!(
-            miner_uid = miner_uid,
             executor_id = executor_id,
             cpu_info = cpu_info,
             mem_info = mem_info,
             "[HARDWARE_PROFILE] Successfully collected hardware profile"
         );
 
-        // Store in database
+        Ok(hardware_profile)
+    }
+
+    /// Store hardware profile in database
+    pub async fn store(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        hardware_profile: &HardwareProfile,
+    ) -> Result<()> {
         self.persistence
             .store_executor_hardware_profile(
                 miner_uid,
@@ -205,6 +226,25 @@ impl HardwareCollector {
             )
             .await?;
 
+        info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
+            "[HARDWARE_PROFILE] Stored hardware profile in database"
+        );
+
+        Ok(())
+    }
+
+    /// Collect hardware profile from executor and store in database
+    pub async fn collect_and_store(
+        &self,
+        executor_id: &str,
+        miner_uid: u16,
+        ssh_details: &SshConnectionDetails,
+    ) -> Result<HardwareProfile> {
+        let hardware_profile = self.collect(executor_id, ssh_details).await?;
+        self.store(miner_uid, executor_id, &hardware_profile)
+            .await?;
         Ok(hardware_profile)
     }
 
@@ -215,11 +255,18 @@ impl HardwareCollector {
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Option<HardwareProfile> {
-        match self
-            .collect_and_store(executor_id, miner_uid, ssh_details)
-            .await
-        {
-            Ok(profile) => Some(profile),
+        match self.collect(executor_id, ssh_details).await {
+            Ok(profile) => {
+                // Try to store but don't fail if storage fails
+                if let Err(e) = self.store(miner_uid, executor_id, &profile).await {
+                    warn!(
+                        executor_id = executor_id,
+                        error = %e,
+                        "[HARDWARE_PROFILE] Failed to store hardware profile (non-critical)"
+                    );
+                }
+                Some(profile)
+            }
             Err(e) => {
                 warn!(
                     executor_id = executor_id,
