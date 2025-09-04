@@ -247,6 +247,19 @@ impl SimplePersistence {
                 PRIMARY KEY (miner_uid, executor_id)
             );
 
+            CREATE TABLE IF NOT EXISTS executor_speedtest_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                download_mbps REAL,
+                upload_mbps REAL,
+                test_timestamp TEXT NOT NULL,
+                test_server TEXT,
+                full_result_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
             CREATE TABLE IF NOT EXISTS weight_allocation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 miner_uid INTEGER NOT NULL,
@@ -281,6 +294,8 @@ impl SimplePersistence {
             CREATE INDEX IF NOT EXISTS idx_weight_history_block ON weight_allocation_history(weight_set_block);
             CREATE INDEX IF NOT EXISTS idx_executor_hardware_miner ON executor_hardware_profile(miner_uid);
             CREATE INDEX IF NOT EXISTS idx_executor_hardware_updated ON executor_hardware_profile(updated_at);
+            CREATE INDEX IF NOT EXISTS idx_executor_speedtest_miner ON executor_speedtest_profile(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_executor_speedtest_timestamp ON executor_speedtest_profile(test_timestamp);
             "#,
         )
         .execute(&self.pool)
@@ -1922,6 +1937,91 @@ impl SimplePersistence {
                 cpu_cores,
                 ram_gb,
                 disk_gb,
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Store executor network speedtest profile information
+    #[allow(clippy::too_many_arguments)]
+    pub async fn store_executor_speedtest_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        download_mbps: Option<f64>,
+        upload_mbps: Option<f64>,
+        test_timestamp: &str,
+        test_server: Option<String>,
+        full_result_json: &str,
+    ) -> Result<(), anyhow::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO executor_speedtest_profile
+            (miner_uid, executor_id, download_mbps, upload_mbps, test_timestamp, test_server, full_result_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                download_mbps = excluded.download_mbps,
+                upload_mbps = excluded.upload_mbps,
+                test_timestamp = excluded.test_timestamp,
+                test_server = excluded.test_server,
+                full_result_json = excluded.full_result_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(download_mbps)
+        .bind(upload_mbps)
+        .bind(test_timestamp)
+        .bind(test_server)
+        .bind(full_result_json)
+        .execute(&self.pool)
+        .await?;
+
+        info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
+            download_mbps = download_mbps.unwrap_or(0.0),
+            upload_mbps = upload_mbps.unwrap_or(0.0),
+            "Stored speedtest profile for executor"
+        );
+
+        Ok(())
+    }
+
+    /// Retrieve executor speedtest profile from database
+    pub async fn get_executor_speedtest_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<Option<(String, Option<f64>, Option<f64>, String, Option<String>)>, anyhow::Error>
+    {
+        let row = sqlx::query(
+            r#"
+            SELECT download_mbps, upload_mbps, test_timestamp, test_server, full_result_json
+            FROM executor_speedtest_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let full_result_json: String = row.get("full_result_json");
+            let download_mbps: Option<f64> = row.get("download_mbps");
+            let upload_mbps: Option<f64> = row.get("upload_mbps");
+            let test_timestamp: String = row.get("test_timestamp");
+            let test_server: Option<String> = row.get("test_server");
+
+            Ok(Some((
+                full_result_json,
+                download_mbps,
+                upload_mbps,
+                test_timestamp,
+                test_server,
             )))
         } else {
             Ok(None)

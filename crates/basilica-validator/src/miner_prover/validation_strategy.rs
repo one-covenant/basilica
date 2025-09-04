@@ -10,6 +10,7 @@ use super::types::{
 };
 use super::validation_binary::BinaryValidator;
 use super::validation_hardware::HardwareCollector;
+use super::validation_speedtest::NetworkSpeedCollector;
 use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::SimplePersistence;
@@ -48,6 +49,7 @@ pub struct ValidationExecutor {
     ssh_client: Arc<ValidatorSshClient>,
     binary_validator: BinaryValidator,
     hardware_collector: HardwareCollector,
+    speedtest_collector: NetworkSpeedCollector,
     metrics: Option<Arc<ValidatorMetrics>>,
 }
 
@@ -287,11 +289,13 @@ impl ValidationExecutor {
         persistence: Arc<SimplePersistence>,
     ) -> Self {
         let binary_validator = BinaryValidator::new(ssh_client.clone());
-        let hardware_collector = HardwareCollector::new(ssh_client.clone(), persistence);
+        let hardware_collector = HardwareCollector::new(ssh_client.clone(), persistence.clone());
+        let speedtest_collector = NetworkSpeedCollector::new(ssh_client.clone(), persistence);
         Self {
             ssh_client,
             binary_validator,
             hardware_collector,
+            speedtest_collector,
             metrics,
         }
     }
@@ -466,9 +470,12 @@ impl ValidationExecutor {
         validation_details.ssh_test_duration = ssh_test_start.elapsed();
         validation_details.ssh_score = if ssh_connection_successful { 0.8 } else { 0.0 };
 
-        // Phase 1.5: Hardware Profile Collection
+        // Phase 1.5: Node Profiling Collection
         if ssh_connection_successful {
             self.hardware_collector
+                .collect_with_fallback(&executor_info.id.to_string(), miner_uid, ssh_details)
+                .await;
+            self.speedtest_collector
                 .collect_with_fallback(&executor_info.id.to_string(), miner_uid, ssh_details)
                 .await;
         }
