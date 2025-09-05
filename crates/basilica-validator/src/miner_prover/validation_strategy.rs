@@ -477,15 +477,21 @@ impl ValidationExecutor {
 
         // Phase 1.5: Node Profiling Collection
         if ssh_connection_successful {
-            self.hardware_collector
-                .collect_with_fallback(&executor_info.id.to_string(), miner_uid, ssh_details)
-                .await;
-            self.network_collector
-                .collect_with_fallback(&executor_info.id.to_string(), miner_uid, ssh_details)
-                .await;
-            self.speedtest_collector
-                .collect_with_fallback(&executor_info.id.to_string(), miner_uid, ssh_details)
-                .await;
+            let executor_id = executor_info.id.to_string();
+
+            let hardware_future =
+                self.hardware_collector
+                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+            let network_future =
+                self.network_collector
+                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+            let speedtest_future = self.speedtest_collector.collect_with_fallback(
+                &executor_id,
+                miner_uid,
+                ssh_details,
+            );
+
+            tokio::join!(hardware_future, network_future, speedtest_future);
         }
 
         // Phase 2: Binary Validation
