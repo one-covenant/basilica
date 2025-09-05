@@ -202,6 +202,10 @@ pub struct UpOptions {
     /// Create rental in detached mode (don't auto-connect via SSH)
     #[arg(short = 'd', long)]
     pub detach: bool,
+
+    /// Show detailed executor information (full GPU names and individual executors)
+    #[arg(long)]
+    pub detailed: bool,
 }
 
 /// Filters for listing active rentals

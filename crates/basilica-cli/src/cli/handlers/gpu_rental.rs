@@ -201,13 +201,9 @@ pub async fn handle_up(
 
         complete_spinner_and_clear(spinner);
 
-        // Use interactive selector to choose an executor (use compact mode for better readability)
+        // Use interactive selector to choose an executor
         let selector = crate::interactive::InteractiveSelector::new();
-        let selected_executor = selector.select_executor(&response.available_executors, false)?;
-
-        ExecutorSelection::ExecutorId {
-            executor_id: selected_executor,
-        }
+        selector.select_executor(&response.available_executors, options.detailed)?
     };
 
     let spinner = create_spinner("Preparing rental request...");
