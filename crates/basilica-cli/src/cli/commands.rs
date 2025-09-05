@@ -146,6 +146,10 @@ pub struct ListFilters {
     /// Minimum memory in GB
     #[arg(long)]
     pub memory_min: Option<u32>,
+
+    /// Show detailed GPU information (full GPU names)
+    #[arg(long)]
+    pub detailed: bool,
 }
 
 /// Options for provisioning instances
@@ -214,6 +218,10 @@ pub struct PsFilters {
     /// Minimum GPU count
     #[arg(long)]
     pub min_gpu_count: Option<u32>,
+
+    /// Show detailed GPU information (full GPU names)
+    #[arg(long)]
+    pub detailed: bool,
 }
 
 /// Options for viewing logs

@@ -81,7 +81,12 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
                 } else if executor.executor.gpu_specs.len() == 1 {
                     // Single GPU
                     let gpu = &executor.executor.gpu_specs[0];
-                    format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+                    let gpu_display_name = if filters.detailed {
+                        gpu.name.clone()
+                    } else {
+                        table_output::extract_gpu_category(&gpu.name)
+                    };
+                    format!("{} ({}GB)", gpu_display_name, gpu.memory_gb)
                 } else {
                     // Multiple GPUs - check if they're all the same model
                     let first_gpu = &executor.executor.gpu_specs[0];
@@ -92,10 +97,15 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
 
                     if all_same {
                         // All GPUs are identical - use count prefix format
+                        let gpu_display_name = if filters.detailed {
+                            first_gpu.name.clone()
+                        } else {
+                            table_output::extract_gpu_category(&first_gpu.name)
+                        };
                         format!(
                             "{}x {} ({}GB)",
                             executor.executor.gpu_specs.len(),
-                            first_gpu.name,
+                            gpu_display_name,
                             first_gpu.memory_gb
                         )
                     } else {
@@ -104,7 +114,14 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
                             .executor
                             .gpu_specs
                             .iter()
-                            .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                            .map(|g| {
+                                let display_name = if filters.detailed {
+                                    g.name.clone()
+                                } else {
+                                    table_output::extract_gpu_category(&g.name)
+                                };
+                                format!("{} ({}GB)", display_name, g.memory_gb)
+                            })
                             .collect();
                         gpu_names.join(", ")
                     }
@@ -168,9 +185,9 @@ pub async fn handle_up(
 
         complete_spinner_and_clear(spinner);
 
-        // Use interactive selector to choose an executor
+        // Use interactive selector to choose an executor (use compact mode for better readability)
         let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_executor(&response.available_executors)?
+        selector.select_executor(&response.available_executors, false)?
     };
 
     let spinner = create_spinner("Preparing rental request...");
@@ -339,7 +356,7 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
     if json {
         json_output(&rentals_list)?;
     } else {
-        table_output::display_rental_items(&rentals_list.rentals[..])?;
+        table_output::display_rental_items(&rentals_list.rentals[..], filters.detailed)?;
         println!("\nTotal: {} active rentals", rentals_list.rentals.len());
 
         display_ps_quick_start_commands();

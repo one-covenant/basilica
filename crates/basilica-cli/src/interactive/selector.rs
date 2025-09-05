@@ -33,7 +33,7 @@ impl InteractiveSelector {
     }
 
     /// Let user select an executor from available options
-    pub fn select_executor(&self, executors: &[AvailableExecutor]) -> Result<String> {
+    pub fn select_executor(&self, executors: &[AvailableExecutor], detailed: bool) -> Result<String> {
         if executors.is_empty() {
             return Err(CliError::not_found("No executors available"));
         }
@@ -46,15 +46,20 @@ impl InteractiveSelector {
                     "No GPUs".to_string()
                 } else {
                     let gpu = &executor.executor.gpu_specs[0];
+                    let gpu_display_name = if detailed {
+                        gpu.name.clone()
+                    } else {
+                        crate::output::table_output::extract_gpu_category(&gpu.name)
+                    };
                     if executor.executor.gpu_specs.len() > 1 {
                         format!(
                             "{}x {} ({}GB)",
                             executor.executor.gpu_specs.len(),
-                            gpu.name,
+                            gpu_display_name,
                             gpu.memory_gb
                         )
                     } else {
-                        format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+                        format!("{} ({}GB)", gpu_display_name, gpu.memory_gb)
                     }
                 }
             })
@@ -101,15 +106,20 @@ impl InteractiveSelector {
             "No GPUs".to_string()
         } else {
             let gpu = &executors[selection].executor.gpu_specs[0];
+            let gpu_display_name = if detailed {
+                gpu.name.clone()
+            } else {
+                crate::output::table_output::extract_gpu_category(&gpu.name)
+            };
             if executors[selection].executor.gpu_specs.len() > 1 {
                 format!(
                     "{}x {} ({}GB)",
                     executors[selection].executor.gpu_specs.len(),
-                    gpu.name,
+                    gpu_display_name,
                     gpu.memory_gb
                 )
             } else {
-                format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+                format!("{} ({}GB)", gpu_display_name, gpu.memory_gb)
             }
         };
 
@@ -140,7 +150,7 @@ impl InteractiveSelector {
     }
 
     /// Let user select a single instance from active instances
-    pub fn select_rental(&self, rentals: &[ApiRentalListItem]) -> Result<String> {
+    pub fn select_rental(&self, rentals: &[ApiRentalListItem], detailed: bool) -> Result<String> {
         if rentals.is_empty() {
             return Err(CliError::not_found("No active instances"));
         }
@@ -159,17 +169,33 @@ impl InteractiveSelector {
                         .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
 
                     if all_same {
-                        format!(
-                            "{}x {} ({}GB)",
-                            rental.gpu_specs.len(),
-                            first_gpu.name,
-                            first_gpu.memory_gb
-                        )
+                        let gpu_display_name = if detailed {
+                            first_gpu.name.clone()
+                        } else {
+                            crate::output::table_output::extract_gpu_category(&first_gpu.name)
+                        };
+                        if rental.gpu_specs.len() > 1 {
+                            format!(
+                                "{}x {} ({}GB)",
+                                rental.gpu_specs.len(),
+                                gpu_display_name,
+                                first_gpu.memory_gb
+                            )
+                        } else {
+                            format!("{} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                        }
                     } else {
                         rental
                             .gpu_specs
                             .iter()
-                            .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                            .map(|g| {
+                                let display_name = if detailed {
+                                    g.name.clone()
+                                } else {
+                                    crate::output::table_output::extract_gpu_category(&g.name)
+                                };
+                                format!("{} ({}GB)", display_name, g.memory_gb)
+                            })
                             .collect::<Vec<_>>()
                             .join(", ")
                     }

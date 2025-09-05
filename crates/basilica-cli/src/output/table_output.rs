@@ -98,8 +98,41 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
     Ok(())
 }
 
+/// Extract GPU category from full GPU name
+pub fn extract_gpu_category(gpu_name: &str) -> String {
+    let name_upper = gpu_name.to_uppercase();
+
+    // Common GPU categories to look for
+    let categories = [
+        "H100", "H200", "B200", "B100", "A100", "A6000", "A40", "A30", "A10", "RTX 4090",
+        "RTX 4080", "RTX 3090", "RTX 3080", "V100", "T4", "L4", "L40", "L40S",
+    ];
+
+    for category in &categories {
+        if name_upper.contains(category) {
+            return category.to_string();
+        }
+    }
+
+    // If no known category found, try to extract the model name
+    // Remove common prefixes
+    let cleaned = name_upper
+        .replace("NVIDIA", "")
+        .replace("GEFORCE", "")
+        .replace("TESLA", "")
+        .trim()
+        .to_string();
+
+    // Return first word/token as category
+    cleaned
+        .split_whitespace()
+        .next()
+        .unwrap_or("Unknown")
+        .to_string()
+}
+
 /// Display rental items in table format
-pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
+pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Result<()> {
     #[derive(Tabled)]
     struct RentalRow {
         #[tabled(rename = "GPU")]
@@ -132,18 +165,37 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
                     .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
 
                 if all_same {
-                    format!(
-                        "{}x {} ({}GB)",
-                        rental.gpu_specs.len(),
-                        first_gpu.name,
-                        first_gpu.memory_gb
-                    )
+                    let gpu_display_name = if detailed {
+                        // Detailed mode: show full GPU name
+                        first_gpu.name.clone()
+                    } else {
+                        // Compact mode: show categorized name
+                        extract_gpu_category(&first_gpu.name)
+                    };
+
+                    if rental.gpu_specs.len() > 1 {
+                        format!(
+                            "{}x {} ({}GB)",
+                            rental.gpu_specs.len(),
+                            gpu_display_name,
+                            first_gpu.memory_gb
+                        )
+                    } else {
+                        format!("{} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                    }
                 } else {
                     // List each GPU
                     rental
                         .gpu_specs
                         .iter()
-                        .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                        .map(|g| {
+                            let display_name = if detailed {
+                                g.name.clone()
+                            } else {
+                                extract_gpu_category(&g.name)
+                            };
+                            format!("{} ({}GB)", display_name, g.memory_gb)
+                        })
                         .collect::<Vec<_>>()
                         .join(", ")
                 }

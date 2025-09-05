@@ -64,7 +64,7 @@ pub async fn resolve_target_rental(
         };
     }
 
-    // Use interactive selector to choose a rental
+    // Use interactive selector to choose a rental (use compact mode for better readability)
     let selector = crate::interactive::InteractiveSelector::new();
-    selector.select_rental(&eligible_rentals)
+    selector.select_rental(&eligible_rentals, false)
 }
