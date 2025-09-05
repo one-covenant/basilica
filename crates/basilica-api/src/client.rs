@@ -34,13 +34,11 @@
 use crate::{
     api::types::{
         ApiListRentalsResponse, HealthCheckResponse, ListRentalsQuery, RentalStatusWithSshResponse,
+        StartRentalApiRequest,
     },
     error::{ApiError, ErrorResponse, Result},
 };
-use basilica_validator::api::{
-    rental_routes::StartRentalRequest,
-    types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse},
-};
+use basilica_validator::api::types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse};
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
@@ -82,7 +80,7 @@ impl BasilicaClient {
     }
 
     /// Start a new rental
-    pub async fn start_rental(&self, request: StartRentalRequest) -> Result<RentalResponse> {
+    pub async fn start_rental(&self, request: StartRentalApiRequest) -> Result<RentalResponse> {
         self.post("/rentals", &request).await
     }
 

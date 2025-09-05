@@ -8,8 +8,9 @@ use crate::{
         },
         middleware::Auth0Claims,
         types::{
-            ApiListRentalsResponse, ApiRentalListItem, ListRentalsQuery, LogStreamQuery,
-            RentalStatusWithSshResponse, TerminateRentalRequest,
+            ApiListRentalsResponse, ApiRentalListItem, ExecutorSelection, ListRentalsQuery,
+            LogStreamQuery, RentalStatusWithSshResponse, StartRentalApiRequest,
+            TerminateRentalRequest,
         },
     },
     error::Result,
@@ -24,7 +25,7 @@ use axum::{
 use basilica_validator::{
     api::{
         rental_routes::StartRentalRequest,
-        types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse},
+        types::{AvailableExecutor, ListAvailableExecutorsQuery, ListAvailableExecutorsResponse},
     },
     RentalResponse,
 };
@@ -71,10 +72,8 @@ pub async fn get_rental_status(
 pub async fn start_rental(
     State(state): State<AppState>,
     axum::Extension(claims): axum::Extension<Auth0Claims>,
-    Json(request): Json<StartRentalRequest>,
+    Json(request): Json<StartRentalApiRequest>,
 ) -> Result<Json<RentalResponse>> {
-    info!("Starting rental with executor: {:?}", request.executor_id);
-
     // Get user ID from auth claims (already extracted via Extension)
     let user_id = &claims.sub;
 
@@ -94,7 +93,54 @@ pub async fn start_rental(
         });
     }
 
-    let executor_id = request.executor_id;
+    // Determine executor_id based on the selection strategy
+    let executor_id = match &request.executor_selection {
+        ExecutorSelection::ExecutorId { executor_id } => {
+            info!("Starting rental with specified executor: {}", executor_id);
+            executor_id.clone()
+        }
+        ExecutorSelection::GpuRequirements { gpu_requirements } => {
+            info!(
+                "Selecting executor based on GPU requirements: {:?}",
+                gpu_requirements
+            );
+
+            // Query available executors with filters based on requirements
+            let query = ListAvailableExecutorsQuery {
+                available: Some(true),
+                min_gpu_memory: Some(gpu_requirements.min_memory_gb),
+                gpu_type: gpu_requirements.gpu_type.clone(),
+                min_gpu_count: Some(gpu_requirements.gpu_count),
+            };
+
+            let executors_response = state
+                .validator_client
+                .list_available_executors(Some(query))
+                .await
+                .map_err(|e| crate::error::ApiError::Internal {
+                    message: format!("Failed to query available executors: {}", e),
+                })?;
+
+            if executors_response.available_executors.is_empty() {
+                error!("No executors match the specified GPU requirements");
+                return Err(crate::error::ApiError::NotFound {
+                    resource: "executor matching GPU requirements".into(),
+                });
+            }
+
+            // Select the best executor based on verification score and uptime
+            let selected_id = select_best_executor(executors_response.available_executors)
+                .ok_or_else(|| crate::error::ApiError::Internal {
+                    message: "Failed to select best executor".into(),
+                })?;
+
+            info!(
+                "Selected executor {} based on GPU requirements",
+                selected_id
+            );
+            selected_id
+        }
+    };
 
     // Convert to validator's StartRentalRequest format
     let validator_request = StartRentalRequest {
@@ -409,6 +455,38 @@ pub async fn list_available_executors(
         .await?;
 
     Ok(Json(response))
+}
+
+/// Select the best executor from a list of available executors based on
+/// verification score and uptime percentage
+fn select_best_executor(executors: Vec<AvailableExecutor>) -> Option<String> {
+    if executors.is_empty() {
+        return None;
+    }
+
+    // Sort executors by verification score (descending) and then by uptime percentage (descending)
+    let mut sorted_executors = executors;
+    sorted_executors.sort_by(|a, b| {
+        // First compare by verification score
+        let score_cmp = b
+            .availability
+            .verification_score
+            .partial_cmp(&a.availability.verification_score)
+            .unwrap_or(std::cmp::Ordering::Equal);
+
+        if score_cmp != std::cmp::Ordering::Equal {
+            return score_cmp;
+        }
+
+        // If scores are equal, compare by uptime percentage
+        b.availability
+            .uptime_percentage
+            .partial_cmp(&a.availability.uptime_percentage)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Return the ID of the best executor
+    sorted_executors.first().map(|e| e.executor.id.clone())
 }
 
 fn is_valid_container_image(image: &str) -> bool {

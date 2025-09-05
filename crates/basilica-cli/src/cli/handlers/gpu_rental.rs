@@ -10,9 +10,11 @@ use crate::output::{
 };
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
-use basilica_api::api::types::{ListRentalsQuery, ResourceRequirementsRequest, SshAccess};
+use basilica_api::api::types::{
+    ExecutorSelection, GpuRequirements, ListRentalsQuery, ResourceRequirementsRequest, SshAccess,
+    StartRentalApiRequest,
+};
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
-use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
 use basilica_validator::api::types::RentalStatusResponse;
 use basilica_validator::rental::types::RentalState;
@@ -161,17 +163,31 @@ pub async fn handle_up(
 ) -> Result<()> {
     let api_client = create_authenticated_client(config).await?;
 
-    // If no target provided, fetch available executors and prompt for selection
-    let target = if let Some(t) = target {
-        t
+    // Determine whether to use direct executor ID, GPU requirements, or interactive selection
+    let executor_selection = if let Some(executor_id) = target {
+        // Direct executor ID provided
+        ExecutorSelection::ExecutorId { executor_id }
+    } else if options.gpu_type.is_some() {
+        // No executor ID, but GPU requirements specified - use automatic selection
+        let spinner = create_spinner("Using GPU requirements for automatic executor selection...");
+        complete_spinner_and_clear(spinner);
+
+        ExecutorSelection::GpuRequirements {
+            gpu_requirements: GpuRequirements {
+                min_memory_gb: 0, // Default, no minimum memory requirement
+                gpu_type: options.gpu_type.clone(),
+                gpu_count: options.gpu_min.unwrap_or(1),
+            },
+        }
     } else {
+        // No executor ID and no GPU requirements - use interactive selection
         let spinner = create_spinner("Fetching available executors...");
 
         // Build query from options
         let query = ListAvailableExecutorsQuery {
             available: Some(true),
             min_gpu_memory: None,
-            gpu_type: options.gpu_type.clone(),
+            gpu_type: None,
             min_gpu_count: options.gpu_min,
         };
 
@@ -187,7 +203,11 @@ pub async fn handle_up(
 
         // Use interactive selector to choose an executor (use compact mode for better readability)
         let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_executor(&response.available_executors, false)?
+        let selected_executor = selector.select_executor(&response.available_executors, false)?;
+
+        ExecutorSelection::ExecutorId {
+            executor_id: selected_executor,
+        }
     };
 
     let spinner = create_spinner("Preparing rental request...");
@@ -223,8 +243,8 @@ pub async fn handle_up(
         options.command
     };
 
-    let request = StartRentalRequest {
-        executor_id: target.clone(),
+    let request = StartRentalApiRequest {
+        executor_selection,
         container_image,
         ssh_public_key,
         environment: env_vars,
@@ -234,7 +254,7 @@ pub async fn handle_up(
             memory_mb: options.memory_mb.unwrap_or(1024),
             storage_mb: 102400,
             gpu_count: options.gpu_min.unwrap_or(1),
-            gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
+            gpu_types: vec![],
         },
         command,
         volumes: vec![],

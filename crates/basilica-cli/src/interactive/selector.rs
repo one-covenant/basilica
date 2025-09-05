@@ -33,7 +33,11 @@ impl InteractiveSelector {
     }
 
     /// Let user select an executor from available options
-    pub fn select_executor(&self, executors: &[AvailableExecutor], detailed: bool) -> Result<String> {
+    pub fn select_executor(
+        &self,
+        executors: &[AvailableExecutor],
+        detailed: bool,
+    ) -> Result<String> {
         if executors.is_empty() {
             return Err(CliError::not_found("No executors available"));
         }

@@ -92,6 +92,53 @@ pub struct LogStreamQuery {
     pub tail: Option<u32>,
 }
 
+/// Executor selection strategy for rental requests
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ExecutorSelection {
+    /// Select a specific executor by ID
+    ExecutorId { executor_id: String },
+    /// Select best available executor based on GPU requirements
+    GpuRequirements { gpu_requirements: GpuRequirements },
+}
+
+/// Start rental request with flexible executor selection
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct StartRentalApiRequest {
+    /// How to select the executor for this rental
+    pub executor_selection: ExecutorSelection,
+
+    /// Container image to run
+    pub container_image: String,
+
+    /// SSH public key for authentication
+    pub ssh_public_key: String,
+
+    /// Environment variables
+    #[serde(default)]
+    pub environment: std::collections::HashMap<String, String>,
+
+    /// Port mappings
+    #[serde(default)]
+    pub ports: Vec<PortMappingRequest>,
+
+    /// Resource requirements
+    #[serde(default)]
+    pub resources: ResourceRequirementsRequest,
+
+    /// Command to run
+    #[serde(default)]
+    pub command: Vec<String>,
+
+    /// Volume mounts
+    #[serde(default)]
+    pub volumes: Vec<VolumeMountRequest>,
+
+    /// Disable SSH
+    #[serde(default)]
+    pub no_ssh: bool,
+}
+
 /// Extended rental status response that includes SSH credentials from the database
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct RentalStatusWithSshResponse {
