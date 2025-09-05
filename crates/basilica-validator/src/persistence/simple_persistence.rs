@@ -260,6 +260,25 @@ impl SimplePersistence {
                 PRIMARY KEY (miner_uid, executor_id)
             );
 
+            CREATE TABLE IF NOT EXISTS executor_network_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                ip_address TEXT,
+                hostname TEXT,
+                city TEXT,
+                region TEXT,
+                country TEXT,
+                location TEXT,
+                organization TEXT,
+                postal_code TEXT,
+                timezone TEXT,
+                test_timestamp TEXT NOT NULL,
+                full_result_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
             CREATE TABLE IF NOT EXISTS weight_allocation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 miner_uid INTEGER NOT NULL,
@@ -296,6 +315,9 @@ impl SimplePersistence {
             CREATE INDEX IF NOT EXISTS idx_executor_hardware_updated ON executor_hardware_profile(updated_at);
             CREATE INDEX IF NOT EXISTS idx_executor_speedtest_miner ON executor_speedtest_profile(miner_uid);
             CREATE INDEX IF NOT EXISTS idx_executor_speedtest_timestamp ON executor_speedtest_profile(test_timestamp);
+            CREATE INDEX IF NOT EXISTS idx_executor_network_miner ON executor_network_profile(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_executor_network_timestamp ON executor_network_profile(test_timestamp);
+            CREATE INDEX IF NOT EXISTS idx_executor_network_country ON executor_network_profile(country);
             "#,
         )
         .execute(&self.pool)
@@ -2022,6 +2044,142 @@ impl SimplePersistence {
                 upload_mbps,
                 test_timestamp,
                 test_server,
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Store executor network geolocation profile information
+    #[allow(clippy::too_many_arguments)]
+    pub async fn store_executor_network_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        ip_address: Option<String>,
+        hostname: Option<String>,
+        city: Option<String>,
+        region: Option<String>,
+        country: Option<String>,
+        location: Option<String>,
+        organization: Option<String>,
+        postal_code: Option<String>,
+        timezone: Option<String>,
+        test_timestamp: &str,
+        full_result_json: &str,
+    ) -> Result<(), anyhow::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO executor_network_profile
+            (miner_uid, executor_id, ip_address, hostname, city, region, country, location, 
+             organization, postal_code, timezone, test_timestamp, full_result_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                ip_address = excluded.ip_address,
+                hostname = excluded.hostname,
+                city = excluded.city,
+                region = excluded.region,
+                country = excluded.country,
+                location = excluded.location,
+                organization = excluded.organization,
+                postal_code = excluded.postal_code,
+                timezone = excluded.timezone,
+                test_timestamp = excluded.test_timestamp,
+                full_result_json = excluded.full_result_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(ip_address.clone())
+        .bind(hostname)
+        .bind(city.clone())
+        .bind(region.clone())
+        .bind(country.clone())
+        .bind(location.clone())
+        .bind(organization.clone())
+        .bind(postal_code)
+        .bind(timezone)
+        .bind(test_timestamp)
+        .bind(full_result_json)
+        .execute(&self.pool)
+        .await?;
+
+        info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
+            ip = ip_address.unwrap_or_else(|| "Unknown".to_string()),
+            country = country.unwrap_or_else(|| "Unknown".to_string()),
+            city = city.unwrap_or_else(|| "Unknown".to_string()),
+            region = region.unwrap_or_else(|| "Unknown".to_string()),
+            organization = organization.unwrap_or_else(|| "Unknown".to_string()),
+            location = location.unwrap_or_else(|| "Unknown".to_string()),
+            "Stored network profile for executor"
+        );
+
+        Ok(())
+    }
+
+    /// Retrieve executor network profile from database
+    #[allow(clippy::type_complexity)]
+    pub async fn get_executor_network_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<
+        Option<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+        )>,
+        anyhow::Error,
+    > {
+        let row = sqlx::query(
+            r#"
+            SELECT ip_address, hostname, city, region, country, location, organization,
+                   postal_code, timezone, test_timestamp, full_result_json
+            FROM executor_network_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let full_result_json: String = row.get("full_result_json");
+            let ip_address: Option<String> = row.get("ip_address");
+            let hostname: Option<String> = row.get("hostname");
+            let city: Option<String> = row.get("city");
+            let region: Option<String> = row.get("region");
+            let country: Option<String> = row.get("country");
+            let location: Option<String> = row.get("location");
+            let organization: Option<String> = row.get("organization");
+            let postal_code: Option<String> = row.get("postal_code");
+            let timezone: Option<String> = row.get("timezone");
+            let test_timestamp: String = row.get("test_timestamp");
+
+            Ok(Some((
+                full_result_json,
+                ip_address,
+                hostname,
+                city,
+                region,
+                country,
+                location,
+                organization,
+                postal_code,
+                timezone,
+                test_timestamp,
             )))
         } else {
             Ok(None)
