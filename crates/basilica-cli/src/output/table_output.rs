@@ -181,7 +181,7 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Re
                             first_gpu.memory_gb
                         )
                     } else {
-                        format!("{} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                        format!("1x {} ({}GB)", gpu_display_name, first_gpu.memory_gb)
                     }
                 } else {
                     // List each GPU

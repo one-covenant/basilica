@@ -88,7 +88,7 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
                     } else {
                         table_output::extract_gpu_category(&gpu.name)
                     };
-                    format!("{} ({}GB)", gpu_display_name, gpu.memory_gb)
+                    format!("1x {} ({}GB)", gpu_display_name, gpu.memory_gb)
                 } else {
                     // Multiple GPUs - check if they're all the same model
                     let first_gpu = &executor.executor.gpu_specs[0];

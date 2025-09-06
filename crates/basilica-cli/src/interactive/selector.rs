@@ -74,7 +74,7 @@ impl InteractiveSelector {
                             gpu.memory_gb
                         )
                     } else {
-                        format!("{} ({}GB)", gpu_display_name, gpu.memory_gb)
+                        format!("1x {} ({}GB)", gpu_display_name, gpu.memory_gb)
                     }
                 }
             })
@@ -175,7 +175,7 @@ impl InteractiveSelector {
                 } else if *count > 1 {
                     format!("{}x {} ({}GB)", count, gpu_type, memory)
                 } else {
-                    format!("{} ({}GB)", gpu_type, memory)
+                    format!("1x {} ({}GB)", gpu_type, memory)
                 }
             })
             .collect();
@@ -263,7 +263,7 @@ impl InteractiveSelector {
                                 first_gpu.memory_gb
                             )
                         } else {
-                            format!("{} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                            format!("1x {} ({}GB)", gpu_display_name, first_gpu.memory_gb)
                         }
                     } else {
                         rental
