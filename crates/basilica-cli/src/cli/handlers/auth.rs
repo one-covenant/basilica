@@ -12,6 +12,15 @@ const SERVICE_NAME: &str = "basilica-cli";
 
 /// Handle login command
 pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
+    handle_login_with_options(device_code, config, true).await
+}
+
+/// Handle login with configurable options
+pub async fn handle_login_with_options(
+    device_code: bool,
+    config: &CliConfig,
+    show_suggestions: bool,
+) -> Result<()> {
     debug!("Starting login process, device_code: {}", device_code);
 
     println!(
@@ -116,8 +125,10 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
         }
     }
 
-    // Show helpful command suggestions
-    banner::print_command_suggestions();
+    // Show helpful command suggestions only if requested
+    if show_suggestions {
+        banner::print_command_suggestions();
+    }
 
     Ok(())
 }

@@ -3,7 +3,7 @@ use clap::{Subcommand, ValueHint};
 use std::path::PathBuf;
 
 /// Main CLI commands
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// List available GPU resources
     #[command(alias = "list")]
@@ -124,8 +124,37 @@ pub enum Commands {
     },
 }
 
+impl Commands {
+    /// Check if this command requires authentication
+    pub fn requires_auth(&self) -> bool {
+        match self {
+            // GPU rental commands require authentication
+            Commands::Ls { .. }
+            | Commands::Up { .. }
+            | Commands::Ps { .. }
+            | Commands::Status { .. }
+            | Commands::Logs { .. }
+            | Commands::Down { .. }
+            | Commands::Exec { .. }
+            | Commands::Ssh { .. }
+            | Commands::Cp { .. } => true,
+
+            // Authentication and delegation commands don't require auth
+            Commands::Login { .. }
+            | Commands::Logout
+            | Commands::Validator { .. }
+            | Commands::Miner { .. }
+            | Commands::Executor { .. } => false,
+
+            // Test auth command requires authentication
+            #[cfg(debug_assertions)]
+            Commands::TestAuth { .. } => true,
+        }
+    }
+}
+
 /// Filters for listing GPUs
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct ListFilters {
     /// Minimum GPU count
     #[arg(long)]
@@ -153,7 +182,7 @@ pub struct ListFilters {
 }
 
 /// Options for provisioning instances
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct UpOptions {
     /// GPU type requirement
     #[arg(long)]
@@ -209,7 +238,7 @@ pub struct UpOptions {
 }
 
 /// Filters for listing active rentals
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct PsFilters {
     /// Filter by status (defaults to 'active' if not specified)
     #[arg(long, value_enum)]
@@ -229,7 +258,7 @@ pub struct PsFilters {
 }
 
 /// Options for viewing logs
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct LogsOptions {
     /// Follow logs in real-time
     #[arg(short, long)]
@@ -241,7 +270,7 @@ pub struct LogsOptions {
 }
 
 /// Options for SSH connections
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct SshOptions {
     /// Local port forwarding (local_port:remote_host:remote_port)
     #[arg(short = 'L', long)]
