@@ -1,7 +1,7 @@
 use crate::auth::should_use_device_flow;
 use crate::cli::{commands::Commands, handlers};
 use crate::config::CliConfig;
-use crate::error::{CliError, Result};
+use crate::error::CliError;
 use clap::{Parser, ValueHint};
 use clap_verbosity_flag::Verbosity;
 use console::Term;
@@ -60,7 +60,7 @@ pub struct Args {
 
 impl Args {
     /// Execute the CLI command
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<(), CliError> {
         // Load config using the common loader pattern
         let config = if let Some(path) = &self.config {
             let expanded_path = expand_tilde(path);
@@ -78,12 +78,12 @@ impl Args {
     }
 
     /// Execute command with automatic login retry on authentication failure
-    async fn execute_with_auth_retry(&self, config: &CliConfig) -> Result<()> {
+    async fn execute_with_auth_retry(&self, config: &CliConfig) -> Result<(), CliError> {
         // First attempt to execute the command
         match self.execute_command(config).await {
             Err(err) => {
                 // Check if this is specifically a login_required error
-                if matches!(&err, CliError::Auth { message } if message.contains("not logged in")) {
+                if matches!(&err, CliError::Auth(_)) {
                     // Inform user we need to authenticate
                     println!("You need to authenticate to continue.");
                     println!();
@@ -112,56 +112,59 @@ impl Args {
     }
 
     /// Execute the actual command
-    async fn execute_command(&self, config: &CliConfig) -> Result<()> {
+    async fn execute_command(&self, config: &CliConfig) -> Result<(), CliError> {
         match &self.command {
             Commands::Login { device_code } => {
-                handlers::auth::handle_login(*device_code, config).await
+                handlers::auth::handle_login(*device_code, config).await?;
             }
-            Commands::Logout => handlers::auth::handle_logout(config).await,
+            Commands::Logout => handlers::auth::handle_logout(config).await?,
             #[cfg(debug_assertions)]
             Commands::TestAuth { api } => {
                 if *api {
-                    handlers::test_auth::handle_test_api_auth(config).await
+                    handlers::test_auth::handle_test_api_auth(config).await?;
                 } else {
-                    handlers::test_auth::handle_test_auth(config).await
+                    handlers::test_auth::handle_test_auth(config).await?;
                 }
             }
 
             // GPU rental operations
             Commands::Ls { filters } => {
-                handlers::gpu_rental::handle_ls(filters.clone(), self.json, config).await
+                handlers::gpu_rental::handle_ls(filters.clone(), self.json, config).await?;
             }
             Commands::Up { target, options } => {
-                handlers::gpu_rental::handle_up(target.clone(), options.clone(), config).await
+                handlers::gpu_rental::handle_up(target.clone(), options.clone(), config).await?;
             }
             Commands::Ps { filters } => {
-                handlers::gpu_rental::handle_ps(filters.clone(), self.json, config).await
+                handlers::gpu_rental::handle_ps(filters.clone(), self.json, config).await?;
             }
             Commands::Status { target } => {
-                handlers::gpu_rental::handle_status(target.clone(), self.json, config).await
+                handlers::gpu_rental::handle_status(target.clone(), self.json, config).await?;
             }
             Commands::Logs { target, options } => {
-                handlers::gpu_rental::handle_logs(target.clone(), options.clone(), config).await
+                handlers::gpu_rental::handle_logs(target.clone(), options.clone(), config).await?;
             }
             Commands::Down { target } => {
-                handlers::gpu_rental::handle_down(target.clone(), config).await
+                handlers::gpu_rental::handle_down(target.clone(), config).await?;
             }
             Commands::Exec { command, target } => {
-                handlers::gpu_rental::handle_exec(target.clone(), command.clone(), config).await
+                handlers::gpu_rental::handle_exec(target.clone(), command.clone(), config).await?;
             }
             Commands::Ssh { target, options } => {
-                handlers::gpu_rental::handle_ssh(target.clone(), options.clone(), config).await
+                handlers::gpu_rental::handle_ssh(target.clone(), options.clone(), config).await?;
             }
             Commands::Cp {
                 source,
                 destination,
-            } => handlers::gpu_rental::handle_cp(source.clone(), destination.clone(), config).await,
+            } => {
+                handlers::gpu_rental::handle_cp(source.clone(), destination.clone(), config).await?
+            }
 
             // Network component delegation
-            Commands::Validator { args } => handlers::external::handle_validator(args.clone()),
-            Commands::Miner { args } => handlers::external::handle_miner(args.clone()),
-            Commands::Executor { args } => handlers::external::handle_executor(args.clone()),
+            Commands::Validator { args } => handlers::external::handle_validator(args.clone())?,
+            Commands::Miner { args } => handlers::external::handle_miner(args.clone())?,
+            Commands::Executor { args } => handlers::external::handle_executor(args.clone())?,
         }
+        Ok(())
     }
 }
 

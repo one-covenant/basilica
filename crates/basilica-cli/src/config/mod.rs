@@ -1,12 +1,14 @@
 //! Configuration management for the Basilica CLI
 
-use crate::error::{CliError, Result};
 use basilica_common::config::loader;
+use color_eyre::eyre::{eyre, WrapErr};
 use etcetera::{choose_base_strategy, BaseStrategy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
+
+use crate::CliError;
 
 /// CLI configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -186,17 +188,16 @@ pub struct RegistrationCache {
 
 impl CliConfig {
     /// Load configuration using the common loader pattern
-    pub fn load() -> Result<Self> {
-        let mut config = loader::load_config::<Self>()
-            .map_err(|e| CliError::internal(format!("Failed to load config: {}", e)))?;
+    pub fn load() -> Result<Self, CliError> {
+        let mut config = loader::load_config::<Self>().wrap_err("Failed to load config")?;
         config.expand_paths();
         Ok(config)
     }
 
     /// Load configuration from specific file using the common loader pattern
-    pub fn load_from_file(path: &Path) -> Result<Self> {
-        let mut config = loader::load_from_file::<Self>(path)
-            .map_err(|e| CliError::internal(format!("Failed to load config from file: {}", e)))?;
+    pub fn load_from_file(path: &Path) -> Result<Self, CliError> {
+        let mut config =
+            loader::load_from_file::<Self>(path).wrap_err("Failed to load config from file")?;
         config.expand_paths();
         Ok(config)
     }
@@ -252,88 +253,27 @@ impl CliConfig {
     }
 
     /// Save configuration to specific path
-    pub async fn save_to_path(&self, path: &Path) -> Result<()> {
+    pub async fn save_to_path(&self, path: &Path) -> Result<(), CliError> {
         debug!("Saving configuration to: {}", path.display());
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(CliError::Io)?;
+                .map_err(|e| eyre!("Failed to create directory: {}", e))?;
         }
 
         // Compress paths to use tilde notation before serialization
         let compressed_config = self.compress_paths();
 
-        let content = toml::to_string_pretty(&compressed_config)
-            .map_err(|e| CliError::internal(format!("Failed to serialize config: {e}")))?;
+        let content =
+            toml::to_string_pretty(&compressed_config).wrap_err("Failed to serialize config")?;
 
         tokio::fs::write(path, content)
             .await
-            .map_err(CliError::Io)?;
+            .map_err(|e| eyre!("Failed to write config file: {}", e))?;
 
         info!("Configuration saved successfully");
-        Ok(())
-    }
-
-    /// Get configuration value by key
-    pub fn get(&self, key: &str) -> Result<String> {
-        match key {
-            "api.base_url" | "api-url" => Ok(self.api.base_url.clone()),
-            "ssh.key_path" | "ssh-key" => Ok(self.ssh.key_path.to_string_lossy().to_string()),
-            "ssh.private_key_path" | "ssh-private-key" => {
-                Ok(self.ssh.private_key_path.to_string_lossy().to_string())
-            }
-            "ssh.connection_timeout" | "ssh-timeout" => Ok(self.ssh.connection_timeout.to_string()),
-            "image.name" | "default-image" => Ok(self.image.name.clone()),
-            "wallet.default_wallet" | "default-wallet" => Ok(self.wallet.default_wallet.clone()),
-            "wallet.base_wallet_path" | "base-wallet-path" => {
-                Ok(self.wallet.base_wallet_path.to_string_lossy().to_string())
-            }
-            _ => Err(CliError::invalid_argument(format!(
-                "Unknown configuration key: {key}"
-            ))),
-        }
-    }
-
-    /// Set configuration value by key
-    pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
-        match key {
-            "api.base_url" | "api-url" => {
-                self.api.base_url = value.to_string();
-            }
-            "ssh.key_path" | "ssh-key" => {
-                self.ssh.key_path = PathBuf::from(value);
-            }
-            "ssh.private_key_path" | "ssh-private-key" => {
-                self.ssh.private_key_path = PathBuf::from(value);
-            }
-            "ssh.connection_timeout" | "ssh-timeout" => {
-                let timeout: u64 = value.parse().map_err(|_| {
-                    CliError::invalid_argument("SSH connection timeout must be a positive number")
-                })?;
-                if timeout == 0 {
-                    return Err(CliError::invalid_argument(
-                        "SSH connection timeout must be greater than 0",
-                    ));
-                }
-                self.ssh.connection_timeout = timeout;
-            }
-            "image.name" | "default-image" => {
-                self.image.name = value.to_string();
-            }
-            "wallet.default_wallet" | "default-wallet" => {
-                self.wallet.default_wallet = value.to_string();
-            }
-            "wallet.base_wallet_path" | "base-wallet-path" => {
-                self.wallet.base_wallet_path = PathBuf::from(value);
-            }
-            _ => {
-                return Err(CliError::invalid_argument(format!(
-                    "Unknown configuration key: {key}"
-                )));
-            }
-        }
         Ok(())
     }
 
@@ -396,35 +336,35 @@ impl CliConfig {
     }
 
     /// Get configuration directory
-    pub fn config_dir() -> Result<PathBuf> {
-        let strategy = choose_base_strategy().map_err(|e| {
-            CliError::internal(format!("Failed to determine base directories: {}", e))
+    pub fn config_dir() -> Result<PathBuf, CliError> {
+        let strategy = choose_base_strategy().map_err(|e| -> crate::error::CliError {
+            eyre!("Failed to determine base directories: {}", e).into()
         })?;
         Ok(strategy.config_dir().join("basilica"))
     }
 
     /// Get data directory
-    pub fn data_dir() -> Result<PathBuf> {
-        let strategy = choose_base_strategy().map_err(|e| {
-            CliError::internal(format!("Failed to determine base directories: {}", e))
+    pub fn data_dir() -> Result<PathBuf, CliError> {
+        let strategy = choose_base_strategy().map_err(|e| -> crate::error::CliError {
+            eyre!("Failed to determine base directories: {}", e).into()
         })?;
         Ok(strategy.data_dir().join("basilica"))
     }
 
     /// Get cache file path
-    pub fn cache_path() -> Result<PathBuf> {
+    pub fn cache_path() -> Result<PathBuf, CliError> {
         let config_dir = Self::config_dir()?;
         Ok(config_dir.join("cache.json"))
     }
 
     /// Get default config file path
-    pub fn default_config_path() -> Result<PathBuf> {
+    pub fn default_config_path() -> Result<PathBuf, CliError> {
         let config_dir = Self::config_dir()?;
         Ok(config_dir.join("config.toml"))
     }
 
     /// Check if config file exists at default location
-    pub fn config_exists() -> Result<bool> {
+    pub fn config_exists() -> Result<bool, CliError> {
         let path = Self::default_config_path()?;
         Ok(path.exists())
     }
@@ -432,46 +372,48 @@ impl CliConfig {
 
 impl CliCache {
     /// Load cache from default location
-    pub async fn load() -> Result<Self> {
+    pub async fn load() -> Result<Self, CliError> {
         let cache_path = CliConfig::cache_path()?;
         Self::load_from_file(&cache_path).await
     }
 
     /// Load cache from specific path
-    pub async fn load_from_file(path: &Path) -> Result<Self> {
+    pub async fn load_from_file(path: &Path) -> Result<Self, CliError> {
         if !path.exists() {
             return Ok(Self::default());
         }
 
         let content = tokio::fs::read_to_string(path)
             .await
-            .map_err(CliError::Io)?;
+            .map_err(|e| eyre!("Failed to write config file: {}", e))?;
 
-        let cache: Self = serde_json::from_str(&content).map_err(CliError::Serialization)?;
+        let cache: Self =
+            serde_json::from_str(&content).map_err(|e| eyre!("Failed to parse cache: {}", e))?;
 
         Ok(cache)
     }
 
     /// Save cache to default location
-    pub async fn save(&self) -> Result<()> {
+    pub async fn save(&self) -> Result<(), CliError> {
         let cache_path = CliConfig::cache_path()?;
         self.save_to_path(&cache_path).await
     }
 
     /// Save cache to specific path
-    pub async fn save_to_path(&self, path: &Path) -> Result<()> {
+    pub async fn save_to_path(&self, path: &Path) -> Result<(), CliError> {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(CliError::Io)?;
+                .map_err(|e| eyre!("Failed to create directory: {}", e))?;
         }
 
-        let content = serde_json::to_string_pretty(self).map_err(CliError::Serialization)?;
+        let content = serde_json::to_string_pretty(self)
+            .map_err(|e| eyre!("Failed to serialize cache: {}", e))?;
 
         tokio::fs::write(path, content)
             .await
-            .map_err(CliError::Io)?;
+            .map_err(|e| eyre!("Failed to write config file: {}", e))?;
 
         Ok(())
     }

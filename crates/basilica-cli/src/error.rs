@@ -1,206 +1,28 @@
 //! Error types for the Basilica CLI
 
+use color_eyre::eyre::Report;
 use thiserror::Error;
 
-/// Main error type for CLI operations
-#[derive(Error, Debug)]
+/// CLI error type with minimal variants
+#[derive(Debug, Error)]
 pub enum CliError {
-    #[error("Configuration error: {0}")]
-    Config(#[from] basilica_common::error::ConfigurationError),
+    /// Configuration file issues
+    #[error("Configuration error")]
+    Config(#[from] basilica_common::ConfigurationError),
 
-    #[error("API communication error: {0}")]
-    Api(#[from] reqwest::Error),
+    /// API communication errors (wraps basilica-api's ApiError)
+    #[error(transparent)]
+    Api(#[from] basilica_api::error::ApiError),
 
-    #[error("SSH operation failed: {message}")]
-    Ssh { message: String },
+    /// Authentication/authorization issues
+    #[error("Authentication required. Run 'basilica login' to authenticate")]
+    Auth(#[source] Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("Interactive operation failed: {message}")]
-    Interactive { message: String },
+    /// External component delegation
+    #[error("Failed to execute external component")]
+    DelegationComponent(#[from] std::io::Error),
 
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
-
-    #[error("{message}")]
-    Auth { message: String },
-
-    #[error("Delegation component error: {message}")]
-    DelegationComponent { message: String },
-
-    #[error("Invalid argument: {message}")]
-    InvalidArgument { message: String },
-
-    #[error("Operation not supported: {message}")]
-    NotSupported { message: String },
-
-    #[error("Resource not found: {resource}")]
-    NotFound { resource: String },
-
-    #[error("Operation timed out")]
-    Timeout,
-
-    #[error("Internal error: {0}")]
-    Internal(#[from] anyhow::Error),
-
-    #[error("Configuration not initialized: {message}")]
-    ConfigNotInitialized { message: String },
-}
-
-/// Result type alias for CLI operations
-pub type Result<T> = std::result::Result<T, CliError>;
-
-impl CliError {
-    /// Create a new SSH error
-    pub fn ssh(message: impl Into<String>) -> Self {
-        Self::Ssh {
-            message: message.into(),
-        }
-    }
-
-    /// Create a new interactive error
-    pub fn interactive(message: impl Into<String>) -> Self {
-        Self::Interactive {
-            message: message.into(),
-        }
-    }
-
-    /// Create a new authentication error
-    pub fn auth(message: impl Into<String>) -> Self {
-        Self::Auth {
-            message: message.into(),
-        }
-    }
-
-    /// Create a new delegation component error
-    pub fn delegation_component(message: impl Into<String>) -> Self {
-        Self::DelegationComponent {
-            message: message.into(),
-        }
-    }
-
-    /// Create a new invalid argument error
-    pub fn invalid_argument(message: impl Into<String>) -> Self {
-        Self::InvalidArgument {
-            message: message.into(),
-        }
-    }
-
-    /// Create a new not supported error
-    pub fn not_supported(message: impl Into<String>) -> Self {
-        Self::NotSupported {
-            message: message.into(),
-        }
-    }
-
-    /// Create a new not found error
-    pub fn not_found(resource: impl Into<String>) -> Self {
-        Self::NotFound {
-            resource: resource.into(),
-        }
-    }
-
-    /// Create a new internal error
-    pub fn internal(message: impl Into<String>) -> Self {
-        Self::Internal(anyhow::anyhow!(message.into()))
-    }
-
-    /// Create a new config not initialized error
-    pub fn config_not_initialized(message: impl Into<String>) -> Self {
-        Self::ConfigNotInitialized {
-            message: message.into(),
-        }
-    }
-
-    /// Add a helpful suggestion to any error
-    pub fn with_suggestion(self, suggestion: impl Into<String>) -> Self {
-        let suggestion = suggestion.into();
-        match self {
-            Self::Internal(err) => {
-                Self::Internal(anyhow::anyhow!("{}\n💡 Suggestion: {}", err, suggestion))
-            }
-            _ => Self::Internal(anyhow::anyhow!("{}\n💡 Suggestion: {}", self, suggestion)),
-        }
-    }
-
-    /// Add contextual information to any error
-    pub fn with_context(self, context: impl Into<String>) -> Self {
-        let context = context.into();
-        match self {
-            Self::Internal(err) => Self::Internal(anyhow::anyhow!("{}\nContext: {}", err, context)),
-            _ => Self::Internal(anyhow::anyhow!("{}\nContext: {}", self, context)),
-        }
-    }
-}
-
-/// Helper functions for common error patterns with suggestions
-impl CliError {
-    /// Create rental not found error with helpful suggestion
-    pub fn rental_not_found(rental_id: impl Into<String>) -> Self {
-        Self::not_found(format!("Rental '{}' not found", rental_id.into()))
-            .with_suggestion("Run 'basilica ps' to see active rentals")
-    }
-
-    /// Create SSH connection error with helpful suggestion
-    pub fn ssh_connection_failed(host: impl Into<String>, port: u32) -> Self {
-        Self::ssh(format!("Failed to connect to {}:{}", host.into(), port))
-            .with_suggestion("Check if the rental is still active and SSH port is exposed")
-    }
-
-    /// Create rental failed error
-    pub fn rental_failed(message: impl Into<String>) -> Self {
-        Self::Internal(anyhow::anyhow!("Rental failed: {}", message.into()))
-    }
-
-    /// Create authentication expired error with helpful suggestion
-    pub fn auth_expired() -> Self {
-        Self::auth("Authentication token has expired")
-            .with_suggestion("Run 'basilica login' to refresh your credentials")
-    }
-
-    /// Create login required error with helpful suggestions
-    pub fn login_required() -> Self {
-        Self::auth("You are not logged in. Please run 'basilica login' to authenticate")
-    }
-
-    /// Create API request failed error with helpful suggestion
-    pub fn api_request_failed(operation: impl Into<String>, error: impl Into<String>) -> Self {
-        Self::internal(format!(
-            "API request failed for {}: {}",
-            operation.into(),
-            error.into()
-        ))
-        .with_suggestion("Check your internet connection and try again")
-    }
-
-    /// Create config validation error with helpful suggestion
-    pub fn config_invalid(
-        key: impl Into<String>,
-        value: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
-        Self::invalid_argument(format!(
-            "Invalid config value for '{}': '{}' - {}",
-            key.into(),
-            value.into(),
-            reason.into()
-        ))
-        .with_suggestion("Use 'basilica config show' to see current configuration")
-    }
-
-    /// Create SSH key not found error with helpful suggestion
-    pub fn ssh_key_not_found(path: impl Into<String>) -> Self {
-        Self::invalid_argument(format!("SSH key not found at: {}", path.into()))
-            .with_suggestion("SSH keys are automatically generated during login. Run 'basilica login' to create them, or generate manually with 'ssh-keygen -t rsa -f ~/.ssh/basilica_rsa'")
-    }
-
-    /// Create executor not available error with helpful suggestion
-    pub fn executor_not_available(executor_id: impl Into<String>) -> Self {
-        Self::not_found(format!(
-            "Executor '{}' is not available",
-            executor_id.into()
-        ))
-        .with_suggestion("Run 'basilica ls' to see available executors")
-    }
+    /// Everything else (using color-eyre's Report for rich errors)
+    #[error(transparent)]
+    Internal(#[from] Report),
 }

@@ -2,16 +2,17 @@
 
 use crate::auth::{should_use_device_flow, CallbackServer, DeviceFlow, OAuthFlow, TokenStore};
 use crate::config::CliConfig;
-use crate::error::{CliError, Result};
+use crate::error::CliError;
 use crate::output::{banner, compress_path, print_success};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
+use color_eyre::eyre::{eyre, WrapErr};
 use tracing::{debug, warn};
 
 /// Service name for token storage
 const SERVICE_NAME: &str = "basilica-cli";
 
 /// Handle login command
-pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
+pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<(), CliError> {
     handle_login_with_options(device_code, config, true).await
 }
 
@@ -20,7 +21,7 @@ pub async fn handle_login_with_options(
     device_code: bool,
     config: &CliConfig,
     show_suggestions: bool,
-) -> Result<()> {
+) -> Result<(), CliError> {
     debug!("Starting login process, device_code: {}", device_code);
 
     println!(
@@ -40,16 +41,14 @@ pub async fn handle_login_with_options(
         crate::config::create_auth_config_with_port(0)
     } else {
         // Find available port for OAuth callback server
-        let port = CallbackServer::find_available_port().map_err(|e| {
-            CliError::internal(format!("Failed to find available port: {}", e))
-                .with_suggestion("Try 'basilica login --device-code' for device flow")
-        })?;
+        let port = CallbackServer::find_available_port().wrap_err(
+            "Failed to find available port. Try 'basilica login --device-code' for device flow",
+        )?;
         crate::config::create_auth_config_with_port(port)
     };
 
     // Initialize token store
-    let token_store = TokenStore::new()
-        .map_err(|e| CliError::internal(format!("Failed to initialize token store: {}", e)))?;
+    let token_store = TokenStore::new().wrap_err("Failed to initialize token store")?;
 
     let token_set = if use_device_flow {
         let spinner = create_spinner("Requesting device code...");
@@ -62,10 +61,11 @@ pub async fn handle_login_with_options(
             }
             Err(e) => {
                 complete_spinner_error(spinner, "Authentication failed");
-                return Err(CliError::auth(format!("Authentication failed: {}", e))
-                    .with_suggestion(
-                        "Try 'basilica login' without --device-code for browser flow",
-                    ));
+                return Err(CliError::Auth(Box::new(
+                    std::io::Error::other(
+                        format!("Authentication failed: {}. Try 'basilica login' without --device-code for browser flow", e)
+                    )
+                )));
             }
         }
     } else {
@@ -74,8 +74,10 @@ pub async fn handle_login_with_options(
         match oauth_flow.start_flow().await {
             Ok(tokens) => tokens,
             Err(e) => {
-                return Err(CliError::auth(format!("Authentication failed: {}", e))
-                    .with_suggestion("Try 'basilica login --device-code' for device flow"));
+                return Err(CliError::Auth(Box::new(std::io::Error::other(format!(
+                    "Authentication failed: {}. Try 'basilica login --device-code' for device flow",
+                    e
+                )))));
             }
         }
     };
@@ -85,7 +87,7 @@ pub async fn handle_login_with_options(
     // Store the tokens securely
     if let Err(e) = token_store.store_tokens(SERVICE_NAME, &token_set).await {
         complete_spinner_error(spinner, "Failed to store tokens");
-        return Err(CliError::internal(format!("Failed to store tokens: {}", e)));
+        return Err(eyre!("Failed to store tokens: {}", e).into());
     }
 
     complete_spinner_and_clear(spinner);
@@ -134,12 +136,11 @@ pub async fn handle_login_with_options(
 }
 
 /// Handle logout command
-pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
+pub async fn handle_logout(_config: &CliConfig) -> Result<(), CliError> {
     let spinner = create_spinner("Checking authentication status...");
 
     // Initialize token store
-    let token_store = TokenStore::new()
-        .map_err(|e| CliError::internal(format!("Failed to initialize token store: {}", e)))?;
+    let token_store = TokenStore::new().wrap_err("Failed to initialize token store")?;
 
     // Check if user is currently logged in and get tokens for revocation
     let tokens = match token_store.get_tokens(SERVICE_NAME).await {
@@ -184,10 +185,7 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
     // Delete stored authentication tokens
     if let Err(e) = token_store.delete_tokens(SERVICE_NAME).await {
         complete_spinner_error(spinner, "Failed to clear tokens");
-        return Err(CliError::internal(format!(
-            "Failed to clear authentication data: {}",
-            e
-        )));
+        return Err(eyre!("Failed to clear authentication data: {}", e).into());
     }
 
     complete_spinner_and_clear(spinner);

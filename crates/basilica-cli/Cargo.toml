@@ -52,6 +52,9 @@ shell-escape = "0.1"
 shellexpand = "3.1"
 etcetera = "0.8"
 
+# Error handling
+color-eyre = "0.6"
+
 # OAuth dependencies
 oauth2 = "4.4"
 axum = { workspace = true }

@@ -1,8 +1,8 @@
 //! Interactive selection utilities
 
-use crate::error::{CliError, Result};
 use basilica_api::api::types::{ApiRentalListItem, ExecutorSelection, GpuRequirements};
 use basilica_validator::api::types::AvailableExecutor;
+use color_eyre::eyre::{eyre, Result};
 use console::Term;
 use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};
 use std::collections::HashMap;
@@ -40,7 +40,7 @@ impl InteractiveSelector {
         detailed: bool,
     ) -> Result<ExecutorSelection> {
         if executors.is_empty() {
-            return Err(CliError::not_found("No executors available"));
+            return Err(eyre!("No executors available"));
         }
 
         if detailed {
@@ -109,11 +109,11 @@ impl InteractiveSelector {
             .items(&selector_items)
             .default(0)
             .interact_opt()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+            .map_err(|e| eyre!("Selection failed: {}", e))?;
 
         let selection = match selection {
             Some(s) => s,
-            None => return Err(CliError::interactive("Selection cancelled")),
+            None => return Err(eyre!("Selection cancelled")),
         };
 
         // Get the selected executor ID
@@ -185,11 +185,11 @@ impl InteractiveSelector {
             .items(&selector_items)
             .default(0)
             .interact_opt()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+            .map_err(|e| eyre!("Selection failed: {}", e))?;
 
         let selection = match selection {
             Some(s) => s,
-            None => return Err(CliError::interactive("Selection cancelled")),
+            None => return Err(eyre!("Selection cancelled")),
         };
 
         let selected_config = &gpu_configs[selection];
@@ -204,10 +204,10 @@ impl InteractiveSelector {
             .with_prompt(format!("Proceed with {}?", display_name))
             .default(true)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Confirmation failed: {e}")))?;
+            .map_err(|e| eyre!("Confirmation failed: {}", e))?;
 
         if !confirmed {
-            return Err(CliError::interactive("Selection cancelled"));
+            return Err(eyre!("Selection cancelled"));
         }
 
         // Return GPU requirements for automatic selection
@@ -233,7 +233,7 @@ impl InteractiveSelector {
     /// Let user select a single instance from active instances
     pub fn select_rental(&self, rentals: &[ApiRentalListItem], detailed: bool) -> Result<String> {
         if rentals.is_empty() {
-            return Err(CliError::not_found("No active instances"));
+            return Err(eyre!("No active instances"));
         }
 
         let items: Vec<String> = rentals
@@ -292,11 +292,11 @@ impl InteractiveSelector {
             .items(&items)
             .default(0)
             .interact_opt()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+            .map_err(|e| eyre!("Selection failed: {}", e))?;
 
         let selection = match selection {
             Some(s) => s,
-            None => return Err(CliError::interactive("Selection cancelled")),
+            None => return Err(eyre!("Selection cancelled")),
         };
 
         // Clear the selection prompt line
@@ -312,7 +312,7 @@ impl InteractiveSelector {
         rentals: &[ApiRentalListItem],
     ) -> Result<Vec<String>> {
         if rentals.is_empty() {
-            return Err(CliError::not_found("No active instances"));
+            return Err(eyre!("No active instances"));
         }
 
         let items: Vec<String> = rentals
@@ -354,10 +354,10 @@ impl InteractiveSelector {
             .with_prompt("Select instances to terminate (Space to select, Enter to confirm)")
             .items(&items)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+            .map_err(|e| eyre!("Selection failed: {}", e))?;
 
         if selections.is_empty() {
-            return Err(CliError::interactive("No instances selected"));
+            return Err(eyre!("No instances selected"));
         }
 
         let selected_ids: Vec<String> = selections
@@ -374,7 +374,7 @@ impl InteractiveSelector {
             .with_prompt(message)
             .default(false)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Confirmation failed: {e}")))?;
+            .map_err(|e| eyre!("Confirmation failed: {}", e))?;
 
         Ok(confirmed)
     }

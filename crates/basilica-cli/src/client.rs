@@ -10,8 +10,9 @@ use std::time::Duration;
 
 use crate::auth::{OAuthFlow, TokenStore};
 use crate::config::CliConfig;
-use crate::error::{CliError, Result};
+use crate::error::CliError;
 use basilica_api::client::{BasilicaClient, ClientBuilder};
+use color_eyre::eyre::{eyre, Result, WrapErr};
 use tracing::{debug, warn};
 
 /// Creates an authenticated BasilicaClient with JWT
@@ -22,7 +23,7 @@ use tracing::{debug, warn};
 ///
 /// # Arguments
 /// * `config` - CLI configuration
-pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaClient> {
+pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaClient, CliError> {
     let api_url = config.api.base_url.clone();
 
     let mut builder = ClientBuilder::default()
@@ -35,12 +36,14 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
         builder = builder.with_bearer_token(jwt_token);
     } else {
         // Provide a more helpful error message using our custom error type
-        return Err(CliError::login_required());
+        return Err(CliError::Auth(Box::new(std::io::Error::other(
+            "No authentication tokens found",
+        ))));
     }
 
     builder
         .build()
-        .map_err(|e| CliError::internal(e.to_string()))
+        .map_err(|e| eyre!("Failed to build client: {}", e).into())
 }
 
 /// Gets a valid JWT token with pre-emptive refresh
@@ -48,17 +51,17 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
 /// This function checks if the stored token needs refresh and refreshes it
 /// before returning, ensuring the API client always gets a valid token.
 async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
-    let token_store = TokenStore::new().map_err(|e| CliError::internal(e.to_string()))?;
+    let token_store = TokenStore::new().wrap_err("Failed to initialize token store")?;
 
     // Try to get stored tokens
     let mut tokens = token_store
         .retrieve("basilica-cli")
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to retrieve authentication tokens: {}", e))?
+        .wrap_err("Failed to retrieve authentication tokens")?
         .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No authentication tokens found. Please run 'basilica login' to authenticate"
-            )
+            CliError::Auth(Box::new(std::io::Error::other(
+                "No authentication tokens found",
+            )))
         })?;
 
     if tokens.needs_refresh() {
@@ -106,10 +109,10 @@ pub async fn is_authenticated() -> bool {
 
 /// Clears stored authentication tokens
 pub async fn clear_authentication() -> Result<()> {
-    let token_store = TokenStore::new().map_err(|e| CliError::internal(e.to_string()))?;
+    let token_store = TokenStore::new().wrap_err("Failed to initialize token store")?;
     token_store
         .delete_tokens("basilica-cli")
         .await
-        .map_err(|e| CliError::internal(e.to_string()))?;
+        .wrap_err("Failed to delete authentication tokens")?;
     Ok(())
 }

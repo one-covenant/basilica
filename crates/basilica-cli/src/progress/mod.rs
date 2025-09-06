@@ -127,8 +127,10 @@ pub fn complete_spinner_success(spinner: ProgressBar, message: &str) {
 }
 
 /// Finish spinner with error and clear
-pub fn complete_spinner_error(spinner: ProgressBar, message: &str) {
-    spinner.finish_with_message(format!("✗ {}", message));
+pub fn complete_spinner_error(spinner: ProgressBar, _message: &str) {
+    // Clear the spinner completely instead of leaving error message
+    // The error will be displayed through the error handling system
+    spinner.finish_and_clear();
 }
 
 /// Clear spinner completely without leaving any message

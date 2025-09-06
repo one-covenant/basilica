@@ -4,7 +4,6 @@ use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::cli::handlers::gpu_rental_helpers::resolve_target_rental;
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
-use crate::error::{CliError, Result};
 use crate::output::{
     compress_path, json_output, print_error, print_info, print_success, table_output,
 };
@@ -14,10 +13,13 @@ use basilica_api::api::types::{
     ExecutorSelection, GpuRequirements, ListRentalsQuery, ResourceRequirementsRequest, SshAccess,
     StartRentalApiRequest,
 };
+use basilica_api::error::ApiError;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
 use basilica_validator::api::types::RentalStatusResponse;
 use basilica_validator::rental::types::RentalState;
+use color_eyre::eyre::{eyre, Result};
+use color_eyre::Help;
 use console::style;
 use reqwest::StatusCode;
 use std::path::PathBuf;
@@ -42,10 +44,7 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
     let response = api_client
         .list_available_executors(Some(query))
         .await
-        .map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to fetch executors");
-            CliError::api_request_failed("list available executors", e.to_string())
-        })?;
+        .inspect_err(|_| complete_spinner_error(spinner.clone(), "Failed to fetch executors"))?;
 
     complete_spinner_and_clear(spinner);
 
@@ -194,9 +193,9 @@ pub async fn handle_up(
         let response = api_client
             .list_available_executors(Some(query))
             .await
-            .map_err(|e| {
+            .map_err(|e| -> crate::error::CliError {
                 complete_spinner_error(spinner.clone(), "Failed to fetch executors");
-                CliError::api_request_failed("list available executors", e.to_string())
+                eyre!("API request failed for list available executors: {}", e).into()
             })?;
 
         complete_spinner_and_clear(spinner);
@@ -217,7 +216,7 @@ pub async fn handle_up(
     let container_image = options.image.unwrap_or_else(|| config.image.name.clone());
 
     let env_vars = parse_env_vars(&options.env)
-        .map_err(|e| CliError::invalid_argument(e.to_string()))
+        .map_err(|e| eyre!("Invalid argument: {}", e.to_string()))
         .inspect_err(|_e| {
             complete_spinner_error(spinner.clone(), "Environment variable parsing failed");
         })?;
@@ -225,7 +224,7 @@ pub async fn handle_up(
     // Parse port mappings if provided
     let port_mappings: Vec<basilica_api::api::types::PortMappingRequest> =
         parse_port_mappings(&options.ports)
-            .map_err(|e| CliError::invalid_argument(e.to_string()))
+            .map_err(|e| eyre!("Invalid argument: {}", e.to_string()))
             .inspect_err(|_e| {
                 complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
             })?
@@ -258,11 +257,10 @@ pub async fn handle_up(
     };
 
     spinner.set_message("Creating rental...");
-    let response = api_client.start_rental(request).await.map_err(|e| {
-        complete_spinner_error(spinner.clone(), "Failed to create rental");
-        CliError::api_request_failed("start rental", e.to_string())
-            .with_suggestion("Ensure the executor is available and try again")
-    })?;
+    let response = api_client
+        .start_rental(request)
+        .await
+        .inspect_err(|_| complete_spinner_error(spinner.clone(), "Failed to create rental"))?;
 
     complete_spinner_and_clear(spinner);
 
@@ -362,10 +360,10 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
         min_gpu_count: filters.min_gpu_count,
     });
 
-    let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
-        complete_spinner_error(spinner.clone(), "Failed to load rentals");
-        CliError::api_request_failed("list rentals", e.to_string())
-    })?;
+    let rentals_list = api_client
+        .list_rentals(query)
+        .await
+        .inspect_err(|_| complete_spinner_error(spinner.clone(), "Failed to load rentals"))?;
 
     complete_spinner_and_clear(spinner);
 
@@ -392,7 +390,16 @@ pub async fn handle_status(target: Option<String>, json: bool, config: &CliConfi
 
     let status = api_client.get_rental_status(&target).await.map_err(|e| {
         complete_spinner_error(spinner.clone(), "Failed to get status");
-        CliError::api_request_failed("get rental status", e.to_string())
+        match e {
+            ApiError::NotFound { .. } => eyre!("Rental not found")
+                .wrap_err(format!(
+                    "The rental '{}' does not exist or has expired",
+                    target
+                ))
+                .note("Try 'basilica ps' to see your active rentals")
+                .note("For more options, run 'basilica help status'"),
+            _ => eyre!(e),
+        }
     })?;
 
     complete_spinner_and_clear(spinner);
@@ -432,10 +439,7 @@ pub async fn handle_logs(
     let response = api_client
         .get_rental_logs(&target, options.follow, options.tail)
         .await
-        .map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to connect to logs");
-            CliError::api_request_failed("get rental logs", e.to_string())
-        })?;
+        .inspect_err(|_| complete_spinner_error(spinner.clone(), "Failed to connect to logs"))?;
 
     // Check content type
     let content_type = response
@@ -455,11 +459,15 @@ pub async fn handle_logs(
         complete_spinner_error(spinner, "Failed to get logs");
 
         if status == StatusCode::NOT_FOUND {
-            return Err(CliError::rental_not_found(target));
+            return Err(eyre!(
+                "Rental '{}' not found. Run 'basilica ps' to see active rentals",
+                target
+            ));
         } else {
-            return Err(CliError::api_request_failed(
-                "get logs",
-                format!("status {}: {}", status, body),
+            return Err(eyre!(
+                "API request failed for get logs: status {}: {}",
+                status,
+                body
             ));
         }
     }
@@ -527,20 +535,21 @@ pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<(
     // Single rental - use spinner
     let spinner = create_spinner(&format!("Terminating rental: {}", rental_id));
 
-    match api_client
-        .stop_rental(&rental_id)
-        .await
-        .map_err(|e| CliError::api_request_failed("stop rental", e.to_string()))
-    {
-        Ok(_) => {
-            complete_spinner_and_clear(spinner);
-            print_success(&format!("Successfully stopped rental: {}", rental_id));
+    api_client.stop_rental(&rental_id).await.map_err(|e| {
+        complete_spinner_error(spinner.clone(), "Failed to terminate rental");
+        match e {
+            ApiError::NotFound { .. } => eyre!("Rental not found")
+                .wrap_err(format!(
+                    "The rental '{}' does not exist or has already been terminated",
+                    rental_id
+                ))
+                .note("Try 'basilica ps' to see your active rentals"),
+            _ => eyre!(e).wrap_err(format!("Failed to stop rental '{}'", rental_id)),
         }
-        Err(e) => {
-            complete_spinner_error(spinner, "Failed to terminate rental");
-            print_error(&format!("Failed to stop rental {}: {e}", rental_id));
-        }
-    }
+    })?;
+
+    complete_spinner_and_clear(spinner);
+    print_success(&format!("Successfully stopped rental: {}", rental_id));
 
     Ok(())
 }
@@ -563,13 +572,26 @@ pub async fn handle_exec(
     let rental_status = api_client
         .get_rental_status(&target)
         .await
-        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
+        .map_err(|e| match e {
+            ApiError::NotFound { .. } => eyre!("Rental not found")
+                .wrap_err(format!(
+                    "The rental '{}' does not exist or has expired",
+                    target
+                ))
+                .note("Try 'basilica ps' to see your active rentals"),
+            _ => eyre!(e).wrap_err(format!("Failed to get rental status for '{}'", target)),
+        })?;
 
     // Extract SSH credentials from response
-    let ssh_credentials = rental_status.ssh_credentials
-        .ok_or_else(|| CliError::not_supported(
-            "SSH credentials not available for this rental. This rental may have been created with --no-ssh flag."
-        ))?;
+    let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {
+        eyre!("SSH credentials not available")
+            .wrap_err(format!(
+                "The rental '{}' was created without SSH access",
+                target
+            ))
+            .note("Rentals created with --no-ssh flag cannot be accessed via SSH")
+            .note("Create a new rental without --no-ssh to enable SSH access")
+    })?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -581,7 +603,8 @@ pub async fn handle_exec(
 
     // Use SSH client to execute command
     let ssh_client = SshClient::new(&config.ssh)?;
-    ssh_client.execute_command(&ssh_access, &command).await
+    ssh_client.execute_command(&ssh_access, &command).await?;
+    Ok(())
 }
 
 /// Handle the `ssh` command - SSH into instances
@@ -602,13 +625,26 @@ pub async fn handle_ssh(
     let rental_status = api_client
         .get_rental_status(&target)
         .await
-        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
+        .map_err(|e| match e {
+            ApiError::NotFound { .. } => eyre!("Rental not found")
+                .wrap_err(format!(
+                    "The rental '{}' does not exist or has expired",
+                    target
+                ))
+                .note("Try 'basilica ps' to see your active rentals"),
+            _ => eyre!(e).wrap_err(format!("Failed to get rental status for '{}'", target)),
+        })?;
 
     // Extract SSH credentials from response
-    let ssh_credentials = rental_status.ssh_credentials
-        .ok_or_else(|| CliError::not_supported(
-            "SSH credentials not available for this rental. This rental may have been created with --no-ssh flag."
-        ))?;
+    let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {
+        eyre!("SSH credentials not available")
+            .wrap_err(format!(
+                "The rental '{}' was created without SSH access",
+                target
+            ))
+            .note("Rentals created with --no-ssh flag cannot be accessed via SSH")
+            .note("Create a new rental without --no-ssh to enable SSH access")
+    })?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -624,7 +660,8 @@ pub async fn handle_ssh(
     // Open interactive session with port forwarding options
     ssh_client
         .interactive_session_with_options(&ssh_access, &options)
-        .await
+        .await?;
+    Ok(())
 }
 
 /// Handle the `cp` command - copy files via SSH
@@ -649,9 +686,7 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
             (rental, true, source_path, dest_path)
         }
         (Some(_), Some(_)) => {
-            return Err(CliError::not_supported(
-                "Remote-to-remote copy not supported",
-            ));
+            return Err(eyre!("Remote-to-remote copy not supported"));
         }
         (None, None) => {
             // No rental ID provided, need to prompt user
@@ -660,7 +695,7 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
 
             // Resolve target rental with SSH requirement
             let selected_rental = resolve_target_rental(None, &api_client, true).await
-                .map_err(|e| e.with_suggestion("Specify rental ID explicitly: 'basilica cp <rental_id>:<path> <local_path>' or vice versa"))?;
+                .map_err(|_| eyre!("No rental ID provided. Specify rental ID explicitly: 'basilica cp <rental_id>:<path> <local_path>' or vice versa"))?;
 
             // Determine direction based on source file existence
             if source_exists {
@@ -677,14 +712,26 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
     let rental_status = api_client
         .get_rental_status(&rental_id)
         .await
-        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
+        .map_err(|e| match e {
+            ApiError::NotFound { .. } => eyre!("Rental not found")
+                .wrap_err(format!(
+                    "The rental '{}' does not exist or has expired",
+                    rental_id
+                ))
+                .note("Try 'basilica ps' to see your active rentals"),
+            _ => eyre!(e).wrap_err(format!("Failed to get rental status for '{}'", rental_id)),
+        })?;
 
     // Extract SSH credentials from response
-    let ssh_credentials = rental_status.ssh_credentials
-        .ok_or_else(|| CliError::not_supported(format!(
-            "SSH credentials not available for rental {}. This rental may have been created with --no-ssh flag.",
-            rental_id
-        )))?;
+    let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {
+        eyre!("SSH credentials not available")
+            .wrap_err(format!(
+                "The rental '{}' was created without SSH access",
+                rental_id
+            ))
+            .note("Rentals created with --no-ssh flag cannot be accessed via SSH")
+            .note("Create a new rental without --no-ssh to enable SSH access")
+    })?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -695,16 +742,18 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
     };
 
     // Use SSH client for file transfer
-    let ssh_client = SshClient::new(&config.ssh)?;
+    let ssh_client = SshClient::new(&config.ssh).map_err(|e| eyre!(e))?;
 
     if is_upload {
         ssh_client
             .upload_file(&ssh_access, &local_path, &remote_path)
             .await
+            .map_err(|e| eyre!(e))
     } else {
         ssh_client
             .download_file(&ssh_access, &remote_path, &local_path)
             .await
+            .map_err(|e| eyre!(e))
     }
 }
 
@@ -745,13 +794,15 @@ async fn poll_rental_status(
                     }
                     RentalStatus::Failed => {
                         complete_spinner_error(spinner, "Rental failed to start");
-                        return Err(CliError::rental_failed(
+                        return Err(eyre!(
+                            "Rental failed: {}",
                             "Rental failed during initialization",
                         ));
                     }
                     RentalStatus::Terminated => {
                         complete_spinner_error(spinner, "Rental was terminated");
-                        return Err(CliError::rental_failed(
+                        return Err(eyre!(
+                            "Rental failed: {}",
                             "Rental was terminated before becoming active",
                         ));
                     }
@@ -827,8 +878,12 @@ fn display_ssh_connection_instructions(
 fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result<String> {
     let path = key_path.as_ref().unwrap_or(&config.ssh.key_path);
 
-    std::fs::read_to_string(path)
-        .map_err(|_| CliError::ssh_key_not_found(path.display().to_string()))
+    std::fs::read_to_string(path).map_err(|_| {
+        eyre!(
+            "SSH key not found at: {}. Run \'basilica login\' to generate keys",
+            path.display().to_string()
+        )
+    })
 }
 
 fn split_remote_path(path: &str) -> (Option<String>, String) {

@@ -1,8 +1,8 @@
 //! Table formatting for CLI output
 
-use crate::error::Result;
 use basilica_api::api::types::{ApiRentalListItem, ExecutorDetails, RentalStatusResponse};
 use chrono::{DateTime, Local};
+use color_eyre::eyre::Result;
 use std::collections::HashMap;
 use tabled::{settings::Style, Table, Tabled};
 
