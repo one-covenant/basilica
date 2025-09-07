@@ -13,7 +13,7 @@ use crate::ssh::{parse_ssh_credentials, SshClient};
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_sdk::types::{
     ListAvailableExecutorsQuery, ListRentalsQuery, RentalState, RentalStatusResponse,
-    ResourceRequirementsRequest, StartRentalRequest, SshAccess,
+    ResourceRequirementsRequest, SshAccess, StartRentalRequest,
 };
 use console::style;
 use reqwest::StatusCode;

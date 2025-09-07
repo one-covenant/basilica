@@ -38,8 +38,8 @@ use crate::{
     },
     error::{ApiError, ErrorResponse, Result},
     types::{
-        ApiListRentalsResponse, HealthCheckResponse, ListAvailableExecutorsQuery,
-        ListRentalsQuery, RentalStatusWithSshResponse, StartRentalRequest,
+        ApiListRentalsResponse, HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
+        RentalStatusWithSshResponse, StartRentalRequest,
     },
 };
 use basilica_validator::api::types::ListAvailableExecutorsResponse;

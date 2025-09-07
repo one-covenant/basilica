@@ -1,7 +1,7 @@
 //! Table formatting for CLI output
 
 use crate::error::Result;
-use basilica_sdk::types::{ExecutorDetails, RentalStatusResponse, ApiRentalListItem};
+use basilica_sdk::types::{ApiRentalListItem, ExecutorDetails, RentalStatusResponse};
 use chrono::{DateTime, Local};
 use std::collections::HashMap;
 use tabled::{settings::Style, Table, Tabled};
