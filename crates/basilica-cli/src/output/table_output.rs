@@ -1,9 +1,10 @@
 //! Table formatting for CLI output
 
 use basilica_api::api::types::{ApiRentalListItem, ExecutorDetails, RentalStatusResponse};
+use basilica_validator::gpu::GpuCategory;
 use chrono::{DateTime, Local};
 use color_eyre::eyre::Result;
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 use tabled::{settings::Style, Table, Tabled};
 
 /// Format RFC3339 timestamp to YY-MM-DD HH:MM:SS format
@@ -98,39 +99,6 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
     Ok(())
 }
 
-/// Extract GPU category from full GPU name
-pub fn extract_gpu_category(gpu_name: &str) -> String {
-    let name_upper = gpu_name.to_uppercase();
-
-    // Common GPU categories to look for
-    let categories = [
-        "H100", "H200", "B200", "B100", "A100", "A6000", "A40", "A30", "A10", "RTX 4090",
-        "RTX 4080", "RTX 3090", "RTX 3080", "V100", "T4", "L4", "L40", "L40S",
-    ];
-
-    for category in &categories {
-        if name_upper.contains(category) {
-            return category.to_string();
-        }
-    }
-
-    // If no known category found, try to extract the model name
-    // Remove common prefixes
-    let cleaned = name_upper
-        .replace("NVIDIA", "")
-        .replace("GEFORCE", "")
-        .replace("TESLA", "")
-        .trim()
-        .to_string();
-
-    // Return first word/token as category
-    cleaned
-        .split_whitespace()
-        .next()
-        .unwrap_or("Unknown")
-        .to_string()
-}
-
 /// Display rental items in table format
 pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Result<()> {
     #[derive(Tabled)]
@@ -170,7 +138,7 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Re
                         first_gpu.name.clone()
                     } else {
                         // Compact mode: show categorized name
-                        extract_gpu_category(&first_gpu.name)
+                        GpuCategory::from_str(&first_gpu.name).unwrap().to_string()
                     };
 
                     if rental.gpu_specs.len() > 1 {
@@ -192,7 +160,7 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Re
                             let display_name = if detailed {
                                 g.name.clone()
                             } else {
-                                extract_gpu_category(&g.name)
+                                GpuCategory::from_str(&g.name).unwrap().to_string()
                             };
                             format!("{} ({}GB)", display_name, g.memory_gb)
                         })

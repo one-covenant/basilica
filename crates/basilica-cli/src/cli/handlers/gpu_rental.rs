@@ -18,12 +18,14 @@ use basilica_api::error::ApiError;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
 use basilica_validator::api::types::RentalStatusResponse;
+use basilica_validator::gpu::GpuCategory;
 use basilica_validator::rental::types::RentalState;
 use color_eyre::eyre::{eyre, Result};
 use color_eyre::Section;
 use console::style;
 use reqwest::StatusCode;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 use tabled::{settings::Style, Table, Tabled};
 use tracing::debug;
@@ -97,7 +99,7 @@ pub async fn handle_ls(
                     let gpu_display_name = if filters.detailed {
                         gpu.name.clone()
                     } else {
-                        table_output::extract_gpu_category(&gpu.name)
+                        GpuCategory::from_str(&gpu.name).unwrap().to_string()
                     };
                     format!("1x {} ({}GB)", gpu_display_name, gpu.memory_gb)
                 } else {
@@ -113,7 +115,7 @@ pub async fn handle_ls(
                         let gpu_display_name = if filters.detailed {
                             first_gpu.name.clone()
                         } else {
-                            table_output::extract_gpu_category(&first_gpu.name)
+                            GpuCategory::from_str(&first_gpu.name).unwrap().to_string()
                         };
                         format!(
                             "{}x {} ({}GB)",
@@ -131,7 +133,7 @@ pub async fn handle_ls(
                                 let display_name = if filters.detailed {
                                     g.name.clone()
                                 } else {
-                                    table_output::extract_gpu_category(&g.name)
+                                    GpuCategory::from_str(&g.name).unwrap().to_string()
                                 };
                                 format!("{} ({}GB)", display_name, g.memory_gb)
                             })

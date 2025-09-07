@@ -2,10 +2,12 @@
 
 use basilica_api::api::types::{ApiRentalListItem, ExecutorSelection, GpuRequirements};
 use basilica_validator::api::types::AvailableExecutor;
+use basilica_validator::gpu::GpuCategory;
 use color_eyre::eyre::{eyre, Result};
 use console::Term;
 use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 /// Interactive selector for CLI operations
 pub struct InteractiveSelector {
@@ -19,18 +21,6 @@ impl InteractiveSelector {
         let theme = ColorfulTheme::default();
         // The theme already has good defaults, we can customize if needed
         Self { theme }
-    }
-
-    /// Get GPU use case description based on GPU model
-    fn get_gpu_use_case(gpu_name: &str) -> &'static str {
-        match gpu_name {
-            name if name.contains("H100") => "High-end training & inference",
-            name if name.contains("H200") => "High-end training & inference",
-            name if name.contains("A100") => "Training & large model inference",
-            name if name.contains("RTX 4090") => "Development & prototyping",
-            name if name.contains("RTX 4080") => "Development & prototyping",
-            _ => "General GPU compute",
-        }
     }
 
     /// Let user select an executor from available options
@@ -98,7 +88,7 @@ impl InteractiveSelector {
                     )
                 } else {
                     let gpu = &executor.executor.gpu_specs[0];
-                    let use_case = Self::get_gpu_use_case(&gpu.name);
+                    let use_case = GpuCategory::from_str(&gpu.name).unwrap().description();
                     format!("{:<width$} {}", gpu_info, use_case, width = padding)
                 }
             })
@@ -139,9 +129,10 @@ impl InteractiveSelector {
                 "no_gpu".to_string()
             } else {
                 let gpu = &executor.executor.gpu_specs[0];
-                let gpu_category = crate::output::table_output::extract_gpu_category(&gpu.name);
+                let category = GpuCategory::from_str(&gpu.name)
+                    .unwrap_or(GpuCategory::Other(gpu.name.clone()));
                 let gpu_count = executor.executor.gpu_specs.len() as u32;
-                format!("{}_{}_{}GB", gpu_count, gpu_category, gpu.memory_gb)
+                format!("{}_{}_{}GB", gpu_count, category, gpu.memory_gb)
             };
 
             gpu_groups.entry(key).or_insert_with(|| {
@@ -149,9 +140,10 @@ impl InteractiveSelector {
                     ("".to_string(), 0, 0)
                 } else {
                     let gpu = &executor.executor.gpu_specs[0];
-                    let gpu_category = crate::output::table_output::extract_gpu_category(&gpu.name);
+                    let category = GpuCategory::from_str(&gpu.name)
+                        .unwrap_or(GpuCategory::Other(gpu.name.clone()));
                     let gpu_count = executor.executor.gpu_specs.len() as u32;
-                    (gpu_category, gpu_count, gpu.memory_gb)
+                    (category.to_string(), gpu_count, gpu.memory_gb)
                 }
             });
         }
@@ -166,16 +158,23 @@ impl InteractiveSelector {
             a.1.cmp(&b.1).then(a.2.cmp(&b.2)).then(a.3.cmp(&b.3))
         });
 
-        // Create display items
+        // Create display items with GPU use case descriptions
         let selector_items: Vec<String> = gpu_configs
             .iter()
             .map(|(_, gpu_type, count, memory)| {
                 if gpu_type.is_empty() {
-                    "No GPUs - General compute".to_string()
-                } else if *count > 1 {
-                    format!("{}x {} ({}GB)", count, gpu_type, memory)
+                    format!("{:<30} {}", "No GPUs", "General compute")
                 } else {
-                    format!("1x {} ({}GB)", gpu_type, memory)
+                    let gpu_info = if *count > 1 {
+                        format!("{}x {} ({}GB)", count, gpu_type, memory)
+                    } else {
+                        format!("1x {} ({}GB)", gpu_type, memory)
+                    };
+                    // Parse the category string directly to get the enum and its description
+                    let category = GpuCategory::from_str(gpu_type)
+                        .unwrap_or(GpuCategory::Other(gpu_type.to_string()));
+                    let use_case = category.description();
+                    format!("{:<30} {}", gpu_info, use_case)
                 }
             })
             .collect();
@@ -253,7 +252,9 @@ impl InteractiveSelector {
                         let gpu_display_name = if detailed {
                             first_gpu.name.clone()
                         } else {
-                            crate::output::table_output::extract_gpu_category(&first_gpu.name)
+                            let category = GpuCategory::from_str(&first_gpu.name)
+                                .unwrap_or(GpuCategory::Other(first_gpu.name.clone()));
+                            category.to_string()
                         };
                         if rental.gpu_specs.len() > 1 {
                             format!(
@@ -273,7 +274,9 @@ impl InteractiveSelector {
                                 let display_name = if detailed {
                                     g.name.clone()
                                 } else {
-                                    crate::output::table_output::extract_gpu_category(&g.name)
+                                    let category = GpuCategory::from_str(&g.name)
+                                        .unwrap_or(GpuCategory::Other(g.name.clone()));
+                                    category.to_string()
                                 };
                                 format!("{} ({}GB)", display_name, g.memory_gb)
                             })
