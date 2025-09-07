@@ -7,6 +7,7 @@ use basilica_common::ssh::{
     StandardSshClient,
 };
 use color_eyre::eyre::{eyre, Result, WrapErr};
+use color_eyre::Section;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, info, warn};
@@ -53,7 +54,9 @@ impl SshClient {
             return Err(eyre!(
                 "SSH private key not found at: {}",
                 private_key_path.display()
-            ));
+            )
+            .suggestion("SSH keys are automatically generated during login. Run 'basilica login' to create them")
+            .note("Or generate manually with 'ssh-keygen -t rsa -f ~/.ssh/basilica_rsa'"));
         }
 
         Ok(SshConnectionDetails {
@@ -77,7 +80,11 @@ impl SshClient {
             .client
             .execute_command(&details, command, true)
             .await
-            .map_err(|e| eyre!("Command execution failed: {}", e))?;
+            .map_err(|e| {
+                eyre!("Command execution failed: {}", e)
+                    .suggestion("Check if the rental is still active and SSH port is exposed")
+                    .note("Run 'basilica status <rental-id>' to check rental status")
+            })?;
 
         println!("{}", output);
         Ok(())
@@ -122,14 +129,18 @@ impl SshClient {
             .arg("LogLevel=error")
             .arg(format!("{}@{}", details.username, details.host));
 
-        let status = cmd
-            .status()
-            .map_err(|e| eyre!("Failed to start SSH session: {}", e))?;
+        let status = cmd.status().map_err(|e| {
+            eyre!("Failed to start SSH session: {}", e)
+                .suggestion("Check your SSH key permissions and network connectivity")
+                .note("Ensure the rental is active and accessible")
+        })?;
 
         // Only treat exit code 255 as an SSH error (SSH's own error code)
         // Other exit codes are from the remote command
         if status.code() == Some(255) {
-            return Err(eyre!("SSH connection failed"));
+            return Err(eyre!("SSH connection failed")
+                .suggestion("Check if the rental is still active and SSH port is exposed")
+                .note("Run 'basilica status <rental-id>' to check rental status"));
         }
 
         Ok(())
@@ -259,14 +270,18 @@ impl SshClient {
         // Add the target host
         cmd.arg(format!("{}@{}", details.username, details.host));
 
-        let status = cmd
-            .status()
-            .map_err(|e| eyre!("Failed to start SSH session: {}", e))?;
+        let status = cmd.status().map_err(|e| {
+            eyre!("Failed to start SSH session: {}", e)
+                .suggestion("Check your SSH key permissions and network connectivity")
+                .note("Ensure the rental is active and accessible")
+        })?;
 
         // Only treat exit code 255 as an SSH error (SSH's own error code)
         // Other exit codes are from the remote command and should be ignored
         if status.code() == Some(255) {
-            return Err(eyre!("SSH connection failed"));
+            return Err(eyre!("SSH connection failed")
+                .suggestion("Check if the rental is still active and SSH port is exposed")
+                .note("Run 'basilica status <rental-id>' to check rental status"));
         }
 
         Ok(())
@@ -287,7 +302,11 @@ impl SshClient {
         self.client
             .upload_file(&details, local, remote_path)
             .await
-            .map_err(|e| eyre!("File upload failed: {}", e))?;
+            .map_err(|e| {
+                eyre!("File upload failed: {}", e)
+                    .suggestion("Check file permissions and available disk space on the rental")
+                    .note("Ensure the local file exists and is readable")
+            })?;
 
         info!("Upload completed successfully");
         Ok(())
@@ -308,7 +327,11 @@ impl SshClient {
         self.client
             .download_file(&details, remote_path, local)
             .await
-            .map_err(|e| eyre!("File download failed: {}", e))?;
+            .map_err(|e| {
+                eyre!("File download failed: {}", e)
+                    .suggestion("Check that the remote file exists and you have read permissions")
+                    .note("Ensure the destination directory is writable")
+            })?;
 
         info!("Download completed successfully");
         Ok(())

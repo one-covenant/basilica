@@ -14,12 +14,13 @@ use basilica_api::api::types::{
     ExecutorSelection, GpuRequirements, ListRentalsQuery, ResourceRequirementsRequest, SshAccess,
     StartRentalApiRequest,
 };
+use basilica_api::error::ApiError;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
 use basilica_validator::api::types::RentalStatusResponse;
 use basilica_validator::rental::types::RentalState;
 use color_eyre::eyre::{eyre, Result};
-use color_eyre::Help;
+use color_eyre::Section;
 use console::style;
 use reqwest::StatusCode;
 use std::path::PathBuf;
@@ -48,7 +49,14 @@ pub async fn handle_ls(
     let response = api_client
         .list_available_executors(Some(query))
         .await
-        .inspect_err(|_| complete_spinner_error(spinner.clone(), "Failed to fetch executors"))?;
+        .map_err(|e| -> CliError {
+            complete_spinner_error(spinner.clone(), "Failed to fetch executors");
+            CliError::Internal(
+                eyre!(e)
+                    .suggestion("Check your internet connection and try again")
+                    .note("If this persists, executors may be temporarily unavailable"),
+            )
+        })?;
 
     complete_spinner_and_clear(spinner);
 
@@ -264,7 +272,14 @@ pub async fn handle_up(
     let response = api_client
         .start_rental(request)
         .await
-        .inspect_err(|_| complete_spinner_error(spinner.clone(), "Failed to create rental"))?;
+        .map_err(|e| -> CliError {
+            complete_spinner_error(spinner.clone(), "Failed to create rental");
+            CliError::Internal(
+                eyre!(e)
+                    .suggestion("Ensure the executor is available and try again")
+                    .note("Run 'basilica ls' to see available executors"),
+            )
+        })?;
 
     complete_spinner_and_clear(spinner);
 
@@ -399,8 +414,15 @@ pub async fn handle_status(
     let status = api_client
         .get_rental_status(&target)
         .await
-        .inspect_err(|_| {
+        .map_err(|e| -> CliError {
             complete_spinner_error(spinner.clone(), "Failed to get status");
+            let report = match e {
+                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", target)
+                    .suggestion("Try 'basilica ps' to see your active rentals")
+                    .note("The rental may have expired or been terminated"),
+                _ => eyre!(e).suggestion("Check your internet connection and try again"),
+            };
+            CliError::Internal(report)
         })?;
 
     complete_spinner_and_clear(spinner);
@@ -538,9 +560,19 @@ pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<(
     // Single rental - use spinner
     let spinner = create_spinner(&format!("Terminating rental: {}", rental_id));
 
-    api_client.stop_rental(&rental_id).await.inspect_err(|_| {
-        complete_spinner_error(spinner.clone(), "Failed to terminate rental");
-    })?;
+    api_client
+        .stop_rental(&rental_id)
+        .await
+        .map_err(|e| -> CliError {
+            complete_spinner_error(spinner.clone(), "Failed to terminate rental");
+            let report = match e {
+                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", rental_id)
+                    .suggestion("Try 'basilica ps' to see your active rentals")
+                    .note("The rental may have already been terminated"),
+                _ => eyre!(e).suggestion("Check your internet connection and try again"),
+            };
+            CliError::Internal(report)
+        })?;
 
     complete_spinner_and_clear(spinner);
     print_success(&format!("Successfully stopped rental: {}", rental_id));
@@ -563,7 +595,17 @@ pub async fn handle_exec(
     debug!("Executing command on rental: {}", target);
 
     // Get rental status from API which includes SSH credentials
-    let rental_status = api_client.get_rental_status(&target).await?;
+    let rental_status = api_client
+        .get_rental_status(&target)
+        .await
+        .map_err(|e| -> CliError {
+            let report = match e {
+                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", target)
+                    .suggestion("Try 'basilica ps' to see your active rentals"),
+                _ => eyre!(e).suggestion("Check your internet connection and try again"),
+            };
+            CliError::Internal(report)
+        })?;
 
     // Extract SSH credentials from response
     let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {
@@ -605,7 +647,17 @@ pub async fn handle_ssh(
     debug!("Opening SSH connection to rental: {}", target);
 
     // Get rental status from API which includes SSH credentials
-    let rental_status = api_client.get_rental_status(&target).await?;
+    let rental_status = api_client
+        .get_rental_status(&target)
+        .await
+        .map_err(|e| -> CliError {
+            let report = match e {
+                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", target)
+                    .suggestion("Try 'basilica ps' to see your active rentals"),
+                _ => eyre!(e).suggestion("Check your internet connection and try again"),
+            };
+            CliError::Internal(report)
+        })?;
 
     // Extract SSH credentials from response
     let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {
@@ -687,7 +739,18 @@ pub async fn handle_cp(
     };
 
     // Get rental status from API which includes SSH credentials
-    let rental_status = api_client.get_rental_status(&rental_id).await?;
+    let rental_status =
+        api_client
+            .get_rental_status(&rental_id)
+            .await
+            .map_err(|e| -> CliError {
+                let report = match e {
+                    ApiError::NotFound { .. } => eyre!("Rental '{}' not found", rental_id)
+                        .suggestion("Try 'basilica ps' to see your active rentals"),
+                    _ => eyre!(e).suggestion("Check your internet connection and try again"),
+                };
+                CliError::Internal(report)
+            })?;
 
     // Extract SSH credentials from response
     let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {

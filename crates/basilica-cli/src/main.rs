@@ -41,6 +41,22 @@ async fn main() -> Result<()> {
     )
     .map_err(|e| eyre!("Failed to initialize logging: {}", e))?;
 
-    // Run and propagate errors as eyre::Report
-    Ok(args.run().await?)
+    // Run and handle errors explicitly to show suggestions
+    if let Err(err) = args.run().await {
+        // Extract and format the inner error properly
+        match err {
+            basilica_cli::CliError::Internal(report) => {
+                // For Internal errors (which contain eyre Reports with suggestions),
+                // use Debug formatting to show the full error report
+                eprintln!("Error: {:?}", report);
+            }
+            other => {
+                // For other error types, use Display formatting
+                eprintln!("Error: {}", other);
+            }
+        }
+        std::process::exit(1);
+    }
+
+    Ok(())
 }

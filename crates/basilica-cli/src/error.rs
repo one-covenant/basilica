@@ -15,7 +15,7 @@ pub enum CliError {
     Api(#[from] basilica_api::error::ApiError),
 
     /// Authentication/authorization issues
-    #[error("Authentication error")]
+    #[error(transparent)]
     Auth(#[from] crate::auth::AuthError),
 
     /// External component delegation

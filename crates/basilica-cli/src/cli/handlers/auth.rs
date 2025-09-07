@@ -6,6 +6,7 @@ use crate::error::CliError;
 use crate::output::{banner, compress_path, print_success};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use color_eyre::eyre::{eyre, WrapErr};
+use color_eyre::Section;
 use tracing::{debug, warn};
 
 /// Service name for token storage
@@ -41,9 +42,12 @@ pub async fn handle_login_with_options(
         crate::config::create_auth_config_with_port(0)
     } else {
         // Find available port for OAuth callback server
-        let port = CallbackServer::find_available_port().wrap_err(
-            "Failed to find available port. Try 'basilica login --device-code' for device flow",
-        )?;
+        let port = CallbackServer::find_available_port().map_err(|e| {
+            eyre!(e)
+                .wrap_err("Failed to find available port")
+                .suggestion("Try 'basilica login --device-code' for device flow")
+                .note("The standard OAuth flow requires an available local port")
+        })?;
         crate::config::create_auth_config_with_port(port)
     };
 
@@ -80,7 +84,10 @@ pub async fn handle_login_with_options(
     // Store the tokens securely
     if let Err(e) = token_store.store_tokens(SERVICE_NAME, &token_set).await {
         complete_spinner_error(spinner, "Failed to store tokens");
-        return Err(eyre!("Failed to store tokens: {}", e).into());
+        return Err(eyre!("Failed to store tokens: {}", e)
+            .suggestion("Check if you have permission to access the system keychain")
+            .note("On macOS, you may need to grant Terminal/IDE access to the keychain")
+            .into());
     }
 
     complete_spinner_and_clear(spinner);
@@ -178,7 +185,10 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<(), CliError> {
     // Delete stored authentication tokens
     if let Err(e) = token_store.delete_tokens(SERVICE_NAME).await {
         complete_spinner_error(spinner, "Failed to clear tokens");
-        return Err(eyre!("Failed to clear authentication data: {}", e).into());
+        return Err(eyre!("Failed to clear authentication data: {}", e)
+            .suggestion("Try running the command with elevated permissions")
+            .note("Authentication data is stored in the system keychain")
+            .into());
     }
 
     complete_spinner_and_clear(spinner);
