@@ -24,6 +24,7 @@ external_ip = "160.202.129.15"
 
 [verification]
 max_concurrent_verifications = 50
+max_concurrent_full_validations = 1
 min_score_threshold = 0.1
 verification_interval = { secs = 600 }
 challenge_timeout = { secs = 120 }
@@ -34,6 +35,7 @@ use_dynamic_discovery = true
 discovery_timeout = { secs = 30 }
 fallback_to_static = true
 cache_miner_info_ttl = { secs = 300 }
+enable_worker_queue = false  # Enable for decoupled async validation execution
 
 [verification.binary_validation]
 enabled = true

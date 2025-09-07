@@ -24,6 +24,7 @@ external_ip = "YOUR_PUBLIC_IP_HERE"
 
 [verification]
 max_concurrent_verifications = 50
+max_concurrent_full_validations = 1  # Limit resource-intensive full validations to 1 at a time
 min_score_threshold = 0.1
 verification_interval = { secs = 600 }
 challenge_timeout = { secs = 120 }
@@ -34,6 +35,12 @@ use_dynamic_discovery = true
 discovery_timeout = { secs = 30 }
 fallback_to_static = true
 cache_miner_info_ttl = { secs = 300 }
+
+# Worker Queue Configuration (Advanced)
+# Enable decoupled validation execution for better scalability
+# When enabled, validations are processed asynchronously by worker pools
+# This improves throughput but uses more memory
+enable_worker_queue = false  # Set to true to enable worker queue
 
 [verification.binary_validation]
 enabled = true

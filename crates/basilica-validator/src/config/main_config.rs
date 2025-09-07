@@ -82,6 +82,9 @@ pub struct VerificationConfig {
     pub verification_interval: Duration,
     /// Maximum concurrent verifications
     pub max_concurrent_verifications: usize,
+    /// Maximum concurrent full validations (resource-intensive binary validations)
+    #[serde(default = "default_max_concurrent_full_validations")]
+    pub max_concurrent_full_validations: usize,
     /// Challenge timeout
     pub challenge_timeout: Duration,
     /// Minimum score threshold for miners
@@ -119,6 +122,9 @@ pub struct VerificationConfig {
     /// Time period for cleaning up GPU assignments from offline executors (min 2 hours)
     #[serde(default = "default_gpu_assignment_cleanup_ttl")]
     pub gpu_assignment_cleanup_ttl: Option<Duration>,
+    /// Enable worker queue for decoupled validation execution
+    #[serde(default = "default_enable_worker_queue")]
+    pub enable_worker_queue: bool,
 }
 
 fn default_use_dynamic_discovery() -> bool {
@@ -149,6 +155,40 @@ fn default_gpu_assignment_cleanup_ttl() -> Option<Duration> {
     Some(Duration::from_secs(120 * 60)) // 2 hours
 }
 
+fn default_enable_worker_queue() -> bool {
+    false // Disabled by default until fully tested
+}
+
+fn default_max_concurrent_full_validations() -> usize {
+    1 // Conservative default: only 1 concurrent full validation to prevent resource contention
+}
+
+impl VerificationConfig {
+    #[cfg(test)]
+    pub fn test_default() -> Self {
+        Self {
+            verification_interval: Duration::from_secs(60),
+            max_concurrent_verifications: 5,
+            max_concurrent_full_validations: 1,
+            challenge_timeout: Duration::from_secs(120),
+            min_score_threshold: 0.1,
+            max_miners_per_round: 10,
+            min_verification_interval: Duration::from_secs(300),
+            netuid: 39,
+            use_dynamic_discovery: true,
+            discovery_timeout: Duration::from_secs(30),
+            fallback_to_static: true,
+            cache_miner_info_ttl: Duration::from_secs(300),
+            grpc_port_offset: None,
+            binary_validation: BinaryValidationConfig::default(),
+            collateral_event_scan_interval: Duration::from_secs(12),
+            executor_validation_interval: Duration::from_secs(3600),
+            gpu_assignment_cleanup_ttl: Some(Duration::from_secs(7200)),
+            enable_worker_queue: false,
+        }
+    }
+}
+
 /// Configuration for binary validation using validator-binary and executor-binary
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinaryValidationConfig {
@@ -164,6 +204,13 @@ pub struct BinaryValidationConfig {
     pub enabled: bool,
     /// Binary validation weight in final score calculation
     pub score_weight: f64,
+    /// Default executor port for SSH tunnel cleanup
+    #[serde(default = "default_executor_port")]
+    pub executor_port: u16,
+}
+
+fn default_executor_port() -> u16 {
+    3000
 }
 
 impl Default for BinaryValidationConfig {
@@ -175,7 +222,15 @@ impl Default for BinaryValidationConfig {
             output_format: "json".to_string(),
             enabled: true,
             score_weight: 0.8,
+            executor_port: default_executor_port(),
         }
+    }
+}
+
+impl BinaryValidationConfig {
+    #[cfg(test)]
+    pub fn test_default() -> Self {
+        Self::default()
     }
 }
 
@@ -232,6 +287,13 @@ impl Default for AutomaticVerificationConfig {
             max_concurrent_verifications: default_max_concurrent_verifications(),
             enable_ssh_automation: default_enable_ssh_automation(),
         }
+    }
+}
+
+impl AutomaticVerificationConfig {
+    #[cfg(test)]
+    pub fn test_default() -> Self {
+        Self::default()
     }
 }
 
@@ -400,6 +462,13 @@ impl Default for SshSessionConfig {
     }
 }
 
+impl SshSessionConfig {
+    #[cfg(test)]
+    pub fn test_default() -> Self {
+        Self::default()
+    }
+}
+
 impl Default for ValidatorConfig {
     fn default() -> Self {
         Self {
@@ -431,6 +500,7 @@ impl Default for ValidatorConfig {
             verification: VerificationConfig {
                 verification_interval: Duration::from_secs(600),
                 max_concurrent_verifications: 50,
+                max_concurrent_full_validations: default_max_concurrent_full_validations(),
                 challenge_timeout: Duration::from_secs(120),
                 min_score_threshold: 0.1,
                 max_miners_per_round: 20,
@@ -445,6 +515,7 @@ impl Default for ValidatorConfig {
                 collateral_event_scan_interval: default_collateral_event_scan_interval(),
                 executor_validation_interval: default_executor_validation_interval(),
                 gpu_assignment_cleanup_ttl: default_gpu_assignment_cleanup_ttl(),
+                enable_worker_queue: default_enable_worker_queue(),
             },
             automatic_verification: AutomaticVerificationConfig::default(),
             storage: StorageConfig {
@@ -493,6 +564,17 @@ impl ConfigValidation for ValidatorConfig {
                 key: "verification.max_concurrent_verifications".to_string(),
                 value: self.verification.max_concurrent_verifications.to_string(),
                 reason: "Must allow at least 1 concurrent verification".to_string(),
+            });
+        }
+
+        if self.verification.max_concurrent_full_validations == 0 {
+            return Err(ConfigurationError::InvalidValue {
+                key: "verification.max_concurrent_full_validations".to_string(),
+                value: self
+                    .verification
+                    .max_concurrent_full_validations
+                    .to_string(),
+                reason: "Must allow at least 1 concurrent full validation".to_string(),
             });
         }
 

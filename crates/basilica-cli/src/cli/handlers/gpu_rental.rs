@@ -1,10 +1,7 @@
 //! GPU rental command handlers
 
-use crate::cache::{CachedRental, RentalCache};
 use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
-use crate::cli::handlers::gpu_rental_helpers::{
-    get_ssh_credentials_from_cache, resolve_target_rental,
-};
+use crate::cli::handlers::gpu_rental_helpers::resolve_target_rental;
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, Result};
@@ -18,7 +15,8 @@ use basilica_sdk::types::{
     ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
 };
 use basilica_validator::api::rental_routes::StartRentalRequest;
-use basilica_validator::api::types::{ListAvailableExecutorsQuery, RentalStatus};
+use basilica_validator::api::types::ListAvailableExecutorsQuery;
+use basilica_validator::api::types::RentalStatusResponse;
 use basilica_validator::rental::types::RentalState;
 use console::style;
 use reqwest::StatusCode;
@@ -149,8 +147,8 @@ pub async fn handle_up(
     let api_client = create_authenticated_client(config).await?;
 
     // If no target provided, fetch available executors and prompt for selection
-    let (target, executor_details) = if let Some(t) = target {
-        (t, None)
+    let target = if let Some(t) = target {
+        t
     } else {
         let spinner = create_spinner("Fetching available executors...");
 
@@ -174,23 +172,7 @@ pub async fn handle_up(
 
         // Use interactive selector to choose an executor
         let selector = crate::interactive::InteractiveSelector::new();
-        let selected_id = selector.select_executor(&response.available_executors)?;
-
-        // Find the selected executor details
-        let selected_executor = response
-            .available_executors
-            .iter()
-            .find(|e| {
-                // Strip miner prefix from executor ID before comparing
-                let executor_id = match e.executor.id.split_once("__") {
-                    Some((_, second)) => second.to_string(),
-                    None => e.executor.id.clone(),
-                };
-                executor_id == selected_id
-            })
-            .map(|e| e.executor.clone());
-
-        (selected_id, selected_executor)
+        selector.select_executor(&response.available_executors)?
     };
 
     let spinner = create_spinner("Preparing rental request...");
@@ -251,41 +233,6 @@ pub async fn handle_up(
             .with_suggestion("Ensure the executor is available and try again")
     })?;
 
-    spinner.set_message("Caching rental information...");
-
-    // Format GPU info if we have executor details
-    let gpu_info = executor_details.as_ref().and_then(|exec| {
-        if exec.gpu_specs.is_empty() {
-            None
-        } else {
-            let gpu = &exec.gpu_specs[0];
-            Some(if exec.gpu_specs.len() > 1 {
-                format!(
-                    "{}x {} ({}GB)",
-                    exec.gpu_specs.len(),
-                    gpu.name,
-                    gpu.memory_gb
-                )
-            } else {
-                format!("{} ({}GB)", gpu.name, gpu.memory_gb)
-            })
-        }
-    });
-
-    // Cache the rental information
-    let mut cache = RentalCache::load().await.unwrap_or_default();
-    cache.add_rental(CachedRental {
-        rental_id: response.rental_id.clone(),
-        ssh_credentials: response.ssh_credentials.clone(),
-        container_id: response.container_info.container_id.clone(),
-        container_name: response.container_info.container_name.clone(),
-        executor_id: target.clone(),
-        gpu_info,
-        created_at: chrono::Utc::now(),
-        cached_at: chrono::Utc::now(),
-    });
-    cache.save().await?;
-
     complete_spinner_and_clear(spinner);
 
     print_success(&format!(
@@ -310,7 +257,12 @@ pub async fn handle_up(
 
     if options.detach {
         // Detached mode: just show instructions and exit
-        display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+        display_ssh_connection_instructions(
+            &response.rental_id,
+            ssh_creds,
+            config,
+            "SSH connection options:",
+        )?;
     } else {
         // Auto-SSH mode: wait for rental to be active and connect
         print_info("Waiting for rental to become active...");
@@ -334,20 +286,32 @@ pub async fn handle_up(
                 Ok(_) => {
                     // SSH session ended normally
                     print_info("SSH session closed");
+                    display_ssh_connection_instructions(
+                        &response.rental_id,
+                        ssh_creds,
+                        config,
+                        "To reconnect to this rental:",
+                    )?;
                 }
                 Err(e) => {
                     print_error(&format!("SSH connection failed: {}", e));
-                    println!();
-                    print_info("You can manually connect using:");
-                    display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+                    display_ssh_connection_instructions(
+                        &response.rental_id,
+                        ssh_creds,
+                        config,
+                        "Try manually connecting using:",
+                    )?;
                 }
             }
         } else {
             // Timeout or error - show manual instructions
             print_info("Rental is taking longer than expected to become active");
-            println!();
-            print_info("You can manually connect once it's ready using:");
-            display_ssh_connection_instructions(&response.rental_id, ssh_creds, config)?;
+            display_ssh_connection_instructions(
+                &response.rental_id,
+                ssh_creds,
+                config,
+                "You can manually connect once it's ready using:",
+            )?
         }
     }
 
@@ -402,21 +366,18 @@ pub async fn handle_status(target: Option<String>, json: bool, config: &CliConfi
 
     complete_spinner_and_clear(spinner);
 
-    // Check if rental is stopped and clean up cache
-    if matches!(
-        status.status,
-        RentalStatus::Terminated | RentalStatus::Failed
-    ) {
-        let mut cache = RentalCache::load().await.unwrap_or_default();
-        if cache.remove_rental(&target).is_some() {
-            cache.save().await?;
-        }
-    }
-
     if json {
         json_output(&status)?;
     } else {
-        display_rental_status(&status);
+        // Convert to validator's RentalStatusResponse for display (without SSH credentials)
+        let display_status = RentalStatusResponse {
+            rental_id: status.rental_id,
+            status: status.status,
+            executor: status.executor,
+            created_at: status.created_at,
+            updated_at: status.updated_at,
+        };
+        display_rental_status(&display_status);
     }
 
     Ok(())
@@ -532,9 +493,6 @@ pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<(
     // Resolve target rental (fetch and prompt if not provided)
     let rental_id = resolve_target_rental(target, &api_client, false).await?;
 
-    // Load rental cache
-    let mut cache = RentalCache::load().await.unwrap_or_default();
-
     // Single rental - use spinner
     let spinner = create_spinner(&format!("Terminating rental: {}", rental_id));
 
@@ -546,16 +504,12 @@ pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<(
         Ok(_) => {
             complete_spinner_and_clear(spinner);
             print_success(&format!("Successfully stopped rental: {}", rental_id));
-            cache.remove_rental(&rental_id);
         }
         Err(e) => {
             complete_spinner_error(spinner, "Failed to terminate rental");
             print_error(&format!("Failed to stop rental {}: {e}", rental_id));
         }
     }
-
-    // Save updated cache
-    cache.save().await?;
 
     Ok(())
 }
@@ -569,19 +523,22 @@ pub async fn handle_exec(
     // Create API client to verify rental status
     let api_client = create_authenticated_client(config).await?;
 
-    // Load rental cache first to see what's available for SSH
-    let mut cache = RentalCache::load().await?;
-
     // Resolve target rental with SSH requirement
     let target = resolve_target_rental(target, &api_client, true).await?;
 
     debug!("Executing command on rental: {}", target);
 
-    // Get SSH credentials from cache
-    let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
+    // Get rental status from API which includes SSH credentials
+    let rental_status = api_client
+        .get_rental_status(&target)
+        .await
+        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
 
-    // Verify rental is still active before proceeding
-    verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
+    // Extract SSH credentials from response
+    let ssh_credentials = rental_status.ssh_credentials
+        .ok_or_else(|| CliError::not_supported(
+            "SSH credentials not available for this rental. This rental may have been created with --no-ssh flag."
+        ))?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -605,19 +562,22 @@ pub async fn handle_ssh(
     // Create API client to verify rental status
     let api_client = create_authenticated_client(config).await?;
 
-    // Load rental cache first to see what's available for SSH
-    let mut cache = RentalCache::load().await?;
-
     // Resolve target rental with SSH requirement
     let target = resolve_target_rental(target, &api_client, true).await?;
 
     debug!("Opening SSH connection to rental: {}", target);
 
-    // Get SSH credentials from cache
-    let ssh_credentials = get_ssh_credentials_from_cache(&target, &cache)?;
+    // Get rental status from API which includes SSH credentials
+    let rental_status = api_client
+        .get_rental_status(&target)
+        .await
+        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
 
-    // Verify rental is still active before proceeding
-    verify_rental_status_and_cleanup_cache(&target, &api_client, &mut cache).await?;
+    // Extract SSH credentials from response
+    let ssh_credentials = rental_status.ssh_credentials
+        .ok_or_else(|| CliError::not_supported(
+            "SSH credentials not available for this rental. This rental may have been created with --no-ssh flag."
+        ))?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -642,9 +602,6 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
 
     // Create API client
     let api_client = create_authenticated_client(config).await?;
-
-    // Load rental cache
-    let mut cache = RentalCache::load().await?;
 
     // Parse source and destination to check if rental ID is provided
     let (source_rental, source_path) = split_remote_path(&source);
@@ -685,15 +642,18 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
         }
     };
 
-    // Get SSH credentials from cache
-    let ssh_credentials = get_ssh_credentials_from_cache(&rental_id, &cache)
-        .map_err(|_e| CliError::not_found(format!(
-            "Rental {} not found in cache. SSH credentials are only available for rentals created in this session.",
+    // Get rental status from API which includes SSH credentials
+    let rental_status = api_client
+        .get_rental_status(&rental_id)
+        .await
+        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
+
+    // Extract SSH credentials from response
+    let ssh_credentials = rental_status.ssh_credentials
+        .ok_or_else(|| CliError::not_supported(format!(
+            "SSH credentials not available for rental {}. This rental may have been created with --no-ssh flag.",
             rental_id
         )))?;
-
-    // Verify rental is still active before proceeding
-    verify_rental_status_and_cleanup_cache(&rental_id, &api_client, &mut cache).await?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -746,6 +706,7 @@ async fn poll_rental_status(
         // Check rental status
         match api_client.get_rental_status(rental_id).await {
             Ok(status) => {
+                use basilica_api::api::types::RentalStatus;
                 match status.status {
                     RentalStatus::Active => {
                         complete_spinner_and_clear(spinner);
@@ -792,6 +753,7 @@ fn display_ssh_connection_instructions(
     rental_id: &str,
     ssh_credentials: &str,
     config: &CliConfig,
+    message: &str,
 ) -> Result<()> {
     // Parse SSH credentials to get components
     let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
@@ -800,7 +762,7 @@ fn display_ssh_connection_instructions(
     let private_key_path = &config.ssh.private_key_path;
 
     println!();
-    print_info("SSH connection options:");
+    print_info(message);
     println!();
 
     // Option 1: Using basilica CLI (simplest)

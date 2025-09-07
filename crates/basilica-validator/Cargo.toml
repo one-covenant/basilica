@@ -48,6 +48,8 @@ toml = "0.8"
 url = "2.5"
 prost-types = { workspace = true }
 async-stream = "0.3"
+num_cpus = "1.16"
+lru = "0.12"
 eventsource-stream = "0.2"
 regex = "1.10"
 
@@ -82,6 +84,7 @@ signature = "2.2"
 
 # System information and process management
 sysinfo = "0.30"
+libc = "0.2"
 
 # SSH key management
 ssh-key = { version = "0.6", features = ["ed25519", "std"] }

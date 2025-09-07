@@ -464,6 +464,7 @@ mod tests {
         let verification_config = VerificationConfig {
             verification_interval: Duration::from_secs(600),
             max_concurrent_verifications: 5,
+            max_concurrent_full_validations: 1,
             challenge_timeout: Duration::from_secs(30),
             min_score_threshold: 0.5,
             max_miners_per_round: 10,
@@ -478,6 +479,7 @@ mod tests {
             collateral_event_scan_interval: Duration::from_secs(12),
             executor_validation_interval: Duration::from_secs(12 * 3600),
             gpu_assignment_cleanup_ttl: Some(Duration::from_secs(30 * 60)),
+            enable_worker_queue: false,
         };
 
         let automatic_verification_config = AutomaticVerificationConfig {

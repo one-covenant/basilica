@@ -27,6 +27,29 @@ use basilica_validator::rental::types::RentalState;
 
 // API-specific types that don't exist in validator
 
+/// API rental list item with GPU information
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ApiRentalListItem {
+    pub rental_id: String,
+    pub executor_id: String,
+    pub container_id: String,
+    pub state: RentalState,
+    pub created_at: String,
+    pub miner_id: String,
+    pub container_image: String,
+    /// GPU specifications for this rental
+    pub gpu_specs: Vec<GpuSpec>,
+    /// Whether SSH credentials are available for this rental
+    pub has_ssh: bool,
+}
+
+/// API list rentals response with GPU information
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ApiListRentalsResponse {
+    pub rentals: Vec<ApiRentalListItem>,
+    pub total_count: usize,
+}
+
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct HealthCheckResponse {
@@ -74,4 +97,44 @@ pub struct RentalStatusQuery {
 pub struct LogStreamQuery {
     pub follow: Option<bool>,
     pub tail: Option<u32>,
+}
+
+/// Extended rental status response that includes SSH credentials from the database
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct RentalStatusWithSshResponse {
+    /// Rental ID
+    pub rental_id: String,
+
+    /// Current rental status
+    pub status: RentalStatus,
+
+    /// Executor details
+    pub executor: ExecutorDetails,
+
+    /// SSH credentials (from database, not validator)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_credentials: Option<String>,
+
+    /// Creation timestamp
+    pub created_at: chrono::DateTime<chrono::Utc>,
+
+    /// Last update timestamp
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl RentalStatusWithSshResponse {
+    /// Create from validator response and database SSH credentials
+    pub fn from_validator_response(
+        response: RentalStatusResponse,
+        ssh_credentials: Option<String>,
+    ) -> Self {
+        Self {
+            rental_id: response.rental_id,
+            status: response.status,
+            executor: response.executor,
+            ssh_credentials,
+            created_at: response.created_at,
+            updated_at: response.updated_at,
+        }
+    }
 }

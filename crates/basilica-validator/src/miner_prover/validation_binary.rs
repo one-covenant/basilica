@@ -12,13 +12,18 @@ use basilica_common::ssh::SshConnectionDetails;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
+// Import simplified process management utilities
+use crate::os_process::{ProcessGroup, ProcessTerminator, ProcessUtils};
+
 /// Binary validation executor for running and parsing validator binaries
-pub struct BinaryValidator {}
+pub struct BinaryValidator {
+    ssh_client: Arc<crate::ssh::ValidatorSshClient>,
+}
 
 impl BinaryValidator {
     /// Create a new binary validator
-    pub fn new(_ssh_client: Arc<crate::ssh::ValidatorSshClient>) -> Self {
-        Self {}
+    pub fn new(ssh_client: Arc<crate::ssh::ValidatorSshClient>) -> Self {
+        Self { ssh_client }
     }
 
     /// Execute validator-binary locally with SSH parameters
@@ -35,7 +40,28 @@ impl BinaryValidator {
             "[EVAL_FLOW] Executing validator binary locally"
         );
 
+        // Clean up any zombie processes and SSH tunnels before starting
+        ProcessUtils::reap_zombies();
+        ProcessUtils::cleanup_ssh_tunnels();
+
+        self.ssh_client
+            .ensure_host_key_available(ssh_details)
+            .await
+            .map_err(|e| {
+                warn!("Failed to pre-accept SSH host key: {}.", e);
+                e
+            })
+            .ok();
+
         let mut command = tokio::process::Command::new(&binary_config.validator_binary_path);
+
+        // Configure for process group isolation to ensure all child processes can be cleaned up
+        ProcessGroup::configure_command(&mut command);
+
+        // Ensure proper output capture
+        command
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
 
         // Configure SSH parameters and executor binary path
         command
@@ -53,9 +79,6 @@ impl BinaryValidator {
             .arg(&binary_config.output_format)
             .arg("--timeout")
             .arg(binary_config.execution_timeout_secs.to_string());
-
-        // Set environment variable for matrix size
-        command.env("BAS_MATRIX_SIZE", "1024");
 
         // Set timeout for entire process
         let timeout_duration = Duration::from_secs(binary_config.execution_timeout_secs + 10);
@@ -81,28 +104,69 @@ impl BinaryValidator {
         );
         let start_time = std::time::Instant::now();
 
-        let output = tokio::time::timeout(timeout_duration, command.output())
-            .await
-            .map_err(|_| {
+        let child = command.spawn().map_err(|e| {
+            error!(
+                "[EVAL_FLOW] Failed to spawn validator binary process: {}",
+                e
+            );
+            anyhow::anyhow!("Failed to spawn validator binary: {}", e)
+        })?;
+
+        let child_pid = child.id();
+
+        let output = match tokio::time::timeout(timeout_duration, child.wait_with_output()).await {
+            Ok(Ok(output)) => output,
+            Ok(Err(e)) => {
+                error!(
+                    ssh_host = %ssh_details.host,
+                    "[EVAL_FLOW] Failed to wait for validator binary process: {}",
+                    e
+                );
+                return Err(anyhow::anyhow!(
+                    "Failed to wait for validator binary: {}",
+                    e
+                ));
+            }
+            Err(_) => {
                 error!(
                     ssh_host = %ssh_details.host,
                     ssh_port = ssh_details.port,
                     ssh_user = %ssh_details.username,
-                    "[EVAL_FLOW] Validator binary execution timed out after {}s",
+                    "[EVAL_FLOW] Validator binary execution timed out after {}s, terminating process group",
                     timeout_duration.as_secs()
                 );
-                anyhow::anyhow!(
+
+                // Terminate the process group on timeout
+                if let Some(pid) = child_pid {
+                    info!(
+                        "[EVAL_FLOW] Terminating process group {} due to timeout",
+                        pid
+                    );
+
+                    // Use graceful termination with 2-second grace period
+                    if let Err(e) =
+                        ProcessTerminator::terminate(pid as i32, std::time::Duration::from_secs(2))
+                            .await
+                    {
+                        error!(
+                            "[EVAL_FLOW] Failed to terminate process group {}: {}",
+                            pid, e
+                        );
+                    } else {
+                        info!("[EVAL_FLOW] Successfully terminated process group {}", pid);
+                    }
+                }
+
+                // Clean up zombie processes and SSH tunnels after timeout
+                ProcessUtils::reap_zombies();
+                ProcessUtils::cleanup_ssh_tunnels();
+
+                return Err(anyhow::anyhow!(
                     "Validator binary execution timeout after {}s",
                     timeout_duration.as_secs()
-                )
-            })?
-            .map_err(|e| {
-                error!(
-                    "[EVAL_FLOW] Failed to execute validator binary process: {}",
-                    e
-                );
-                anyhow::anyhow!("Failed to execute validator binary: {}", e)
-            })?;
+                ));
+            }
+        };
 
         let execution_time = start_time.elapsed();
         info!(
@@ -113,6 +177,12 @@ impl BinaryValidator {
         // Log stdout and stderr regardless of status
         let stdout_str = String::from_utf8_lossy(&output.stdout);
         let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+        info!(
+            "[EVAL_FLOW] Validator binary output - stdout: {} bytes, stderr: {} bytes",
+            output.stdout.len(),
+            output.stderr.len()
+        );
 
         if !stdout_str.is_empty() {
             info!(
@@ -141,6 +211,10 @@ impl BinaryValidator {
                 "[EVAL_FLOW] Validator binary execution failed with exit code: {}",
                 exit_code
             );
+
+            ProcessUtils::reap_zombies();
+            ProcessUtils::cleanup_ssh_tunnels();
+
             return Err(anyhow::anyhow!(
                 "Validator binary execution failed with exit code {}: {}",
                 exit_code,
@@ -148,18 +222,52 @@ impl BinaryValidator {
             ));
         }
 
-        info!(
-            "[EVAL_FLOW] Validator binary execution successful, processing output ({} bytes)",
-            output.stdout.len()
-        );
-        Ok(output.stdout)
+        // Try to find JSON output in stdout first, then stderr as fallback
+        let output_bytes = if !output.stdout.is_empty() {
+            info!(
+                "[EVAL_FLOW] Validator binary execution successful, processing stdout output ({} bytes)",
+                output.stdout.len()
+            );
+            output.stdout
+        } else if !output.stderr.is_empty() {
+            warn!(
+                "[EVAL_FLOW] stdout empty, trying stderr for JSON output ({} bytes)",
+                output.stderr.len()
+            );
+            output.stderr
+        } else {
+            error!("[EVAL_FLOW] Both stdout and stderr are empty, no output to process");
+
+            // Clean up SSH tunnels after empty output
+            ProcessUtils::reap_zombies();
+            ProcessUtils::cleanup_ssh_tunnels();
+
+            return Err(anyhow::anyhow!(
+                "Validator binary produced no output in stdout or stderr"
+            ));
+        };
+
+        // Clean up zombie processes and SSH tunnels after successful execution
+        ProcessUtils::reap_zombies();
+        ProcessUtils::cleanup_ssh_tunnels();
+
+        Ok(output_bytes)
     }
 
     /// Parse validator binary output
     pub fn parse_validator_binary_output(&self, output: &[u8]) -> Result<ValidatorBinaryOutput> {
+        info!(
+            "[EVAL_FLOW] Parsing validator binary output ({} bytes)",
+            output.len()
+        );
+
         if output.is_empty() {
-            error!("[EVAL_FLOW] Validator binary output is empty");
-            return Err(anyhow::anyhow!("Validator binary produced no output"));
+            error!(
+                "[EVAL_FLOW] Validator binary output is empty - this indicates a capture problem"
+            );
+            return Err(anyhow::anyhow!(
+                "Validator binary produced no output - output capture failed"
+            ));
         }
 
         let output_str = String::from_utf8_lossy(output);
@@ -920,6 +1028,7 @@ impl BinaryValidator {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use tokio::process::Command;
 
     fn create_test_validator() -> BinaryValidator {
         let mock_ssh_client = Arc::new(crate::ssh::ValidatorSshClient::new());
@@ -1251,6 +1360,84 @@ mod tests {
             calculated_score <= 1.0,
             "Score should be <= 1.0, got {}",
             calculated_score
+        );
+    }
+
+    // Process Management Tests
+
+    #[tokio::test]
+    async fn test_process_group_creation() {
+        // Test that commands are properly configured for process group isolation
+        let mut command = Command::new("sh");
+        command.arg("-c").arg("sleep 0.1");
+
+        ProcessGroup::configure_command(&mut command);
+
+        let child = command.spawn().expect("Failed to spawn test process");
+        let pid = child.id().expect("Failed to get process ID");
+
+        // Verify the process is running
+        assert!(
+            ProcessUtils::process_exists(pid),
+            "Process should be running after spawn"
+        );
+
+        // Clean up
+        let _ =
+            ProcessTerminator::terminate(pid as i32, std::time::Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_validator_binary_timeout_cleanup() {
+        // This test simulates a timeout scenario with the validator binary
+        let validator = create_test_validator();
+
+        // Create a mock binary config with very short timeout
+        let binary_config = crate::config::BinaryValidationConfig {
+            validator_binary_path: "/usr/bin/sleep".into(), // Use sleep as mock binary
+            executor_binary_path: "/tmp/mock_executor".into(),
+            output_format: "json".to_string(),
+            execution_timeout_secs: 1, // Very short timeout to trigger cleanup
+            enabled: true,
+            score_weight: 1.0,
+            executor_port: 3000,
+        };
+
+        let ssh_details = SshConnectionDetails {
+            host: "localhost".to_string(),
+            port: 22,
+            username: "test".to_string(),
+            private_key_path: "/tmp/test_key".into(),
+            timeout: std::time::Duration::from_secs(10),
+        };
+
+        // This will timeout and trigger process group cleanup
+        let result = validator
+            .execute_validator_binary_locally(&ssh_details, &binary_config)
+            .await;
+
+        // Should fail due to timeout or execution error, but process should be cleaned up
+        assert!(
+            result.is_err(),
+            "Should fail due to timeout or invalid binary"
+        );
+    }
+
+    #[test]
+    fn test_process_verification() {
+        // Test process verification with non-existent PID
+        let fake_pid = 2147483647u32; // Max u32, unlikely to exist
+
+        assert!(
+            !ProcessUtils::process_exists(fake_pid),
+            "Non-existent process should not exist"
+        );
+
+        // Test with current process (should exist)
+        let current_pid = std::process::id();
+        assert!(
+            ProcessUtils::process_exists(current_pid),
+            "Current process should exist"
         );
     }
 }

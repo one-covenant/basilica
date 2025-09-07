@@ -117,7 +117,7 @@ pub struct RentalInfo {
     pub created_at: DateTime<Utc>,
     pub container_spec: ContainerSpec,
     pub miner_id: String,
-    pub executor_details: Option<crate::api::types::ExecutorDetails>,
+    pub executor_details: crate::api::types::ExecutorDetails,
 }
 
 /// Rental status

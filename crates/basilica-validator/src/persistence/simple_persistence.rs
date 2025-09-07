@@ -47,6 +47,26 @@ impl SimplePersistence {
         Self { pool }
     }
 
+    #[cfg(test)]
+    pub async fn for_testing() -> Result<Self, anyhow::Error> {
+        let pool = SqlitePool::connect(":memory:").await?;
+
+        sqlx::query("PRAGMA journal_mode = WAL")
+            .execute(&pool)
+            .await?;
+        sqlx::query("PRAGMA busy_timeout = 5000")
+            .execute(&pool)
+            .await?;
+        sqlx::query("PRAGMA synchronous = NORMAL")
+            .execute(&pool)
+            .await?;
+
+        let instance = Self { pool };
+        instance.run_migrations().await?;
+
+        Ok(instance)
+    }
+
     pub async fn new(
         database_path: &str,
         _validator_hotkey: String,
@@ -873,11 +893,16 @@ impl SimplePersistence {
     }
 
     /// Helper function to parse a rental row from the database
-    fn parse_rental_row(&self, row: sqlx::sqlite::SqliteRow) -> Result<RentalInfo, anyhow::Error> {
+    fn parse_rental_row(
+        &self,
+        row: sqlx::sqlite::SqliteRow,
+        executor_details: crate::api::types::ExecutorDetails,
+    ) -> Result<RentalInfo, anyhow::Error> {
         let state_str: String = row.get("state");
         let created_at_str: String = row.get("created_at");
         let container_spec_str: String = row.get("container_spec");
         let rental_id: String = row.get("id");
+        let executor_id: String = row.get("executor_id");
 
         // Use existing parse_rental_state for consistency
         let state = Self::parse_rental_state(&state_str, &rental_id);
@@ -885,7 +910,7 @@ impl SimplePersistence {
         Ok(RentalInfo {
             rental_id,
             validator_hotkey: row.get("validator_hotkey"),
-            executor_id: row.get("executor_id"),
+            executor_id,
             container_id: row.get("container_id"),
             ssh_session_id: row.get("ssh_session_id"),
             ssh_credentials: row.get("ssh_credentials"),
@@ -893,7 +918,7 @@ impl SimplePersistence {
             created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
             container_spec: serde_json::from_str(&container_spec_str)?,
             miner_id: row.get::<String, _>("miner_id"),
-            executor_details: None, // Will be populated lazily when needed
+            executor_details,
         })
     }
 
@@ -944,10 +969,35 @@ impl SimplePersistence {
         let query = builder.build();
         let rows = query.fetch_all(&self.pool).await?;
 
-        // Parse all rows using helper
-        rows.into_iter()
-            .map(|row| self.parse_rental_row(row))
-            .collect()
+        // Parse all rows and fetch executor details for each
+        let mut rentals = Vec::new();
+        for row in rows {
+            // Extract executor_id and miner_id from the row first
+            let executor_id: String = row.get("executor_id");
+            let miner_id: String = row.get("miner_id");
+
+            // Fetch executor details or use defaults if not found
+            let executor_details = match self.get_executor_details(&executor_id, &miner_id).await {
+                Ok(Some(details)) => details,
+                _ => {
+                    // Default executor details if not found
+                    crate::api::types::ExecutorDetails {
+                        id: executor_id.clone(),
+                        gpu_specs: vec![],
+                        cpu_specs: crate::api::types::CpuSpec {
+                            cores: 0,
+                            model: "Unknown".to_string(),
+                            memory_gb: 0,
+                        },
+                        location: None,
+                    }
+                }
+            };
+
+            rentals.push(self.parse_rental_row(row, executor_details)?);
+        }
+
+        Ok(rentals)
     }
 
     /// Helper function to convert database row to Rental

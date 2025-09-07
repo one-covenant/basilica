@@ -22,6 +22,7 @@ weight_interval_secs = 300
 
 [verification]
 max_concurrent_verifications = 50
+max_concurrent_full_validations = 1
 min_score_threshold = 0.01
 min_stake_threshold = 1.0
 max_miners_per_round = 10
@@ -37,6 +38,7 @@ cache_miner_info_ttl = { secs = 300 }
 # Miner gRPC is on same port as HTTP (8080), axon is on 8091
 # Default behavior: axon port -> gRPC port mapping is handled by the client
 # grpc_port_offset = None  # Let the client handle default mapping
+enable_worker_queue = false  # Enable for decoupled async validation execution
 
 [ssh_validation]
 enabled = true

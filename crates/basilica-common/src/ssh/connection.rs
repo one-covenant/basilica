@@ -146,6 +146,95 @@ impl StandardSshClient {
         Ok(())
     }
 
+    /// Ensure SSH host key is available
+    pub async fn ensure_host_key_available(&self, details: &SshConnectionDetails) -> Result<()> {
+        debug!(
+            "Ensuring host key available for {}:{}",
+            details.host, details.port
+        );
+
+        let known_hosts_path = self.get_known_hosts_path()?;
+        self.ensure_ssh_directory(&known_hosts_path)?;
+
+        let mut cmd = tokio::process::Command::new("ssh-keyscan");
+        cmd.arg("-p")
+            .arg(details.port.to_string())
+            .arg("-T")
+            .arg("5")
+            .arg("-t")
+            .arg("rsa,ed25519")
+            .arg(&details.host)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+
+        let output = timeout(Duration::from_secs(10), cmd.output())
+            .await
+            .map_err(|_| anyhow::anyhow!("Host key scan timeout after 10s"))?
+            .map_err(|e| anyhow::anyhow!("Failed to execute ssh-keyscan: {}", e))?;
+
+        if !output.status.success() || output.stdout.is_empty() {
+            return Err(anyhow::anyhow!("ssh-keyscan failed or returned no keys"));
+        }
+
+        use std::fs::OpenOptions;
+        use std::io::Write;
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&known_hosts_path)
+            .map_err(|e| anyhow::anyhow!("Failed to open known_hosts: {}", e))?;
+
+        file.write_all(&output.stdout)
+            .map_err(|e| anyhow::anyhow!("Failed to write to known_hosts: {}", e))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&known_hosts_path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| anyhow::anyhow!("Failed to set known_hosts permissions: {}", e))?;
+        }
+
+        debug!(
+            "Successfully added host keys for {}:{} to {}",
+            details.host,
+            details.port,
+            known_hosts_path.display()
+        );
+
+        Ok(())
+    }
+
+    /// Get the path to known_hosts file
+    fn get_known_hosts_path(&self) -> Result<std::path::PathBuf> {
+        match std::env::var("HOME") {
+            Ok(home) => Ok(std::path::PathBuf::from(home)
+                .join(".ssh")
+                .join("known_hosts")),
+            Err(_) => {
+                warn!("HOME environment variable not set, using /tmp/known_hosts");
+                Ok(std::path::PathBuf::from("/tmp/known_hosts"))
+            }
+        }
+    }
+
+    /// Ensure .ssh directory exists with proper permissions
+    fn ensure_ssh_directory(&self, known_hosts_path: &std::path::Path) -> Result<()> {
+        if let Some(ssh_dir) = known_hosts_path.parent() {
+            std::fs::create_dir_all(ssh_dir)
+                .map_err(|e| anyhow::anyhow!("Failed to create .ssh directory: {}", e))?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(ssh_dir, std::fs::Permissions::from_mode(0o700)).map_err(
+                    |e| anyhow::anyhow!("Failed to set .ssh directory permissions: {}", e),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     /// Internal SSH command execution
     async fn execute_ssh_command(
         &self,

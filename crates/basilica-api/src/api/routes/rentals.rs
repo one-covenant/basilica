@@ -3,10 +3,14 @@
 use crate::{
     api::{
         extractors::ownership::{
-            delete_rental_ownership, get_user_rental_ids, store_rental_ownership, OwnedRental,
+            archive_rental_ownership, get_user_rentals_with_ssh, store_rental_ownership,
+            OwnedRental,
         },
         middleware::Auth0Claims,
-        types::{ListRentalsQuery, LogStreamQuery, RentalStatusResponse, TerminateRentalRequest},
+        types::{
+            ApiListRentalsResponse, ApiRentalListItem, ListRentalsQuery, LogStreamQuery,
+            RentalStatusWithSshResponse, TerminateRentalRequest,
+        },
     },
     error::Result,
     server::AppState,
@@ -20,7 +24,7 @@ use axum::{
 use basilica_validator::{
     api::{
         rental_routes::StartRentalRequest,
-        types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, ListRentalsResponse},
+        types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse},
     },
     RentalResponse,
 };
@@ -46,13 +50,19 @@ static DOCKER_IMAGE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 pub async fn get_rental_status(
     State(state): State<AppState>,
     owned_rental: OwnedRental,
-) -> Result<Json<RentalStatusResponse>> {
+) -> Result<Json<RentalStatusWithSshResponse>> {
     debug!("Getting status for rental: {}", owned_rental.rental_id);
 
     let client = &state.validator_client;
-    let response = client.get_rental_status(&owned_rental.rental_id).await?;
+    let validator_response = client.get_rental_status(&owned_rental.rental_id).await?;
 
-    Ok(Json(response))
+    // Create extended response with SSH credentials from database
+    let response_with_ssh = RentalStatusWithSshResponse::from_validator_response(
+        validator_response,
+        owned_rental.ssh_credentials,
+    );
+
+    Ok(Json(response_with_ssh))
 }
 
 // ===== New Validator-Compatible Endpoints =====
@@ -104,8 +114,14 @@ pub async fn start_rental(
         .start_rental(validator_request)
         .await?;
 
-    // Store ownership record in database
-    if let Err(e) = store_rental_ownership(&state.db, &validator_response.rental_id, user_id).await
+    // Store ownership record in database with SSH credentials
+    if let Err(e) = store_rental_ownership(
+        &state.db,
+        &validator_response.rental_id,
+        user_id,
+        validator_response.ssh_credentials.as_deref(),
+    )
+    .await
     {
         error!(
             "Failed to store rental ownership for rental {}: {}. Rolling back rental creation.",
@@ -164,13 +180,19 @@ pub async fn stop_rental(
 
     state
         .validator_client
-        .terminate_rental(&owned_rental.rental_id, request)
+        .terminate_rental(&owned_rental.rental_id, request.clone())
         .await?;
 
-    // Delete ownership record from database
-    if let Err(e) = delete_rental_ownership(&state.db, &owned_rental.rental_id).await {
-        error!("Failed to delete rental ownership record: {}", e);
-        // Note: We don't fail the request if ownership deletion fails
+    // Archive ownership record to terminated_user_rentals table
+    if let Err(e) = archive_rental_ownership(
+        &state.db,
+        &owned_rental.rental_id,
+        request.reason.as_deref(),
+    )
+    .await
+    {
+        error!("Failed to archive rental ownership record: {}", e);
+        // Note: We don't fail the request if ownership archiving fails
     }
 
     Ok(axum::http::StatusCode::NO_CONTENT.into_response())
@@ -249,18 +271,24 @@ pub async fn list_rentals_validator(
     State(state): State<AppState>,
     axum::Extension(claims): axum::Extension<Auth0Claims>,
     Query(query): Query<ListRentalsQuery>,
-) -> Result<Json<ListRentalsResponse>> {
+) -> Result<Json<ApiListRentalsResponse>> {
     info!("Listing rentals with state filter: {:?}", query.status);
 
     // Get user ID from auth claims (already extracted via Extension)
     let user_id = &claims.sub;
 
-    // Get user's rental IDs from database
-    let user_rental_ids = get_user_rental_ids(&state.db, user_id).await.map_err(|e| {
-        crate::error::ApiError::Internal {
+    // Get user's rental IDs with SSH status from database
+    let user_rentals_with_ssh = get_user_rentals_with_ssh(&state.db, user_id)
+        .await
+        .map_err(|e| crate::error::ApiError::Internal {
             message: format!("Failed to get user rentals: {}", e),
-        }
-    })?;
+        })?;
+
+    // Create a map for quick lookup of SSH status
+    let mut ssh_status_map = std::collections::HashMap::new();
+    for rental in &user_rentals_with_ssh {
+        ssh_status_map.insert(rental.rental_id.clone(), rental.has_ssh);
+    }
 
     // Get all rentals from validator
     let all_rentals = state
@@ -271,17 +299,65 @@ pub async fn list_rentals_validator(
             message: format!("Failed to list rentals: {e}"),
         })?;
 
-    // Filter to only include user's rentals
-    let filtered_rentals: Vec<_> = all_rentals
-        .rentals
-        .into_iter()
-        .filter(|rental| user_rental_ids.contains(&rental.rental_id))
-        .collect();
+    // Filter to only include user's rentals and fetch executor details
+    let mut api_rentals = Vec::new();
 
-    let filtered_count = filtered_rentals.len();
+    for rental in all_rentals.rentals {
+        // Check if user owns this rental and get SSH status
+        let has_ssh = match ssh_status_map.get(&rental.rental_id) {
+            Some(&has_ssh) => has_ssh,
+            None => continue, // User doesn't own this rental
+        };
 
-    let user_rentals = basilica_validator::api::types::ListRentalsResponse {
-        rentals: filtered_rentals,
+        // Get rental status to fetch executor details with GPU specs
+        // TODO: fix n+1 api requests. we should get the status while listing rentals.
+        let rental_status = match state
+            .validator_client
+            .get_rental_status(&rental.rental_id)
+            .await
+        {
+            Ok(status) => status,
+            Err(e) => {
+                // Log error but continue with other rentals
+                tracing::warn!(
+                    "Failed to get rental status for {}: {}",
+                    rental.rental_id,
+                    e
+                );
+                // Create rental item without GPU specs
+                api_rentals.push(ApiRentalListItem {
+                    rental_id: rental.rental_id,
+                    executor_id: rental.executor_id,
+                    container_id: rental.container_id,
+                    state: rental.state,
+                    created_at: rental.created_at,
+                    miner_id: rental.miner_id,
+                    container_image: rental.container_image,
+                    gpu_specs: vec![],
+                    has_ssh,
+                });
+                continue;
+            }
+        };
+
+        // Create API rental item with GPU specs from executor details
+        api_rentals.push(ApiRentalListItem {
+            rental_id: rental.rental_id,
+            executor_id: rental.executor_id,
+            container_id: rental.container_id,
+            state: rental.state,
+            created_at: rental.created_at,
+            miner_id: rental.miner_id,
+            container_image: rental.container_image,
+            gpu_specs: rental_status.executor.gpu_specs,
+            has_ssh,
+        });
+    }
+
+    let filtered_count = api_rentals.len();
+
+    let user_rentals = ApiListRentalsResponse {
+        rentals: api_rentals,
         total_count: filtered_count,
     };
 
