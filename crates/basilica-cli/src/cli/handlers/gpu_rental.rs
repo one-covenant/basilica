@@ -12,12 +12,9 @@ use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create
 use crate::ssh::{parse_ssh_credentials, SshClient};
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_sdk::types::{
-    ListRentalsQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
+    ListAvailableExecutorsQuery, ListRentalsQuery, RentalState, RentalStatusResponse,
+    ResourceRequirementsRequest, StartRentalRequest, SshAccess,
 };
-use basilica_validator::api::rental_routes::StartRentalRequest;
-use basilica_validator::api::types::ListAvailableExecutorsQuery;
-use basilica_validator::api::types::RentalStatusResponse;
-use basilica_validator::rental::types::RentalState;
 use console::style;
 use reqwest::StatusCode;
 use std::path::PathBuf;
@@ -706,7 +703,7 @@ async fn poll_rental_status(
         // Check rental status
         match api_client.get_rental_status(rental_id).await {
             Ok(status) => {
-                use basilica_api::api::types::RentalStatus;
+                use basilica_sdk::types::RentalStatus;
                 match status.status {
                     RentalStatus::Active => {
                         complete_spinner_and_clear(spinner);
@@ -793,32 +790,33 @@ fn display_ssh_connection_instructions(
     Ok(())
 }
 
-/// Verify rental is still active and clean up cache if not
-async fn verify_rental_status_and_cleanup_cache(
-    rental_id: &str,
-    api_client: &basilica_sdk::BasilicaClient,
-    cache: &mut RentalCache,
-) -> Result<()> {
-    let status = api_client
-        .get_rental_status(rental_id)
-        .await
-        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
+// TODO: Re-implement rental cache functionality
+// /// Verify rental is still active and clean up cache if not
+// async fn verify_rental_status_and_cleanup_cache(
+//     rental_id: &str,
+//     api_client: &basilica_sdk::BasilicaClient,
+//     cache: &mut RentalCache,
+// ) -> Result<()> {
+//     let status = api_client
+//         .get_rental_status(rental_id)
+//         .await
+//         .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
 
-    if matches!(
-        status.status,
-        RentalStatus::Terminated | RentalStatus::Failed
-    ) {
-        cache.remove_rental(rental_id);
-        cache.save().await?;
-        return Err(CliError::not_found(format!(
-            "Rental {} is no longer active (status: {:?})",
-            rental_id, status.status
-        ))
-        .with_suggestion("Run 'basilica ps' to see currently active rentals"));
-    }
+//     if matches!(
+//         status.status,
+//         RentalStatus::Terminated | RentalStatus::Failed
+//     ) {
+//         cache.remove_rental(rental_id);
+//         cache.save().await?;
+//         return Err(CliError::not_found(format!(
+//             "Rental {} is no longer active (status: {:?})",
+//             rental_id, status.status
+//         ))
+//         .with_suggestion("Run 'basilica ps' to see currently active rentals"));
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result<String> {
     let path = key_path.as_ref().unwrap_or(&config.ssh.key_path);

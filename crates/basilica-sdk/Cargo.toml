@@ -36,6 +36,9 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 url = "2.5"
 
+# OpenAPI support (optional)
+utoipa = { version = "4.1", features = ["chrono", "uuid"], optional = true }
+
 # Auth dependencies (moved from CLI)
 oauth2 = "4.4"
 base64 = "0.21"
@@ -59,3 +62,8 @@ basilica-validator = { path = "../basilica-validator", features = ["client", "op
 [dev-dependencies]
 wiremock = "0.6"
 tokio = { workspace = true, features = ["full", "test-util"] }
+
+[features]
+default = []
+openapi = ["utoipa"]
+client = []

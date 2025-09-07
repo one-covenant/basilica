@@ -17,7 +17,6 @@
 
 // Use auth from SDK instead of local module
 pub use basilica_sdk::auth;
-pub mod cache;
 pub mod cli;
 pub mod client;
 pub mod config;

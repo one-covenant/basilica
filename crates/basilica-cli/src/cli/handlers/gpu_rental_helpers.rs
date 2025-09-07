@@ -2,10 +2,8 @@
 
 use crate::error::{CliError, Result};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
-use basilica_sdk::types::ListRentalsQuery;
+use basilica_sdk::types::{ListRentalsQuery, RentalState};
 use basilica_sdk::BasilicaClient;
-use basilica_validator::api::types::RentalListItem;
-use basilica_validator::rental::types::RentalState;
 
 /// Resolve target rental ID - if not provided, fetch active rentals and prompt for selection
 ///

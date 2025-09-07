@@ -15,7 +15,7 @@ basilica-validator = { path = "../basilica-validator", features = [
   "client",
   "openapi",
 ] }
-basilica-sdk = { path = "../basilica-sdk", optional = true }
+basilica-sdk = { path = "../basilica-sdk", features = ["openapi"] }
 
 # Async runtime
 tokio = { workspace = true }
@@ -100,11 +100,12 @@ mockall = "0.12"
 wiremock = "0.6"
 
 [features]
-default = ["server", "redis-cache"]
+default = ["server", "redis-cache", "utoipa"]
 server = []
-client = ["basilica-sdk"]
+client = []
 redis-cache = ["redis"]
-full = ["server", "client", "redis-cache"]
+utoipa = []
+full = ["server", "client", "redis-cache", "utoipa"]
 
 [[bin]]
 name = "basilica-api"

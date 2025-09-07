@@ -2478,6 +2478,7 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "url",
+ "utoipa",
  "uuid",
  "webbrowser",
  "wiremock 0.6.4",

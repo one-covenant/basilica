@@ -1,7 +1,7 @@
 //! Interactive selection utilities
 
 use crate::error::{CliError, Result};
-use basilica_api::api::types::ApiRentalListItem;
+use basilica_sdk::types::ApiRentalListItem;
 use basilica_validator::api::types::AvailableExecutor;
 use console::Term;
 use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};

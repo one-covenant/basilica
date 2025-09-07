@@ -37,12 +37,12 @@ use crate::{
         TokenManager,
     },
     error::{ApiError, ErrorResponse, Result},
-    types::{HealthCheckResponse, ListRentalsQuery, RentalStatusResponse},
+    types::{
+        ApiListRentalsResponse, HealthCheckResponse, ListAvailableExecutorsQuery,
+        ListRentalsQuery, RentalStatusWithSshResponse, StartRentalRequest,
+    },
 };
-use basilica_validator::api::{
-    rental_routes::StartRentalRequest,
-    types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, ListRentalsResponse},
-};
+use basilica_validator::api::types::ListAvailableExecutorsResponse;
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
@@ -115,7 +115,7 @@ impl BasilicaClient {
     // ===== Rentals =====
 
     /// Get rental status
-    pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusResponse> {
+    pub async fn get_rental_status(&self, rental_id: &str) -> Result<RentalStatusWithSshResponse> {
         let path = format!("/rentals/{rental_id}");
         self.get(&path).await
     }
@@ -173,7 +173,7 @@ impl BasilicaClient {
     pub async fn list_rentals(
         &self,
         query: Option<ListRentalsQuery>,
-    ) -> Result<ListRentalsResponse> {
+    ) -> Result<ApiListRentalsResponse> {
         let url = format!("{}/rentals", self.base_url);
         let mut request = self.http_client.get(&url);
 

@@ -1,4 +1,4 @@
-use basilica_validator::rental::types::RentalState;
+use basilica_sdk::types::RentalState;
 use clap::{Subcommand, ValueHint};
 use std::path::PathBuf;
 
