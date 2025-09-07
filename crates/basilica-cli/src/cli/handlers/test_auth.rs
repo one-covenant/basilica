@@ -3,6 +3,7 @@
 use crate::auth::{OAuthFlow, TokenStore};
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
+use crate::error::CliError;
 use base64::{
     engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
     Engine,
@@ -182,7 +183,7 @@ fn decode_jwt_scopes(token: &str) -> Option<Vec<String>> {
 }
 
 /// Test the authentication token by calling Auth0's /userinfo endpoint
-pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
+pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
     println!("Testing authentication token...\n");
 
     // First, test token refresh functionality
@@ -344,11 +345,11 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
     } else if status.as_u16() == 401 {
         println!("Token is invalid or expired");
         println!("\nPlease run 'basilica login' to get a new token");
-        return Err(eyre!("Invalid or expired token"));
+        return Err(eyre!("Invalid or expired token").into());
     } else if status.as_u16() == 429 {
         println!("Rate limited (max 5 requests per minute)");
         println!("Please wait a moment and try again");
-        return Err(eyre!("Rate limited by Auth0"));
+        return Err(eyre!("Rate limited by Auth0").into());
     } else {
         let error_text = response
             .text()
@@ -356,14 +357,14 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
             .unwrap_or_else(|_| "Unknown error".to_string());
         println!("Unexpected error: {}", status);
         println!("Response: {}", error_text);
-        return Err(eyre!(format!("Unexpected error: {}", status)));
+        return Err(eyre!(format!("Unexpected error: {}", status)).into());
     }
 
     Ok(())
 }
 
 /// Test API authentication by making a request to your Basilica API
-pub async fn handle_test_api_auth(config: &CliConfig) -> Result<()> {
+pub async fn handle_test_api_auth(config: &CliConfig) -> Result<(), CliError> {
     println!("Testing Basilica API authentication...\n");
 
     // Create authenticated client
@@ -382,7 +383,7 @@ pub async fn handle_test_api_auth(config: &CliConfig) -> Result<()> {
             println!("  Error: {}", e);
             println!("  Note: Health endpoint requires full authentication");
             println!("  Run 'basilica login' to authenticate if you haven't already");
-            return Err(eyre!(format!("API connection failed: {}", e)));
+            return Err(eyre!(format!("API connection failed: {}", e)).into());
         }
     }
 

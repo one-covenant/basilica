@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use crate::auth::{OAuthFlow, TokenStore};
+use crate::auth::{AuthError, OAuthFlow, TokenStore};
 use crate::config::CliConfig;
 use crate::error::CliError;
 use basilica_api::client::{BasilicaClient, ClientBuilder};
@@ -36,9 +36,7 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
         builder = builder.with_bearer_token(jwt_token);
     } else {
         // Provide a more helpful error message using our custom error type
-        return Err(CliError::Auth(Box::new(std::io::Error::other(
-            "No authentication tokens found",
-        ))));
+        return Err(CliError::from(AuthError::UserNotLoggedIn));
     }
 
     builder
@@ -58,11 +56,7 @@ async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
         .retrieve("basilica-cli")
         .await
         .wrap_err("Failed to retrieve authentication tokens")?
-        .ok_or_else(|| {
-            CliError::Auth(Box::new(std::io::Error::other(
-                "No authentication tokens found",
-            )))
-        })?;
+        .ok_or_else(|| CliError::from(AuthError::UserNotLoggedIn))?;
 
     if tokens.needs_refresh() {
         debug!("Token needs refresh, attempting to refresh pre-emptively");

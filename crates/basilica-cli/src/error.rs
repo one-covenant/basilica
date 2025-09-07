@@ -11,12 +11,12 @@ pub enum CliError {
     Config(#[from] basilica_common::ConfigurationError),
 
     /// API communication errors (wraps basilica-api's ApiError)
-    #[error(transparent)]
+    #[error("API error")]
     Api(#[from] basilica_api::error::ApiError),
 
     /// Authentication/authorization issues
-    #[error("Authentication required. Run 'basilica login' to authenticate")]
-    Auth(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("Authentication error")]
+    Auth(#[from] crate::auth::AuthError),
 
     /// External component delegation
     #[error("Failed to execute external component")]

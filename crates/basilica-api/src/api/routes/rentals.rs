@@ -55,7 +55,13 @@ pub async fn get_rental_status(
     debug!("Getting status for rental: {}", owned_rental.rental_id);
 
     let client = &state.validator_client;
-    let validator_response = client.get_rental_status(&owned_rental.rental_id).await?;
+    let validator_response = client
+        .get_rental_status(&owned_rental.rental_id)
+        .await
+        .inspect_err(|e| {
+            dbg!(&e);
+            println!("{e:?}");
+        })?;
 
     // Create extended response with SSH credentials from database
     let response_with_ssh = RentalStatusWithSshResponse::from_validator_response(

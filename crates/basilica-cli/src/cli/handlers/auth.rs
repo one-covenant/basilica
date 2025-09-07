@@ -61,11 +61,7 @@ pub async fn handle_login_with_options(
             }
             Err(e) => {
                 complete_spinner_error(spinner, "Authentication failed");
-                return Err(CliError::Auth(Box::new(
-                    std::io::Error::other(
-                        format!("Authentication failed: {}. Try 'basilica login' without --device-code for browser flow", e)
-                    )
-                )));
+                return Err(e.into());
             }
         }
     } else {
@@ -74,10 +70,7 @@ pub async fn handle_login_with_options(
         match oauth_flow.start_flow().await {
             Ok(tokens) => tokens,
             Err(e) => {
-                return Err(CliError::Auth(Box::new(std::io::Error::other(format!(
-                    "Authentication failed: {}. Try 'basilica login --device-code' for device flow",
-                    e
-                )))));
+                return Err(e.into());
             }
         }
     };

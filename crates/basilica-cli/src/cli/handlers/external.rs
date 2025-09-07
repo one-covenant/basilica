@@ -128,3 +128,45 @@ fn delegate_to_binary_impl(
     // Exit with the same code as the child process
     std::process::exit(exit_status.code().unwrap_or(1));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validator_delegation_fails_gracefully() {
+        // This should fail since basilica-validator is not in PATH during tests
+        let result = handle_validator(vec!["--help".to_string()]);
+        assert!(result.is_err());
+
+        if let Err(CliError::DelegationComponent(err)) = result {
+            assert!(err.to_string().contains("basilica-validator"));
+        } else {
+            panic!("Expected DelegationComponent error");
+        }
+    }
+
+    #[test]
+    fn test_binary_name_with_extension() {
+        // Test executable extension handling
+        if cfg!(windows) {
+            assert_eq!(
+                resolve_binary_name_with_ext("basilica-validator"),
+                "basilica-validator.exe"
+            );
+            assert_eq!(
+                resolve_binary_name_with_ext("basilica-validator.exe"),
+                "basilica-validator.exe"
+            );
+            assert_eq!(
+                resolve_binary_name_with_ext("BASILICA-VALIDATOR.EXE"),
+                "BASILICA-VALIDATOR.EXE"
+            );
+        } else {
+            assert_eq!(
+                resolve_binary_name_with_ext("basilica-validator"),
+                "basilica-validator"
+            );
+        }
+    }
+}
