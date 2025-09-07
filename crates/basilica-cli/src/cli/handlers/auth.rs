@@ -9,9 +9,6 @@ use color_eyre::eyre::{eyre, WrapErr};
 use color_eyre::Section;
 use tracing::{debug, warn};
 
-/// Service name for token storage
-const SERVICE_NAME: &str = "basilica-cli";
-
 /// Handle login command
 pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<(), CliError> {
     handle_login_with_options(device_code, config, true).await
@@ -52,7 +49,8 @@ pub async fn handle_login_with_options(
     };
 
     // Initialize token store
-    let token_store = TokenStore::new().wrap_err("Failed to initialize token store")?;
+    let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
+    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
 
     let token_set = if use_device_flow {
         let spinner = create_spinner("Requesting device code...");
@@ -82,7 +80,7 @@ pub async fn handle_login_with_options(
     let spinner = create_spinner("Storing authentication tokens...");
 
     // Store the tokens securely
-    if let Err(e) = token_store.store_tokens(SERVICE_NAME, &token_set).await {
+    if let Err(e) = token_store.store_tokens(&token_set).await {
         complete_spinner_error(spinner, "Failed to store tokens");
         return Err(eyre!("Failed to store tokens: {}", e)
             .suggestion("Check if you have permission to access the system keychain")
@@ -140,10 +138,11 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<(), CliError> {
     let spinner = create_spinner("Checking authentication status...");
 
     // Initialize token store
-    let token_store = TokenStore::new().wrap_err("Failed to initialize token store")?;
+    let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
+    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
 
     // Check if user is currently logged in and get tokens for revocation
-    let tokens = match token_store.get_tokens(SERVICE_NAME).await {
+    let tokens = match token_store.get_tokens().await {
         Ok(Some(tokens)) => {
             complete_spinner_and_clear(spinner);
             Some(tokens)
@@ -183,7 +182,7 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<(), CliError> {
     let spinner = create_spinner("Clearing local authentication data...");
 
     // Delete stored authentication tokens
-    if let Err(e) = token_store.delete_tokens(SERVICE_NAME).await {
+    if let Err(e) = token_store.delete_tokens().await {
         complete_spinner_error(spinner, "Failed to clear tokens");
         return Err(eyre!("Failed to clear authentication data: {}", e)
             .suggestion("Try running the command with elevated permissions")

@@ -49,11 +49,12 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
 /// This function checks if the stored token needs refresh and refreshes it
 /// before returning, ensuring the API client always gets a valid token.
 async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
-    let token_store = TokenStore::new().wrap_err("Failed to initialize token store")?;
+    let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
+    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
 
     // Try to get stored tokens
     let mut tokens = token_store
-        .retrieve("basilica-cli")
+        .retrieve()
         .await
         .wrap_err("Failed to retrieve authentication tokens")?
         .ok_or_else(|| CliError::from(AuthError::UserNotLoggedIn))?;
@@ -69,7 +70,7 @@ async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
                 Ok(new_tokens) => {
                     debug!("Successfully refreshed tokens pre-emptively");
                     // Store new tokens
-                    if let Err(e) = token_store.store("basilica-cli", &new_tokens).await {
+                    if let Err(e) = token_store.store(&new_tokens).await {
                         warn!("Failed to store refreshed tokens: {}", e);
                     }
                     tokens = new_tokens;
@@ -89,12 +90,16 @@ async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
 
 /// Checks if the user is authenticated (has valid tokens)
 pub async fn is_authenticated() -> bool {
-    let token_store = match TokenStore::new() {
+    let data_dir = match CliConfig::data_dir() {
+        Ok(dir) => dir,
+        Err(_) => return false,
+    };
+    let token_store = match TokenStore::new(data_dir) {
         Ok(store) => store,
         Err(_) => return false,
     };
 
-    match token_store.retrieve("basilica-cli").await {
+    match token_store.retrieve().await {
         Ok(Some(tokens)) => !tokens.is_expired(),
         Ok(None) => false,
         Err(_) => false,
@@ -103,9 +108,10 @@ pub async fn is_authenticated() -> bool {
 
 /// Clears stored authentication tokens
 pub async fn clear_authentication() -> Result<()> {
-    let token_store = TokenStore::new().wrap_err("Failed to initialize token store")?;
+    let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
+    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
     token_store
-        .delete_tokens("basilica-cli")
+        .delete_tokens()
         .await
         .wrap_err("Failed to delete authentication tokens")?;
     Ok(())

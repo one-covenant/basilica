@@ -190,11 +190,12 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
     println!("Testing token refresh capability...");
     println!("──────────────────────────────────\n");
 
-    let token_store = TokenStore::new().map_err(|e| eyre!(e.to_string()))?;
+    let data_dir = CliConfig::data_dir().map_err(|e| eyre!(e.to_string()))?;
+    let token_store = TokenStore::new(data_dir).map_err(|e| eyre!(e.to_string()))?;
 
     // Get current tokens to test refresh
     let tokens = token_store
-        .retrieve("basilica-cli")
+        .retrieve()
         .await
         .map_err(|e| eyre!(format!("Failed to retrieve tokens: {}", e)))?
         .ok_or_else(|| {
@@ -234,7 +235,7 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
                 println!("  ✅ Token refresh SUCCESSFUL!");
 
                 // Store the new tokens
-                if let Err(e) = token_store.store("basilica-cli", &new_tokens).await {
+                if let Err(e) = token_store.store(&new_tokens).await {
                     println!("  ⚠️  Warning: Failed to store refreshed tokens: {}", e);
                 }
 
