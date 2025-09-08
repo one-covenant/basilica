@@ -1,3 +1,4 @@
+use crate::cli::handlers::gpu_rental::TargetType;
 use basilica_validator::rental::types::RentalState;
 use clap::{Subcommand, ValueHint};
 use std::path::PathBuf;
@@ -15,8 +16,8 @@ pub enum Commands {
     /// Provision and start GPU instances
     #[command(alias = "start")]
     Up {
-        /// Target executor UID/HUID (optional)
-        target: Option<String>,
+        /// Target executor ID (UUID) or GPU category (e.g., 'h100', 'h200', 'b200') (optional)
+        target: Option<TargetType>,
 
         #[command(flatten)]
         options: UpOptions,
@@ -184,10 +185,6 @@ pub struct ListFilters {
 /// Options for provisioning instances
 #[derive(clap::Args, Debug, Clone)]
 pub struct UpOptions {
-    /// GPU type requirement
-    #[arg(long)]
-    pub gpu_type: Option<String>,
-
     /// Minimum GPU count
     #[arg(long)]
     pub gpu_min: Option<u32>,

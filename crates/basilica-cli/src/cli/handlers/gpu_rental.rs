@@ -18,14 +18,72 @@ use basilica_api::error::ApiError;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
 use basilica_validator::api::types::RentalStatusResponse;
+use basilica_validator::gpu::categorization::GpuCategory;
 use basilica_validator::rental::types::RentalState;
 use color_eyre::eyre::{eyre, Result};
 use color_eyre::Section;
 use console::style;
 use reqwest::StatusCode;
+use std::fmt;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 use tracing::debug;
+use uuid::Uuid;
+
+/// Represents the target for the `up` command - either an executor ID or GPU category
+#[derive(Debug, Clone)]
+pub enum TargetType {
+    /// A specific executor ID
+    ExecutorId(String),
+    /// A GPU category (h100, h200, b200, etc.)
+    GpuCategory(GpuCategory),
+}
+
+/// Error type for TargetType parsing
+#[derive(Debug, Clone)]
+pub struct TargetTypeParseError {
+    value: String,
+}
+
+impl fmt::Display for TargetTypeParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "'{}' is not a valid executor ID (UUID) or GPU type (h100, b200, etc...)",
+            self.value
+        )
+    }
+}
+
+impl std::error::Error for TargetTypeParseError {}
+
+impl FromStr for TargetType {
+    type Err = TargetTypeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // First check if it's a valid UUID v4 (executor ID)
+        if Uuid::parse_str(s).is_ok() {
+            return Ok(TargetType::ExecutorId(s.to_string()));
+        }
+
+        // Then check if it's a known GPU type
+        let gpu_category =
+            GpuCategory::from_str(s).expect("GpuCategory::from_str returns Infallible");
+
+        match gpu_category {
+            GpuCategory::H100 | GpuCategory::H200 | GpuCategory::B200 => {
+                Ok(TargetType::GpuCategory(gpu_category))
+            }
+            GpuCategory::Other(_) => {
+                // Not a valid UUID and not a known GPU type
+                Err(TargetTypeParseError {
+                    value: s.to_string(),
+                })
+            }
+        }
+    }
+}
 
 /// Handle the `ls` command - list available executors for rental
 pub async fn handle_ls(
@@ -78,30 +136,36 @@ pub async fn handle_ls(
 
 /// Handle the `up` command - provision GPU instances
 pub async fn handle_up(
-    target: Option<String>,
+    target: Option<TargetType>,
     options: UpOptions,
     config: &CliConfig,
 ) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
-    // Determine whether to use direct executor ID, GPU requirements, or interactive selection
-    let executor_selection = if let Some(executor_id) = target {
-        // Direct executor ID provided
-        ExecutorSelection::ExecutorId { executor_id }
-    } else if options.gpu_type.is_some() {
-        // No executor ID, but GPU requirements specified - use automatic selection
-        let spinner = create_spinner("Using GPU requirements for automatic executor selection...");
-        complete_spinner_and_clear(spinner);
+    // Parse the target to determine executor selection strategy
+    let executor_selection = if let Some(target_type) = target {
+        match target_type {
+            TargetType::ExecutorId(executor_id) => {
+                // Direct executor ID provided
+                ExecutorSelection::ExecutorId { executor_id }
+            }
+            TargetType::GpuCategory(gpu_category) => {
+                // GPU category specified - use automatic selection
+                let spinner =
+                    create_spinner(&format!("Finding available {} executors...", gpu_category));
+                complete_spinner_and_clear(spinner);
 
-        ExecutorSelection::GpuRequirements {
-            gpu_requirements: GpuRequirements {
-                min_memory_gb: 0, // Default, no minimum memory requirement
-                gpu_type: options.gpu_type.clone(),
-                gpu_count: options.gpu_min.unwrap_or(1),
-            },
+                ExecutorSelection::GpuRequirements {
+                    gpu_requirements: GpuRequirements {
+                        min_memory_gb: 0, // Default, no minimum memory requirement
+                        gpu_type: Some(gpu_category.as_str()),
+                        gpu_count: options.gpu_min.unwrap_or(1),
+                    },
+                }
+            }
         }
     } else {
-        // No executor ID and no GPU requirements - use interactive selection
+        // No target specified - use interactive selection
         let spinner = create_spinner("Fetching available executors...");
 
         // Build query from options
