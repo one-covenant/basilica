@@ -18,7 +18,7 @@ def main():
         print("Starting GPU rental...")
         rental = client.start_rental()
         
-        rental_id = rental["rental_id"]
+        rental_id = rental.rental_id  # Now using typed attribute access!
         print(f"Rental started with ID: {rental_id}")
         
         # Use the new blocking wait method
@@ -27,15 +27,15 @@ def main():
         
         print("Rental is now active!")
         
-        # Display SSH access info
-        if "ssh_access" in status:
-            ssh = status["ssh_access"]
+        # Display SSH access info using typed attributes
+        if status.ssh_access:
+            ssh = status.ssh_access
             print(f"\nSSH Access:")
-            print(f"  Host: {ssh.get('host', 'N/A')}")
-            print(f"  Port: {ssh.get('port', 22)}")
-            print(f"  User: {ssh.get('user', 'root')}")
+            print(f"  Host: {ssh.host}")
+            print(f"  Port: {ssh.port}")
+            print(f"  User: {ssh.user}")
             print(f"\nConnect with:")
-            print(f"  ssh -p {ssh.get('port', 22)} {ssh.get('user', 'root')}@{ssh.get('host', 'N/A')}")
+            print(f"  ssh -p {ssh.port} {ssh.user}@{ssh.host}")
         
         # Optionally stop the rental
         # print("\nStopping rental...")

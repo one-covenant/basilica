@@ -8,24 +8,22 @@ from basilica import BasilicaClient
 # That's it! The client auto-configures from environment variables
 client = BasilicaClient()
 
-# Start a rental with all defaults
-rental = client.start_rental()
+# Start a rental with all defaults - returns typed RentalResponse
+rental = client.start_rental(gpu_type="h100")
+print(f"Rental started with ID: {rental.rental_id}")
 
-# Wait for it to be ready
-status = client.wait_for_rental(rental["rental_id"])
+# Wait for it to be ready - returns typed RentalStatusResponse
+status = client.wait_for_rental(rental.rental_id)
 
-# Print SSH details if available
-ssh = status.get("ssh_access")
-if isinstance(ssh, dict):
-    port = ssh.get("port", 22)
-    user = ssh.get("user", "root")
-    host = ssh.get("host")
-    if host:
-        print(f"ssh -p {port} {user}@{host}")
-    else:
-        print("SSH access reported but host missing")
+# Print SSH details if available - using typed attributes
+if status.ssh_access:
+    ssh = status.ssh_access
+    print(f"SSH Access Available:")
+    print(f"  ssh -p {ssh.port} {ssh.user}@{ssh.host}")
+elif status.ssh_credentials:
+    print(f"SSH credentials: {status.ssh_credentials}")
 else:
     print("No SSH access (no_ssh=True or not provisioned)")
 
 # When done, stop the rental
-# client.stop_rental(rental["rental_id"])
+# client.stop_rental(rental.rental_id)

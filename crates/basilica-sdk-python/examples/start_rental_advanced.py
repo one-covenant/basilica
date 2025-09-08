@@ -18,11 +18,9 @@ def main():
             # Override the default container image
             container_image="pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime",
             
-            # Override the default resources
-            resources={
-                "gpu_count": 2,
-                "gpu_type": "a100"
-            },
+            # Override GPU configuration
+            gpu_type="a100",
+            gpu_count=2,
             
             # Add custom environment variables  
             environment={
@@ -35,8 +33,11 @@ def main():
             # ssh_public_key="ssh-rsa AAAAB3... user@host"
         )
         
-        rental_id = rental["rental_id"]
+        # Using typed response
+        rental_id = rental.rental_id
         print(f"Rental started with ID: {rental_id}")
+        print(f"Container: {rental.container_name}")
+        print(f"Status: {rental.status}")
         
         # Wait for rental with custom timeout and poll interval
         print("Waiting for rental to become active...")
@@ -48,11 +49,24 @@ def main():
         
         print("Rental is now active!")
         
-        # Display rental details
-        if "ssh_access" in status:
-            ssh = status["ssh_access"]
+        # Display rental details using typed attributes
+        if status.ssh_access:
+            ssh = status.ssh_access
             print(f"\nSSH Access:")
-            print(f"  ssh -p {ssh.get('port', 22)} {ssh.get('user', 'root')}@{ssh.get('host', 'N/A')}")
+            print(f"  Host: {ssh.host}")
+            print(f"  Port: {ssh.port}")
+            print(f"  User: {ssh.user}")
+            print(f"\nConnect with:")
+            print(f"  ssh -p {ssh.port} {ssh.user}@{ssh.host}")
+        elif status.ssh_credentials:
+            print(f"\nSSH credentials: {status.ssh_credentials}")
+        
+        # Display executor details
+        executor = status.executor
+        print(f"\nExecutor details:")
+        print(f"  ID: {executor.id}")
+        for gpu in executor.gpu_specs:
+            print(f"  GPU: {gpu.name} - {gpu.memory_gb} GB")
         
     except TimeoutError as e:
         print(f"Timeout: {e}")

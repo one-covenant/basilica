@@ -1,0 +1,44 @@
+"""Default values and constants for Basilica SDK."""
+
+# API Defaults
+DEFAULT_API_URL = "https://api.basilica.ai"
+DEFAULT_TIMEOUT_SECS = 30
+
+# Container Defaults
+DEFAULT_CONTAINER_IMAGE = "nvidia/cuda:12.2.0-base-ubuntu22.04"
+
+# GPU Defaults
+DEFAULT_GPU_TYPE = "h100"
+DEFAULT_GPU_COUNT = 1
+DEFAULT_GPU_MIN_MEMORY_GB = 24
+
+# Resource Defaults
+DEFAULT_CPU_CORES = 4.0
+DEFAULT_MEMORY_MB = 16384  # 16GB
+DEFAULT_STORAGE_MB = 51200  # 50GB
+
+# Network Defaults
+DEFAULT_PORT_PROTOCOL = "tcp"
+
+# SSH Defaults
+DEFAULT_SSH_USER = "root"
+DEFAULT_SSH_PORT = 22
+
+# Rental Defaults
+DEFAULT_MAX_DURATION_HOURS = 24
+DEFAULT_WAIT_TIMEOUT_SECS = 300
+DEFAULT_POLL_INTERVAL_SECS = 5
+
+# Rental States
+RENTAL_STATE_PENDING = "Pending"
+RENTAL_STATE_ACTIVE = "Active"
+RENTAL_STATE_TERMINATED = "Terminated"
+RENTAL_STATE_FAILED = "Failed"
+RENTAL_STATE_CANCELLED = "Cancelled"
+
+# Terminal rental states that won't transition to active
+TERMINAL_RENTAL_STATES = [
+    RENTAL_STATE_FAILED,
+    RENTAL_STATE_TERMINATED,
+    RENTAL_STATE_CANCELLED,
+]

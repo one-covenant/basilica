@@ -4,13 +4,57 @@ Basilica SDK for Python
 A Python SDK for interacting with the Basilica GPU rental network.
 """
 
+import os
 from typing import Optional, Dict, Any, List
 
-from basilica._basilica import BasilicaClient as _BasilicaClient
-from basilica._basilica import create_rental_request
+from basilica._basilica import (
+    BasilicaClient as _BasilicaClient,
+    create_rental_request,
+    # Response types
+    HealthCheckResponse,
+    RentalResponse,
+    RentalStatusResponse,
+    RentalStatus,
+    SshAccess,
+    ExecutorDetails,
+    GpuSpec,
+    CpuSpec,
+    AvailableExecutor,
+    AvailabilityInfo,
+)
+
+from basilica.constants import (
+    DEFAULT_API_URL,
+    DEFAULT_TIMEOUT_SECS,
+    DEFAULT_CONTAINER_IMAGE,
+    DEFAULT_GPU_TYPE,
+    DEFAULT_GPU_COUNT,
+    DEFAULT_GPU_MIN_MEMORY_GB,
+    DEFAULT_CPU_CORES,
+    DEFAULT_MEMORY_MB,
+    DEFAULT_STORAGE_MB,
+    DEFAULT_WAIT_TIMEOUT_SECS,
+    DEFAULT_POLL_INTERVAL_SECS,
+    RENTAL_STATE_ACTIVE,
+    TERMINAL_RENTAL_STATES,
+)
 
 __version__ = "0.1.0"
-__all__ = ["BasilicaClient", "create_rental_request"]
+__all__ = [
+    "BasilicaClient",
+    "create_rental_request",
+    # Response types
+    "HealthCheckResponse",
+    "RentalResponse",
+    "RentalStatusResponse",
+    "RentalStatus",
+    "SshAccess",
+    "ExecutorDetails",
+    "GpuSpec",
+    "CpuSpec",
+    "AvailableExecutor",
+    "AvailabilityInfo",
+]
 
 
 class BasilicaClient:
@@ -27,21 +71,19 @@ class BasilicaClient:
         self,
         base_url: Optional[str] = None,
         token: Optional[str] = None,
-        timeout_secs: int = 30
+        timeout_secs: int = DEFAULT_TIMEOUT_SECS
     ):
         """
         Initialize a new Basilica client.
         
         Args:
-            base_url: The base URL of the Basilica API (default: from BASILICA_API_URL env or https://api.basilica.ai)
+            base_url: The base URL of the Basilica API (default: from BASILICA_API_URL env or DEFAULT_API_URL)
             token: Optional authentication token (default: from BASILICA_API_TOKEN env)
-            timeout_secs: Request timeout in seconds (default: 30)
+            timeout_secs: Request timeout in seconds (default: DEFAULT_TIMEOUT_SECS)
         """
-        import os
-        
         # Auto-detect base_url if not provided
         if base_url is None:
-            base_url = os.environ.get("BASILICA_API_URL", "https://api.basilica.ai")
+            base_url = os.environ.get("BASILICA_API_URL", DEFAULT_API_URL)
         
         # Auto-detect token if not provided
         if token is None:
@@ -49,12 +91,12 @@ class BasilicaClient:
         
         self._client = _BasilicaClient(base_url, token, timeout_secs)
     
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> HealthCheckResponse:
         """
         Check the health of the API.
         
         Returns:
-            Health check response containing status, version, and validator info
+            HealthCheckResponse: Typed response with status, version, and validator info
         """
         return self._client.health_check()
     
@@ -63,7 +105,7 @@ class BasilicaClient:
         available: Optional[bool] = None,
         gpu_type: Optional[str] = None,
         min_gpu_count: Optional[int] = None
-    ) -> Dict[str, Any]:
+    ) -> List[AvailableExecutor]:
         """
         List available executors.
         
@@ -73,7 +115,7 @@ class BasilicaClient:
             min_gpu_count: Filter by minimum GPU count
             
         Returns:
-            List of available executors
+            List[AvailableExecutor]: List of typed executor objects with details
         """
         query = {}
         if available is not None:
@@ -89,6 +131,8 @@ class BasilicaClient:
         self,
         container_image: Optional[str] = None,
         executor_id: Optional[str] = None,
+        gpu_type: Optional[str] = None,
+        gpu_count: int = DEFAULT_GPU_COUNT,
         ssh_public_key: Optional[str] = None,
         environment: Optional[Dict[str, str]] = None,
         ports: Optional[List[Dict[str, Any]]] = None,
@@ -96,31 +140,35 @@ class BasilicaClient:
         command: Optional[List[str]] = None,
         volumes: Optional[List[Dict[str, str]]] = None,
         no_ssh: bool = False
-    ) -> Dict[str, Any]:
+    ) -> RentalResponse:
         """
         Start a new rental.
         
         Args:
-            container_image: Docker image to run (default: nvidia/cuda:12.2.0-base-ubuntu22.04)
+            container_image: Docker image to run (default: DEFAULT_CONTAINER_IMAGE)
             executor_id: Optional specific executor to use
+            gpu_type: GPU type to request (default: DEFAULT_GPU_TYPE)
+            gpu_count: Number of GPUs to request (default: DEFAULT_GPU_COUNT)
             ssh_public_key: SSH public key for access (auto-detected from ~/.ssh/id_*.pub if not provided)
             environment: Environment variables
             ports: Port mappings
-            resources: Resource requirements (default: {"gpu_count": 1, "gpu_type": "h100"})
+            resources: Resource requirements (uses defaults if not provided)
             command: Command to run
             volumes: Volume mounts
             no_ssh: Disable SSH access
             
         Returns:
-            Rental response with rental ID and details
+            RentalResponse: Typed response with rental details
         """
-        # Set defaults
+        # Set defaults from constants
         if container_image is None:
-            container_image = "nvidia/cuda:12.2.0-base-ubuntu22.04"
+            container_image = DEFAULT_CONTAINER_IMAGE
+        
+        if gpu_type is None:
+            gpu_type = DEFAULT_GPU_TYPE
         
         if ssh_public_key is None and not no_ssh:
             # Auto-detect SSH key
-            import os
             import glob
             ssh_key_paths = glob.glob(os.path.expanduser("~/.ssh/id_*.pub"))
             if ssh_key_paths:
@@ -129,19 +177,62 @@ class BasilicaClient:
         
         if resources is None:
             resources = {
-                "gpu_count": 1,
-                "gpu_type": "h100"
+                "gpu_count": gpu_count,
+                "gpu_types": [gpu_type] if gpu_type else [],  # Array of GPU types
+                "cpu_cores": DEFAULT_CPU_CORES,
+                "memory_mb": DEFAULT_MEMORY_MB,
+                "storage_mb": DEFAULT_STORAGE_MB
+            }
+        else:
+            # Merge with defaults to ensure all required fields are present
+            # Handle gpu_type -> gpu_types conversion
+            if "gpu_type" in resources and "gpu_types" not in resources:
+                # Convert singular gpu_type to plural gpu_types array
+                gpu_type_value = resources.pop("gpu_type")
+                resources["gpu_types"] = [gpu_type_value] if gpu_type_value else []
+            elif "gpu_types" not in resources:
+                resources["gpu_types"] = [gpu_type] if gpu_type else []
+            
+            # Ensure all required fields have defaults
+            if "gpu_count" not in resources:
+                resources["gpu_count"] = gpu_count
+            if "cpu_cores" not in resources:
+                resources["cpu_cores"] = DEFAULT_CPU_CORES
+            if "memory_mb" not in resources:
+                resources["memory_mb"] = DEFAULT_MEMORY_MB
+            if "storage_mb" not in resources:
+                resources["storage_mb"] = DEFAULT_STORAGE_MB
+        
+        # Build executor_selection based on whether executor_id is provided
+        if executor_id:
+            executor_selection = {
+                "type": "executor_id",
+                "executor_id": executor_id
+            }
+        else:
+            # Use GPU requirements from resources for auto-selection
+            gpu_requirements = {
+                "min_memory_gb": DEFAULT_GPU_MIN_MEMORY_GB,
+                "gpu_count": resources.get("gpu_count", gpu_count)
+            }
+            # Get GPU type from gpu_types array if available
+            gpu_types = resources.get("gpu_types", [])
+            if gpu_types and len(gpu_types) > 0:
+                gpu_requirements["gpu_type"] = gpu_types[0]
+            elif gpu_type:
+                gpu_requirements["gpu_type"] = gpu_type
+            
+            executor_selection = {
+                "type": "gpu_requirements",
+                "gpu_requirements": gpu_requirements
             }
         
         request = {
+            "executor_selection": executor_selection,
             "container_image": container_image,
+            "ssh_public_key": ssh_public_key if ssh_public_key else "",
             "no_ssh": no_ssh
         }
-        
-        if executor_id:
-            request["executor_id"] = executor_id
-        if ssh_public_key:
-            request["ssh_public_key"] = ssh_public_key
         if environment:
             request["environment"] = environment
         if ports:
@@ -155,7 +246,7 @@ class BasilicaClient:
             
         return self._client.start_rental(request)
     
-    def get_rental(self, rental_id: str) -> Dict[str, Any]:
+    def get_rental(self, rental_id: str) -> RentalStatusResponse:
         """
         Get rental status.
         
@@ -163,7 +254,7 @@ class BasilicaClient:
             rental_id: The rental ID
             
         Returns:
-            Rental status and details
+            RentalStatusResponse: Typed response with status and details
         """
         return self._client.get_rental(rental_id)
     
@@ -206,21 +297,21 @@ class BasilicaClient:
     def wait_for_rental(
         self,
         rental_id: str,
-        target_state: str = "Active",
-        timeout: int = 300,
-        poll_interval: int = 5
-    ) -> Dict[str, Any]:
+        target_state: str = RENTAL_STATE_ACTIVE,
+        timeout: int = DEFAULT_WAIT_TIMEOUT_SECS,
+        poll_interval: int = DEFAULT_POLL_INTERVAL_SECS
+    ) -> RentalStatusResponse:
         """
         Wait for a rental to reach a specific state.
         
         Args:
             rental_id: The rental ID to wait for
-            target_state: The state to wait for (default: "Active")
-            timeout: Maximum time to wait in seconds (default: 300)
-            poll_interval: How often to check status in seconds (default: 5)
+            target_state: The state to wait for (default: RENTAL_STATE_ACTIVE)
+            timeout: Maximum time to wait in seconds (default: DEFAULT_WAIT_TIMEOUT_SECS)
+            poll_interval: How often to check status in seconds (default: DEFAULT_POLL_INTERVAL_SECS)
             
         Returns:
-            Final rental status
+            RentalStatusResponse: Final rental status
             
         Raises:
             TimeoutError: If timeout is reached before target state
@@ -230,13 +321,13 @@ class BasilicaClient:
         
         while time.time() - start_time < timeout:
             status = self.get_rental(rental_id)
-            current_state = status.get("status", {}).get("state", "Unknown")
+            current_state = status.status.state
             
             if current_state == target_state:
                 return status
             
             # Check for terminal states that won't transition to target
-            if current_state in ["Failed", "Terminated", "Cancelled"]:
+            if current_state in TERMINAL_RENTAL_STATES:
                 raise RuntimeError(f"Rental reached terminal state: {current_state}")
             
             time.sleep(poll_interval)
