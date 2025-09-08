@@ -5,6 +5,7 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::fmt;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -71,15 +72,57 @@ pub enum GpuCategory {
     Other(String),
 }
 
+impl GpuCategory {
+    /// Get the use case description for this GPU category
+    pub fn description(&self) -> &'static str {
+        match self {
+            GpuCategory::H100 => "High-end training & inference",
+            GpuCategory::H200 => "Flagship AI training & inference",
+            GpuCategory::B200 => "Next-gen AI acceleration",
+            GpuCategory::Other(_) => "General GPU compute",
+        }
+    }
+
+    /// Get the display string for this GPU category (e.g., "H100", "H200", "OTHER")
+    pub fn as_str(&self) -> String {
+        match self {
+            GpuCategory::H100 => "H100".to_string(),
+            GpuCategory::H200 => "H200".to_string(),
+            GpuCategory::B200 => "B200".to_string(),
+            GpuCategory::Other(o) => o.clone(),
+        }
+    }
+}
+
+impl fmt::Display for GpuCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 impl FromStr for GpuCategory {
     type Err = Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_uppercase().as_str() {
-            "H100" => Ok(GpuCategory::H100),
-            "H200" => Ok(GpuCategory::H200),
-            "B200" => Ok(GpuCategory::B200),
-            other => Ok(GpuCategory::Other(other.to_string())),
+        let model = s.to_uppercase();
+
+        // Remove common prefixes and clean up
+        let cleaned = model
+            .replace("NVIDIA", "")
+            .replace("GEFORCE", "")
+            .replace("TESLA", "")
+            .trim()
+            .to_string();
+
+        // Check for known GPU models
+        if cleaned.contains("H100") {
+            Ok(GpuCategory::H100)
+        } else if cleaned.contains("H200") {
+            Ok(GpuCategory::H200)
+        } else if cleaned.contains("B200") {
+            Ok(GpuCategory::B200)
+        } else {
+            Ok(GpuCategory::Other(s.to_string()))
         }
     }
 }
@@ -88,6 +131,8 @@ pub struct GpuCategorizer;
 
 impl GpuCategorizer {
     /// Normalize GPU model string to standard category
+    /// TODO: Consider deprecating this in favor of using GpuCategory::from_str directly
+    ///       which returns the enum and avoids string parsing roundtrips
     pub fn normalize_gpu_model(gpu_model: &str) -> String {
         let model = gpu_model.to_uppercase();
 
@@ -111,14 +156,10 @@ impl GpuCategorizer {
         }
     }
 
-    /// Convert normalized model to category enum
+    /// Convert model string to category enum
     pub fn model_to_category(model: &str) -> GpuCategory {
-        match model.to_uppercase().as_str() {
-            "H100" => GpuCategory::H100,
-            "H200" => GpuCategory::H200,
-            "B200" => GpuCategory::B200,
-            _ => GpuCategory::Other(model.to_string()),
-        }
+        // Use the FromStr implementation for consistency
+        GpuCategory::from_str(model).unwrap()
     }
 
     /// Determine primary GPU model from validation results

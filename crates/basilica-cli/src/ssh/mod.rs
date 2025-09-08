@@ -7,6 +7,8 @@ use basilica_common::ssh::{
     StandardSshClient,
 };
 use basilica_sdk::types::{RentalStatusResponse, SshAccess};
+use color_eyre::eyre::{eyre, WrapErr};
+use color_eyre::Section;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, info, warn};
@@ -50,10 +52,13 @@ impl SshClient {
         let private_key_path = self.config.private_key_path.clone();
 
         if !private_key_path.exists() {
-            return Err(CliError::invalid_argument(format!(
+            return Err(eyre!(
                 "SSH private key not found at: {}",
                 private_key_path.display()
-            )));
+            )
+            .suggestion("SSH keys are automatically generated during login. Run 'basilica login' to create them")
+            .note("Or generate manually with 'ssh-keygen -t ed25519 -f ~/.ssh/basilica_ed25519'")
+            .into());
         }
 
         Ok(SshConnectionDetails {
@@ -77,7 +82,11 @@ impl SshClient {
             .client
             .execute_command(&details, command, true)
             .await
-            .map_err(|e| CliError::ssh(format!("Command execution failed: {}", e)))?;
+            .map_err(|e| {
+                eyre!("Command execution failed: {}", e)
+                    .suggestion("Check if the rental is still active and SSH port is exposed")
+                    .note("Run 'basilica status <rental-id>' to check rental status")
+            })?;
 
         println!("{}", output);
         Ok(())
@@ -89,9 +98,10 @@ impl SshClient {
         _rental: &RentalStatusResponse,
         _command: &str,
     ) -> Result<()> {
-        Err(CliError::not_supported(
-            "SSH access details must be provided separately - use execute_command with SshAccess",
-        ))
+        Err(eyre!(
+            "SSH access details must be provided separately - use execute_command with SshAccess"
+        )
+        .into())
     }
 
     /// Open interactive SSH session
@@ -122,14 +132,20 @@ impl SshClient {
             .arg("LogLevel=error")
             .arg(format!("{}@{}", details.username, details.host));
 
-        let status = cmd
-            .status()
-            .map_err(|e| CliError::ssh(format!("Failed to start SSH session: {}", e)))?;
+        let status = cmd.status().map_err(|e| -> CliError {
+            eyre!("Failed to start SSH session: {}", e)
+                .suggestion("Check your SSH key permissions and network connectivity")
+                .note("Ensure the rental is active and accessible")
+                .into()
+        })?;
 
         // Only treat exit code 255 as an SSH error (SSH's own error code)
         // Other exit codes are from the remote command
         if status.code() == Some(255) {
-            return Err(CliError::ssh("SSH connection failed"));
+            return Err(eyre!("SSH connection failed")
+                .suggestion("Check if the rental is still active and SSH port is exposed")
+                .note("Run 'basilica status <rental-id>' to check rental status")
+                .into());
         }
 
         Ok(())
@@ -143,41 +159,57 @@ impl SshClient {
         // Use splitn for more efficient parsing - stops after finding 3 parts
         let mut parts = spec.splitn(3, ':');
 
-        let port1_str = parts.next().ok_or_else(|| {
-            CliError::invalid_argument(format!(
+        let port1_str = parts.next().ok_or_else(|| -> crate::error::CliError {
+            eyre!(
                 "Invalid {} forward specification: {}. Expected format: port:host:port",
-                forward_type, spec
-            ))
+                forward_type,
+                spec
+            )
+            .into()
         })?;
 
-        let host = parts.next().ok_or_else(|| {
-            CliError::invalid_argument(format!(
+        let host = parts.next().ok_or_else(|| -> crate::error::CliError {
+            eyre!(
                 "Invalid {} forward specification: {}. Expected format: port:host:port",
-                forward_type, spec
-            ))
+                forward_type,
+                spec
+            )
+            .into()
         })?;
 
-        let port2_str = parts.next().ok_or_else(|| {
-            CliError::invalid_argument(format!(
+        let port2_str = parts.next().ok_or_else(|| -> crate::error::CliError {
+            eyre!(
                 "Invalid {} forward specification: {}. Expected format: port:host:port",
-                forward_type, spec
-            ))
+                forward_type,
+                spec
+            )
+            .into()
         })?;
 
         // Parse and validate port numbers
-        let port1 = port1_str.parse::<u16>().map_err(|_| {
-            CliError::invalid_argument(format!(
-                "Invalid port number '{}' in {} forward spec: {}",
-                port1_str, forward_type, spec
-            ))
-        })?;
+        let port1 = port1_str
+            .parse::<u16>()
+            .map_err(|_| -> crate::error::CliError {
+                eyre!(
+                    "Invalid port number '{}' in {} forward spec: {}",
+                    port1_str,
+                    forward_type,
+                    spec
+                )
+                .into()
+            })?;
 
-        let port2 = port2_str.parse::<u16>().map_err(|_| {
-            CliError::invalid_argument(format!(
-                "Invalid port number '{}' in {} forward spec: {}",
-                port2_str, forward_type, spec
-            ))
-        })?;
+        let port2 = port2_str
+            .parse::<u16>()
+            .map_err(|_| -> crate::error::CliError {
+                eyre!(
+                    "Invalid port number '{}' in {} forward spec: {}",
+                    port2_str,
+                    forward_type,
+                    spec
+                )
+                .into()
+            })?;
 
         Ok((port1, host, port2))
     }
@@ -243,14 +275,20 @@ impl SshClient {
         // Add the target host
         cmd.arg(format!("{}@{}", details.username, details.host));
 
-        let status = cmd
-            .status()
-            .map_err(|e| CliError::ssh(format!("Failed to start SSH session: {}", e)))?;
+        let status = cmd.status().map_err(|e| -> CliError {
+            eyre!("Failed to start SSH session: {}", e)
+                .suggestion("Check your SSH key permissions and network connectivity")
+                .note("Ensure the rental is active and accessible")
+                .into()
+        })?;
 
         // Only treat exit code 255 as an SSH error (SSH's own error code)
         // Other exit codes are from the remote command and should be ignored
         if status.code() == Some(255) {
-            return Err(CliError::ssh("SSH connection failed"));
+            return Err(eyre!("SSH connection failed")
+                .suggestion("Check if the rental is still active and SSH port is exposed")
+                .note("Run 'basilica status <rental-id>' to check rental status")
+                .into());
         }
 
         Ok(())
@@ -271,7 +309,11 @@ impl SshClient {
         self.client
             .upload_file(&details, local, remote_path)
             .await
-            .map_err(|e| CliError::ssh(format!("File upload failed: {}", e)))?;
+            .map_err(|e| {
+                eyre!("File upload failed: {}", e)
+                    .suggestion("Check file permissions and available disk space on the rental")
+                    .note("Ensure the local file exists and is readable")
+            })?;
 
         info!("Upload completed successfully");
         Ok(())
@@ -292,7 +334,11 @@ impl SshClient {
         self.client
             .download_file(&details, remote_path, local)
             .await
-            .map_err(|e| CliError::ssh(format!("File download failed: {}", e)))?;
+            .map_err(|e| {
+                eyre!("File download failed: {}", e)
+                    .suggestion("Check that the remote file exists and you have read permissions")
+                    .note("Ensure the destination directory is writable")
+            })?;
 
         info!("Download completed successfully");
         Ok(())
@@ -311,7 +357,7 @@ pub fn parse_ssh_credentials(credentials: &str) -> Result<(String, u16, String)>
             let user_host = parts[1];
             let port = parts[3]
                 .parse::<u16>()
-                .map_err(|_| CliError::invalid_argument("Invalid port in SSH credentials"))?;
+                .map_err(|_| eyre!("Invalid port in SSH credentials"))?;
 
             let (user, host) = if let Some((user, host)) = user_host.split_once('@') {
                 (user.to_string(), host.to_string())
@@ -327,7 +373,7 @@ pub fn parse_ssh_credentials(credentials: &str) -> Result<(String, u16, String)>
     if let Some((left_part, port_str)) = credentials.rsplit_once(':') {
         let port = port_str
             .parse::<u16>()
-            .map_err(|_| CliError::invalid_argument("Invalid port in SSH credentials"))?;
+            .map_err(|_| eyre!("Invalid port in SSH credentials"))?;
 
         let (user, host) = if let Some((user, host)) = left_part.split_once('@') {
             (user.to_string(), host.to_string())
@@ -371,8 +417,7 @@ pub async fn ensure_ssh_keys_exist(config: &SshConfig) -> Result<()> {
 
     // Ensure the .ssh directory exists
     if let Some(parent) = private_key_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| CliError::internal(format!("Failed to create SSH directory: {}", e)))?;
+        std::fs::create_dir_all(parent).wrap_err("Failed to create SSH directory")?;
     }
 
     // Generate SSH keys using ssh-keygen
@@ -389,16 +434,11 @@ pub async fn ensure_ssh_keys_exist(config: &SshConfig) -> Result<()> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let output = cmd
-        .output()
-        .map_err(|e| CliError::internal(format!("Failed to run ssh-keygen: {}", e)))?;
+    let output = cmd.output().wrap_err("Failed to run ssh-keygen")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(CliError::internal(format!(
-            "Failed to generate SSH keys: {}",
-            stderr
-        )));
+        return Err(eyre!("Failed to generate SSH keys: {}", stderr).into());
     }
 
     // Set appropriate permissions for the private key (600)
@@ -406,11 +446,11 @@ pub async fn ensure_ssh_keys_exist(config: &SshConfig) -> Result<()> {
     {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(private_key_path)
-            .map_err(|e| CliError::internal(format!("Failed to get key metadata: {}", e)))?
+            .wrap_err("Failed to get key metadata")?
             .permissions();
         perms.set_mode(0o600);
         std::fs::set_permissions(private_key_path, perms)
-            .map_err(|e| CliError::internal(format!("Failed to set key permissions: {}", e)))?;
+            .wrap_err("Failed to set key permissions")?;
     }
 
     info!(

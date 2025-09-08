@@ -5,7 +5,7 @@
 
 use super::provider::AuthProvider;
 use super::token_store::TokenStore;
-use super::types::{AuthResult, TokenSet};
+use super::types::{get_sdk_data_dir, AuthResult, TokenSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -39,7 +39,6 @@ pub struct TokenManager {
     provider: Box<dyn AuthProvider>,
     storage: TokenStore,
     cache: Arc<RwLock<TokenCache>>,
-    storage_key: String,
 }
 
 impl TokenManager {
@@ -47,21 +46,17 @@ impl TokenManager {
     const REFRESH_THRESHOLD: Duration = Duration::from_secs(3600);
 
     /// Create a new token manager with the given provider
-    pub fn new(
-        provider: Box<dyn AuthProvider>,
-        storage_key: impl Into<String>,
-    ) -> AuthResult<Self> {
+    pub fn new(provider: Box<dyn AuthProvider>) -> AuthResult<Self> {
         Ok(Self {
             provider,
-            storage: TokenStore::new()?,
+            storage: TokenStore::new(get_sdk_data_dir()?)?,
             cache: Arc::new(RwLock::new(TokenCache::new())),
-            storage_key: storage_key.into(),
         })
     }
 
     /// Create a token manager from an existing token set
     /// This is useful when tokens are already available (e.g., from CLI)
-    pub fn from_token_set(token_set: TokenSet, storage_key: impl Into<String>) -> AuthResult<Self> {
+    pub fn from_token_set(token_set: TokenSet) -> AuthResult<Self> {
         use super::providers::ExistingTokenProvider;
         use super::types::AuthConfig;
 
@@ -82,7 +77,7 @@ impl TokenManager {
             token_set.clone(),
             auth_config,
         ));
-        let storage = TokenStore::new()?;
+        let storage = TokenStore::new(get_sdk_data_dir()?)?;
         let mut cache = TokenCache::new();
         cache.set(token_set);
 
@@ -90,7 +85,6 @@ impl TokenManager {
             provider,
             storage,
             cache: Arc::new(RwLock::new(cache)),
-            storage_key: storage_key.into(),
         })
     }
 
@@ -110,7 +104,7 @@ impl TokenManager {
         }
 
         // 2. Check storage for valid token
-        if let Some(token_set) = self.storage.retrieve(&self.storage_key).await? {
+        if let Some(token_set) = self.storage.retrieve().await? {
             if !self.should_refresh(&token_set) {
                 debug!("Using stored token");
                 // Update cache
@@ -156,7 +150,7 @@ impl TokenManager {
 
     /// Revoke current tokens
     pub async fn revoke(&self) -> AuthResult<()> {
-        if let Some(token_set) = self.storage.retrieve(&self.storage_key).await? {
+        if let Some(token_set) = self.storage.retrieve().await? {
             // Prioritize refresh token for revocation as it revokes the entire grant
             let token = token_set
                 .refresh_token
@@ -166,7 +160,7 @@ impl TokenManager {
             self.provider.revoke(token).await?;
 
             // Clear storage and cache
-            self.storage.delete(&self.storage_key).await?;
+            self.storage.delete().await?;
             self.cache.write().await.clear();
 
             info!("Tokens revoked successfully");
@@ -177,7 +171,7 @@ impl TokenManager {
     /// Store tokens in both storage and cache
     async fn store_tokens(&self, tokens: TokenSet) -> AuthResult<()> {
         // Store in persistent storage
-        self.storage.store(&self.storage_key, &tokens).await?;
+        self.storage.store(&tokens).await?;
 
         // Update cache
         self.cache.write().await.set(tokens);

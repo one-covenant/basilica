@@ -39,8 +39,9 @@ use crate::{
     error::{ApiError, ErrorResponse, Result},
     types::{
         ApiListRentalsResponse, HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
-        RentalStatusWithSshResponse, StartRentalRequest,
+        RentalStatusWithSshResponse,
     },
+    StartRentalApiRequest,
 };
 use basilica_validator::api::types::ListAvailableExecutorsResponse;
 use basilica_validator::rental::RentalResponse;
@@ -91,8 +92,8 @@ impl BasilicaClient {
             // If we have a refresh token, set up token manager for auto-refresh
             if token_set.refresh_token.is_some() {
                 // Use "basilica-cli" as storage key to update CLI tokens when refreshed
-                let token_manager = TokenManager::from_token_set(token_set, "basilica-cli")
-                    .map_err(|e| ApiError::Internal {
+                let token_manager =
+                    TokenManager::from_token_set(token_set).map_err(|e| ApiError::Internal {
                         message: format!("Failed to create token manager: {}", e),
                     })?;
                 client.token_manager = Some(Arc::new(token_manager));
@@ -121,7 +122,7 @@ impl BasilicaClient {
     }
 
     /// Start a new rental
-    pub async fn start_rental(&self, request: StartRentalRequest) -> Result<RentalResponse> {
+    pub async fn start_rental(&self, request: StartRentalApiRequest) -> Result<RentalResponse> {
         self.post("/rentals", &request).await
     }
 
@@ -389,10 +390,9 @@ impl ClientBuilder {
 
         // Create OAuth provider and token manager
         let provider = Box::new(OAuth2Provider::new(auth_config));
-        let token_manager =
-            TokenManager::new(provider, "basilica-sdk").map_err(|e| ApiError::Internal {
-                message: format!("Failed to create token manager: {}", e),
-            })?;
+        let token_manager = TokenManager::new(provider).map_err(|e| ApiError::Internal {
+            message: format!("Failed to create token manager: {}", e),
+        })?;
 
         // Pre-fetch token to ensure authentication works
         token_manager
@@ -420,10 +420,9 @@ impl ClientBuilder {
 
         // Create device flow provider and token manager
         let provider = Box::new(DeviceFlowProvider::new(auth_config));
-        let token_manager =
-            TokenManager::new(provider, "basilica-sdk").map_err(|e| ApiError::Internal {
-                message: format!("Failed to create token manager: {}", e),
-            })?;
+        let token_manager = TokenManager::new(provider).map_err(|e| ApiError::Internal {
+            message: format!("Failed to create token manager: {}", e),
+        })?;
 
         // Pre-fetch token to ensure authentication works
         token_manager
@@ -480,10 +479,11 @@ impl ClientBuilder {
                 // Set up token manager for auto-refresh if we have a refresh token
                 if token_set.refresh_token.is_some() {
                     // Use "basilica-cli" as storage key to update CLI tokens when refreshed
-                    let token_manager = TokenManager::from_token_set(token_set, "basilica-cli")
-                        .map_err(|e| ApiError::Internal {
+                    let token_manager = TokenManager::from_token_set(token_set).map_err(|e| {
+                        ApiError::Internal {
                             message: format!("Failed to create token manager: {}", e),
-                        })?;
+                        }
+                    })?;
                     client.token_manager = Some(Arc::new(token_manager));
                 }
             }

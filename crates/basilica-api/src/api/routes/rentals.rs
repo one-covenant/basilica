@@ -8,8 +8,9 @@ use crate::{
         },
         middleware::Auth0Claims,
         types::{
-            ApiListRentalsResponse, ApiRentalListItem, ListRentalsQuery, LogStreamQuery,
-            RentalStatusWithSshResponse, TerminateRentalRequest,
+            ApiListRentalsResponse, ApiRentalListItem, ExecutorSelection, ListRentalsQuery,
+            LogStreamQuery, RentalStatusWithSshResponse, StartRentalApiRequest,
+            TerminateRentalRequest,
         },
     },
     error::Result,
@@ -24,11 +25,12 @@ use axum::{
 use basilica_validator::{
     api::{
         rental_routes::StartRentalRequest,
-        types::{ListAvailableExecutorsQuery, ListAvailableExecutorsResponse},
+        types::{AvailableExecutor, ListAvailableExecutorsQuery, ListAvailableExecutorsResponse},
     },
     RentalResponse,
 };
 use futures::stream::Stream;
+use rand::seq::SliceRandom;
 use regex::Regex;
 use std::sync::LazyLock;
 use tracing::{debug, error, info};
@@ -71,10 +73,8 @@ pub async fn get_rental_status(
 pub async fn start_rental(
     State(state): State<AppState>,
     axum::Extension(claims): axum::Extension<Auth0Claims>,
-    Json(request): Json<StartRentalRequest>,
+    Json(request): Json<StartRentalApiRequest>,
 ) -> Result<Json<RentalResponse>> {
-    info!("Starting rental with executor: {:?}", request.executor_id);
-
     // Get user ID from auth claims (already extracted via Extension)
     let user_id = &claims.sub;
 
@@ -94,7 +94,54 @@ pub async fn start_rental(
         });
     }
 
-    let executor_id = request.executor_id;
+    // Determine executor_id based on the selection strategy
+    let executor_id = match &request.executor_selection {
+        ExecutorSelection::ExecutorId { executor_id } => {
+            info!("Starting rental with specified executor: {}", executor_id);
+            executor_id.clone()
+        }
+        ExecutorSelection::GpuRequirements { gpu_requirements } => {
+            info!(
+                "Selecting executor based on GPU requirements: {:?}",
+                gpu_requirements
+            );
+
+            // Query available executors with filters based on requirements
+            let query = ListAvailableExecutorsQuery {
+                available: Some(true),
+                min_gpu_memory: Some(gpu_requirements.min_memory_gb),
+                gpu_type: gpu_requirements.gpu_type.clone(),
+                min_gpu_count: Some(gpu_requirements.gpu_count),
+            };
+
+            let executors_response = state
+                .validator_client
+                .list_available_executors(Some(query))
+                .await
+                .map_err(|e| crate::error::ApiError::Internal {
+                    message: format!("Failed to query available executors: {}", e),
+                })?;
+
+            if executors_response.available_executors.is_empty() {
+                error!("No executors match the specified GPU requirements");
+                return Err(crate::error::ApiError::NotFound {
+                    resource: "executor matching GPU requirements".into(),
+                });
+            }
+
+            // Randomly select an executor from those matching GPU requirements
+            let selected_id = select_best_executor(executors_response.available_executors)
+                .ok_or_else(|| crate::error::ApiError::Internal {
+                    message: "Failed to select executor".into(),
+                })?;
+
+            info!(
+                "Randomly selected executor {} from available executors matching GPU requirements",
+                selected_id
+            );
+            selected_id
+        }
+    };
 
     // Convert to validator's StartRentalRequest format
     let validator_request = StartRentalRequest {
@@ -409,6 +456,18 @@ pub async fn list_available_executors(
         .await?;
 
     Ok(Json(response))
+}
+
+/// Select a random executor from a list of available executors to distribute
+/// load and allow users to retry with different executors if issues occur
+fn select_best_executor(executors: Vec<AvailableExecutor>) -> Option<String> {
+    if executors.is_empty() {
+        return None;
+    }
+
+    // Randomly select an executor from the available list
+    let mut rng = rand::thread_rng();
+    executors.choose(&mut rng).map(|e| e.executor.id.clone())
 }
 
 fn is_valid_container_image(image: &str) -> bool {

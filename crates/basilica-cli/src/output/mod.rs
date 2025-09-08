@@ -3,13 +3,14 @@
 pub mod banner;
 pub mod table_output;
 
-use crate::error::Result;
+use color_eyre::eyre::{eyre, Result};
 use console::style;
 use serde::Serialize;
 
 /// Output data as JSON
 pub fn json_output<T: Serialize>(data: &T) -> Result<()> {
-    let json = serde_json::to_string_pretty(data)?;
+    let json = serde_json::to_string_pretty(data)
+        .map_err(|e| eyre!("Failed to serialize to JSON: {}", e))?;
     println!("{json}");
     Ok(())
 }

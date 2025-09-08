@@ -73,7 +73,7 @@ pub enum ApiError {
     ServiceUnavailable,
 
     /// Not found
-    #[error("Resource not found: {resource}")]
+    #[error("{resource}")]
     NotFound { resource: String },
 
     /// Bad request with message

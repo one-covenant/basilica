@@ -4,7 +4,7 @@
 //! enabling seamless authentication when using the SDK after CLI login.
 
 use super::token_store::TokenStore;
-use super::types::TokenSet;
+use super::types::{get_sdk_data_dir, TokenSet};
 use std::env;
 use tracing::{debug, info, warn};
 
@@ -66,8 +66,8 @@ impl TokenResolver {
 
     /// Try to get token from CLI keyring
     async fn from_cli_keyring() -> Option<TokenSet> {
-        match TokenStore::new() {
-            Ok(store) => match store.get_tokens("basilica-cli").await {
+        match TokenStore::new(get_sdk_data_dir().ok()?) {
+            Ok(store) => match store.get_tokens().await {
                 Ok(Some(tokens)) => {
                     if !tokens.is_expired() {
                         info!("Found valid tokens in CLI keyring");
@@ -131,13 +131,13 @@ impl TokenResolver {
             return Some("environment".to_string());
         }
 
-        if let Ok(store) = TokenStore::new() {
-            if let Ok(Some(tokens)) = store.get_tokens("basilica-cli").await {
-                if !tokens.is_expired() {
-                    return Some("cli-keyring".to_string());
+        if let Ok(data_dir) = get_sdk_data_dir() {
+            if let Ok(store) = TokenStore::new(data_dir) {
+                if let Ok(Some(tokens)) = store.get_tokens().await {
+                    if !tokens.is_expired() {
+                        return Some("cli-keyring".to_string());
+                    }
                 }
-            } else {
-                // fall through
             }
         }
 

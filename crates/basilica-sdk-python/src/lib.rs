@@ -1,6 +1,7 @@
 //! Python bindings for the Basilica SDK
 #![allow(clippy::useless_conversion)]
 
+use basilica_sdk::StartRentalApiRequest;
 use basilica_sdk::{auth::types::AuthConfig, BasilicaClient as RustClient, ClientBuilder};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -209,10 +210,8 @@ impl BasilicaClient {
         let client = Arc::clone(&self.inner);
 
         // Convert Python dict to StartRentalRequest
-        let request = depythonize::<basilica_validator::api::rental_routes::StartRentalRequest>(
-            request.as_any(),
-        )
-        .map_err(|e| PyValueError::new_err(format!("Invalid rental request: {}", e)))?;
+        let request = depythonize::<StartRentalApiRequest>(request.as_any())
+            .map_err(|e| PyValueError::new_err(format!("Invalid rental request: {}", e)))?;
 
         let response = py
             .allow_threads(|| {

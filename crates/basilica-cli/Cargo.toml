@@ -52,6 +52,9 @@ shell-escape = "0.1"
 shellexpand = "3.1"
 etcetera = "0.8"
 
+# Error handling
+color-eyre = "0.6"
+
 # OAuth dependencies
 oauth2 = "4.4"
 axum = { workspace = true }
@@ -60,8 +63,6 @@ tower-http = { workspace = true, features = ["cors"] }
 rand = { workspace = true }
 base64 = "0.21"
 sha2 = "0.10"
-keyring = { version = "3.6", features = ["apple-native", "windows-native", "linux-native"] }
-directories = "5.0"
 webbrowser = "0.8"
 url = "2.4"
 

@@ -4,6 +4,7 @@
 //! including configuration, token data, and error types.
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Result type for authentication operations
@@ -179,6 +180,10 @@ pub enum AuthError {
     #[error("Authorization timeout")]
     Timeout,
 
+    /// User is not logged in / no tokens found
+    #[error("User not logged in. Run 'basilica login' to authenticate")]
+    UserNotLoggedIn,
+
     /// Generic IO error
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -186,4 +191,15 @@ pub enum AuthError {
     /// Serialization/deserialization error
     #[error("Serialization error: {0}")]
     SerdeError(#[from] serde_json::Error),
+}
+
+/// Get the default data directory for SDK token storage
+/// Returns platform-specific data directory (e.g., ~/.local/share/basilica on Linux)
+pub fn get_sdk_data_dir() -> AuthResult<PathBuf> {
+    let base_dir = directories::BaseDirs::new().ok_or_else(|| {
+        AuthError::ConfigError("Failed to determine base directories".to_string())
+    })?;
+
+    // Use the same path as the CLI for consistency
+    Ok(base_dir.data_dir().join("basilica"))
 }
