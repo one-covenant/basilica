@@ -2,14 +2,24 @@ use crate::auth::should_use_device_flow;
 use crate::cli::{commands::Commands, handlers};
 use crate::config::CliConfig;
 use crate::error::CliError;
+use clap::builder::styling::AnsiColor;
+use clap::builder::Styles;
 use clap::{Parser, ValueHint};
 use clap_verbosity_flag::Verbosity;
 use console::Term;
 use etcetera::{choose_base_strategy, BaseStrategy};
 use std::path::{Path, PathBuf};
 
+// Styles are disabled by default in clap v4, this are styles used in clap v3
+const USAGE_STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Yellow.on_default())
+    .usage(AnsiColor::Green.on_default())
+    .literal(AnsiColor::Green.on_default())
+    .placeholder(AnsiColor::Green.on_default());
+
 /// Basilica CLI - Unified GPU rental and network management
 #[derive(Parser, Debug)]
+#[clap(styles = USAGE_STYLES)]
 #[command(
     name = "basilica",
     author = "Basilica Team",
