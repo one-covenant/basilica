@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Simplified token storage from keyring to file-based system
 - Enhanced GPU executor display with grouped selection mode, compact view by default (use `--detailed` flag for full GPU names), and improved table formatting
+- Unified GPU executor targeting - accept either executor UUID or GPU category (h100, h200, b200) as target parameter, removing separate --gpu-type option
 
 ### Fixed
 - Consistent GPU count prefixes in all displays (e.g., "2x H100")
