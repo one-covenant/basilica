@@ -4,27 +4,93 @@ use crate::cli::commands::{ListFilters, LogsOptions, PsFilters, UpOptions};
 use crate::cli::handlers::gpu_rental_helpers::resolve_target_rental;
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
-use crate::error::{CliError, Result};
 use crate::output::{
     compress_path, json_output, print_error, print_info, print_success, table_output,
 };
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
-use basilica_api::api::types::{ListRentalsQuery, ResourceRequirementsRequest, SshAccess};
+use crate::CliError;
+use basilica_api::api::types::{
+    ExecutorSelection, GpuRequirements, ListRentalsQuery, ResourceRequirementsRequest, SshAccess,
+    StartRentalApiRequest,
+};
+use basilica_api::error::ApiError;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
-use basilica_validator::api::rental_routes::StartRentalRequest;
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
 use basilica_validator::api::types::RentalStatusResponse;
+use basilica_validator::gpu::categorization::GpuCategory;
 use basilica_validator::rental::types::RentalState;
+use color_eyre::eyre::{eyre, Result};
+use color_eyre::Section;
 use console::style;
 use reqwest::StatusCode;
+use std::fmt;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
-use tabled::{settings::Style, Table, Tabled};
 use tracing::debug;
+use uuid::Uuid;
+
+/// Represents the target for the `up` command - either an executor ID or GPU category
+#[derive(Debug, Clone)]
+pub enum TargetType {
+    /// A specific executor ID
+    ExecutorId(String),
+    /// A GPU category (h100, h200, b200, etc.)
+    GpuCategory(GpuCategory),
+}
+
+/// Error type for TargetType parsing
+#[derive(Debug, Clone)]
+pub struct TargetTypeParseError {
+    value: String,
+}
+
+impl fmt::Display for TargetTypeParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "'{}' is not a valid executor ID (UUID) or GPU type (h100, b200, etc...)",
+            self.value
+        )
+    }
+}
+
+impl std::error::Error for TargetTypeParseError {}
+
+impl FromStr for TargetType {
+    type Err = TargetTypeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // First check if it's a valid UUID v4 (executor ID)
+        if Uuid::parse_str(s).is_ok() {
+            return Ok(TargetType::ExecutorId(s.to_string()));
+        }
+
+        // Then check if it's a known GPU type
+        let gpu_category =
+            GpuCategory::from_str(s).expect("GpuCategory::from_str returns Infallible");
+
+        match gpu_category {
+            GpuCategory::H100 | GpuCategory::H200 | GpuCategory::B200 => {
+                Ok(TargetType::GpuCategory(gpu_category))
+            }
+            GpuCategory::Other(_) => {
+                // Not a valid UUID and not a known GPU type
+                Err(TargetTypeParseError {
+                    value: s.to_string(),
+                })
+            }
+        }
+    }
+}
 
 /// Handle the `ls` command - list available executors for rental
-pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> Result<()> {
+pub async fn handle_ls(
+    filters: ListFilters,
+    json: bool,
+    config: &CliConfig,
+) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
     // Build query from filters
@@ -35,14 +101,18 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
         min_gpu_count: filters.gpu_min,
     };
 
-    let spinner = create_spinner("Fetching available executors...");
+    let spinner = create_spinner("Scanning global GPU availability...");
 
     let response = api_client
         .list_available_executors(Some(query))
         .await
-        .map_err(|e| {
+        .map_err(|e| -> CliError {
             complete_spinner_error(spinner.clone(), "Failed to fetch executors");
-            CliError::api_request_failed("list available executors", e.to_string())
+            CliError::Internal(
+                eyre!(e)
+                    .suggestion("Check your internet connection and try again")
+                    .note("If this persists, executors may be temporarily unavailable"),
+            )
         })?;
 
     complete_spinner_and_clear(spinner);
@@ -50,87 +120,15 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
     if json {
         json_output(&response)?;
     } else {
-        if response.available_executors.is_empty() {
-            println!("No available executors found matching the specified criteria.");
-            return Ok(());
+        // Use table_output module for consistent styling
+        if filters.detailed {
+            table_output::display_available_executors_detailed(
+                &response.available_executors,
+                filters.detailed,
+            )?;
+        } else {
+            table_output::display_available_executors_compact(&response.available_executors)?;
         }
-
-        // Format as table
-        #[derive(Tabled)]
-        struct ExecutorRow {
-            #[tabled(rename = "GPU")]
-            gpu_info: String,
-            #[tabled(rename = "Executor ID")]
-            id: String,
-            #[tabled(rename = "CPU")]
-            cpu: String,
-            #[tabled(rename = "RAM")]
-            ram: String,
-            #[tabled(rename = "Score")]
-            score: String,
-            #[tabled(rename = "Uptime")]
-            uptime: String,
-        }
-
-        let rows: Vec<ExecutorRow> = response
-            .available_executors
-            .into_iter()
-            .map(|executor| {
-                let gpu_info = if executor.executor.gpu_specs.is_empty() {
-                    "No GPU".to_string()
-                } else if executor.executor.gpu_specs.len() == 1 {
-                    // Single GPU
-                    let gpu = &executor.executor.gpu_specs[0];
-                    format!("{} ({}GB)", gpu.name, gpu.memory_gb)
-                } else {
-                    // Multiple GPUs - check if they're all the same model
-                    let first_gpu = &executor.executor.gpu_specs[0];
-                    let all_same =
-                        executor.executor.gpu_specs.iter().all(|g| {
-                            g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb
-                        });
-
-                    if all_same {
-                        // All GPUs are identical - use count prefix format
-                        format!(
-                            "{}x {} ({}GB)",
-                            executor.executor.gpu_specs.len(),
-                            first_gpu.name,
-                            first_gpu.memory_gb
-                        )
-                    } else {
-                        // Different GPU models - list them individually
-                        let gpu_names: Vec<String> = executor
-                            .executor
-                            .gpu_specs
-                            .iter()
-                            .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
-                            .collect();
-                        gpu_names.join(", ")
-                    }
-                };
-
-                // Remove miner prefix from executor ID if present
-                let executor_id = match executor.executor.id.split_once("__") {
-                    Some((_, second)) => second.to_string(),
-                    None => executor.executor.id,
-                };
-
-                ExecutorRow {
-                    gpu_info,
-                    id: executor_id,
-                    cpu: format!("{} cores", executor.executor.cpu_specs.cores),
-                    ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
-                    score: format!("{:.2}", executor.availability.verification_score),
-                    uptime: format!("{:.1}%", executor.availability.uptime_percentage),
-                }
-            })
-            .collect();
-
-        let mut table = Table::new(rows);
-        table.with(Style::modern());
-        println!("{}", table);
-        println!("\nTotal available executors: {}", response.total_count);
     }
 
     Ok(())
@@ -138,39 +136,59 @@ pub async fn handle_ls(filters: ListFilters, json: bool, config: &CliConfig) -> 
 
 /// Handle the `up` command - provision GPU instances
 pub async fn handle_up(
-    target: Option<String>,
+    target: Option<TargetType>,
     options: UpOptions,
     config: &CliConfig,
-) -> Result<()> {
+) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
-    // If no target provided, fetch available executors and prompt for selection
-    let target = if let Some(t) = target {
-        t
+    // Parse the target to determine executor selection strategy
+    let executor_selection = if let Some(target_type) = target {
+        match target_type {
+            TargetType::ExecutorId(executor_id) => {
+                // Direct executor ID provided
+                ExecutorSelection::ExecutorId { executor_id }
+            }
+            TargetType::GpuCategory(gpu_category) => {
+                // GPU category specified - use automatic selection
+                let spinner =
+                    create_spinner(&format!("Finding available {} executors...", gpu_category));
+                complete_spinner_and_clear(spinner);
+
+                ExecutorSelection::GpuRequirements {
+                    gpu_requirements: GpuRequirements {
+                        min_memory_gb: 0, // Default, no minimum memory requirement
+                        gpu_type: Some(gpu_category.as_str()),
+                        gpu_count: options.gpu_min.unwrap_or(1),
+                    },
+                }
+            }
+        }
     } else {
+        // No target specified - use interactive selection
         let spinner = create_spinner("Fetching available executors...");
 
         // Build query from options
         let query = ListAvailableExecutorsQuery {
             available: Some(true),
             min_gpu_memory: None,
-            gpu_type: options.gpu_type.clone(),
+            gpu_type: None,
             min_gpu_count: options.gpu_min,
         };
 
         let response = api_client
             .list_available_executors(Some(query))
             .await
-            .map_err(|e| {
+            .map_err(|e| -> crate::error::CliError {
                 complete_spinner_error(spinner.clone(), "Failed to fetch executors");
-                CliError::api_request_failed("list available executors", e.to_string())
+                eyre!("API request failed for list available executors: {}", e).into()
             })?;
 
         complete_spinner_and_clear(spinner);
 
         // Use interactive selector to choose an executor
         let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_executor(&response.available_executors)?
+        selector.select_executor(&response.available_executors, options.detailed)?
     };
 
     let spinner = create_spinner("Preparing rental request...");
@@ -184,7 +202,7 @@ pub async fn handle_up(
     let container_image = options.image.unwrap_or_else(|| config.image.name.clone());
 
     let env_vars = parse_env_vars(&options.env)
-        .map_err(|e| CliError::invalid_argument(e.to_string()))
+        .map_err(|e| eyre!("Invalid argument: {}", e.to_string()))
         .inspect_err(|_e| {
             complete_spinner_error(spinner.clone(), "Environment variable parsing failed");
         })?;
@@ -192,7 +210,7 @@ pub async fn handle_up(
     // Parse port mappings if provided
     let port_mappings: Vec<basilica_api::api::types::PortMappingRequest> =
         parse_port_mappings(&options.ports)
-            .map_err(|e| CliError::invalid_argument(e.to_string()))
+            .map_err(|e| eyre!("Invalid argument: {}", e.to_string()))
             .inspect_err(|_e| {
                 complete_spinner_error(spinner.clone(), "Port mapping parsing failed");
             })?
@@ -206,8 +224,11 @@ pub async fn handle_up(
         options.command
     };
 
-    let request = StartRentalRequest {
-        executor_id: target.clone(),
+    // Determine the selection mode for error messaging
+    let is_direct_executor_id = matches!(executor_selection, ExecutorSelection::ExecutorId { .. });
+
+    let request = StartRentalApiRequest {
+        executor_selection,
         container_image,
         ssh_public_key,
         environment: env_vars,
@@ -217,7 +238,7 @@ pub async fn handle_up(
             memory_mb: options.memory_mb.unwrap_or(1024),
             storage_mb: 102400,
             gpu_count: options.gpu_min.unwrap_or(1),
-            gpu_types: options.gpu_type.map(|t| vec![t]).unwrap_or_default(),
+            gpu_types: vec![],
         },
         command,
         volumes: vec![],
@@ -225,11 +246,23 @@ pub async fn handle_up(
     };
 
     spinner.set_message("Creating rental...");
-    let response = api_client.start_rental(request).await.map_err(|e| {
-        complete_spinner_error(spinner.clone(), "Failed to create rental");
-        CliError::api_request_failed("start rental", e.to_string())
-            .with_suggestion("Ensure the executor is available and try again")
-    })?;
+    let response = api_client
+        .start_rental(request)
+        .await
+        .map_err(|e| -> CliError {
+            complete_spinner_error(spinner.clone(), "Failed to create rental");
+            CliError::Internal(
+                eyre!(e)
+                    .note("The selected executor is experiencing issues.")
+                    .with_suggestion(|| {
+                        if is_direct_executor_id {
+                            "Try using a different executor ID (e.g., 'basilica up <different-executor-id>')."
+                        } else {
+                            "Simply rerun the same command to automatically try a different executor."
+                        }
+                    })
+            )
+        })?;
 
     complete_spinner_and_clear(spinner);
 
@@ -317,7 +350,7 @@ pub async fn handle_up(
 }
 
 /// Handle the `ps` command - list active rentals
-pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Result<()> {
+pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
     let spinner = create_spinner("Loading active rentals...");
@@ -329,17 +362,17 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
         min_gpu_count: filters.min_gpu_count,
     });
 
-    let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
-        complete_spinner_error(spinner.clone(), "Failed to load rentals");
-        CliError::api_request_failed("list rentals", e.to_string())
-    })?;
+    let rentals_list = api_client
+        .list_rentals(query)
+        .await
+        .inspect_err(|_| complete_spinner_error(spinner.clone(), "Failed to load rentals"))?;
 
     complete_spinner_and_clear(spinner);
 
     if json {
         json_output(&rentals_list)?;
     } else {
-        table_output::display_rental_items(&rentals_list.rentals[..])?;
+        table_output::display_rental_items(&rentals_list.rentals[..], filters.detailed)?;
         println!("\nTotal: {} active rentals", rentals_list.rentals.len());
 
         display_ps_quick_start_commands();
@@ -349,7 +382,11 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
 }
 
 /// Handle the `status` command - check rental status
-pub async fn handle_status(target: Option<String>, json: bool, config: &CliConfig) -> Result<()> {
+pub async fn handle_status(
+    target: Option<String>,
+    json: bool,
+    config: &CliConfig,
+) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
     // Resolve target rental (fetch and prompt if not provided)
@@ -357,10 +394,19 @@ pub async fn handle_status(target: Option<String>, json: bool, config: &CliConfi
 
     let spinner = create_spinner("Checking rental status...");
 
-    let status = api_client.get_rental_status(&target).await.map_err(|e| {
-        complete_spinner_error(spinner.clone(), "Failed to get status");
-        CliError::api_request_failed("get rental status", e.to_string())
-    })?;
+    let status = api_client
+        .get_rental_status(&target)
+        .await
+        .map_err(|e| -> CliError {
+            complete_spinner_error(spinner.clone(), "Failed to get status");
+            let report = match e {
+                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", target)
+                    .suggestion("Try 'basilica ps' to see your active rentals")
+                    .note("The rental may have expired or been terminated"),
+                _ => eyre!(e).suggestion("Check your internet connection and try again"),
+            };
+            CliError::Internal(report)
+        })?;
 
     complete_spinner_and_clear(spinner);
 
@@ -386,7 +432,7 @@ pub async fn handle_logs(
     target: Option<String>,
     options: LogsOptions,
     config: &CliConfig,
-) -> Result<()> {
+) -> Result<(), CliError> {
     // Create API client
     let api_client = create_authenticated_client(config).await?;
 
@@ -399,10 +445,7 @@ pub async fn handle_logs(
     let response = api_client
         .get_rental_logs(&target, options.follow, options.tail)
         .await
-        .map_err(|e| {
-            complete_spinner_error(spinner.clone(), "Failed to connect to logs");
-            CliError::api_request_failed("get rental logs", e.to_string())
-        })?;
+        .inspect_err(|_| complete_spinner_error(spinner.clone(), "Failed to connect to logs"))?;
 
     // Check content type
     let content_type = response
@@ -422,12 +465,18 @@ pub async fn handle_logs(
         complete_spinner_error(spinner, "Failed to get logs");
 
         if status == StatusCode::NOT_FOUND {
-            return Err(CliError::rental_not_found(target));
+            return Err(eyre!(
+                "Rental '{}' not found. Run 'basilica ps' to see active rentals",
+                target
+            )
+            .into());
         } else {
-            return Err(CliError::api_request_failed(
-                "get logs",
-                format!("status {}: {}", status, body),
-            ));
+            return Err(eyre!(
+                "API request failed for get logs: status {}: {}",
+                status,
+                body
+            )
+            .into());
         }
     }
 
@@ -485,7 +534,7 @@ pub async fn handle_logs(
 }
 
 /// Handle the `down` command - terminate rental
-pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<()> {
+pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
     // Resolve target rental (fetch and prompt if not provided)
@@ -494,20 +543,22 @@ pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<(
     // Single rental - use spinner
     let spinner = create_spinner(&format!("Terminating rental: {}", rental_id));
 
-    match api_client
+    api_client
         .stop_rental(&rental_id)
         .await
-        .map_err(|e| CliError::api_request_failed("stop rental", e.to_string()))
-    {
-        Ok(_) => {
-            complete_spinner_and_clear(spinner);
-            print_success(&format!("Successfully stopped rental: {}", rental_id));
-        }
-        Err(e) => {
-            complete_spinner_error(spinner, "Failed to terminate rental");
-            print_error(&format!("Failed to stop rental {}: {e}", rental_id));
-        }
-    }
+        .map_err(|e| -> CliError {
+            complete_spinner_error(spinner.clone(), "Failed to terminate rental");
+            let report = match e {
+                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", rental_id)
+                    .suggestion("Try 'basilica ps' to see your active rentals")
+                    .note("The rental may have already been terminated"),
+                _ => eyre!(e).suggestion("Check your internet connection and try again"),
+            };
+            CliError::Internal(report)
+        })?;
+
+    complete_spinner_and_clear(spinner);
+    print_success(&format!("Successfully stopped rental: {}", rental_id));
 
     Ok(())
 }
@@ -517,7 +568,7 @@ pub async fn handle_exec(
     target: Option<String>,
     command: String,
     config: &CliConfig,
-) -> Result<()> {
+) -> Result<(), CliError> {
     // Create API client to verify rental status
     let api_client = create_authenticated_client(config).await?;
 
@@ -530,13 +581,25 @@ pub async fn handle_exec(
     let rental_status = api_client
         .get_rental_status(&target)
         .await
-        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
+        .map_err(|e| -> CliError {
+            let report = match e {
+                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", target)
+                    .suggestion("Try 'basilica ps' to see your active rentals"),
+                _ => eyre!(e).suggestion("Check your internet connection and try again"),
+            };
+            CliError::Internal(report)
+        })?;
 
     // Extract SSH credentials from response
-    let ssh_credentials = rental_status.ssh_credentials
-        .ok_or_else(|| CliError::not_supported(
-            "SSH credentials not available for this rental. This rental may have been created with --no-ssh flag."
-        ))?;
+    let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {
+        eyre!("SSH credentials not available")
+            .wrap_err(format!(
+                "The rental '{}' was created without SSH access",
+                target
+            ))
+            .note("Rentals created with --no-ssh flag cannot be accessed via SSH")
+            .note("Create a new rental without --no-ssh to enable SSH access")
+    })?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -548,7 +611,8 @@ pub async fn handle_exec(
 
     // Use SSH client to execute command
     let ssh_client = SshClient::new(&config.ssh)?;
-    ssh_client.execute_command(&ssh_access, &command).await
+    ssh_client.execute_command(&ssh_access, &command).await?;
+    Ok(())
 }
 
 /// Handle the `ssh` command - SSH into instances
@@ -556,7 +620,7 @@ pub async fn handle_ssh(
     target: Option<String>,
     options: crate::cli::commands::SshOptions,
     config: &CliConfig,
-) -> Result<()> {
+) -> Result<(), CliError> {
     // Create API client to verify rental status
     let api_client = create_authenticated_client(config).await?;
 
@@ -569,13 +633,25 @@ pub async fn handle_ssh(
     let rental_status = api_client
         .get_rental_status(&target)
         .await
-        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
+        .map_err(|e| -> CliError {
+            let report = match e {
+                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", target)
+                    .suggestion("Try 'basilica ps' to see your active rentals"),
+                _ => eyre!(e).suggestion("Check your internet connection and try again"),
+            };
+            CliError::Internal(report)
+        })?;
 
     // Extract SSH credentials from response
-    let ssh_credentials = rental_status.ssh_credentials
-        .ok_or_else(|| CliError::not_supported(
-            "SSH credentials not available for this rental. This rental may have been created with --no-ssh flag."
-        ))?;
+    let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {
+        eyre!("SSH credentials not available")
+            .wrap_err(format!(
+                "The rental '{}' was created without SSH access",
+                target
+            ))
+            .note("Rentals created with --no-ssh flag cannot be accessed via SSH")
+            .note("Create a new rental without --no-ssh to enable SSH access")
+    })?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -591,11 +667,16 @@ pub async fn handle_ssh(
     // Open interactive session with port forwarding options
     ssh_client
         .interactive_session_with_options(&ssh_access, &options)
-        .await
+        .await?;
+    Ok(())
 }
 
 /// Handle the `cp` command - copy files via SSH
-pub async fn handle_cp(source: String, destination: String, config: &CliConfig) -> Result<()> {
+pub async fn handle_cp(
+    source: String,
+    destination: String,
+    config: &CliConfig,
+) -> Result<(), CliError> {
     debug!("Copying files from {} to {}", source, destination);
 
     // Create API client
@@ -616,9 +697,9 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
             (rental, true, source_path, dest_path)
         }
         (Some(_), Some(_)) => {
-            return Err(CliError::not_supported(
-                "Remote-to-remote copy not supported",
-            ));
+            return Err(CliError::Internal(eyre!(
+                "Remote-to-remote copy not supported"
+            )));
         }
         (None, None) => {
             // No rental ID provided, need to prompt user
@@ -627,7 +708,7 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
 
             // Resolve target rental with SSH requirement
             let selected_rental = resolve_target_rental(None, &api_client, true).await
-                .map_err(|e| e.with_suggestion("Specify rental ID explicitly: 'basilica cp <rental_id>:<path> <local_path>' or vice versa"))?;
+                .map_err(|_| eyre!("No rental ID provided. Specify rental ID explicitly: 'basilica cp <rental_id>:<path> <local_path>' or vice versa"))?;
 
             // Determine direction based on source file existence
             if source_exists {
@@ -641,17 +722,29 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
     };
 
     // Get rental status from API which includes SSH credentials
-    let rental_status = api_client
-        .get_rental_status(&rental_id)
-        .await
-        .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
+    let rental_status =
+        api_client
+            .get_rental_status(&rental_id)
+            .await
+            .map_err(|e| -> CliError {
+                let report = match e {
+                    ApiError::NotFound { .. } => eyre!("Rental '{}' not found", rental_id)
+                        .suggestion("Try 'basilica ps' to see your active rentals"),
+                    _ => eyre!(e).suggestion("Check your internet connection and try again"),
+                };
+                CliError::Internal(report)
+            })?;
 
     // Extract SSH credentials from response
-    let ssh_credentials = rental_status.ssh_credentials
-        .ok_or_else(|| CliError::not_supported(format!(
-            "SSH credentials not available for rental {}. This rental may have been created with --no-ssh flag.",
-            rental_id
-        )))?;
+    let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {
+        eyre!("SSH credentials not available")
+            .wrap_err(format!(
+                "The rental '{}' was created without SSH access",
+                rental_id
+            ))
+            .note("Rentals created with --no-ssh flag cannot be accessed via SSH")
+            .note("Create a new rental without --no-ssh to enable SSH access")
+    })?;
 
     // Parse SSH credentials
     let (host, port, username) = parse_ssh_credentials(&ssh_credentials)?;
@@ -662,16 +755,18 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
     };
 
     // Use SSH client for file transfer
-    let ssh_client = SshClient::new(&config.ssh)?;
+    let ssh_client = SshClient::new(&config.ssh).map_err(|e| eyre!(e))?;
 
     if is_upload {
         ssh_client
             .upload_file(&ssh_access, &local_path, &remote_path)
-            .await
+            .await?;
+        Ok(())
     } else {
         ssh_client
             .download_file(&ssh_access, &remote_path, &local_path)
-            .await
+            .await?;
+        Ok(())
     }
 }
 
@@ -681,7 +776,7 @@ pub async fn handle_cp(source: String, destination: String, config: &CliConfig) 
 async fn poll_rental_status(
     rental_id: &str,
     api_client: &basilica_api::client::BasilicaClient,
-) -> Result<bool> {
+) -> Result<bool, CliError> {
     const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
     const INITIAL_INTERVAL: Duration = Duration::from_secs(2);
     const MAX_INTERVAL: Duration = Duration::from_secs(10);
@@ -712,15 +807,17 @@ async fn poll_rental_status(
                     }
                     RentalStatus::Failed => {
                         complete_spinner_error(spinner, "Rental failed to start");
-                        return Err(CliError::rental_failed(
+                        return Err(CliError::Internal(eyre!(
+                            "Rental failed: {}",
                             "Rental failed during initialization",
-                        ));
+                        )));
                     }
                     RentalStatus::Terminated => {
                         complete_spinner_error(spinner, "Rental was terminated");
-                        return Err(CliError::rental_failed(
+                        return Err(CliError::Internal(eyre!(
+                            "Rental failed: {}",
                             "Rental was terminated before becoming active",
-                        ));
+                        )));
                     }
                     RentalStatus::Pending => {
                         // Still pending, continue polling
@@ -752,7 +849,7 @@ fn display_ssh_connection_instructions(
     ssh_credentials: &str,
     config: &CliConfig,
     message: &str,
-) -> Result<()> {
+) -> Result<(), CliError> {
     // Parse SSH credentials to get components
     let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
 
@@ -791,11 +888,16 @@ fn display_ssh_connection_instructions(
     Ok(())
 }
 
-fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result<String> {
+fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result<String, CliError> {
     let path = key_path.as_ref().unwrap_or(&config.ssh.key_path);
 
-    std::fs::read_to_string(path)
-        .map_err(|_| CliError::ssh_key_not_found(path.display().to_string()))
+    std::fs::read_to_string(path).map_err(|_| {
+        eyre!(
+            "SSH key not found at: {}. Run \'basilica login\' to generate keys",
+            path.display().to_string()
+        )
+        .into()
+    })
 }
 
 fn split_remote_path(path: &str) -> (Option<String>, String) {

@@ -2,16 +2,24 @@
 
 use crate::auth::{should_use_device_flow, CallbackServer, DeviceFlow, OAuthFlow, TokenStore};
 use crate::config::CliConfig;
-use crate::error::{CliError, Result};
+use crate::error::CliError;
 use crate::output::{banner, compress_path, print_success};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
+use color_eyre::eyre::{eyre, WrapErr};
+use color_eyre::Section;
 use tracing::{debug, warn};
 
-/// Service name for token storage
-const SERVICE_NAME: &str = "basilica-cli";
-
 /// Handle login command
-pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
+pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<(), CliError> {
+    handle_login_with_options(device_code, config, true).await
+}
+
+/// Handle login with configurable options
+pub async fn handle_login_with_options(
+    device_code: bool,
+    config: &CliConfig,
+    show_suggestions: bool,
+) -> Result<(), CliError> {
     debug!("Starting login process, device_code: {}", device_code);
 
     println!(
@@ -32,15 +40,17 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
     } else {
         // Find available port for OAuth callback server
         let port = CallbackServer::find_available_port().map_err(|e| {
-            CliError::internal(format!("Failed to find available port: {}", e))
-                .with_suggestion("Try 'basilica login --device-code' for device flow")
+            eyre!(e)
+                .wrap_err("Failed to find available port")
+                .suggestion("Try 'basilica login --device-code' for device flow")
+                .note("The standard OAuth flow requires an available local port")
         })?;
         crate::config::create_auth_config_with_port(port)
     };
 
     // Initialize token store
-    let token_store = TokenStore::new()
-        .map_err(|e| CliError::internal(format!("Failed to initialize token store: {}", e)))?;
+    let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
+    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
 
     let token_set = if use_device_flow {
         let spinner = create_spinner("Requesting device code...");
@@ -53,10 +63,7 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
             }
             Err(e) => {
                 complete_spinner_error(spinner, "Authentication failed");
-                return Err(CliError::auth(format!("Authentication failed: {}", e))
-                    .with_suggestion(
-                        "Try 'basilica login' without --device-code for browser flow",
-                    ));
+                return Err(e.into());
             }
         }
     } else {
@@ -65,8 +72,7 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
         match oauth_flow.start_flow().await {
             Ok(tokens) => tokens,
             Err(e) => {
-                return Err(CliError::auth(format!("Authentication failed: {}", e))
-                    .with_suggestion("Try 'basilica login --device-code' for device flow"));
+                return Err(e.into());
             }
         }
     };
@@ -74,9 +80,12 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
     let spinner = create_spinner("Storing authentication tokens...");
 
     // Store the tokens securely
-    if let Err(e) = token_store.store_tokens(SERVICE_NAME, &token_set).await {
+    if let Err(e) = token_store.store_tokens(&token_set).await {
         complete_spinner_error(spinner, "Failed to store tokens");
-        return Err(CliError::internal(format!("Failed to store tokens: {}", e)));
+        return Err(eyre!("Failed to store tokens: {}", e)
+            .suggestion("Check that you have permission to access the CLI data directory and auth.json file")
+            .note("The auth file is located at: ~/.local/share/basilica/auth.json. Ensure the directory exists and is writable.")
+            .into());
     }
 
     complete_spinner_and_clear(spinner);
@@ -109,29 +118,31 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<()> {
                 println!();
                 println!("⚠️  SSH keys could not be generated automatically.");
                 println!("   You can generate them manually with:");
-                println!("   ssh-keygen -f ~/.ssh/basilica_rsa");
+                println!("   ssh-keygen -t ed25519 -f ~/.ssh/basilica_ed25519");
                 println!();
                 // Don't fail the login, just warn
             }
         }
     }
 
-    // Show helpful command suggestions
-    banner::print_command_suggestions();
+    // Show helpful command suggestions only if requested
+    if show_suggestions {
+        banner::print_command_suggestions();
+    }
 
     Ok(())
 }
 
 /// Handle logout command
-pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
+pub async fn handle_logout(_config: &CliConfig) -> Result<(), CliError> {
     let spinner = create_spinner("Checking authentication status...");
 
     // Initialize token store
-    let token_store = TokenStore::new()
-        .map_err(|e| CliError::internal(format!("Failed to initialize token store: {}", e)))?;
+    let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
+    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
 
     // Check if user is currently logged in and get tokens for revocation
-    let tokens = match token_store.get_tokens(SERVICE_NAME).await {
+    let tokens = match token_store.get_tokens().await {
         Ok(Some(tokens)) => {
             complete_spinner_and_clear(spinner);
             Some(tokens)
@@ -171,12 +182,11 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<()> {
     let spinner = create_spinner("Clearing local authentication data...");
 
     // Delete stored authentication tokens
-    if let Err(e) = token_store.delete_tokens(SERVICE_NAME).await {
+    if let Err(e) = token_store.delete_tokens().await {
         complete_spinner_error(spinner, "Failed to clear tokens");
-        return Err(CliError::internal(format!(
-            "Failed to clear authentication data: {}",
-            e
-        )));
+        return Err(eyre!("Failed to clear authentication data: {}", e)
+            .note("The auth file is located at: ~/.local/share/basilica/auth.json. Ensure you have write permissions to delete the file.")
+            .into());
     }
 
     complete_spinner_and_clear(spinner);

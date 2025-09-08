@@ -1,10 +1,10 @@
 //! Common helper functions for GPU rental operations
 
-use crate::error::{CliError, Result};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use basilica_api::api::types::ListRentalsQuery;
 use basilica_api::client::BasilicaClient;
 use basilica_validator::rental::types::RentalState;
+use color_eyre::eyre::{eyre, Result};
 
 /// Resolve target rental ID - if not provided, fetch active rentals and prompt for selection
 ///
@@ -34,10 +34,10 @@ pub async fn resolve_target_rental(
         min_gpu_count: None,
     });
 
-    let rentals_list = api_client.list_rentals(query).await.map_err(|e| {
-        complete_spinner_error(spinner.clone(), "Failed to load rentals");
-        CliError::api_request_failed("list rentals", e.to_string())
-    })?;
+    let rentals_list = api_client
+        .list_rentals(query)
+        .await
+        .inspect_err(|_| complete_spinner_error(spinner.clone(), "Failed to load rentals"))?;
 
     complete_spinner_and_clear(spinner);
 
@@ -55,16 +55,14 @@ pub async fn resolve_target_rental(
     if eligible_rentals.is_empty() {
         return if require_ssh {
             Err(
-                CliError::not_found("No rentals with SSH access found").with_context(
-                    "SSH credentials are only available for rentals created in this session",
-                ),
+                eyre!("No rentals with SSH access found. SSH credentials are only available for rentals created in this session")
             )
         } else {
-            Err(CliError::not_found("No active rentals found"))
+            Err(eyre!("No active rentals found"))
         };
     }
 
-    // Use interactive selector to choose a rental
+    // Use interactive selector to choose a rental (use compact mode for better readability)
     let selector = crate::interactive::InteractiveSelector::new();
-    selector.select_rental(&eligible_rentals)
+    selector.select_rental(&eligible_rentals, false)
 }

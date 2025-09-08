@@ -175,6 +175,10 @@ pub enum AuthError {
     #[error("Authorization timeout")]
     Timeout,
 
+    /// User is not logged in / no tokens found
+    #[error("User not logged in. Run 'basilica login' to authenticate")]
+    UserNotLoggedIn,
+
     /// Generic IO error
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),

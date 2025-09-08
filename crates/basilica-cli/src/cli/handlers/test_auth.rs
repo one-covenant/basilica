@@ -3,11 +3,12 @@
 use crate::auth::{OAuthFlow, TokenStore};
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
-use crate::error::{CliError, Result};
+use crate::error::CliError;
 use base64::{
     engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
     Engine,
 };
+use color_eyre::eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, info};
@@ -182,22 +183,23 @@ fn decode_jwt_scopes(token: &str) -> Option<Vec<String>> {
 }
 
 /// Test the authentication token by calling Auth0's /userinfo endpoint
-pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
+pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
     println!("Testing authentication token...\n");
 
     // First, test token refresh functionality
     println!("Testing token refresh capability...");
     println!("──────────────────────────────────\n");
 
-    let token_store = TokenStore::new().map_err(|e| CliError::internal(e.to_string()))?;
+    let data_dir = CliConfig::data_dir().map_err(|e| eyre!(e.to_string()))?;
+    let token_store = TokenStore::new(data_dir).map_err(|e| eyre!(e.to_string()))?;
 
     // Get current tokens to test refresh
     let tokens = token_store
-        .retrieve("basilica-cli")
+        .retrieve()
         .await
-        .map_err(|e| CliError::internal(format!("Failed to retrieve tokens: {}", e)))?
+        .map_err(|e| eyre!(format!("Failed to retrieve tokens: {}", e)))?
         .ok_or_else(|| {
-            CliError::internal("No authentication tokens found. Please run 'basilica login' first")
+            eyre!("No authentication tokens found. Please run 'basilica login' first")
         })?;
 
     // Show current token status
@@ -233,7 +235,7 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
                 println!("  ✅ Token refresh SUCCESSFUL!");
 
                 // Store the new tokens
-                if let Err(e) = token_store.store("basilica-cli", &new_tokens).await {
+                if let Err(e) = token_store.store(&new_tokens).await {
                     println!("  ⚠️  Warning: Failed to store refreshed tokens: {}", e);
                 }
 
@@ -276,16 +278,16 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
     let http_client = reqwest::Client::new();
 
     // Get the bearer token from our client
-    let token = client.get_bearer_token().ok_or_else(|| {
-        CliError::internal("No authentication token found. Please run 'basilica login' first")
-    })?;
+    let token = client
+        .get_bearer_token()
+        .ok_or_else(|| eyre!("No authentication token found. Please run 'basilica login' first"))?;
 
     let response = http_client
         .get(&userinfo_url)
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await
-        .map_err(|e| CliError::internal(format!("Failed to call userinfo endpoint: {}", e)))?;
+        .map_err(|e| eyre!(format!("Failed to call userinfo endpoint: {}", e)))?;
 
     let status = response.status();
 
@@ -293,7 +295,7 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
         let user_info: UserInfo = response
             .json()
             .await
-            .map_err(|e| CliError::internal(format!("Failed to parse userinfo response: {}", e)))?;
+            .map_err(|e| eyre!(format!("Failed to parse userinfo response: {}", e)))?;
 
         println!("Token is valid!\n");
         println!("User Information:");
@@ -344,11 +346,11 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
     } else if status.as_u16() == 401 {
         println!("Token is invalid or expired");
         println!("\nPlease run 'basilica login' to get a new token");
-        return Err(CliError::internal("Invalid or expired token"));
+        return Err(eyre!("Invalid or expired token").into());
     } else if status.as_u16() == 429 {
         println!("Rate limited (max 5 requests per minute)");
         println!("Please wait a moment and try again");
-        return Err(CliError::internal("Rate limited by Auth0"));
+        return Err(eyre!("Rate limited by Auth0").into());
     } else {
         let error_text = response
             .text()
@@ -356,14 +358,14 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<()> {
             .unwrap_or_else(|_| "Unknown error".to_string());
         println!("Unexpected error: {}", status);
         println!("Response: {}", error_text);
-        return Err(CliError::internal(format!("Unexpected error: {}", status)));
+        return Err(eyre!(format!("Unexpected error: {}", status)).into());
     }
 
     Ok(())
 }
 
 /// Test API authentication by making a request to your Basilica API
-pub async fn handle_test_api_auth(config: &CliConfig) -> Result<()> {
+pub async fn handle_test_api_auth(config: &CliConfig) -> Result<(), CliError> {
     println!("Testing Basilica API authentication...\n");
 
     // Create authenticated client
@@ -382,7 +384,7 @@ pub async fn handle_test_api_auth(config: &CliConfig) -> Result<()> {
             println!("  Error: {}", e);
             println!("  Note: Health endpoint requires full authentication");
             println!("  Run 'basilica login' to authenticate if you haven't already");
-            return Err(CliError::internal(format!("API connection failed: {}", e)));
+            return Err(eyre!(format!("API connection failed: {}", e)).into());
         }
     }
 

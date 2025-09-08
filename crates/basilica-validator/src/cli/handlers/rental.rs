@@ -184,7 +184,7 @@ async fn handle_start_rental(
             cpu_cores: cpu_cores.unwrap_or(1.0),
             memory_mb: memory_mb.unwrap_or(1024),
             storage_mb: storage_mb.unwrap_or(102400), // Default to 100GB
-            gpu_count: gpu_count.unwrap_or(0),
+            gpu_count: gpu_count.unwrap_or(1),
             gpu_types: Vec::new(),
         },
         command,

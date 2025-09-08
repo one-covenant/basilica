@@ -1,9 +1,10 @@
+use crate::cli::handlers::gpu_rental::TargetType;
 use basilica_validator::rental::types::RentalState;
 use clap::{Subcommand, ValueHint};
 use std::path::PathBuf;
 
 /// Main CLI commands
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// List available GPU resources
     #[command(alias = "list")]
@@ -15,8 +16,8 @@ pub enum Commands {
     /// Provision and start GPU instances
     #[command(alias = "start")]
     Up {
-        /// Target executor UID/HUID (optional)
-        target: Option<String>,
+        /// Target executor ID (UUID) or GPU category (e.g., 'h100', 'h200', 'b200') (optional)
+        target: Option<TargetType>,
 
         #[command(flatten)]
         options: UpOptions,
@@ -124,8 +125,37 @@ pub enum Commands {
     },
 }
 
+impl Commands {
+    /// Check if this command requires authentication
+    pub fn requires_auth(&self) -> bool {
+        match self {
+            // GPU rental commands require authentication
+            Commands::Ls { .. }
+            | Commands::Up { .. }
+            | Commands::Ps { .. }
+            | Commands::Status { .. }
+            | Commands::Logs { .. }
+            | Commands::Down { .. }
+            | Commands::Exec { .. }
+            | Commands::Ssh { .. }
+            | Commands::Cp { .. } => true,
+
+            // Authentication and delegation commands don't require auth
+            Commands::Login { .. }
+            | Commands::Logout
+            | Commands::Validator { .. }
+            | Commands::Miner { .. }
+            | Commands::Executor { .. } => false,
+
+            // Test auth command requires authentication
+            #[cfg(debug_assertions)]
+            Commands::TestAuth { .. } => true,
+        }
+    }
+}
+
 /// Filters for listing GPUs
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct ListFilters {
     /// Minimum GPU count
     #[arg(long)]
@@ -146,15 +176,15 @@ pub struct ListFilters {
     /// Minimum memory in GB
     #[arg(long)]
     pub memory_min: Option<u32>,
+
+    /// Show detailed GPU information (full GPU names)
+    #[arg(long)]
+    pub detailed: bool,
 }
 
 /// Options for provisioning instances
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct UpOptions {
-    /// GPU type requirement
-    #[arg(long)]
-    pub gpu_type: Option<String>,
-
     /// Minimum GPU count
     #[arg(long)]
     pub gpu_min: Option<u32>,
@@ -198,10 +228,14 @@ pub struct UpOptions {
     /// Create rental in detached mode (don't auto-connect via SSH)
     #[arg(short = 'd', long)]
     pub detach: bool,
+
+    /// Show detailed executor information (full GPU names and individual executors)
+    #[arg(long)]
+    pub detailed: bool,
 }
 
 /// Filters for listing active rentals
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct PsFilters {
     /// Filter by status (defaults to 'active' if not specified)
     #[arg(long, value_enum)]
@@ -214,10 +248,14 @@ pub struct PsFilters {
     /// Minimum GPU count
     #[arg(long)]
     pub min_gpu_count: Option<u32>,
+
+    /// Show detailed GPU information (full GPU names)
+    #[arg(long)]
+    pub detailed: bool,
 }
 
 /// Options for viewing logs
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct LogsOptions {
     /// Follow logs in real-time
     #[arg(short, long)]
@@ -229,7 +267,7 @@ pub struct LogsOptions {
 }
 
 /// Options for SSH connections
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 pub struct SshOptions {
     /// Local port forwarding (local_port:remote_host:remote_port)
     #[arg(short = 'L', long)]

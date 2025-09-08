@@ -1,10 +1,13 @@
 //! Interactive selection utilities
 
-use crate::error::{CliError, Result};
-use basilica_api::api::types::ApiRentalListItem;
+use basilica_api::api::types::{ApiRentalListItem, ExecutorSelection, GpuRequirements};
 use basilica_validator::api::types::AvailableExecutor;
+use basilica_validator::gpu::GpuCategory;
+use color_eyre::eyre::{eyre, Result};
 use console::Term;
 use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};
+use std::collections::HashMap;
+use std::str::FromStr;
 
 /// Interactive selector for CLI operations
 pub struct InteractiveSelector {
@@ -20,24 +23,30 @@ impl InteractiveSelector {
         Self { theme }
     }
 
-    /// Get GPU use case description based on GPU model
-    fn get_gpu_use_case(gpu_name: &str) -> &'static str {
-        match gpu_name {
-            name if name.contains("H100") => "High-end training & inference",
-            name if name.contains("H200") => "High-end training & inference",
-            name if name.contains("A100") => "Training & large model inference",
-            name if name.contains("RTX 4090") => "Development & prototyping",
-            name if name.contains("RTX 4080") => "Development & prototyping",
-            _ => "General GPU compute",
+    /// Let user select an executor from available options
+    pub fn select_executor(
+        &self,
+        executors: &[AvailableExecutor],
+        detailed: bool,
+    ) -> Result<ExecutorSelection> {
+        if executors.is_empty() {
+            return Err(eyre!("No executors available"));
+        }
+
+        if detailed {
+            // Detailed mode: Show all executors individually
+            self.select_executor_detailed(executors)
+        } else {
+            // Grouped mode: Group by GPU configuration
+            self.select_executor_grouped(executors)
         }
     }
 
-    /// Let user select an executor from available options
-    pub fn select_executor(&self, executors: &[AvailableExecutor]) -> Result<String> {
-        if executors.is_empty() {
-            return Err(CliError::not_found("No executors available"));
-        }
-
+    /// Select executor in detailed mode (show all executors)
+    fn select_executor_detailed(
+        &self,
+        executors: &[AvailableExecutor],
+    ) -> Result<ExecutorSelection> {
         // First pass: collect GPU info strings to determine max width
         let gpu_infos: Vec<String> = executors
             .iter()
@@ -46,15 +55,16 @@ impl InteractiveSelector {
                     "No GPUs".to_string()
                 } else {
                     let gpu = &executor.executor.gpu_specs[0];
+                    let gpu_display_name = gpu.name.clone(); // Full name in detailed mode
                     if executor.executor.gpu_specs.len() > 1 {
                         format!(
                             "{}x {} ({}GB)",
                             executor.executor.gpu_specs.len(),
-                            gpu.name,
+                            gpu_display_name,
                             gpu.memory_gb
                         )
                     } else {
-                        format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+                        format!("1x {} ({}GB)", gpu_display_name, gpu.memory_gb)
                     }
                 }
             })
@@ -62,7 +72,7 @@ impl InteractiveSelector {
 
         // Calculate the maximum width needed for proper alignment
         let max_width = gpu_infos.iter().map(|s| s.len()).max().unwrap_or(30);
-        let padding = max_width + 3; // Add some padding for better visual separation
+        let padding = max_width + 3;
 
         // Create items for the selector with GPU info and use cases
         let selector_items: Vec<String> = executors
@@ -78,8 +88,93 @@ impl InteractiveSelector {
                     )
                 } else {
                     let gpu = &executor.executor.gpu_specs[0];
-                    let use_case = Self::get_gpu_use_case(&gpu.name);
+                    let use_case = GpuCategory::from_str(&gpu.name).unwrap().description();
                     format!("{:<width$} {}", gpu_info, use_case, width = padding)
+                }
+            })
+            .collect();
+
+        let selection = Select::with_theme(&self.theme)
+            .with_prompt("Select executor")
+            .items(&selector_items)
+            .default(0)
+            .interact_opt()
+            .map_err(|e| eyre!("Selection failed: {}", e))?;
+
+        let selection = match selection {
+            Some(s) => s,
+            None => return Err(eyre!("Selection cancelled")),
+        };
+
+        // Get the selected executor ID
+        let executor_id = executors[selection].executor.id.clone();
+        let executor_id = match executor_id.split_once("__") {
+            Some((_, second)) => second.to_string(),
+            None => executor_id,
+        };
+
+        Ok(ExecutorSelection::ExecutorId { executor_id })
+    }
+
+    /// Select executor in grouped mode (group by GPU configuration)
+    fn select_executor_grouped(
+        &self,
+        executors: &[AvailableExecutor],
+    ) -> Result<ExecutorSelection> {
+        // Group executors by GPU configuration
+        let mut gpu_groups: HashMap<String, (String, u32, u32)> = HashMap::new();
+
+        for executor in executors {
+            let key = if executor.executor.gpu_specs.is_empty() {
+                "no_gpu".to_string()
+            } else {
+                let gpu = &executor.executor.gpu_specs[0];
+                let category = GpuCategory::from_str(&gpu.name)
+                    .unwrap_or(GpuCategory::Other(gpu.name.clone()));
+                let gpu_count = executor.executor.gpu_specs.len() as u32;
+                format!("{}_{}_{}GB", gpu_count, category, gpu.memory_gb)
+            };
+
+            gpu_groups.entry(key).or_insert_with(|| {
+                if executor.executor.gpu_specs.is_empty() {
+                    ("".to_string(), 0, 0)
+                } else {
+                    let gpu = &executor.executor.gpu_specs[0];
+                    let category = GpuCategory::from_str(&gpu.name)
+                        .unwrap_or(GpuCategory::Other(gpu.name.clone()));
+                    let gpu_count = executor.executor.gpu_specs.len() as u32;
+                    (category.to_string(), gpu_count, gpu.memory_gb)
+                }
+            });
+        }
+
+        // Create sorted list of unique GPU configurations
+        let mut gpu_configs: Vec<(String, String, u32, u32)> = gpu_groups
+            .into_iter()
+            .map(|(key, (gpu_type, count, memory))| (key, gpu_type, count, memory))
+            .collect();
+        gpu_configs.sort_by(|a, b| {
+            // Sort by GPU type, then count, then memory
+            a.1.cmp(&b.1).then(a.2.cmp(&b.2)).then(a.3.cmp(&b.3))
+        });
+
+        // Create display items with GPU use case descriptions
+        let selector_items: Vec<String> = gpu_configs
+            .iter()
+            .map(|(_, gpu_type, count, memory)| {
+                if gpu_type.is_empty() {
+                    format!("{:<30} {}", "No GPUs", "General compute")
+                } else {
+                    let gpu_info = if *count > 1 {
+                        format!("{}x {} ({}GB)", count, gpu_type, memory)
+                    } else {
+                        format!("1x {} ({}GB)", gpu_type, memory)
+                    };
+                    // Parse the category string directly to get the enum and its description
+                    let category = GpuCategory::from_str(gpu_type)
+                        .unwrap_or(GpuCategory::Other(gpu_type.to_string()));
+                    let use_case = category.description();
+                    format!("{:<30} {}", gpu_info, use_case)
                 }
             })
             .collect();
@@ -89,60 +184,55 @@ impl InteractiveSelector {
             .items(&selector_items)
             .default(0)
             .interact_opt()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+            .map_err(|e| eyre!("Selection failed: {}", e))?;
 
         let selection = match selection {
             Some(s) => s,
-            None => return Err(CliError::interactive("Selection cancelled")),
+            None => return Err(eyre!("Selection cancelled")),
         };
 
-        // Get the selected GPU info for confirmation
-        let selected_gpu = if executors[selection].executor.gpu_specs.is_empty() {
-            "No GPUs".to_string()
-        } else {
-            let gpu = &executors[selection].executor.gpu_specs[0];
-            if executors[selection].executor.gpu_specs.len() > 1 {
-                format!(
-                    "{}x {} ({}GB)",
-                    executors[selection].executor.gpu_specs.len(),
-                    gpu.name,
-                    gpu.memory_gb
-                )
-            } else {
-                format!("{} ({}GB)", gpu.name, gpu.memory_gb)
-            }
-        };
+        let selected_config = &gpu_configs[selection];
 
         // Use console crate to clear the previous line properly
         let term = Term::stdout();
-        let _ = term.clear_last_lines(1); // Clear the selection prompt line
+        let _ = term.clear_last_lines(1);
 
-        // Use dialoguer's Confirm with the same theme for consistency
+        // Confirm selection
+        let display_name = &selector_items[selection];
         let confirmed = Confirm::with_theme(&self.theme)
-            .with_prompt(format!("Proceed with {}?", selected_gpu))
-            .default(true) // Default to yes for better UX
+            .with_prompt(format!("Proceed with {}?", display_name))
+            .default(true)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Confirmation failed: {e}")))?;
+            .map_err(|e| eyre!("Confirmation failed: {}", e))?;
 
         if !confirmed {
-            return Err(CliError::interactive("Selection cancelled"));
+            return Err(eyre!("Selection cancelled"));
         }
 
-        let executor_id = executors[selection].executor.id.clone();
-
-        // Remove miner prefix from executor ID if present
-        let executor_id = match executor_id.split_once("__") {
-            Some((_, second)) => second.to_string(),
-            None => executor_id,
-        };
-
-        Ok(executor_id)
+        // Return GPU requirements for automatic selection
+        if selected_config.1.is_empty() {
+            // No GPU case - just pick the first available executor
+            let executor_id = executors[0].executor.id.clone();
+            let executor_id = match executor_id.split_once("__") {
+                Some((_, second)) => second.to_string(),
+                None => executor_id,
+            };
+            Ok(ExecutorSelection::ExecutorId { executor_id })
+        } else {
+            Ok(ExecutorSelection::GpuRequirements {
+                gpu_requirements: GpuRequirements {
+                    gpu_type: Some(selected_config.1.clone()),
+                    gpu_count: selected_config.2,
+                    min_memory_gb: 0, // We match exact memory from the selection
+                },
+            })
+        }
     }
 
     /// Let user select a single instance from active instances
-    pub fn select_rental(&self, rentals: &[ApiRentalListItem]) -> Result<String> {
+    pub fn select_rental(&self, rentals: &[ApiRentalListItem], detailed: bool) -> Result<String> {
         if rentals.is_empty() {
-            return Err(CliError::not_found("No active instances"));
+            return Err(eyre!("No active instances"));
         }
 
         let items: Vec<String> = rentals
@@ -159,17 +249,37 @@ impl InteractiveSelector {
                         .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
 
                     if all_same {
-                        format!(
-                            "{}x {} ({}GB)",
-                            rental.gpu_specs.len(),
-                            first_gpu.name,
-                            first_gpu.memory_gb
-                        )
+                        let gpu_display_name = if detailed {
+                            first_gpu.name.clone()
+                        } else {
+                            let category = GpuCategory::from_str(&first_gpu.name)
+                                .unwrap_or(GpuCategory::Other(first_gpu.name.clone()));
+                            category.to_string()
+                        };
+                        if rental.gpu_specs.len() > 1 {
+                            format!(
+                                "{}x {} ({}GB)",
+                                rental.gpu_specs.len(),
+                                gpu_display_name,
+                                first_gpu.memory_gb
+                            )
+                        } else {
+                            format!("1x {} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                        }
                     } else {
                         rental
                             .gpu_specs
                             .iter()
-                            .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                            .map(|g| {
+                                let display_name = if detailed {
+                                    g.name.clone()
+                                } else {
+                                    let category = GpuCategory::from_str(&g.name)
+                                        .unwrap_or(GpuCategory::Other(g.name.clone()));
+                                    category.to_string()
+                                };
+                                format!("{} ({}GB)", display_name, g.memory_gb)
+                            })
                             .collect::<Vec<_>>()
                             .join(", ")
                     }
@@ -185,11 +295,11 @@ impl InteractiveSelector {
             .items(&items)
             .default(0)
             .interact_opt()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+            .map_err(|e| eyre!("Selection failed: {}", e))?;
 
         let selection = match selection {
             Some(s) => s,
-            None => return Err(CliError::interactive("Selection cancelled")),
+            None => return Err(eyre!("Selection cancelled")),
         };
 
         // Clear the selection prompt line
@@ -205,7 +315,7 @@ impl InteractiveSelector {
         rentals: &[ApiRentalListItem],
     ) -> Result<Vec<String>> {
         if rentals.is_empty() {
-            return Err(CliError::not_found("No active instances"));
+            return Err(eyre!("No active instances"));
         }
 
         let items: Vec<String> = rentals
@@ -247,10 +357,10 @@ impl InteractiveSelector {
             .with_prompt("Select instances to terminate (Space to select, Enter to confirm)")
             .items(&items)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Selection failed: {e}")))?;
+            .map_err(|e| eyre!("Selection failed: {}", e))?;
 
         if selections.is_empty() {
-            return Err(CliError::interactive("No instances selected"));
+            return Err(eyre!("No instances selected"));
         }
 
         let selected_ids: Vec<String> = selections
@@ -267,7 +377,7 @@ impl InteractiveSelector {
             .with_prompt(message)
             .default(false)
             .interact()
-            .map_err(|e| CliError::interactive(format!("Confirmation failed: {e}")))?;
+            .map_err(|e| eyre!("Confirmation failed: {}", e))?;
 
         Ok(confirmed)
     }
