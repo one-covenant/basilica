@@ -32,10 +32,7 @@
 //! ```
 
 use crate::{
-    auth::{
-        token_resolver::TokenResolver, types::AuthConfig, DeviceFlowProvider, OAuth2Provider,
-        TokenManager,
-    },
+    auth::{token_resolver::TokenResolver, types::AuthConfig, TokenManager},
     error::{ApiError, ErrorResponse, Result},
     types::{
         ApiListRentalsResponse, HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
@@ -378,65 +375,8 @@ impl ClientBuilder {
         self
     }
 
-    /// Build the client with Auth0 authentication using OAuth flow
-    pub async fn build_with_oauth_auth(self) -> Result<BasilicaClient> {
-        let auth_config = self
-            .auth_config
-            .as_ref()
-            .ok_or_else(|| ApiError::InvalidRequest {
-                message: "auth_config is required for OAuth authentication".into(),
-            })?
-            .clone();
-
-        // Create OAuth provider and token manager
-        let provider = Box::new(OAuth2Provider::new(auth_config));
-        let token_manager = TokenManager::new(provider).map_err(|e| ApiError::Internal {
-            message: format!("Failed to create token manager: {}", e),
-        })?;
-
-        // Pre-fetch token to ensure authentication works
-        token_manager
-            .get_access_token()
-            .await
-            .map_err(|e| ApiError::Internal {
-                message: format!("OAuth authentication failed: {}", e),
-            })?;
-
-        // Build client with token manager
-        let mut client = self.build()?;
-        client.token_manager = Some(Arc::new(token_manager));
-        Ok(client)
-    }
-
-    /// Build the client with Auth0 authentication using device flow
-    pub async fn build_with_device_auth(self) -> Result<BasilicaClient> {
-        let auth_config = self
-            .auth_config
-            .as_ref()
-            .ok_or_else(|| ApiError::InvalidRequest {
-                message: "auth_config is required for device authentication".into(),
-            })?
-            .clone();
-
-        // Create device flow provider and token manager
-        let provider = Box::new(DeviceFlowProvider::new(auth_config));
-        let token_manager = TokenManager::new(provider).map_err(|e| ApiError::Internal {
-            message: format!("Failed to create token manager: {}", e),
-        })?;
-
-        // Pre-fetch token to ensure authentication works
-        token_manager
-            .get_access_token()
-            .await
-            .map_err(|e| ApiError::Internal {
-                message: format!("Device authentication failed: {}", e),
-            })?;
-
-        // Build client with token manager
-        let mut client = self.build()?;
-        client.token_manager = Some(Arc::new(token_manager));
-        Ok(client)
-    }
+    // OAuth and Device flow authentication methods removed - these should be handled by CLI
+    // The SDK client should receive tokens from the CLI, not handle interactive auth flows
 
     /// Build the client with automatic authentication detection
     /// This will automatically find and use CLI tokens if available

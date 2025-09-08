@@ -4,10 +4,10 @@
 //! devices that lack a web browser or have limited input capabilities.
 
 use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
+use crate::output::print_info;
 use console::{style, Term};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
-use tracing::info;
 
 /// Device authorization response from the OAuth provider
 #[derive(Debug, Clone, Deserialize)]
@@ -115,9 +115,8 @@ impl DeviceFlow {
         }
 
         println!();
-        info!("Waiting for authentication...");
-        println!("Waiting for authentication...");
-        println!("Press Ctrl+C to cancel");
+        print_info("Waiting for authentication...");
+        print_info("Press Ctrl+C to cancel");
 
         Ok(())
     }
@@ -170,10 +169,10 @@ impl DeviceFlow {
                     {
                         if poll_response.error.as_deref() == Some("slow_down") {
                             current_interval = Duration::from_secs(current_interval.as_secs() + 5);
-                            info!(
+                            print_info(&format!(
                                 "Rate limited, slowing down polling interval to {} seconds",
                                 current_interval.as_secs()
-                            );
+                            ));
                         }
                     }
                     continue;

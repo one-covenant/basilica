@@ -3,7 +3,7 @@
 //! The TokenManager handles token lifecycle including storage, caching,
 //! and automatic refresh when tokens are expired or about to expire.
 
-use super::provider::AuthProvider;
+use super::providers::TokenProvider;
 use super::token_store::TokenStore;
 use super::types::{get_sdk_data_dir, AuthResult, TokenSet};
 use std::sync::Arc;
@@ -36,7 +36,7 @@ impl TokenCache {
 
 /// Manages tokens with automatic refresh and caching
 pub struct TokenManager {
-    provider: Box<dyn AuthProvider>,
+    provider: TokenProvider,
     storage: TokenStore,
     cache: Arc<RwLock<TokenCache>>,
 }
@@ -46,7 +46,7 @@ impl TokenManager {
     const REFRESH_THRESHOLD: Duration = Duration::from_secs(3600);
 
     /// Create a new token manager with the given provider
-    pub fn new(provider: Box<dyn AuthProvider>) -> AuthResult<Self> {
+    pub fn new(provider: TokenProvider) -> AuthResult<Self> {
         Ok(Self {
             provider,
             storage: TokenStore::new(get_sdk_data_dir()?)?,
@@ -57,7 +57,6 @@ impl TokenManager {
     /// Create a token manager from an existing token set
     /// This is useful when tokens are already available (e.g., from CLI)
     pub fn from_token_set(token_set: TokenSet) -> AuthResult<Self> {
-        use super::providers::ExistingTokenProvider;
         use super::types::AuthConfig;
 
         // Create auth config for refresh support
@@ -73,10 +72,7 @@ impl TokenManager {
             additional_params: std::collections::HashMap::new(),
         };
 
-        let provider = Box::new(ExistingTokenProvider::with_config(
-            token_set.clone(),
-            auth_config,
-        ));
+        let provider = TokenProvider::with_config(token_set.clone(), auth_config);
         let storage = TokenStore::new(get_sdk_data_dir()?)?;
         let mut cache = TokenCache::new();
         cache.set(token_set);

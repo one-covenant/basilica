@@ -2,12 +2,11 @@
 #![allow(clippy::useless_conversion)]
 
 use basilica_sdk::StartRentalApiRequest;
-use basilica_sdk::{auth::types::AuthConfig, BasilicaClient as RustClient, ClientBuilder};
+use basilica_sdk::{BasilicaClient as RustClient, ClientBuilder};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pythonize::{depythonize, pythonize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -70,93 +69,9 @@ impl BasilicaClient {
         })
     }
 
-    /// Create a new client with OAuth authentication
-    ///
-    /// Args:
-    ///     base_url: The base URL of the Basilica API
-    ///     client_id: Auth0 client ID
-    ///     timeout_secs: Request timeout in seconds (default: 30)
-    #[staticmethod]
-    #[pyo3(signature = (base_url, client_id, timeout_secs=30))]
-    fn with_oauth_auth(base_url: String, client_id: String, timeout_secs: u64) -> PyResult<Self> {
-        let runtime = Runtime::new()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
-
-        let auth_config = AuthConfig {
-            client_id,
-            auth_endpoint: "https://auth.basilica.ai/authorize".to_string(),
-            token_endpoint: "https://auth.basilica.ai/oauth/token".to_string(),
-            device_auth_endpoint: Some("https://auth.basilica.ai/oauth/device/code".to_string()),
-            revoke_endpoint: Some("https://auth.basilica.ai/oauth/revoke".to_string()),
-            redirect_uri: "http://localhost:8080/callback".to_string(),
-            scopes: vec![
-                "openid".to_string(),
-                "profile".to_string(),
-                "offline_access".to_string(),
-            ],
-            additional_params: HashMap::new(),
-        };
-
-        let client = runtime
-            .block_on(async {
-                ClientBuilder::default()
-                    .base_url(base_url)
-                    .timeout(Duration::from_secs(timeout_secs))
-                    .with_auth_config(auth_config)
-                    .build_with_oauth_auth()
-                    .await
-            })
-            .map_err(|e| PyRuntimeError::new_err(format!("OAuth authentication failed: {}", e)))?;
-
-        Ok(Self {
-            inner: Arc::new(client),
-            runtime,
-        })
-    }
-
-    /// Create a new client with device flow authentication
-    ///
-    /// Args:
-    ///     base_url: The base URL of the Basilica API
-    ///     client_id: Auth0 client ID
-    ///     timeout_secs: Request timeout in seconds (default: 30)
-    #[staticmethod]
-    #[pyo3(signature = (base_url, client_id, timeout_secs=30))]
-    fn with_device_auth(base_url: String, client_id: String, timeout_secs: u64) -> PyResult<Self> {
-        let runtime = Runtime::new()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
-
-        let auth_config = AuthConfig {
-            client_id,
-            auth_endpoint: "https://auth.basilica.ai/authorize".to_string(),
-            token_endpoint: "https://auth.basilica.ai/oauth/token".to_string(),
-            device_auth_endpoint: Some("https://auth.basilica.ai/oauth/device/code".to_string()),
-            revoke_endpoint: Some("https://auth.basilica.ai/oauth/revoke".to_string()),
-            redirect_uri: "http://localhost:8080/callback".to_string(),
-            scopes: vec![
-                "openid".to_string(),
-                "profile".to_string(),
-                "offline_access".to_string(),
-            ],
-            additional_params: HashMap::new(),
-        };
-
-        let client = runtime
-            .block_on(async {
-                ClientBuilder::default()
-                    .base_url(base_url)
-                    .timeout(Duration::from_secs(timeout_secs))
-                    .with_auth_config(auth_config)
-                    .build_with_device_auth()
-                    .await
-            })
-            .map_err(|e| PyRuntimeError::new_err(format!("Device authentication failed: {}", e)))?;
-
-        Ok(Self {
-            inner: Arc::new(client),
-            runtime,
-        })
-    }
+    // Interactive authentication methods removed - Python SDK should use tokens
+    // Users should authenticate via CLI first: `basilica login`
+    // Then use the Python SDK with auto-detected tokens or provide token directly
 
     /// Check the health of the API
     fn health_check(&self, py: Python) -> PyResult<PyObject> {
