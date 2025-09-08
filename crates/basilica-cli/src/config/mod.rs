@@ -413,7 +413,7 @@ impl CliCache {
 
         tokio::fs::write(path, content)
             .await
-            .map_err(|e| eyre!("Failed to write config file: {}", e))?;
+            .map_err(|e| eyre!("Failed to write cache file: {}", e))?;
 
         Ok(())
     }
