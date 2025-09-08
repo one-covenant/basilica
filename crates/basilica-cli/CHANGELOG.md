@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Use registered callback ports for OAuth flow instead of dynamic port allocation
+- Add coloring to clap help page with clap v3 styles for better readability
+- Automatic authentication prompts when commands require auth (no manual login needed)
+- GPU requirements-based selection - specify GPU needs and auto-select matching executors
+
+### Changed
+- Simplified token storage from keyring to file-based system
+- Enhanced GPU executor display with grouped selection mode, compact view by default (use `--detailed` flag for full GPU names), and improved table formatting
+
+### Fixed
+- Consistent GPU count prefixes in all displays (e.g., "2x H100")
+- Better expired/invalid token handling with clear user guidance
 
 ## [0.1.1] - Previous Release
 
