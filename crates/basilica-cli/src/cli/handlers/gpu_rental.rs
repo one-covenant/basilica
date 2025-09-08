@@ -18,16 +18,13 @@ use basilica_api::error::ApiError;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_validator::api::types::ListAvailableExecutorsQuery;
 use basilica_validator::api::types::RentalStatusResponse;
-use basilica_validator::gpu::GpuCategory;
 use basilica_validator::rental::types::RentalState;
 use color_eyre::eyre::{eyre, Result};
 use color_eyre::Section;
 use console::style;
 use reqwest::StatusCode;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::time::Duration;
-use tabled::{settings::Style, Table, Tabled};
 use tracing::debug;
 
 /// Handle the `ls` command - list available executors for rental
@@ -46,7 +43,7 @@ pub async fn handle_ls(
         min_gpu_count: filters.gpu_min,
     };
 
-    let spinner = create_spinner("Fetching available executors...");
+    let spinner = create_spinner("Scanning global GPU availability...");
 
     let response = api_client
         .list_available_executors(Some(query))
@@ -65,104 +62,15 @@ pub async fn handle_ls(
     if json {
         json_output(&response)?;
     } else {
-        if response.available_executors.is_empty() {
-            println!("No available executors found matching the specified criteria.");
-            return Ok(());
+        // Use table_output module for consistent styling
+        if filters.detailed {
+            table_output::display_available_executors_detailed(
+                &response.available_executors,
+                filters.detailed,
+            )?;
+        } else {
+            table_output::display_available_executors_compact(&response.available_executors)?;
         }
-
-        // Format as table
-        #[derive(Tabled)]
-        struct ExecutorRow {
-            #[tabled(rename = "GPU")]
-            gpu_info: String,
-            #[tabled(rename = "Executor ID")]
-            id: String,
-            #[tabled(rename = "CPU")]
-            cpu: String,
-            #[tabled(rename = "RAM")]
-            ram: String,
-            #[tabled(rename = "Score")]
-            score: String,
-            #[tabled(rename = "Uptime")]
-            uptime: String,
-        }
-
-        let rows: Vec<ExecutorRow> = response
-            .available_executors
-            .into_iter()
-            .map(|executor| {
-                let gpu_info = if executor.executor.gpu_specs.is_empty() {
-                    "No GPU".to_string()
-                } else if executor.executor.gpu_specs.len() == 1 {
-                    // Single GPU
-                    let gpu = &executor.executor.gpu_specs[0];
-                    let gpu_display_name = if filters.detailed {
-                        gpu.name.clone()
-                    } else {
-                        GpuCategory::from_str(&gpu.name).unwrap().to_string()
-                    };
-                    format!("1x {} ({}GB)", gpu_display_name, gpu.memory_gb)
-                } else {
-                    // Multiple GPUs - check if they're all the same model
-                    let first_gpu = &executor.executor.gpu_specs[0];
-                    let all_same =
-                        executor.executor.gpu_specs.iter().all(|g| {
-                            g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb
-                        });
-
-                    if all_same {
-                        // All GPUs are identical - use count prefix format
-                        let gpu_display_name = if filters.detailed {
-                            first_gpu.name.clone()
-                        } else {
-                            GpuCategory::from_str(&first_gpu.name).unwrap().to_string()
-                        };
-                        format!(
-                            "{}x {} ({}GB)",
-                            executor.executor.gpu_specs.len(),
-                            gpu_display_name,
-                            first_gpu.memory_gb
-                        )
-                    } else {
-                        // Different GPU models - list them individually
-                        let gpu_names: Vec<String> = executor
-                            .executor
-                            .gpu_specs
-                            .iter()
-                            .map(|g| {
-                                let display_name = if filters.detailed {
-                                    g.name.clone()
-                                } else {
-                                    GpuCategory::from_str(&g.name).unwrap().to_string()
-                                };
-                                format!("{} ({}GB)", display_name, g.memory_gb)
-                            })
-                            .collect();
-                        gpu_names.join(", ")
-                    }
-                };
-
-                // Remove miner prefix from executor ID if present
-                let executor_id = match executor.executor.id.split_once("__") {
-                    Some((_, second)) => second.to_string(),
-                    None => executor.executor.id,
-                };
-
-                ExecutorRow {
-                    gpu_info,
-                    id: executor_id,
-                    cpu: format!("{} cores", executor.executor.cpu_specs.cores),
-                    ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
-                    score: format!("{:.2}", executor.availability.verification_score),
-                    uptime: format!("{:.1}%", executor.availability.uptime_percentage),
-                }
-            })
-            .collect();
-
-        let mut table = Table::new(rows);
-        table.with(Style::modern());
-        println!("{}", table);
-        println!("\nTotal available executors: {}", response.total_count);
     }
 
     Ok(())
@@ -252,6 +160,9 @@ pub async fn handle_up(
         options.command
     };
 
+    // Determine the selection mode for error messaging
+    let is_direct_executor_id = matches!(executor_selection, ExecutorSelection::ExecutorId { .. });
+
     let request = StartRentalApiRequest {
         executor_selection,
         container_image,
@@ -278,8 +189,14 @@ pub async fn handle_up(
             complete_spinner_error(spinner.clone(), "Failed to create rental");
             CliError::Internal(
                 eyre!(e)
-                    .suggestion("Ensure the executor is available and try again")
-                    .note("Run 'basilica ls' to see available executors"),
+                    .note("The selected executor is experiencing issues.")
+                    .with_suggestion(|| {
+                        if is_direct_executor_id {
+                            "Try using a different executor ID (e.g., 'basilica up <different-executor-id>')."
+                        } else {
+                            "Simply rerun the same command to automatically try a different executor."
+                        }
+                    })
             )
         })?;
 

@@ -30,6 +30,7 @@ use basilica_validator::{
     RentalResponse,
 };
 use futures::stream::Stream;
+use rand::seq::SliceRandom;
 use regex::Regex;
 use std::sync::LazyLock;
 use tracing::{debug, error, info};
@@ -134,14 +135,14 @@ pub async fn start_rental(
                 });
             }
 
-            // Select the best executor based on verification score and uptime
+            // Randomly select an executor from those matching GPU requirements
             let selected_id = select_best_executor(executors_response.available_executors)
                 .ok_or_else(|| crate::error::ApiError::Internal {
-                    message: "Failed to select best executor".into(),
+                    message: "Failed to select executor".into(),
                 })?;
 
             info!(
-                "Selected executor {} based on GPU requirements",
+                "Randomly selected executor {} from available executors matching GPU requirements",
                 selected_id
             );
             selected_id
@@ -463,36 +464,16 @@ pub async fn list_available_executors(
     Ok(Json(response))
 }
 
-/// Select the best executor from a list of available executors based on
-/// verification score and uptime percentage
+/// Select a random executor from a list of available executors to distribute
+/// load and allow users to retry with different executors if issues occur
 fn select_best_executor(executors: Vec<AvailableExecutor>) -> Option<String> {
     if executors.is_empty() {
         return None;
     }
 
-    // Sort executors by verification score (descending) and then by uptime percentage (descending)
-    let mut sorted_executors = executors;
-    sorted_executors.sort_by(|a, b| {
-        // First compare by verification score
-        let score_cmp = b
-            .availability
-            .verification_score
-            .partial_cmp(&a.availability.verification_score)
-            .unwrap_or(std::cmp::Ordering::Equal);
-
-        if score_cmp != std::cmp::Ordering::Equal {
-            return score_cmp;
-        }
-
-        // If scores are equal, compare by uptime percentage
-        b.availability
-            .uptime_percentage
-            .partial_cmp(&a.availability.uptime_percentage)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    // Return the ID of the best executor
-    sorted_executors.first().map(|e| e.executor.id.clone())
+    // Randomly select an executor from the available list
+    let mut rng = rand::thread_rng();
+    executors.choose(&mut rng).map(|e| e.executor.id.clone())
 }
 
 fn is_valid_container_image(image: &str) -> bool {

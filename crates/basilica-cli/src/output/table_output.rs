@@ -1,6 +1,7 @@
 //! Table formatting for CLI output
 
 use basilica_api::api::types::{ApiRentalListItem, ExecutorDetails, RentalStatusResponse};
+use basilica_validator::api::types::AvailableExecutor;
 use basilica_validator::gpu::GpuCategory;
 use chrono::{DateTime, Local};
 use color_eyre::eyre::Result;
@@ -213,6 +214,194 @@ pub fn display_config(config: &HashMap<String, String>) -> Result<()> {
     let mut table = Table::new(rows);
     table.with(Style::modern());
     println!("{table}");
+
+    Ok(())
+}
+
+/// Display available executors in compact format (grouped by location and GPU type)
+pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> Result<()> {
+    if executors.is_empty() {
+        println!("No available executors found matching the specified criteria.");
+        return Ok(());
+    }
+
+    // Group executors by location and GPU configuration
+    let mut location_groups: HashMap<String, HashMap<String, Vec<&AvailableExecutor>>> =
+        HashMap::new();
+
+    for executor in executors {
+        let location = executor
+            .executor
+            .location
+            .clone()
+            .unwrap_or_else(|| "Unknown Region".to_string());
+
+        let gpu_key = if executor.executor.gpu_specs.is_empty() {
+            "No GPU".to_string()
+        } else {
+            let gpu = &executor.executor.gpu_specs[0];
+            let category = GpuCategory::from_str(&gpu.name).unwrap();
+            let gpu_count = executor.executor.gpu_specs.len();
+            format!("{}x {} ({}GB)", gpu_count, category, gpu.memory_gb)
+        };
+
+        location_groups
+            .entry(location)
+            .or_default()
+            .entry(gpu_key)
+            .or_default()
+            .push(executor);
+    }
+
+    // Sort locations for consistent display
+    let mut sorted_locations: Vec<_> = location_groups.keys().cloned().collect();
+    sorted_locations.sort();
+
+    println!("Available GPU Instances by Region\n");
+
+    for location in sorted_locations {
+        // Print location header
+        println!("{}", location);
+
+        #[derive(Tabled)]
+        struct CompactRow {
+            #[tabled(rename = "GPU TYPE")]
+            gpu_type: String,
+            #[tabled(rename = "AVAILABLE")]
+            available: String,
+        }
+
+        let gpu_groups = location_groups.get(&location).unwrap();
+        let mut rows: Vec<CompactRow> = Vec::new();
+
+        // Sort GPU configurations for consistent display
+        let mut sorted_gpu_configs: Vec<_> = gpu_groups.keys().cloned().collect();
+        sorted_gpu_configs.sort();
+
+        for gpu_config in sorted_gpu_configs {
+            let executors_in_group = gpu_groups.get(&gpu_config).unwrap();
+            let count = executors_in_group.len();
+
+            rows.push(CompactRow {
+                gpu_type: gpu_config.clone(),
+                available: count.to_string(),
+            });
+        }
+
+        let mut table = Table::new(rows);
+        table.with(Style::modern());
+        println!("{}", table);
+        println!();
+    }
+
+    let total_count = executors.len();
+    println!("Total available executors: {}", total_count);
+
+    Ok(())
+}
+
+/// Display available executors in detailed format (individual executors)
+pub fn display_available_executors_detailed(
+    executors: &[AvailableExecutor],
+    show_full_gpu_names: bool,
+) -> Result<()> {
+    if executors.is_empty() {
+        println!("No available executors found matching the specified criteria.");
+        return Ok(());
+    }
+
+    #[derive(Tabled)]
+    struct DetailedExecutorRow {
+        #[tabled(rename = "GPU")]
+        gpu_info: String,
+        #[tabled(rename = "Executor ID")]
+        id: String,
+        #[tabled(rename = "CPU")]
+        cpu: String,
+        #[tabled(rename = "RAM")]
+        ram: String,
+        #[tabled(rename = "Score")]
+        score: String,
+        #[tabled(rename = "Uptime")]
+        uptime: String,
+    }
+
+    let rows: Vec<DetailedExecutorRow> = executors
+        .iter()
+        .map(|executor| {
+            let gpu_info = if executor.executor.gpu_specs.is_empty() {
+                "No GPU".to_string()
+            } else if executor.executor.gpu_specs.len() == 1 {
+                // Single GPU
+                let gpu = &executor.executor.gpu_specs[0];
+                let gpu_display_name = if show_full_gpu_names {
+                    gpu.name.clone()
+                } else {
+                    GpuCategory::from_str(&gpu.name).unwrap().to_string()
+                };
+                format!("1x {} ({}GB)", gpu_display_name, gpu.memory_gb)
+            } else {
+                // Multiple GPUs - check if they're all the same model
+                let first_gpu = &executor.executor.gpu_specs[0];
+                let all_same = executor
+                    .executor
+                    .gpu_specs
+                    .iter()
+                    .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
+
+                if all_same {
+                    // All GPUs are identical - use count prefix format
+                    let gpu_display_name = if show_full_gpu_names {
+                        first_gpu.name.clone()
+                    } else {
+                        GpuCategory::from_str(&first_gpu.name).unwrap().to_string()
+                    };
+                    format!(
+                        "{}x {} ({}GB)",
+                        executor.executor.gpu_specs.len(),
+                        gpu_display_name,
+                        first_gpu.memory_gb
+                    )
+                } else {
+                    // Different GPU models - list them individually
+                    let gpu_names: Vec<String> = executor
+                        .executor
+                        .gpu_specs
+                        .iter()
+                        .map(|g| {
+                            let display_name = if show_full_gpu_names {
+                                g.name.clone()
+                            } else {
+                                GpuCategory::from_str(&g.name).unwrap().to_string()
+                            };
+                            format!("{} ({}GB)", display_name, g.memory_gb)
+                        })
+                        .collect();
+                    gpu_names.join(", ")
+                }
+            };
+
+            // Remove miner prefix from executor ID if present
+            let executor_id = match executor.executor.id.split_once("__") {
+                Some((_, second)) => second.to_string(),
+                None => executor.executor.id.clone(),
+            };
+
+            DetailedExecutorRow {
+                gpu_info,
+                id: executor_id,
+                cpu: format!("{} cores", executor.executor.cpu_specs.cores),
+                ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
+                score: format!("{:.2}", executor.availability.verification_score),
+                uptime: format!("{:.1}%", executor.availability.uptime_percentage),
+            }
+        })
+        .collect();
+
+    let mut table = Table::new(rows);
+    table.with(Style::modern());
+    println!("{}", table);
+    println!("\nTotal available executors: {}", executors.len());
 
     Ok(())
 }
