@@ -46,6 +46,8 @@ impl HardwareProfile {
 
         // Sum cores from all processors
         let mut total_cores = 0;
+        let mut has_cores_field = false;
+
         for processor in &processor_nodes {
             if let Some(cores) = processor
                 .get("configuration")
@@ -54,8 +56,16 @@ impl HardwareProfile {
                 .and_then(|s| s.parse::<i32>().ok())
             {
                 total_cores += cores;
+                has_cores_field = true;
             }
         }
+
+        // If no cores field found in configuration, fall back to counting processor nodes
+        // This handles virtualized environments where each vCPU appears as a separate processor
+        if !has_cores_field && !processor_nodes.is_empty() {
+            total_cores = processor_nodes.len() as i32;
+        }
+
         if total_cores > 0 {
             cpu_cores = Some(total_cores);
         }
@@ -66,9 +76,10 @@ impl HardwareProfile {
         let mut total_memory_bytes: i64 = 0;
 
         // Look for the "System Memory" node specifically to avoid counting individual banks
+        // Note: Some systems use "System memory" (lowercase 'm') so we do case-insensitive comparison
         for memory_node in &memory_nodes {
             if let Some(description) = memory_node.get("description").and_then(|v| v.as_str()) {
-                if description == "System Memory" {
+                if description.eq_ignore_ascii_case("System Memory") {
                     if let Some(size) = memory_node.get("size").and_then(|v| v.as_i64()) {
                         total_memory_bytes = size;
                         break; // Use only the System Memory total
@@ -85,11 +96,41 @@ impl HardwareProfile {
         let mut disk_nodes = Vec::new();
         find_nodes_by_class(&json, "disk", &mut disk_nodes);
         let mut total_disk_bytes: i64 = 0;
+
         for disk_node in &disk_nodes {
             if let Some(size) = disk_node.get("size").and_then(|v| v.as_i64()) {
                 total_disk_bytes += size;
+            } else {
+                // For virtual disks without size, try to find volume/partition information
+                // Look for children that might be volumes or partitions with size
+                if let Some(children) = disk_node.get("children").and_then(|v| v.as_array()) {
+                    for child in children {
+                        if let Some(size) = child.get("size").and_then(|v| v.as_i64()) {
+                            // Check if it's a volume or partition (not another disk)
+                            if let Some(class) = child.get("class").and_then(|v| v.as_str()) {
+                                if class == "volume" {
+                                    total_disk_bytes += size;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+
+        // Also look for volume nodes directly as some systems report them separately
+        let mut volume_nodes = Vec::new();
+        find_nodes_by_class(&json, "volume", &mut volume_nodes);
+
+        // Only add volumes if we haven't found disk sizes (to avoid double counting)
+        if total_disk_bytes == 0 {
+            for volume_node in &volume_nodes {
+                if let Some(size) = volume_node.get("size").and_then(|v| v.as_i64()) {
+                    total_disk_bytes += size;
+                }
+            }
+        }
+
         if total_disk_bytes > 0 {
             disk_gb = Some((total_disk_bytes / (1024 * 1024 * 1024)) as i32);
         }
@@ -308,6 +349,99 @@ mod tests {
         expected_cpu_cores: Option<i32>,
         expected_ram_gb: Option<i32>,
         expected_disk_gb: Option<i32>,
+    }
+
+    #[test]
+    fn test_parse_production_lshw() {
+        // Test with actual production JSON that was failing
+        let production_json = r#"{
+  "id": "computer",
+  "class": "system",
+  "claimed": true,
+  "description": "Computer",
+  "width": 64,
+  "capabilities": {
+    "smp": "Symmetric Multi-Processing",
+    "vsyscall32": "32-bit processes"
+  },
+  "children": [
+    {
+      "id": "core",
+      "class": "bus",
+      "claimed": true,
+      "description": "Motherboard",
+      "physid": "0",
+      "children": [
+        {
+          "id": "memory",
+          "class": "memory",
+          "claimed": true,
+          "description": "System memory",
+          "physid": "0",
+          "units": "bytes",
+          "size": 193273528320
+        },
+        {
+          "id": "cpu:0",
+          "class": "processor",
+          "claimed": true,
+          "product": "AMD EPYC 9554 64-Core Processor",
+          "vendor": "Advanced Micro Devices [AMD]",
+          "physid": "1",
+          "businfo": "cpu@0",
+          "version": "25.17.1",
+          "width": 64,
+          "configuration": {
+            "microcode": "168825150"
+          }
+        },
+        {
+          "id": "cpu:1",
+          "class": "processor",
+          "claimed": true,
+          "product": "AMD EPYC 9554 64-Core Processor",
+          "vendor": "Advanced Micro Devices [AMD]",
+          "physid": "2",
+          "businfo": "cpu@1",
+          "version": "25.17.1",
+          "width": 64,
+          "configuration": {
+            "microcode": "168825150"
+          }
+        }
+      ]
+    }
+  ]
+}"#;
+
+        println!("\n=== Testing: Production JSON (no cores in config) ===");
+
+        let result = HardwareProfile::from_lshw_json(production_json);
+        assert!(result.is_ok(), "Should parse production JSON successfully");
+
+        let profile = result.unwrap();
+        println!("Parsed Hardware Profile for production JSON:");
+        println!("  CPU Model: {:?}", profile.cpu_model);
+        println!("  CPU Cores: {:?}", profile.cpu_cores);
+        println!("  RAM GB: {:?}", profile.ram_gb);
+        println!("  Disk GB: {:?}", profile.disk_gb);
+
+        // Verify the fixes work
+        assert_eq!(
+            profile.cpu_model,
+            Some("AMD EPYC 9554 64-Core Processor".to_string()),
+            "Should extract CPU model"
+        );
+        assert_eq!(
+            profile.cpu_cores,
+            Some(2),
+            "Should count 2 processor nodes as fallback when no cores field"
+        );
+        assert_eq!(
+            profile.ram_gb,
+            Some(180),
+            "Should extract RAM with case-insensitive 'System memory'"
+        );
     }
 
     #[test]
