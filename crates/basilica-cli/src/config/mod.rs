@@ -69,8 +69,8 @@ fn default_api_request_timeout() -> u64 {
 impl Default for SshConfig {
     fn default() -> Self {
         Self {
-            key_path: PathBuf::from("~/.ssh/basilica_rsa.pub"),
-            private_key_path: PathBuf::from("~/.ssh/basilica_rsa"),
+            key_path: PathBuf::from("~/.ssh/basilica_ed25519.pub"),
+            private_key_path: PathBuf::from("~/.ssh/basilica_ed25519"),
             connection_timeout: 30,
         }
     }
@@ -385,7 +385,7 @@ impl CliCache {
 
         let content = tokio::fs::read_to_string(path)
             .await
-            .map_err(|e| eyre!("Failed to write config file: {}", e))?;
+            .map_err(|e| eyre!("Failed to read cache file: {}", e))?;
 
         let cache: Self =
             serde_json::from_str(&content).map_err(|e| eyre!("Failed to parse cache: {}", e))?;

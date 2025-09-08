@@ -56,7 +56,7 @@ impl SshClient {
                 private_key_path.display()
             )
             .suggestion("SSH keys are automatically generated during login. Run 'basilica login' to create them")
-            .note("Or generate manually with 'ssh-keygen -t rsa -f ~/.ssh/basilica_rsa'"));
+            .note("Or generate manually with 'ssh-keygen -t ed25519 -f ~/.ssh/basilica_ed25519'"));
         }
 
         Ok(SshConnectionDetails {

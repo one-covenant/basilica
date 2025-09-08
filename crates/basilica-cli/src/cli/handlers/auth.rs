@@ -83,8 +83,8 @@ pub async fn handle_login_with_options(
     if let Err(e) = token_store.store_tokens(&token_set).await {
         complete_spinner_error(spinner, "Failed to store tokens");
         return Err(eyre!("Failed to store tokens: {}", e)
-            .suggestion("Check if you have permission to access the system keychain")
-            .note("On macOS, you may need to grant Terminal/IDE access to the keychain")
+            .suggestion("Check that you have permission to access the CLI data directory and auth.json file")
+            .note("The auth file is located at: ~/.local/share/basilica/auth.json. Ensure the directory exists and is writable.")
             .into());
     }
 
@@ -118,7 +118,7 @@ pub async fn handle_login_with_options(
                 println!();
                 println!("⚠️  SSH keys could not be generated automatically.");
                 println!("   You can generate them manually with:");
-                println!("   ssh-keygen -f ~/.ssh/basilica_rsa");
+                println!("   ssh-keygen -t ed25519 -f ~/.ssh/basilica_ed25519");
                 println!();
                 // Don't fail the login, just warn
             }
@@ -185,8 +185,7 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<(), CliError> {
     if let Err(e) = token_store.delete_tokens().await {
         complete_spinner_error(spinner, "Failed to clear tokens");
         return Err(eyre!("Failed to clear authentication data: {}", e)
-            .suggestion("Try running the command with elevated permissions")
-            .note("Authentication data is stored in the system keychain")
+            .note("The auth file is located at: ~/.local/share/basilica/auth.json. Ensure you have write permissions to delete the file.")
             .into());
     }
 
