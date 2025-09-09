@@ -16,11 +16,7 @@ print(f"Rental started with ID: {rental.rental_id}")
 status = client.wait_for_rental(rental.rental_id)
 
 # Print SSH details if available - using typed attributes
-if status.ssh_access:
-    ssh = status.ssh_access
-    print(f"SSH Access Available:")
-    print(f"  ssh -p {ssh.port} {ssh.user}@{ssh.host}")
-elif status.ssh_credentials:
+if status.ssh_credentials:
     print(f"SSH credentials: {status.ssh_credentials}")
 else:
     print("No SSH access (no_ssh=True or not provisioned)")

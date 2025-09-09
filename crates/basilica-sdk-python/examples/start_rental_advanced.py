@@ -19,8 +19,8 @@ def main():
             container_image="pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime",
             
             # Override GPU configuration
-            gpu_type="a100",
-            gpu_count=2,
+            gpu_type="b200",
+            gpu_count=1,
             
             # Add custom environment variables  
             environment={
@@ -50,15 +50,7 @@ def main():
         print("Rental is now active!")
         
         # Display rental details using typed attributes
-        if status.ssh_access:
-            ssh = status.ssh_access
-            print(f"\nSSH Access:")
-            print(f"  Host: {ssh.host}")
-            print(f"  Port: {ssh.port}")
-            print(f"  User: {ssh.user}")
-            print(f"\nConnect with:")
-            print(f"  ssh -p {ssh.port} {ssh.user}@{ssh.host}")
-        elif status.ssh_credentials:
+        if status.ssh_credentials:
             print(f"\nSSH credentials: {status.ssh_credentials}")
         
         # Display executor details

@@ -15,7 +15,7 @@ from basilica._basilica import (
     # Response types
     HealthCheckResponse,
     RentalResponse,
-    RentalStatusResponse,
+    RentalStatusWithSshResponse,
     RentalStatus,
     SshAccess,
     ExecutorDetails,
@@ -60,7 +60,7 @@ __all__ = [
     # Response types
     "HealthCheckResponse",
     "RentalResponse",
-    "RentalStatusResponse",
+    "RentalStatusWithSshResponse",
     "RentalStatus",
     "SshAccess",
     "ExecutorDetails",
@@ -295,7 +295,7 @@ class BasilicaClient:
             
         return self._client.start_rental(request)
     
-    def get_rental(self, rental_id: str) -> RentalStatusResponse:
+    def get_rental(self, rental_id: str) -> RentalStatusWithSshResponse:
         """
         Get rental status.
         
@@ -303,7 +303,7 @@ class BasilicaClient:
             rental_id: The rental ID
             
         Returns:
-            RentalStatusResponse: Typed response with status and details
+            RentalStatusWithSshResponse: Typed response with status and SSH details
         """
         return self._client.get_rental(rental_id)
     
@@ -349,7 +349,7 @@ class BasilicaClient:
         target_state: str = RENTAL_STATE_ACTIVE,
         timeout: int = DEFAULT_WAIT_TIMEOUT_SECS,
         poll_interval: int = DEFAULT_POLL_INTERVAL_SECS
-    ) -> RentalStatusResponse:
+    ) -> RentalStatusWithSshResponse:
         """
         Wait for a rental to reach a specific state.
         
@@ -360,7 +360,7 @@ class BasilicaClient:
             poll_interval: How often to check status in seconds (default: DEFAULT_POLL_INTERVAL_SECS)
             
         Returns:
-            RentalStatusResponse: Final rental status
+            RentalStatusWithSshResponse: Final rental status
             
         Raises:
             TimeoutError: If timeout is reached before target state

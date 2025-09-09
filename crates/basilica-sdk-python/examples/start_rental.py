@@ -27,17 +27,11 @@ def main():
         
         print("Rental is now active!")
         
-        # Display SSH access info using typed attributes
-        if status.ssh_access:
-            ssh = status.ssh_access
-            print(f"\nSSH Access:")
-            print(f"  Host: {ssh.host}")
-            print(f"  Port: {ssh.port}")
-            print(f"  User: {ssh.user}")
-            print(f"\nConnect with:")
-            print(f"  ssh -p {ssh.port} {ssh.user}@{ssh.host}")
+        # Display rental details using typed attributes
+        if status.ssh_credentials:
+            print(f"\nSSH credentials: {status.ssh_credentials}")
         
-        # Optionally stop the rental
+        # # Optionally stop the rental
         # print("\nStopping rental...")
         # client.stop_rental(rental_id)
         # print("Rental stopped")

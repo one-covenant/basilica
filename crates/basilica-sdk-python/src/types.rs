@@ -9,10 +9,10 @@ use basilica_sdk::types::{
     ExecutorSelection as SdkExecutorSelection, GpuRequirements as SdkGpuRequirements,
     GpuSpec as SdkGpuSpec, ListAvailableExecutorsQuery as SdkListAvailableExecutorsQuery,
     ListRentalsQuery as SdkListRentalsQuery, PortMappingRequest as SdkPortMappingRequest,
-    RentalState, RentalStatus as SdkRentalStatus, RentalStatusWithSshResponse,
+    RentalState, RentalStatus as SdkRentalStatus,
+    RentalStatusWithSshResponse as SdkRentalStatusWithSshResponse,
     ResourceRequirementsRequest as SdkResourceRequirementsRequest, SshAccess as SdkSshAccess,
-    StartRentalApiRequest as SdkStartRentalApiRequest, ValidatorRentalStatusResponse,
-    VolumeMountRequest as SdkVolumeMountRequest,
+    StartRentalApiRequest as SdkStartRentalApiRequest, VolumeMountRequest as SdkVolumeMountRequest,
 };
 use basilica_validator::rental::RentalResponse as SdkRentalResponse;
 use pyo3::prelude::*;
@@ -163,10 +163,10 @@ impl From<SdkRentalResponse> for RentalResponse {
     }
 }
 
-/// Full rental status response with SSH access
+/// Full rental status response with SSH credentials (matches API response)
 #[pyclass]
 #[derive(Clone)]
-pub struct RentalStatusResponse {
+pub struct RentalStatusWithSshResponse {
     #[pyo3(get)]
     pub rental_id: String,
     #[pyo3(get)]
@@ -176,53 +176,18 @@ pub struct RentalStatusResponse {
     #[pyo3(get)]
     pub ssh_credentials: Option<String>,
     #[pyo3(get)]
-    pub ssh_access: Option<SshAccess>,
-    #[pyo3(get)]
     pub created_at: String,
     #[pyo3(get)]
     pub updated_at: String,
 }
 
-impl From<RentalStatusWithSshResponse> for RentalStatusResponse {
-    fn from(response: RentalStatusWithSshResponse) -> Self {
-        // Parse SSH credentials to create SshAccess if available
-        let ssh_access = response.ssh_credentials.as_ref().and_then(|creds| {
-            // SSH credentials format: "ssh -p <port> <user>@<host>"
-            let parts: Vec<&str> = creds.split_whitespace().collect();
-            if parts.len() >= 5 && parts[0] == "ssh" && parts[1] == "-p" {
-                let port = parts[2].parse().ok()?;
-                let user_host = parts[3];
-                if let Some((user, host)) = user_host.split_once('@') {
-                    return Some(SshAccess {
-                        host: host.to_string(),
-                        port,
-                        user: user.to_string(),
-                    });
-                }
-            }
-            None
-        });
-
+impl From<SdkRentalStatusWithSshResponse> for RentalStatusWithSshResponse {
+    fn from(response: SdkRentalStatusWithSshResponse) -> Self {
         Self {
             rental_id: response.rental_id,
             status: response.status.into(),
             executor: response.executor.into(),
             ssh_credentials: response.ssh_credentials,
-            ssh_access,
-            created_at: response.created_at.to_rfc3339(),
-            updated_at: response.updated_at.to_rfc3339(),
-        }
-    }
-}
-
-impl From<ValidatorRentalStatusResponse> for RentalStatusResponse {
-    fn from(response: ValidatorRentalStatusResponse) -> Self {
-        Self {
-            rental_id: response.rental_id,
-            status: response.status.into(),
-            executor: response.executor.into(),
-            ssh_credentials: None,
-            ssh_access: None,
             created_at: response.created_at.to_rfc3339(),
             updated_at: response.updated_at.to_rfc3339(),
         }

@@ -83,11 +83,3 @@ impl TokenResolver {
         None
     }
 }
-
-/// Credentials file format for ~/.basilica/credentials
-#[derive(serde::Deserialize)]
-struct CredentialsFile {
-    access_token: String,
-    #[serde(default)]
-    refresh_token: Option<String>,
-}

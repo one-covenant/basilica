@@ -15,7 +15,7 @@ use tokio::runtime::Runtime;
 
 use crate::types::{
     AvailableExecutor, HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
-    RentalResponse, RentalStatusResponse, StartRentalApiRequest,
+    RentalResponse, RentalStatusWithSshResponse, StartRentalApiRequest,
 };
 
 /// Python wrapper for BasilicaClient
@@ -147,7 +147,7 @@ impl BasilicaClient {
     ///
     /// Args:
     ///     rental_id: The rental ID
-    fn get_rental(&self, py: Python, rental_id: String) -> PyResult<RentalStatusResponse> {
+    fn get_rental(&self, py: Python, rental_id: String) -> PyResult<RentalStatusWithSshResponse> {
         let client = Arc::clone(&self.inner);
 
         let response = py
@@ -238,7 +238,7 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Response types
     m.add_class::<types::HealthCheckResponse>()?;
     m.add_class::<types::RentalResponse>()?;
-    m.add_class::<types::RentalStatusResponse>()?;
+    m.add_class::<types::RentalStatusWithSshResponse>()?;
     m.add_class::<types::RentalStatus>()?;
     m.add_class::<types::SshAccess>()?;
     m.add_class::<types::ExecutorDetails>()?;
