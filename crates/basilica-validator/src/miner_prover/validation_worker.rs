@@ -93,6 +93,7 @@ pub struct WorkItem {
 #[derive(Debug, Clone)]
 struct ProcessingEntry {
     started_at: Instant,
+    work_item: WorkItem,
 }
 
 #[derive(Debug, Clone)]
@@ -205,11 +206,12 @@ impl QueueState {
         }
     }
 
-    fn mark_processing(&mut self, executor_key: ExecutorKey) {
+    fn mark_processing(&mut self, executor_key: ExecutorKey, work_item: WorkItem) {
         self.processing.insert(
             executor_key,
             ProcessingEntry {
                 started_at: Instant::now(),
+                work_item,
             },
         );
     }
@@ -236,6 +238,10 @@ impl QueueState {
 
     fn rollback(&mut self, key: ExecutorKey) -> Option<ProcessingEntry> {
         self.processing.remove(&key)
+    }
+
+    fn rollback_for_retry(&mut self, key: ExecutorKey) -> Option<WorkItem> {
+        self.processing.remove(&key).map(|entry| entry.work_item)
     }
 }
 
@@ -553,7 +559,7 @@ impl ValidationWorkerQueue {
             state.pop_next()
         };
 
-        if let Some(mut item) = work_item {
+        if let Some(item) = work_item {
             let executor_key = ExecutorKey::new(item.miner_uid, item.executor_info.id.clone());
 
             metrics
@@ -577,7 +583,7 @@ impl ValidationWorkerQueue {
 
             {
                 let mut state = queue.write().await;
-                state.mark_processing(executor_key.clone());
+                state.mark_processing(executor_key.clone(), item.clone());
             }
 
             let start_time = Instant::now();
@@ -587,7 +593,7 @@ impl ValidationWorkerQueue {
                     &item.task.miner_endpoint,
                     &item.executor_info,
                     item.miner_uid,
-                    item.task.intended_validation_strategy.clone(),
+                    item.task.intended_validation_strategy,
                 ),
             )
             .await;
@@ -622,7 +628,8 @@ impl ValidationWorkerQueue {
                         verification_result.verification_score
                     );
 
-                    // Store verification result to database
+                    // Store verification result to database (release lock before await)
+                    drop(state);
                     Self::store_successful_validation(
                         &verification_engine,
                         &item,
@@ -632,95 +639,115 @@ impl ValidationWorkerQueue {
                     .await;
                 }
                 Ok(Err(e)) => {
-                    state.rollback(executor_key.clone());
-                    metrics
-                        .processing_full
-                        .fetch_sub(1, AtomicOrdering::Relaxed);
+                    // Use rollback_for_retry to get the work item with its current retry count
+                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                        metrics
+                            .processing_full
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < config.max_retries {
-                        item.retry_count += 1;
-                        item.priority = Priority::Low;
-                        drop(state);
+                        if retry_item.retry_count < config.max_retries {
+                            retry_item.retry_count += 1;
+                            retry_item.priority = Priority::Low;
+                            drop(state);
 
-                        let attempt = item.retry_count as u32;
-                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
-                        let mut delay_seconds =
-                            config.retry_backoff_base_secs.saturating_mul(factor);
-                        let cap = config.max_processing_time_secs / 2;
-                        if cap > 0 {
-                            delay_seconds = delay_seconds.min(cap);
+                            let attempt = retry_item.retry_count as u32;
+                            let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                            let mut delay_seconds =
+                                config.retry_backoff_base_secs.saturating_mul(factor);
+                            let cap = config.max_processing_time_secs / 2;
+                            if cap > 0 {
+                                delay_seconds = delay_seconds.min(cap);
+                            }
+                            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+                            Self::requeue_item(queue, retry_item, &metrics, ValidationType::Full)
+                                .await;
+                            metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        } else {
+                            let error_msg = format!(
+                                "Verification failed after {} retries: {}",
+                                config.max_retries, e
+                            );
+                            let status = CompletionStatus::Failed {
+                                completed_at: Instant::now(),
+                                error: error_msg.clone(),
+                            };
+                            state.complete(executor_key.clone(), status);
+                            metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                            // Store failed validation result (release lock before await)
+                            drop(state);
+                            Self::store_failed_validation(
+                                &verification_engine,
+                                &retry_item,
+                                &executor_key,
+                                error_msg,
+                                start_time.elapsed(),
+                                ValidationType::Full,
+                            )
+                            .await;
                         }
-                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-                        Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
-                        metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
-                        let error_msg = format!(
-                            "Verification failed after {} retries: {}",
-                            config.max_retries, e
-                        );
-                        let status = CompletionStatus::Failed {
-                            completed_at: Instant::now(),
-                            error: error_msg.clone(),
-                        };
-                        state.complete(executor_key.clone(), status);
-                        metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
-
-                        // Store failed validation result
-                        Self::store_failed_validation(
-                            &verification_engine,
-                            &item,
-                            &executor_key,
-                            error_msg,
-                            start_time.elapsed(),
-                            ValidationType::Full,
-                        )
-                        .await;
+                        // Should not happen but handle gracefully
+                        state.rollback(executor_key.clone());
+                        metrics
+                            .processing_full
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
                     }
                 }
                 Err(_) => {
-                    state.rollback(executor_key.clone());
-                    metrics
-                        .processing_full
-                        .fetch_sub(1, AtomicOrdering::Relaxed);
+                    // Timeout case - use rollback_for_retry to get the work item
+                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                        metrics
+                            .processing_full
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < config.max_retries {
-                        item.retry_count += 1;
-                        item.priority = Priority::Low;
-                        drop(state);
+                        if retry_item.retry_count < config.max_retries {
+                            retry_item.retry_count += 1;
+                            retry_item.priority = Priority::Low;
+                            drop(state);
 
-                        let attempt = item.retry_count as u32;
-                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
-                        let mut delay_seconds =
-                            config.retry_backoff_base_secs.saturating_mul(factor);
-                        let cap = config.max_processing_time_secs / 2;
-                        if cap > 0 {
-                            delay_seconds = delay_seconds.min(cap);
+                            let attempt = retry_item.retry_count as u32;
+                            let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                            let mut delay_seconds =
+                                config.retry_backoff_base_secs.saturating_mul(factor);
+                            let cap = config.max_processing_time_secs / 2;
+                            if cap > 0 {
+                                delay_seconds = delay_seconds.min(cap);
+                            }
+                            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+                            Self::requeue_item(queue, retry_item, &metrics, ValidationType::Full)
+                                .await;
+                            metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        } else {
+                            let error_msg = format!(
+                                "Verification timed out after {}s ({} retries)",
+                                config.max_processing_time_secs, config.max_retries
+                            );
+                            let status = CompletionStatus::Failed {
+                                completed_at: Instant::now(),
+                                error: error_msg.clone(),
+                            };
+                            state.complete(executor_key.clone(), status);
+                            metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                            // Store failed validation result (release lock before await)
+                            drop(state);
+                            Self::store_failed_validation(
+                                &verification_engine,
+                                &retry_item,
+                                &executor_key,
+                                error_msg,
+                                start_time.elapsed(),
+                                ValidationType::Full,
+                            )
+                            .await;
                         }
-                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-                        Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
-                        metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
-                        let error_msg = format!(
-                            "Verification timed out after {}s ({} retries)",
-                            config.max_processing_time_secs, config.max_retries
-                        );
-                        let status = CompletionStatus::Failed {
-                            completed_at: Instant::now(),
-                            error: error_msg.clone(),
-                        };
-                        state.complete(executor_key.clone(), status);
-                        metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
-
-                        // Store failed validation result
-                        Self::store_failed_validation(
-                            &verification_engine,
-                            &item,
-                            &executor_key,
-                            error_msg,
-                            start_time.elapsed(),
-                            ValidationType::Full,
-                        )
-                        .await;
+                        // Should not happen but handle gracefully
+                        state.rollback(executor_key.clone());
+                        metrics
+                            .processing_full
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
                     }
                 }
             }
@@ -740,7 +767,7 @@ impl ValidationWorkerQueue {
             state.pop_next()
         };
 
-        if let Some(mut item) = work_item {
+        if let Some(item) = work_item {
             let executor_key = ExecutorKey::new(item.miner_uid, item.executor_info.id.clone());
 
             metrics
@@ -757,7 +784,7 @@ impl ValidationWorkerQueue {
 
             {
                 let mut state = queue.write().await;
-                state.mark_processing(executor_key.clone());
+                state.mark_processing(executor_key.clone(), item.clone());
             }
 
             let start_time = Instant::now();
@@ -767,7 +794,7 @@ impl ValidationWorkerQueue {
                     &item.task.miner_endpoint,
                     &item.executor_info,
                     item.miner_uid,
-                    item.task.intended_validation_strategy.clone(),
+                    item.task.intended_validation_strategy,
                 ),
             )
             .await;
@@ -800,7 +827,8 @@ impl ValidationWorkerQueue {
                         verification_result.verification_score
                     );
 
-                    // Store verification result to database
+                    // Store verification result to database (release lock before await)
+                    drop(state);
                     Self::store_successful_validation(
                         &verification_engine,
                         &item,
@@ -810,95 +838,123 @@ impl ValidationWorkerQueue {
                     .await;
                 }
                 Ok(Err(e)) => {
-                    state.rollback(executor_key.clone());
-                    metrics
-                        .processing_lightweight
-                        .fetch_sub(1, AtomicOrdering::Relaxed);
+                    // Use rollback_for_retry to get the work item with current retry count
+                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                        metrics
+                            .processing_lightweight
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < config.max_retries {
-                        item.retry_count += 1;
-                        drop(state);
+                        if retry_item.retry_count < config.max_retries {
+                            retry_item.retry_count += 1;
+                            drop(state);
 
-                        let attempt = item.retry_count as u32;
-                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
-                        let mut delay_seconds =
-                            config.retry_backoff_base_secs.saturating_mul(factor);
-                        let cap = config.lightweight_processing_time_secs / 2;
-                        if cap > 0 {
-                            delay_seconds = delay_seconds.min(cap);
-                        }
-                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-                        Self::requeue_item(queue, item, &metrics, ValidationType::Lightweight)
+                            let attempt = retry_item.retry_count as u32;
+                            let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                            let mut delay_seconds =
+                                config.retry_backoff_base_secs.saturating_mul(factor);
+                            let cap = config.lightweight_processing_time_secs / 2;
+                            if cap > 0 {
+                                delay_seconds = delay_seconds.min(cap);
+                            }
+                            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+                            Self::requeue_item(
+                                queue,
+                                retry_item,
+                                &metrics,
+                                ValidationType::Lightweight,
+                            )
                             .await;
-                        metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
-                    } else {
-                        let error_msg = format!(
-                            "Lightweight verification failed after {} retries: {}",
-                            config.max_retries, e
-                        );
-                        let status = CompletionStatus::Failed {
-                            completed_at: Instant::now(),
-                            error: error_msg.clone(),
-                        };
-                        state.complete(executor_key.clone(), status);
-                        metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+                            metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        } else {
+                            let error_msg = format!(
+                                "Lightweight verification failed after {} retries: {}",
+                                config.max_retries, e
+                            );
+                            let status = CompletionStatus::Failed {
+                                completed_at: Instant::now(),
+                                error: error_msg.clone(),
+                            };
+                            state.complete(executor_key.clone(), status);
+                            metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
 
-                        // Store failed validation result
-                        Self::store_failed_validation(
-                            &verification_engine,
-                            &item,
-                            &executor_key,
-                            error_msg,
-                            start_time.elapsed(),
-                            ValidationType::Lightweight,
-                        )
-                        .await;
+                            // Store failed validation result (release lock before await)
+                            drop(state);
+                            Self::store_failed_validation(
+                                &verification_engine,
+                                &retry_item,
+                                &executor_key,
+                                error_msg,
+                                start_time.elapsed(),
+                                ValidationType::Lightweight,
+                            )
+                            .await;
+                        }
+                    } else {
+                        // Should not happen but handle gracefully
+                        state.rollback(executor_key.clone());
+                        metrics
+                            .processing_lightweight
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
                     }
                 }
                 Err(_) => {
-                    state.rollback(executor_key.clone());
-                    metrics
-                        .processing_lightweight
-                        .fetch_sub(1, AtomicOrdering::Relaxed);
+                    // Timeout case - use rollback_for_retry to get the work item
+                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                        metrics
+                            .processing_lightweight
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < config.max_retries {
-                        item.retry_count += 1;
-                        drop(state);
+                        if retry_item.retry_count < config.max_retries {
+                            retry_item.retry_count += 1;
+                            drop(state);
 
-                        let attempt = item.retry_count as u32;
-                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
-                        let mut delay_seconds =
-                            config.retry_backoff_base_secs.saturating_mul(factor);
-                        let cap = config.lightweight_processing_time_secs / 2;
-                        if cap > 0 {
-                            delay_seconds = delay_seconds.min(cap);
-                        }
-                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-                        Self::requeue_item(queue, item, &metrics, ValidationType::Lightweight)
+                            let attempt = retry_item.retry_count as u32;
+                            let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                            let mut delay_seconds =
+                                config.retry_backoff_base_secs.saturating_mul(factor);
+                            let cap = config.lightweight_processing_time_secs / 2;
+                            if cap > 0 {
+                                delay_seconds = delay_seconds.min(cap);
+                            }
+                            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+                            Self::requeue_item(
+                                queue,
+                                retry_item,
+                                &metrics,
+                                ValidationType::Lightweight,
+                            )
                             .await;
-                        metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
-                    } else {
-                        let error_msg = format!(
-                            "Lightweight verification timed out after {}s ({} retries)",
-                            config.lightweight_processing_time_secs, config.max_retries
-                        );
-                        let status = CompletionStatus::Failed {
-                            completed_at: Instant::now(),
-                            error: error_msg.clone(),
-                        };
-                        state.complete(executor_key.clone(), status);
-                        metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+                            metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        } else {
+                            let error_msg = format!(
+                                "Lightweight verification timed out after {}s ({} retries)",
+                                config.lightweight_processing_time_secs, config.max_retries
+                            );
+                            let status = CompletionStatus::Failed {
+                                completed_at: Instant::now(),
+                                error: error_msg.clone(),
+                            };
+                            state.complete(executor_key.clone(), status);
+                            metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
 
-                        // Store failed validation result
-                        Self::store_failed_validation(
-                            &verification_engine,
-                            &item,
-                            &executor_key,
-                            error_msg,
-                            start_time.elapsed(),
-                            ValidationType::Lightweight,
-                        )
-                        .await;
+                            // Store failed validation result (release lock before await)
+                            drop(state);
+                            Self::store_failed_validation(
+                                &verification_engine,
+                                &retry_item,
+                                &executor_key,
+                                error_msg,
+                                start_time.elapsed(),
+                                ValidationType::Lightweight,
+                            )
+                            .await;
+                        }
+                    } else {
+                        // Should not happen but handle gracefully
+                        state.rollback(executor_key.clone());
+                        metrics
+                            .processing_lightweight
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
                     }
                 }
             }
@@ -932,6 +988,7 @@ impl ValidationWorkerQueue {
         let full_queue = self.full_queue.clone();
         let lightweight_queue = self.lightweight_queue.clone();
         let shutdown = self.shutdown.clone();
+        let verification_engine = self.verification_engine.clone();
 
         tokio::spawn(async move {
             let mut health_interval = interval(Duration::from_secs(interval_secs));
@@ -947,13 +1004,15 @@ impl ValidationWorkerQueue {
                             full_queue.clone(),
                             Duration::from_secs(full_stale_timeout_secs),
                             metrics.clone(),
-                            ValidationType::Full
+                            ValidationType::Full,
+                            verification_engine.clone()
                         ).await;
                         Self::check_stale_items(
                             lightweight_queue.clone(),
                             Duration::from_secs(lightweight_stale_timeout_secs),
                             metrics.clone(),
-                            ValidationType::Lightweight
+                            ValidationType::Lightweight,
+                            verification_engine.clone()
                         ).await;
                         metrics.report();
                     }
@@ -969,44 +1028,73 @@ impl ValidationWorkerQueue {
         max_age: Duration,
         metrics: Arc<QueueMetrics>,
         validation_type: ValidationType,
+        verification_engine: Arc<VerificationEngine>,
     ) {
-        let mut state = queue.write().await;
         let now = Instant::now();
 
-        let stale_keys: Vec<ExecutorKey> = state
-            .processing
-            .iter()
-            .filter(|(_, entry)| now.duration_since(entry.started_at) > max_age)
-            .map(|(key, _)| key.clone())
-            .collect();
+        // Collect stale items with their data
+        let stale_items: Vec<(ExecutorKey, WorkItem, Duration)> = {
+            let state = queue.read().await;
+            state
+                .processing
+                .iter()
+                .filter(|(_, entry)| now.duration_since(entry.started_at) > max_age)
+                .map(|(key, entry)| {
+                    (
+                        key.clone(),
+                        entry.work_item.clone(),
+                        now.duration_since(entry.started_at),
+                    )
+                })
+                .collect()
+        };
 
-        for key in stale_keys {
+        // Process each stale item
+        for (key, work_item, elapsed) in stale_items {
             warn!("Removing stale processing item: {:?}", key);
-            if let Some(entry) = state.rollback(key.clone()) {
-                let elapsed_secs = now.duration_since(entry.started_at).as_secs();
-                let status = CompletionStatus::Failed {
-                    completed_at: now,
-                    error: format!(
-                        "Processing stale after {}s (exceeded {}s timeout)",
-                        elapsed_secs,
-                        max_age.as_secs()
-                    ),
-                };
-                state.completed.put(key, status);
-                match validation_type {
-                    ValidationType::Full => {
-                        metrics
-                            .processing_full
-                            .fetch_sub(1, AtomicOrdering::Relaxed);
+
+            let error_msg = format!(
+                "Processing stale after {}s (exceeded {}s timeout)",
+                elapsed.as_secs(),
+                max_age.as_secs()
+            );
+
+            // Update state
+            {
+                let mut state = queue.write().await;
+                if let Some(_entry) = state.rollback(key.clone()) {
+                    let status = CompletionStatus::Failed {
+                        completed_at: now,
+                        error: error_msg.clone(),
+                    };
+                    state.completed.put(key.clone(), status);
+
+                    match validation_type {
+                        ValidationType::Full => {
+                            metrics
+                                .processing_full
+                                .fetch_sub(1, AtomicOrdering::Relaxed);
+                        }
+                        ValidationType::Lightweight => {
+                            metrics
+                                .processing_lightweight
+                                .fetch_sub(1, AtomicOrdering::Relaxed);
+                        }
                     }
-                    ValidationType::Lightweight => {
-                        metrics
-                            .processing_lightweight
-                            .fetch_sub(1, AtomicOrdering::Relaxed);
-                    }
+                    metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
                 }
-                metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
             }
+
+            // Store failed validation result (outside lock)
+            Self::store_failed_validation(
+                &verification_engine,
+                &work_item,
+                &key,
+                error_msg,
+                elapsed,
+                validation_type,
+            )
+            .await;
         }
     }
 
@@ -1016,7 +1104,7 @@ impl ValidationWorkerQueue {
         task: VerificationTask,
     ) -> Result<()> {
         let executor_key = ExecutorKey::new(task.miner_uid, executor.id.clone());
-        let validation_type = task.intended_validation_strategy.clone();
+        let validation_type = task.intended_validation_strategy;
 
         let queue = match validation_type {
             ValidationType::Full => &self.full_queue,
