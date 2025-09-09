@@ -42,7 +42,7 @@ use crate::{
 };
 
 /// Default API URL when not specified
-pub const DEFAULT_API_URL: &str = "http://localhost:8000";
+pub const DEFAULT_API_URL: &str = "https://api.basilica.ai";
 
 /// Default timeout in seconds for API requests
 pub const DEFAULT_TIMEOUT_SECS: u64 = 1200;
