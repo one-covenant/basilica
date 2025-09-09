@@ -9,7 +9,9 @@ from typing import Optional, Dict, Any, List
 
 from basilica._basilica import (
     BasilicaClient as _BasilicaClient,
-    create_rental_request,
+    # Helper functions
+    executor_by_id,
+    executor_by_gpu,
     # Response types
     HealthCheckResponse,
     RentalResponse,
@@ -21,10 +23,20 @@ from basilica._basilica import (
     CpuSpec,
     AvailableExecutor,
     AvailabilityInfo,
+    # Request types
+    StartRentalApiRequest,
+    ExecutorSelection,
+    GpuRequirements,
+    PortMappingRequest,
+    ResourceRequirementsRequest,
+    VolumeMountRequest,
+    ListAvailableExecutorsQuery,
+    ListRentalsQuery,
 )
 
 from basilica.constants import (
     DEFAULT_API_URL,
+    DEFAULT_COMMAND,
     DEFAULT_TIMEOUT_SECS,
     DEFAULT_CONTAINER_IMAGE,
     DEFAULT_GPU_TYPE,
@@ -42,7 +54,9 @@ from basilica.constants import (
 __version__ = "0.1.0"
 __all__ = [
     "BasilicaClient",
-    "create_rental_request",
+    # Helper functions
+    "executor_by_id",
+    "executor_by_gpu",
     # Response types
     "HealthCheckResponse",
     "RentalResponse",
@@ -54,6 +68,15 @@ __all__ = [
     "CpuSpec",
     "AvailableExecutor",
     "AvailabilityInfo",
+    # Request types
+    "StartRentalApiRequest",
+    "ExecutorSelection",
+    "GpuRequirements",
+    "PortMappingRequest",
+    "ResourceRequirementsRequest",
+    "VolumeMountRequest",
+    "ListAvailableExecutorsQuery",
+    "ListRentalsQuery",
 ]
 
 
@@ -104,7 +127,8 @@ class BasilicaClient:
         self,
         available: Optional[bool] = None,
         gpu_type: Optional[str] = None,
-        min_gpu_count: Optional[int] = None
+        min_gpu_count: Optional[int] = None,
+        min_gpu_memory: Optional[int] = None
     ) -> List[AvailableExecutor]:
         """
         List available executors.
@@ -113,19 +137,21 @@ class BasilicaClient:
             available: Filter by availability
             gpu_type: Filter by GPU type
             min_gpu_count: Filter by minimum GPU count
+            min_gpu_memory: Filter by minimum GPU memory in GB
             
         Returns:
             List[AvailableExecutor]: List of typed executor objects with details
         """
-        query = {}
-        if available is not None:
-            query["available"] = available
-        if gpu_type is not None:
-            query["gpu_type"] = gpu_type
-        if min_gpu_count is not None:
-            query["min_gpu_count"] = min_gpu_count
-            
-        return self._client.list_executors(query if query else None)
+        if any([available is not None, gpu_type is not None, min_gpu_count is not None, min_gpu_memory is not None]):
+            query = ListAvailableExecutorsQuery(
+                available=available,
+                gpu_type=gpu_type,
+                min_gpu_count=min_gpu_count,
+                min_gpu_memory=min_gpu_memory
+            )
+            return self._client.list_executors(query)
+        else:
+            return self._client.list_executors(None)
     
     def start_rental(
         self,
@@ -137,7 +163,7 @@ class BasilicaClient:
         environment: Optional[Dict[str, str]] = None,
         ports: Optional[List[Dict[str, Any]]] = None,
         resources: Optional[Dict[str, Any]] = None,
-        command: Optional[List[str]] = None,
+        command: Optional[List[str]] = DEFAULT_COMMAND,
         volumes: Optional[List[Dict[str, str]]] = None,
         no_ssh: bool = False
     ) -> RentalResponse:
@@ -170,7 +196,7 @@ class BasilicaClient:
         if ssh_public_key is None and not no_ssh:
             # Auto-detect SSH key
             import glob
-            ssh_key_paths = glob.glob(os.path.expanduser("~/.ssh/id_*.pub"))
+            ssh_key_paths = glob.glob(os.path.expanduser("~/.ssh/basilica_*.pub"))
             if ssh_key_paths:
                 with open(ssh_key_paths[0]) as f:
                     ssh_public_key = f.read().strip()
@@ -205,44 +231,67 @@ class BasilicaClient:
         
         # Build executor_selection based on whether executor_id is provided
         if executor_id:
-            executor_selection = {
-                "type": "executor_id",
-                "executor_id": executor_id
-            }
+            executor_selection = executor_by_id(executor_id)
         else:
             # Use GPU requirements from resources for auto-selection
-            gpu_requirements = {
-                "min_memory_gb": DEFAULT_GPU_MIN_MEMORY_GB,
-                "gpu_count": resources.get("gpu_count", gpu_count)
-            }
+            gpu_count_val = resources.get("gpu_count", gpu_count)
+            min_memory_gb_val = DEFAULT_GPU_MIN_MEMORY_GB
+            
             # Get GPU type from gpu_types array if available
             gpu_types = resources.get("gpu_types", [])
+            gpu_type_val = None
             if gpu_types and len(gpu_types) > 0:
-                gpu_requirements["gpu_type"] = gpu_types[0]
+                gpu_type_val = gpu_types[0]
             elif gpu_type:
-                gpu_requirements["gpu_type"] = gpu_type
+                gpu_type_val = gpu_type
             
-            executor_selection = {
-                "type": "gpu_requirements",
-                "gpu_requirements": gpu_requirements
-            }
+            gpu_requirements = GpuRequirements(
+                gpu_count=gpu_count_val,
+                min_memory_gb=min_memory_gb_val,
+                gpu_type=gpu_type_val
+            )
+            executor_selection = executor_by_gpu(gpu_requirements)
         
-        request = {
-            "executor_selection": executor_selection,
-            "container_image": container_image,
-            "ssh_public_key": ssh_public_key if ssh_public_key else "",
-            "no_ssh": no_ssh
-        }
-        if environment:
-            request["environment"] = environment
+        # Convert ports to PortMappingRequest objects
+        port_mappings = []
         if ports:
-            request["ports"] = ports
-        if resources:
-            request["resources"] = resources
-        if command:
-            request["command"] = command
+            for port in ports:
+                port_mappings.append(PortMappingRequest(
+                    container_port=port.get("container_port", 0),
+                    host_port=port.get("host_port", 0),
+                    protocol=port.get("protocol", "tcp")
+                ))
+        
+        # Create ResourceRequirementsRequest
+        resource_req = ResourceRequirementsRequest(
+            cpu_cores=resources.get("cpu_cores", DEFAULT_CPU_CORES),
+            memory_mb=resources.get("memory_mb", DEFAULT_MEMORY_MB),
+            storage_mb=resources.get("storage_mb", DEFAULT_STORAGE_MB),
+            gpu_count=resources.get("gpu_count", gpu_count),
+            gpu_types=resources.get("gpu_types", [])
+        )
+        
+        # Convert volumes to VolumeMountRequest objects
+        volume_mounts = []
         if volumes:
-            request["volumes"] = volumes
+            for vol in volumes:
+                volume_mounts.append(VolumeMountRequest(
+                    host_path=vol.get("host_path", ""),
+                    container_path=vol.get("container_path", ""),
+                    read_only=vol.get("read_only", False)
+                ))
+        
+        request = StartRentalApiRequest(
+            executor_selection=executor_selection,
+            container_image=container_image,
+            ssh_public_key=ssh_public_key if ssh_public_key else "",
+            environment=environment or {},
+            ports=port_mappings,
+            resources=resource_req,
+            command=command or [],
+            volumes=volume_mounts,
+            no_ssh=no_ssh
+        )
             
         return self._client.start_rental(request)
     
@@ -277,22 +326,22 @@ class BasilicaClient:
         List rentals.
         
         Args:
-            status: Filter by status (e.g., "Active", "Pending")
+            status: Filter by status (e.g., "active", "provisioning")
             gpu_type: Filter by GPU type
             min_gpu_count: Filter by minimum GPU count
             
         Returns:
             List of rentals
         """
-        query = {}
-        if status is not None:
-            query["status"] = status
-        if gpu_type is not None:
-            query["gpu_type"] = gpu_type
-        if min_gpu_count is not None:
-            query["min_gpu_count"] = min_gpu_count
-            
-        return self._client.list_rentals(query if query else None)
+        if any([status is not None, gpu_type is not None, min_gpu_count is not None]):
+            query = ListRentalsQuery(
+                status=status,
+                gpu_type=gpu_type,
+                min_gpu_count=min_gpu_count
+            )
+            return self._client.list_rentals(query)
+        else:
+            return self._client.list_rentals(None)
     
     def wait_for_rental(
         self,

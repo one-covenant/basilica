@@ -225,7 +225,7 @@ pub async fn handle_export_token(
                 println!("# Name: {}", name);
             }
             println!("# Generated: {}", chrono::Utc::now().to_rfc3339());
-            println!("export BASILICA_ACCESS_TOKEN=\"{}\"", tokens.access_token);
+            println!("export BASILICA_API_TOKEN=\"{}\"", tokens.access_token);
             if let Some(refresh) = &tokens.refresh_token {
                 println!("export BASILICA_REFRESH_TOKEN=\"{}\"", refresh);
             }
@@ -241,7 +241,7 @@ pub async fn handle_export_token(
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
         "shell" => {
-            println!("BASILICA_ACCESS_TOKEN=\"{}\"", tokens.access_token);
+            println!("BASILICA_API_TOKEN=\"{}\"", tokens.access_token);
             if let Some(refresh) = &tokens.refresh_token {
                 println!("BASILICA_REFRESH_TOKEN=\"{}\"", refresh);
             }

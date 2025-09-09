@@ -9,7 +9,7 @@ from basilica import BasilicaClient
 client = BasilicaClient()
 
 # Start a rental with all defaults - returns typed RentalResponse
-rental = client.start_rental(gpu_type="h100")
+rental = client.start_rental(gpu_type="b200")
 print(f"Rental started with ID: {rental.rental_id}")
 
 # Wait for it to be ready - returns typed RentalStatusResponse

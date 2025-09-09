@@ -3,19 +3,20 @@
 
 mod types;
 
-use basilica_sdk::StartRentalApiRequest;
 use basilica_sdk::{BasilicaClient as RustClient, ClientBuilder};
 use pyo3::exceptions::{
     PyConnectionError, PyKeyError, PyPermissionError, PyRuntimeError, PyValueError,
 };
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
-use pythonize::{depythonize, pythonize};
+use pythonize::pythonize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
-use crate::types::{AvailableExecutor, HealthCheckResponse, RentalResponse, RentalStatusResponse};
+use crate::types::{
+    AvailableExecutor, HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
+    RentalResponse, RentalStatusResponse, StartRentalApiRequest,
+};
 
 /// Python wrapper for BasilicaClient
 #[pyclass]
@@ -96,26 +97,17 @@ impl BasilicaClient {
     /// List available executors
     ///
     /// Args:
-    ///     query: Optional query parameters as a dictionary
+    ///     query: Optional query parameters
     #[pyo3(signature = (query=None))]
     fn list_executors(
         &self,
         py: Python,
-        query: Option<&Bound<'_, PyDict>>,
+        query: Option<ListAvailableExecutorsQuery>,
     ) -> PyResult<Vec<AvailableExecutor>> {
         let client = Arc::clone(&self.inner);
 
-        // Convert Python dict to query struct if provided
-        let query = if let Some(dict) = query {
-            Some(
-                depythonize::<basilica_sdk::types::ListAvailableExecutorsQuery>(dict.as_any())
-                    .map_err(|e| {
-                        PyValueError::new_err(format!("Invalid query parameters: {}", e))
-                    })?,
-            )
-        } else {
-            None
-        };
+        // Convert Python query to SDK query if provided
+        let query = query.map(Into::into);
 
         let response = py
             .allow_threads(|| {
@@ -134,13 +126,12 @@ impl BasilicaClient {
     /// Start a new rental
     ///
     /// Args:
-    ///     request: Rental request parameters as a dictionary
-    fn start_rental(&self, py: Python, request: &Bound<'_, PyDict>) -> PyResult<RentalResponse> {
+    ///     request: Rental request parameters
+    fn start_rental(&self, py: Python, request: StartRentalApiRequest) -> PyResult<RentalResponse> {
         let client = Arc::clone(&self.inner);
 
-        // Convert Python dict to StartRentalRequest
-        let request = depythonize::<StartRentalApiRequest>(request.as_any())
-            .map_err(|e| PyValueError::new_err(format!("Invalid rental request: {}", e)))?;
+        // Convert Python request to SDK request
+        let request = request.into();
 
         let response = py
             .allow_threads(|| {
@@ -184,21 +175,13 @@ impl BasilicaClient {
     /// List rentals
     ///
     /// Args:
-    ///     query: Optional query parameters as a dictionary
+    ///     query: Optional query parameters
     #[pyo3(signature = (query=None))]
-    fn list_rentals(&self, py: Python, query: Option<&Bound<'_, PyDict>>) -> PyResult<PyObject> {
+    fn list_rentals(&self, py: Python, query: Option<ListRentalsQuery>) -> PyResult<PyObject> {
         let client = Arc::clone(&self.inner);
 
-        // Convert Python dict to query struct if provided
-        let query = if let Some(dict) = query {
-            Some(
-                depythonize::<basilica_sdk::types::ListRentalsQuery>(dict.as_any()).map_err(
-                    |e| PyValueError::new_err(format!("Invalid query parameters: {}", e)),
-                )?,
-            )
-        } else {
-            None
-        };
+        // Convert Python query to SDK query if provided
+        let query = query.map(Into::into);
 
         let response = py
             .allow_threads(|| {
@@ -234,39 +217,16 @@ impl BasilicaClient {
     }
 }
 
-/// Helper function to create rental request
+/// Helper function to create executor selection by ID
 #[pyfunction]
-#[pyo3(signature = (executor_id=None, container_image=None, ssh_public_key=None, **kwargs))]
-fn create_rental_request(
-    py: Python,
-    executor_id: Option<String>,
-    container_image: Option<String>,
-    ssh_public_key: Option<String>,
-    kwargs: Option<&Bound<'_, PyDict>>,
-) -> PyResult<PyObject> {
-    let dict = PyDict::new_bound(py);
+fn executor_by_id(executor_id: String) -> types::ExecutorSelection {
+    types::ExecutorSelection::ExecutorId { executor_id }
+}
 
-    if let Some(id) = executor_id {
-        dict.set_item("executor_id", id)?;
-    }
-    if let Some(image) = container_image {
-        dict.set_item("container_image", image)?;
-    } else {
-        dict.set_item("container_image", "ubuntu:latest")?;
-    }
-    if let Some(key) = ssh_public_key {
-        dict.set_item("ssh_public_key", key)?;
-    }
-
-    // Add any additional kwargs
-    if let Some(kw) = kwargs {
-        for item in kw.items() {
-            let (key, value): (String, PyObject) = item.extract()?;
-            dict.set_item(key, value)?;
-        }
-    }
-
-    Ok(dict.into_any().unbind())
+/// Helper function to create executor selection by GPU requirements
+#[pyfunction]
+fn executor_by_gpu(gpu_requirements: types::GpuRequirements) -> types::ExecutorSelection {
+    types::ExecutorSelection::GpuRequirements { gpu_requirements }
 }
 
 /// Python module for Basilica SDK
@@ -287,8 +247,19 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<types::AvailableExecutor>()?;
     m.add_class::<types::AvailabilityInfo>()?;
 
+    // Request types
+    m.add_class::<types::StartRentalApiRequest>()?;
+    m.add_class::<types::ExecutorSelection>()?;
+    m.add_class::<types::GpuRequirements>()?;
+    m.add_class::<types::PortMappingRequest>()?;
+    m.add_class::<types::ResourceRequirementsRequest>()?;
+    m.add_class::<types::VolumeMountRequest>()?;
+    m.add_class::<types::ListAvailableExecutorsQuery>()?;
+    m.add_class::<types::ListRentalsQuery>()?;
+
     // Helper functions
-    m.add_function(wrap_pyfunction!(create_rental_request, m)?)?;
+    m.add_function(wrap_pyfunction!(executor_by_id, m)?)?;
+    m.add_function(wrap_pyfunction!(executor_by_gpu, m)?)?;
 
     Ok(())
 }

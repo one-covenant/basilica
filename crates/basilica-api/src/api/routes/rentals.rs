@@ -155,6 +155,7 @@ pub async fn start_rental(
         volumes: request.volumes,
         no_ssh: request.no_ssh,
     };
+    debug!("Starting rental with request: {:?}", validator_request);
 
     let validator_response = state
         .validator_client

@@ -5,12 +5,18 @@
 
 use basilica_sdk::types::{
     AvailabilityInfo as SdkAvailabilityInfo, AvailableExecutor as SdkAvailableExecutor,
-    CpuSpec as SdkCpuSpec, ExecutorDetails as SdkExecutorDetails, GpuSpec as SdkGpuSpec,
-    RentalStatus as SdkRentalStatus, RentalStatusWithSshResponse, SshAccess as SdkSshAccess,
-    ValidatorRentalStatusResponse,
+    CpuSpec as SdkCpuSpec, ExecutorDetails as SdkExecutorDetails,
+    ExecutorSelection as SdkExecutorSelection, GpuRequirements as SdkGpuRequirements,
+    GpuSpec as SdkGpuSpec, ListAvailableExecutorsQuery as SdkListAvailableExecutorsQuery,
+    ListRentalsQuery as SdkListRentalsQuery, PortMappingRequest as SdkPortMappingRequest,
+    RentalState, RentalStatus as SdkRentalStatus, RentalStatusWithSshResponse,
+    ResourceRequirementsRequest as SdkResourceRequirementsRequest, SshAccess as SdkSshAccess,
+    StartRentalApiRequest as SdkStartRentalApiRequest, ValidatorRentalStatusResponse,
+    VolumeMountRequest as SdkVolumeMountRequest,
 };
 use basilica_validator::rental::RentalResponse as SdkRentalResponse;
 use pyo3::prelude::*;
+use std::collections::HashMap;
 
 /// SSH access information for a rental
 #[pyclass]
@@ -288,6 +294,355 @@ impl From<basilica_sdk::types::HealthCheckResponse> for HealthCheckResponse {
             timestamp: response.timestamp.to_rfc3339(),
             healthy_validators: response.healthy_validators,
             total_validators: response.total_validators,
+        }
+    }
+}
+
+// Request types for Python bindings
+
+/// GPU requirements for executor selection
+#[pyclass]
+#[derive(Clone)]
+pub struct GpuRequirements {
+    #[pyo3(get, set)]
+    pub gpu_count: u32,
+    #[pyo3(get, set)]
+    pub gpu_type: Option<String>,
+    #[pyo3(get, set)]
+    pub min_memory_gb: u32,
+}
+
+#[pymethods]
+impl GpuRequirements {
+    #[new]
+    #[pyo3(signature = (gpu_count, min_memory_gb, gpu_type=None))]
+    fn new(gpu_count: u32, min_memory_gb: u32, gpu_type: Option<String>) -> Self {
+        Self {
+            gpu_count,
+            gpu_type,
+            min_memory_gb,
+        }
+    }
+}
+
+impl From<GpuRequirements> for SdkGpuRequirements {
+    fn from(req: GpuRequirements) -> Self {
+        Self {
+            gpu_count: req.gpu_count,
+            gpu_type: req.gpu_type,
+            min_memory_gb: req.min_memory_gb,
+        }
+    }
+}
+
+/// Executor selection strategy
+#[pyclass]
+#[derive(Clone)]
+pub enum ExecutorSelection {
+    ExecutorId { executor_id: String },
+    GpuRequirements { gpu_requirements: GpuRequirements },
+}
+
+impl From<ExecutorSelection> for SdkExecutorSelection {
+    fn from(selection: ExecutorSelection) -> Self {
+        match selection {
+            ExecutorSelection::ExecutorId { executor_id } => {
+                SdkExecutorSelection::ExecutorId { executor_id }
+            }
+            ExecutorSelection::GpuRequirements { gpu_requirements } => {
+                SdkExecutorSelection::GpuRequirements {
+                    gpu_requirements: gpu_requirements.into(),
+                }
+            }
+        }
+    }
+}
+
+/// Port mapping request
+#[pyclass]
+#[derive(Clone)]
+pub struct PortMappingRequest {
+    #[pyo3(get, set)]
+    pub container_port: u32,
+    #[pyo3(get, set)]
+    pub host_port: u32,
+    #[pyo3(get, set)]
+    pub protocol: String,
+}
+
+#[pymethods]
+impl PortMappingRequest {
+    #[new]
+    #[pyo3(signature = (container_port, host_port, protocol=None))]
+    fn new(container_port: u32, host_port: u32, protocol: Option<String>) -> Self {
+        Self {
+            container_port,
+            host_port,
+            protocol: protocol.unwrap_or_else(|| "tcp".to_string()),
+        }
+    }
+}
+
+impl From<PortMappingRequest> for SdkPortMappingRequest {
+    fn from(port: PortMappingRequest) -> Self {
+        Self {
+            container_port: port.container_port,
+            host_port: port.host_port,
+            protocol: port.protocol,
+        }
+    }
+}
+
+/// Resource requirements request
+#[pyclass]
+#[derive(Clone)]
+pub struct ResourceRequirementsRequest {
+    #[pyo3(get, set)]
+    pub cpu_cores: f64,
+    #[pyo3(get, set)]
+    pub memory_mb: i64,
+    #[pyo3(get, set)]
+    pub storage_mb: i64,
+    #[pyo3(get, set)]
+    pub gpu_count: u32,
+    #[pyo3(get, set)]
+    pub gpu_types: Vec<String>,
+}
+
+#[pymethods]
+impl ResourceRequirementsRequest {
+    #[new]
+    #[pyo3(signature = (cpu_cores=1.0, memory_mb=1024, storage_mb=10240, gpu_count=0, gpu_types=None))]
+    fn new(
+        cpu_cores: f64,
+        memory_mb: i64,
+        storage_mb: i64,
+        gpu_count: u32,
+        gpu_types: Option<Vec<String>>,
+    ) -> Self {
+        Self {
+            cpu_cores,
+            memory_mb,
+            storage_mb,
+            gpu_count,
+            gpu_types: gpu_types.unwrap_or_default(),
+        }
+    }
+}
+
+impl From<ResourceRequirementsRequest> for SdkResourceRequirementsRequest {
+    fn from(req: ResourceRequirementsRequest) -> Self {
+        Self {
+            cpu_cores: req.cpu_cores,
+            memory_mb: req.memory_mb,
+            storage_mb: req.storage_mb,
+            gpu_count: req.gpu_count,
+            gpu_types: req.gpu_types,
+        }
+    }
+}
+
+impl Default for ResourceRequirementsRequest {
+    fn default() -> Self {
+        Self {
+            cpu_cores: 1.0,
+            memory_mb: 1024,
+            storage_mb: 10240,
+            gpu_count: 0,
+            gpu_types: vec![],
+        }
+    }
+}
+
+/// Volume mount request
+#[pyclass]
+#[derive(Clone)]
+pub struct VolumeMountRequest {
+    #[pyo3(get, set)]
+    pub host_path: String,
+    #[pyo3(get, set)]
+    pub container_path: String,
+    #[pyo3(get, set)]
+    pub read_only: bool,
+}
+
+#[pymethods]
+impl VolumeMountRequest {
+    #[new]
+    #[pyo3(signature = (host_path, container_path, read_only=false))]
+    fn new(host_path: String, container_path: String, read_only: bool) -> Self {
+        Self {
+            host_path,
+            container_path,
+            read_only,
+        }
+    }
+}
+
+impl From<VolumeMountRequest> for SdkVolumeMountRequest {
+    fn from(vol: VolumeMountRequest) -> Self {
+        Self {
+            host_path: vol.host_path,
+            container_path: vol.container_path,
+            read_only: vol.read_only,
+        }
+    }
+}
+
+/// Start rental API request
+#[pyclass]
+#[derive(Clone)]
+pub struct StartRentalApiRequest {
+    #[pyo3(get, set)]
+    pub executor_selection: ExecutorSelection,
+    #[pyo3(get, set)]
+    pub container_image: String,
+    #[pyo3(get, set)]
+    pub ssh_public_key: String,
+    #[pyo3(get, set)]
+    pub environment: HashMap<String, String>,
+    #[pyo3(get, set)]
+    pub ports: Vec<PortMappingRequest>,
+    #[pyo3(get, set)]
+    pub resources: ResourceRequirementsRequest,
+    #[pyo3(get, set)]
+    pub command: Vec<String>,
+    #[pyo3(get, set)]
+    pub volumes: Vec<VolumeMountRequest>,
+    #[pyo3(get, set)]
+    pub no_ssh: bool,
+}
+
+#[pymethods]
+impl StartRentalApiRequest {
+    #[new]
+    #[pyo3(signature = (executor_selection, container_image, ssh_public_key, environment=None, ports=None, resources=None, command=None, volumes=None, no_ssh=false))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        executor_selection: ExecutorSelection,
+        container_image: String,
+        ssh_public_key: String,
+        environment: Option<HashMap<String, String>>,
+        ports: Option<Vec<PortMappingRequest>>,
+        resources: Option<ResourceRequirementsRequest>,
+        command: Option<Vec<String>>,
+        volumes: Option<Vec<VolumeMountRequest>>,
+        no_ssh: bool,
+    ) -> Self {
+        Self {
+            executor_selection,
+            container_image,
+            ssh_public_key,
+            environment: environment.unwrap_or_default(),
+            ports: ports.unwrap_or_default(),
+            resources: resources.unwrap_or_default(),
+            command: command.unwrap_or_default(),
+            volumes: volumes.unwrap_or_default(),
+            no_ssh,
+        }
+    }
+}
+
+impl From<StartRentalApiRequest> for SdkStartRentalApiRequest {
+    fn from(req: StartRentalApiRequest) -> Self {
+        Self {
+            executor_selection: req.executor_selection.into(),
+            container_image: req.container_image,
+            ssh_public_key: req.ssh_public_key,
+            environment: req.environment,
+            ports: req.ports.into_iter().map(Into::into).collect(),
+            resources: req.resources.into(),
+            command: req.command,
+            volumes: req.volumes.into_iter().map(Into::into).collect(),
+            no_ssh: req.no_ssh,
+        }
+    }
+}
+
+/// Query parameters for listing available executors
+#[pyclass]
+#[derive(Clone, Default)]
+pub struct ListAvailableExecutorsQuery {
+    #[pyo3(get, set)]
+    pub available: Option<bool>,
+    #[pyo3(get, set)]
+    pub min_gpu_memory: Option<u32>,
+    #[pyo3(get, set)]
+    pub gpu_type: Option<String>,
+    #[pyo3(get, set)]
+    pub min_gpu_count: Option<u32>,
+}
+
+#[pymethods]
+impl ListAvailableExecutorsQuery {
+    #[new]
+    #[pyo3(signature = (available=None, min_gpu_memory=None, gpu_type=None, min_gpu_count=None))]
+    fn new(
+        available: Option<bool>,
+        min_gpu_memory: Option<u32>,
+        gpu_type: Option<String>,
+        min_gpu_count: Option<u32>,
+    ) -> Self {
+        Self {
+            available,
+            min_gpu_memory,
+            gpu_type,
+            min_gpu_count,
+        }
+    }
+}
+
+impl From<ListAvailableExecutorsQuery> for SdkListAvailableExecutorsQuery {
+    fn from(query: ListAvailableExecutorsQuery) -> Self {
+        Self {
+            available: query.available,
+            min_gpu_memory: query.min_gpu_memory,
+            gpu_type: query.gpu_type,
+            min_gpu_count: query.min_gpu_count,
+        }
+    }
+}
+
+/// Query parameters for listing rentals
+#[pyclass]
+#[derive(Clone, Default)]
+pub struct ListRentalsQuery {
+    #[pyo3(get, set)]
+    pub status: Option<String>, // We'll use String for the enum
+    #[pyo3(get, set)]
+    pub gpu_type: Option<String>,
+    #[pyo3(get, set)]
+    pub min_gpu_count: Option<u32>,
+}
+
+#[pymethods]
+impl ListRentalsQuery {
+    #[new]
+    #[pyo3(signature = (status=None, gpu_type=None, min_gpu_count=None))]
+    fn new(status: Option<String>, gpu_type: Option<String>, min_gpu_count: Option<u32>) -> Self {
+        Self {
+            status,
+            gpu_type,
+            min_gpu_count,
+        }
+    }
+}
+
+impl From<ListRentalsQuery> for SdkListRentalsQuery {
+    fn from(query: ListRentalsQuery) -> Self {
+        let status = query.status.and_then(|s| match s.to_lowercase().as_str() {
+            "provisioning" => Some(RentalState::Provisioning),
+            "active" => Some(RentalState::Active),
+            "stopping" => Some(RentalState::Stopping),
+            "stopped" => Some(RentalState::Stopped),
+            "failed" => Some(RentalState::Failed),
+            _ => None,
+        });
+
+        Self {
+            status,
+            gpu_type: query.gpu_type,
+            min_gpu_count: query.min_gpu_count,
         }
     }
 }

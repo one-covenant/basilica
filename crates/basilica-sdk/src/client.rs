@@ -71,35 +71,6 @@ impl BasilicaClient {
         })
     }
 
-    /// Create a new client with automatic token resolution
-    /// This will find tokens from:
-    /// 1. Environment variables (BASILICA_ACCESS_TOKEN)
-    /// 2. CLI keyring (if logged in via CLI)
-    /// 3. Config file (~/.basilica/credentials)
-    pub async fn new_with_auto_auth(
-        base_url: impl Into<String>,
-        timeout: Duration,
-    ) -> Result<Self> {
-        let mut client = Self::new(base_url, timeout)?;
-
-        // Try to resolve tokens
-        if let Some(token_set) = TokenResolver::resolve().await {
-            client.bearer_token = Some(token_set.access_token.clone());
-
-            // If we have a refresh token, set up token manager for auto-refresh
-            if token_set.refresh_token.is_some() {
-                // Use "basilica-cli" as storage key to update CLI tokens when refreshed
-                let token_manager =
-                    TokenManager::from_token_set(token_set).map_err(|e| ApiError::Internal {
-                        message: format!("Failed to create token manager: {}", e),
-                    })?;
-                client.token_manager = Some(Arc::new(token_manager));
-            }
-        }
-
-        Ok(client)
-    }
-
     /// Get a reference to the bearer token (if any)
     pub fn get_bearer_token(&self) -> Option<&str> {
         self.bearer_token.as_deref()
@@ -375,9 +346,6 @@ impl ClientBuilder {
         self
     }
 
-    // OAuth and Device flow authentication methods removed - these should be handled by CLI
-    // The SDK client should receive tokens from the CLI, not handle interactive auth flows
-
     /// Build the client with automatic authentication detection
     /// This will automatically find and use CLI tokens if available
     pub async fn build_auto(self) -> Result<BasilicaClient> {
@@ -388,11 +356,7 @@ impl ClientBuilder {
         // Build HTTP client
         let mut client_builder = reqwest::Client::builder();
 
-        if let Some(timeout) = self.timeout {
-            client_builder = client_builder.timeout(timeout);
-        } else {
-            client_builder = client_builder.timeout(Duration::from_secs(30));
-        }
+        client_builder = client_builder.timeout(self.timeout.unwrap_or(Duration::from_secs(1200)));
 
         if let Some(timeout) = self.connect_timeout {
             client_builder = client_builder.connect_timeout(timeout);
