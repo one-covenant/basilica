@@ -3,6 +3,9 @@
 //! This module provides PyO3 bindings for response types, enabling
 //! direct attribute access with full IDE autocomplete support.
 
+// pyo3-stub-gen uses deprecated PyO3 APIs internally, we need to allow them
+#![cfg_attr(feature = "stub-gen", allow(deprecated))]
+
 use basilica_sdk::types::{
     AvailabilityInfo as SdkAvailabilityInfo, AvailableExecutor as SdkAvailableExecutor,
     CpuSpec as SdkCpuSpec, ExecutorDetails as SdkExecutorDetails,

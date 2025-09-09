@@ -35,7 +35,7 @@ struct BasilicaClient {
 
 // Small helper to convert serializable Rust values into PyObject without
 // re-wrapping PyErr (avoids clippy::useless_conversion).
-fn to_pyobject<T: serde::Serialize>(py: Python<'_>, value: &T) -> PyResult<PyObject> {
+fn to_pyobject<T: serde::Serialize>(py: Python<'_>, value: &T) -> PyResult<Py<pyo3::PyAny>> {
     // `pythonize` already returns `PyResult<_>` so just propagate as-is.
     Ok(pythonize(py, value)?.unbind())
 }
@@ -87,7 +87,7 @@ impl BasilicaClient {
         let client = Arc::clone(&self.inner);
 
         let response = py
-            .allow_threads(|| {
+            .detach(|| {
                 self.runtime
                     .block_on(async move { client.health_check().await })
             })
@@ -112,7 +112,7 @@ impl BasilicaClient {
         let query = query.map(Into::into);
 
         let response = py
-            .allow_threads(|| {
+            .detach(|| {
                 self.runtime
                     .block_on(async move { client.list_available_executors(query).await })
             })
@@ -136,7 +136,7 @@ impl BasilicaClient {
         let request = request.into();
 
         let response = py
-            .allow_threads(|| {
+            .detach(|| {
                 self.runtime
                     .block_on(async move { client.start_rental(request).await })
             })
@@ -153,7 +153,7 @@ impl BasilicaClient {
         let client = Arc::clone(&self.inner);
 
         let response = py
-            .allow_threads(|| {
+            .detach(|| {
                 self.runtime
                     .block_on(async move { client.get_rental_status(&rental_id).await })
             })
@@ -179,14 +179,18 @@ impl BasilicaClient {
     /// Args:
     ///     query: Optional query parameters
     #[pyo3(signature = (query=None))]
-    fn list_rentals(&self, py: Python, query: Option<ListRentalsQuery>) -> PyResult<PyObject> {
+    fn list_rentals(
+        &self,
+        py: Python,
+        query: Option<ListRentalsQuery>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
         let client = Arc::clone(&self.inner);
 
         // Convert Python query to SDK query if provided
         let query = query.map(Into::into);
 
         let response = py
-            .allow_threads(|| {
+            .detach(|| {
                 self.runtime
                     .block_on(async move { client.list_rentals(query).await })
             })
