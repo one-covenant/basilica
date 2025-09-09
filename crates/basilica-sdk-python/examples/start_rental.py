@@ -16,20 +16,18 @@ def main():
     rental = client.start_rental(
         # Container configuration
         container_image="pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime",  # Default: basilica default image
-        # container_image="tensorflow/tensorflow:latest-gpu",  # TensorFlow alternative
-        # container_image="nvidia/cuda:12.0.0-cudnn8-runtime-ubuntu22.04",  # CUDA base image
         
         # GPU selection - choose one method:
-        # Method 1: Specify GPU type and count
-        gpu_type="a100",  # Options: h100, a100, etc.
-        gpu_count=2,  # Number of GPUs to request
+
+        # Method 1: Specify GPU type
+        gpu_type="h100",  # Options: h100, a100, etc.
         
         # Method 2: Target a specific executor by ID (find the id manually or by using list_rentals method)
         # executor_id="executor-uuid-here",  # Use specific executor
         
         # SSH configuration
         # ssh_public_key="ssh-rsa AAAAB3... user@host",  # Explicit SSH key
-        # Auto-detects from ~/.ssh/basilica_*.pub or ~/.ssh/id_*.pub if not specified
+        # Auto-detects from ~/.ssh/basilica_*.pub if not specified
         
         # Set custom Environment variables that will be set in the container
         environment={

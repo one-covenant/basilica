@@ -362,7 +362,10 @@ impl ClientBuilder {
         // Build HTTP client
         let mut client_builder = reqwest::Client::builder();
 
-        client_builder = client_builder.timeout(self.timeout.unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECS)));
+        client_builder = client_builder.timeout(
+            self.timeout
+                .unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),
+        );
 
         if let Some(timeout) = self.connect_timeout {
             client_builder = client_builder.connect_timeout(timeout);

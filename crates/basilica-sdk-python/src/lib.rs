@@ -3,7 +3,10 @@
 
 mod types;
 
-use basilica_sdk::{BasilicaClient as RustClient, ClientBuilder, client::{DEFAULT_API_URL, DEFAULT_TIMEOUT_SECS}};
+use basilica_sdk::{
+    client::{DEFAULT_API_URL, DEFAULT_TIMEOUT_SECS},
+    BasilicaClient as RustClient, ClientBuilder,
+};
 use pyo3::exceptions::{
     PyConnectionError, PyKeyError, PyPermissionError, PyRuntimeError, PyValueError,
 };
@@ -39,16 +42,10 @@ impl BasilicaClient {
     /// Args:
     ///     base_url: The base URL of the Basilica API
     ///     token: Optional authentication token. If not provided, will try to use CLI tokens
-    ///     timeout_secs: Request timeout in seconds (default: 30)
     ///     auto_auth: Automatically use CLI tokens if available (default: True)
     #[new]
-    #[pyo3(signature = (base_url, token=None, timeout_secs=30, auto_auth=true))]
-    fn new(
-        base_url: String,
-        token: Option<String>,
-        timeout_secs: u64,
-        auto_auth: bool,
-    ) -> PyResult<Self> {
+    #[pyo3(signature = (base_url, token=None, auto_auth=true))]
+    fn new(base_url: String, token: Option<String>, auto_auth: bool) -> PyResult<Self> {
         let runtime = Runtime::new()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
 
@@ -56,7 +53,7 @@ impl BasilicaClient {
             .block_on(async {
                 let mut builder = ClientBuilder::default()
                     .base_url(base_url)
-                    .timeout(Duration::from_secs(timeout_secs));
+                    .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
 
                 if let Some(t) = token {
                     builder = builder.with_bearer_token(t);
@@ -235,7 +232,10 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add constants
     m.add("DEFAULT_API_URL", DEFAULT_API_URL)?;
     m.add("DEFAULT_TIMEOUT_SECS", DEFAULT_TIMEOUT_SECS)?;
-    m.add("DEFAULT_CONTAINER_IMAGE", "nvidia/cuda:12.2.0-base-ubuntu22.04")?;
+    m.add(
+        "DEFAULT_CONTAINER_IMAGE",
+        "nvidia/cuda:12.2.0-base-ubuntu22.04",
+    )?;
     m.add("DEFAULT_GPU_TYPE", "b200")?;
     m.add("DEFAULT_GPU_COUNT", 1)?;
     m.add("DEFAULT_GPU_MIN_MEMORY_GB", 0)?;
@@ -245,7 +245,7 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("DEFAULT_PORT_PROTOCOL", "tcp")?;
     m.add("DEFAULT_SSH_USER", "root")?;
     m.add("DEFAULT_SSH_PORT", 22)?;
-    
+
     // Core client
     m.add_class::<BasilicaClient>()?;
 

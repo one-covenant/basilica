@@ -14,8 +14,7 @@ def main():
     # Or initialize with explicit configuration
     # client = BasilicaClient(
     #     base_url="https://api.basilica.ai",
-    #     token="your-api-token",  # Optional
-    #     timeout_secs=30
+    #     token="your-api-token"  # Optional
     # )
     
     # Perform health check

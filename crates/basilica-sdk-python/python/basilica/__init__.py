@@ -69,8 +69,6 @@ __all__ = [
     "ExecutorSelection",
     "GpuRequirements",
     "PortMappingRequest",
-    "ResourceRequirementsRequest",
-    "VolumeMountRequest",
     "ListAvailableExecutorsQuery",
     "ListRentalsQuery",
 ]
@@ -89,8 +87,7 @@ class BasilicaClient:
     def __init__(
         self,
         base_url: Optional[str] = None,
-        token: Optional[str] = None,
-        timeout_secs: int = DEFAULT_TIMEOUT_SECS
+        token: Optional[str] = None
     ):
         """
         Initialize a new Basilica client.
@@ -98,7 +95,6 @@ class BasilicaClient:
         Args:
             base_url: The base URL of the Basilica API (default: from BASILICA_API_URL env or DEFAULT_API_URL)
             token: Optional authentication token (default: from BASILICA_API_TOKEN env)
-            timeout_secs: Request timeout in seconds (default: DEFAULT_TIMEOUT_SECS)
         """
         # Auto-detect base_url if not provided
         if base_url is None:
@@ -108,7 +104,8 @@ class BasilicaClient:
         if token is None:
             token = os.environ.get("BASILICA_API_TOKEN")
         
-        self._client = _BasilicaClient(base_url, token, timeout_secs)
+        # Always use the default timeout
+        self._client = _BasilicaClient(base_url, token, DEFAULT_TIMEOUT_SECS)
     
     def health_check(self) -> HealthCheckResponse:
         """
@@ -154,13 +151,10 @@ class BasilicaClient:
         container_image: Optional[str] = None,
         executor_id: Optional[str] = None,
         gpu_type: Optional[str] = None,
-        gpu_count: int = DEFAULT_GPU_COUNT,
         ssh_public_key: Optional[str] = None,
         environment: Optional[Dict[str, str]] = None,
         ports: Optional[List[Dict[str, Any]]] = None,
-        resources: Optional[Dict[str, Any]] = None,
         command: Optional[List[str]] = None,
-        volumes: Optional[List[Dict[str, str]]] = None,
         no_ssh: bool = False
     ) -> RentalResponse:
         """
@@ -170,13 +164,10 @@ class BasilicaClient:
             container_image: Docker image to run (default: DEFAULT_CONTAINER_IMAGE)
             executor_id: Optional specific executor to use
             gpu_type: GPU type to request (default: DEFAULT_GPU_TYPE)
-            gpu_count: Number of GPUs to request (default: DEFAULT_GPU_COUNT)
             ssh_public_key: SSH public key for access (auto-detected from ~/.ssh/id_*.pub if not provided)
             environment: Environment variables
             ports: Port mappings
-            resources: Resource requirements (uses defaults if not provided)
             command: Command to run (default: ["/bin/bash"])
-            volumes: Volume mounts
             no_ssh: Disable SSH access
             
         Returns:
@@ -197,40 +188,21 @@ class BasilicaClient:
                 with open(ssh_key_paths[0]) as f:
                     ssh_public_key = f.read().strip()
         
-        if resources is None:
-            resources = {
-                "gpu_count": gpu_count,
-                "gpu_types": [gpu_type] if gpu_type else [],  # Array of GPU types
-                "cpu_cores": DEFAULT_CPU_CORES,
-                "memory_mb": DEFAULT_MEMORY_MB,
-                "storage_mb": DEFAULT_STORAGE_MB
-            }
-        else:
-            # Merge with defaults to ensure all required fields are present
-            # Handle gpu_type -> gpu_types conversion
-            if "gpu_type" in resources and "gpu_types" not in resources:
-                # Convert singular gpu_type to plural gpu_types array
-                gpu_type_value = resources.pop("gpu_type")
-                resources["gpu_types"] = [gpu_type_value] if gpu_type_value else []
-            elif "gpu_types" not in resources:
-                resources["gpu_types"] = [gpu_type] if gpu_type else []
-            
-            # Ensure all required fields have defaults
-            if "gpu_count" not in resources:
-                resources["gpu_count"] = gpu_count
-            if "cpu_cores" not in resources:
-                resources["cpu_cores"] = DEFAULT_CPU_CORES
-            if "memory_mb" not in resources:
-                resources["memory_mb"] = DEFAULT_MEMORY_MB
-            if "storage_mb" not in resources:
-                resources["storage_mb"] = DEFAULT_STORAGE_MB
+        # Always use default resources internally
+        resources = {
+            "gpu_count": DEFAULT_GPU_COUNT,
+            "gpu_types": [gpu_type] if gpu_type else [],  # Array of GPU types
+            "cpu_cores": DEFAULT_CPU_CORES,
+            "memory_mb": DEFAULT_MEMORY_MB,
+            "storage_mb": DEFAULT_STORAGE_MB
+        }
         
         # Build executor_selection based on whether executor_id is provided
         if executor_id:
             executor_selection = executor_by_id(executor_id)
         else:
-            # Use GPU requirements from resources for auto-selection
-            gpu_count_val = resources.get("gpu_count", gpu_count)
+            # Use GPU requirements for auto-selection with defaults
+            gpu_count_val = DEFAULT_GPU_COUNT
             min_memory_gb_val = DEFAULT_GPU_MIN_MEMORY_GB
             
             # Get GPU type from gpu_types array if available
@@ -258,24 +230,17 @@ class BasilicaClient:
                     protocol=port.get("protocol", "tcp")
                 ))
         
-        # Create ResourceRequirementsRequest
+        # Create ResourceRequirementsRequest with defaults
         resource_req = ResourceRequirementsRequest(
             cpu_cores=resources.get("cpu_cores", DEFAULT_CPU_CORES),
             memory_mb=resources.get("memory_mb", DEFAULT_MEMORY_MB),
             storage_mb=resources.get("storage_mb", DEFAULT_STORAGE_MB),
-            gpu_count=resources.get("gpu_count", gpu_count),
+            gpu_count=resources.get("gpu_count", DEFAULT_GPU_COUNT),
             gpu_types=resources.get("gpu_types", [])
         )
         
-        # Convert volumes to VolumeMountRequest objects
+        # Volume mounts are always empty now
         volume_mounts = []
-        if volumes:
-            for vol in volumes:
-                volume_mounts.append(VolumeMountRequest(
-                    host_path=vol.get("host_path", ""),
-                    container_path=vol.get("container_path", ""),
-                    read_only=vol.get("read_only", False)
-                ))
         
         request = StartRentalApiRequest(
             executor_selection=executor_selection,
