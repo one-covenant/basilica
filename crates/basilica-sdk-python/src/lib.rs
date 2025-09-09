@@ -11,6 +11,10 @@ use pyo3::exceptions::{
     PyConnectionError, PyKeyError, PyPermissionError, PyRuntimeError, PyValueError,
 };
 use pyo3::prelude::*;
+#[cfg(feature = "stub-gen")]
+use pyo3_stub_gen::define_stub_info_gatherer;
+#[cfg(feature = "stub-gen")]
+use pyo3_stub_gen::derive::gen_stub_pyclass;
 use pythonize::pythonize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +26,7 @@ use crate::types::{
 };
 
 /// Python wrapper for BasilicaClient
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 struct BasilicaClient {
     inner: Arc<RustClient>,
@@ -277,3 +282,7 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     Ok(())
 }
+
+// Define stub info gatherer for generating Python stub files
+#[cfg(feature = "stub-gen")]
+define_stub_info_gatherer!(stub_info);

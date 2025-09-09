@@ -16,9 +16,12 @@ use basilica_sdk::types::{
 };
 use basilica_validator::rental::RentalResponse as SdkRentalResponse;
 use pyo3::prelude::*;
+#[cfg(feature = "stub-gen")]
+use pyo3_stub_gen_derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::collections::HashMap;
 
 /// SSH access information for a rental
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct SshAccess {
@@ -41,6 +44,7 @@ impl From<SdkSshAccess> for SshAccess {
 }
 
 /// GPU specification details
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct GpuSpec {
@@ -63,6 +67,7 @@ impl From<SdkGpuSpec> for GpuSpec {
 }
 
 /// CPU specification details
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct CpuSpec {
@@ -85,6 +90,7 @@ impl From<SdkCpuSpec> for CpuSpec {
 }
 
 /// Executor details including GPU and CPU specifications
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct ExecutorDetails {
@@ -110,6 +116,7 @@ impl From<SdkExecutorDetails> for ExecutorDetails {
 }
 
 /// Rental status enumeration
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct RentalStatus {
@@ -136,6 +143,7 @@ impl From<SdkRentalStatus> for RentalStatus {
 }
 
 /// Response from starting a rental
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct RentalResponse {
@@ -164,6 +172,7 @@ impl From<SdkRentalResponse> for RentalResponse {
 }
 
 /// Full rental status response with SSH credentials (matches API response)
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct RentalStatusWithSshResponse {
@@ -195,6 +204,7 @@ impl From<SdkRentalStatusWithSshResponse> for RentalStatusWithSshResponse {
 }
 
 /// Availability information for an executor
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct AvailabilityInfo {
@@ -217,6 +227,7 @@ impl From<SdkAvailabilityInfo> for AvailabilityInfo {
 }
 
 /// Available executor with details and availability info
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct AvailableExecutor {
@@ -236,6 +247,7 @@ impl From<SdkAvailableExecutor> for AvailableExecutor {
 }
 
 /// Health check response
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct HealthCheckResponse {
@@ -324,6 +336,7 @@ impl From<ExecutorSelection> for SdkExecutorSelection {
 }
 
 /// Port mapping request
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct PortMappingRequest {
@@ -335,6 +348,7 @@ pub struct PortMappingRequest {
     pub protocol: String,
 }
 
+#[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
 impl PortMappingRequest {
     #[new]
@@ -359,6 +373,7 @@ impl From<PortMappingRequest> for SdkPortMappingRequest {
 }
 
 /// Resource requirements request
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct ResourceRequirementsRequest {
@@ -374,6 +389,7 @@ pub struct ResourceRequirementsRequest {
     pub gpu_types: Vec<String>,
 }
 
+#[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
 impl ResourceRequirementsRequest {
     #[new]
@@ -420,6 +436,7 @@ impl Default for ResourceRequirementsRequest {
 }
 
 /// Volume mount request
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct VolumeMountRequest {
@@ -431,6 +448,7 @@ pub struct VolumeMountRequest {
     pub read_only: bool,
 }
 
+#[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
 impl VolumeMountRequest {
     #[new]
@@ -525,6 +543,7 @@ impl From<StartRentalApiRequest> for SdkStartRentalApiRequest {
 }
 
 /// Query parameters for listing available executors
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Default)]
 pub struct ListAvailableExecutorsQuery {
@@ -538,6 +557,7 @@ pub struct ListAvailableExecutorsQuery {
     pub min_gpu_count: Option<u32>,
 }
 
+#[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
 impl ListAvailableExecutorsQuery {
     #[new]
@@ -569,6 +589,7 @@ impl From<ListAvailableExecutorsQuery> for SdkListAvailableExecutorsQuery {
 }
 
 /// Query parameters for listing rentals
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Default)]
 pub struct ListRentalsQuery {
@@ -580,6 +601,7 @@ pub struct ListRentalsQuery {
     pub min_gpu_count: Option<u32>,
 }
 
+#[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
 impl ListRentalsQuery {
     #[new]
