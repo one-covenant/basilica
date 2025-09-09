@@ -1,0 +1,59 @@
+{
+  "id": "computer",
+  "class": "system",
+  "claimed": true,
+  "description": "Computer",
+  "width": 64,
+  "capabilities": {
+    "smp": "Symmetric Multi-Processing",
+    "vsyscall32": "32-bit processes"
+  },
+  "children": [
+    {
+      "id": "core",
+      "class": "bus",
+      "claimed": true,
+      "description": "Motherboard",
+      "physid": "0",
+      "children": [
+        {
+          "id": "memory",
+          "class": "memory",
+          "claimed": true,
+          "description": "System memory",
+          "physid": "0",
+          "units": "bytes",
+          "size": 193273528320
+        },
+        {
+          "id": "cpu:0",
+          "class": "processor",
+          "claimed": true,
+          "product": "AMD EPYC 9554 64-Core Processor",
+          "vendor": "Advanced Micro Devices [AMD]",
+          "physid": "1",
+          "businfo": "cpu@0",
+          "version": "25.17.1",
+          "width": 64,
+          "configuration": {
+            "microcode": "168825150"
+          }
+        },
+        {
+          "id": "cpu:1",
+          "class": "processor",
+          "claimed": true,
+          "product": "AMD EPYC 9554 64-Core Processor",
+          "vendor": "Advanced Micro Devices [AMD]",
+          "physid": "2",
+          "businfo": "cpu@1",
+          "version": "25.17.1",
+          "width": 64,
+          "configuration": {
+            "microcode": "168825150"
+          }
+        }
+      ]
+    }
+  ]
+}

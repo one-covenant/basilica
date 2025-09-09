@@ -353,70 +353,25 @@ mod tests {
 
     #[test]
     fn test_parse_production_lshw() {
-        // Test with actual production JSON that was failing
-        let production_json = r#"{
-  "id": "computer",
-  "class": "system",
-  "claimed": true,
-  "description": "Computer",
-  "width": 64,
-  "capabilities": {
-    "smp": "Symmetric Multi-Processing",
-    "vsyscall32": "32-bit processes"
-  },
-  "children": [
-    {
-      "id": "core",
-      "class": "bus",
-      "claimed": true,
-      "description": "Motherboard",
-      "physid": "0",
-      "children": [
-        {
-          "id": "memory",
-          "class": "memory",
-          "claimed": true,
-          "description": "System memory",
-          "physid": "0",
-          "units": "bytes",
-          "size": 193273528320
-        },
-        {
-          "id": "cpu:0",
-          "class": "processor",
-          "claimed": true,
-          "product": "AMD EPYC 9554 64-Core Processor",
-          "vendor": "Advanced Micro Devices [AMD]",
-          "physid": "1",
-          "businfo": "cpu@0",
-          "version": "25.17.1",
-          "width": 64,
-          "configuration": {
-            "microcode": "168825150"
-          }
-        },
-        {
-          "id": "cpu:1",
-          "class": "processor",
-          "claimed": true,
-          "product": "AMD EPYC 9554 64-Core Processor",
-          "vendor": "Advanced Micro Devices [AMD]",
-          "physid": "2",
-          "businfo": "cpu@1",
-          "version": "25.17.1",
-          "width": 64,
-          "configuration": {
-            "microcode": "168825150"
-          }
-        }
-      ]
-    }
-  ]
-}"#;
+        // Build path to test fixture
+        let mut fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        fixture_path.push("tests");
+        fixture_path.push("fixtures");
+        fixture_path.push("lshw");
+        fixture_path.push("production_no_cores.json");
+
+        // Read the test file
+        let production_json = fs::read_to_string(&fixture_path).unwrap_or_else(|e| {
+            panic!(
+                "Failed to read test fixture '{}': {}",
+                fixture_path.display(),
+                e
+            )
+        });
 
         println!("\n=== Testing: Production JSON (no cores in config) ===");
 
-        let result = HardwareProfile::from_lshw_json(production_json);
+        let result = HardwareProfile::from_lshw_json(&production_json);
         assert!(result.is_ok(), "Should parse production JSON successfully");
 
         let profile = result.unwrap();
