@@ -97,8 +97,13 @@ struct ProcessingEntry {
 
 #[derive(Debug, Clone)]
 enum CompletionStatus {
-    Success { completed_at: Instant },
-    Failed { completed_at: Instant },
+    Success {
+        completed_at: Instant,
+    },
+    Failed {
+        completed_at: Instant,
+        error: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -163,7 +168,9 @@ impl QueueState {
         if let Some(status) = self.completed.peek(key) {
             match status {
                 CompletionStatus::Success { completed_at, .. }
-                | CompletionStatus::Failed { completed_at } => completed_at.elapsed() > cooldown,
+                | CompletionStatus::Failed { completed_at, .. } => {
+                    completed_at.elapsed() > cooldown
+                }
             }
         } else {
             true
@@ -209,6 +216,20 @@ impl QueueState {
 
     fn complete(&mut self, key: ExecutorKey, status: CompletionStatus) -> Option<ProcessingEntry> {
         let entry = self.processing.remove(&key);
+
+        // Log failed completions with their error for diagnostics
+        if let CompletionStatus::Failed { ref error, .. } = &status {
+            debug!(
+                miner_uid = key.miner_uid,
+                executor_id = %key.executor_id,
+                error = %error,
+                "Task for executor {} (miner {}) failed: {}",
+                key.executor_id,
+                key.miner_uid,
+                error
+            );
+        }
+
         self.completed.put(key, status);
         entry
     }
@@ -528,7 +549,7 @@ impl ValidationWorkerQueue {
                         }
                     }
                 }
-                Ok(Err(_e)) => {
+                Ok(Err(e)) => {
                     state.rollback(executor_key.clone());
                     metrics
                         .processing_full
@@ -553,6 +574,10 @@ impl ValidationWorkerQueue {
                     } else {
                         let status = CompletionStatus::Failed {
                             completed_at: Instant::now(),
+                            error: format!(
+                                "Verification failed after {} retries: {}",
+                                config.max_retries, e
+                            ),
                         };
                         state.complete(executor_key, status);
                         metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
@@ -583,6 +608,10 @@ impl ValidationWorkerQueue {
                     } else {
                         let status = CompletionStatus::Failed {
                             completed_at: Instant::now(),
+                            error: format!(
+                                "Verification timed out after {}s ({} retries)",
+                                config.max_processing_time_secs, config.max_retries
+                            ),
                         };
                         state.complete(executor_key, status);
                         metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
@@ -700,7 +729,7 @@ impl ValidationWorkerQueue {
                         }
                     }
                 }
-                Ok(Err(_e)) => {
+                Ok(Err(e)) => {
                     state.rollback(executor_key.clone());
                     metrics
                         .processing_lightweight
@@ -725,6 +754,10 @@ impl ValidationWorkerQueue {
                     } else {
                         let status = CompletionStatus::Failed {
                             completed_at: Instant::now(),
+                            error: format!(
+                                "Lightweight verification failed after {} retries: {}",
+                                config.max_retries, e
+                            ),
                         };
                         state.complete(executor_key, status);
                         metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
@@ -755,6 +788,10 @@ impl ValidationWorkerQueue {
                     } else {
                         let status = CompletionStatus::Failed {
                             completed_at: Instant::now(),
+                            error: format!(
+                                "Lightweight verification timed out after {}s ({} retries)",
+                                config.lightweight_processing_time_secs, config.max_retries
+                            ),
                         };
                         state.complete(executor_key, status);
                         metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
@@ -841,8 +878,16 @@ impl ValidationWorkerQueue {
 
         for key in stale_keys {
             warn!("Removing stale processing item: {:?}", key);
-            if let Some(_entry) = state.rollback(key.clone()) {
-                let status = CompletionStatus::Failed { completed_at: now };
+            if let Some(entry) = state.rollback(key.clone()) {
+                let elapsed_secs = now.duration_since(entry.started_at).as_secs();
+                let status = CompletionStatus::Failed {
+                    completed_at: now,
+                    error: format!(
+                        "Processing stale after {}s (exceeded {}s timeout)",
+                        elapsed_secs,
+                        max_age.as_secs()
+                    ),
+                };
                 state.completed.put(key, status);
                 match validation_type {
                     ValidationType::Full => {
