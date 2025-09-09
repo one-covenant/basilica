@@ -26,6 +26,7 @@ pip install basilica
 
 ```python
 from basilica import BasilicaClient
+from basilica.ssh_utils import format_ssh_command
 
 # Create client - automatically uses environment variables
 # BASILICA_API_URL (defaults to https://api.basilica.ai)
@@ -35,23 +36,26 @@ client = BasilicaClient()
 # Start a GPU rental with minimal configuration
 rental = client.start_rental()  # All defaults applied
 
-# Wait for rental to be ready
-status = client.wait_for_rental(rental["rental_id"])
-
-# Get SSH access details
-ssh = status["ssh_access"]
-print(f"Connect: ssh -p {ssh['port']} {ssh['user']}@{ssh['host']}")
+# SSH credentials are returned directly in the rental response
+if rental.ssh_credentials:
+    ssh_command = format_ssh_command(rental.ssh_credentials)
+    print(f"Connect with: {ssh_command}")
 
 # Stop the rental when done
-client.stop_rental(rental["rental_id"])
+client.stop_rental(rental.rental_id)
 ```
 
 ## Features
 
 ### 🚀 Auto-Configuration
 - Automatically detects `BASILICA_API_URL` and `BASILICA_API_TOKEN` from environment
-- SSH keys auto-detected from `~/.ssh/id_*.pub`
+- SSH keys auto-detected from `~/.ssh/basilica_*.pub` (Basilica-specific keys)
 - Sensible defaults for all parameters
+
+### 🔐 Enhanced SSH Handling
+- Built-in SSH utilities for credential parsing and command generation
+- Automatic SSH key detection and validation
+- Formatted SSH connection instructions with error handling
 
 ### 🎯 Simplified API
 ```python
@@ -66,28 +70,18 @@ rental = client.start_rental(
 )
 ```
 
-### ⏳ Blocking Wait
-```python
-# No more manual polling loops!
-status = client.wait_for_rental(
-    rental_id,
-    timeout=600,  # Max 10 minutes
-    poll_interval=10  # Check every 10 seconds
-)
-```
 
 ## API Reference
 
 ### BasilicaClient
 
-#### `__init__(base_url: Optional[str] = None, token: Optional[str] = None, timeout_secs: int = 30)`
+#### `__init__(base_url: Optional[str] = None, token: Optional[str] = None)`
 
 Initialize a new Basilica client.
 
 **Parameters:**
 - `base_url`: The base URL of the Basilica API (default: from `BASILICA_API_URL` env or `https://api.basilica.ai`)
 - `token`: Authentication token (default: from `BASILICA_API_TOKEN` env)
-- `timeout_secs`: Request timeout in seconds (default: 30)
 
 #### `start_rental(...) -> Dict[str, Any]`
 
@@ -95,32 +89,16 @@ Start a new GPU rental with smart defaults.
 
 **Parameters (all optional):**
 - `container_image`: Docker image to run (default: `nvidia/cuda:12.2.0-base-ubuntu22.04`)
-- `ssh_public_key`: SSH public key (default: auto-detected from `~/.ssh/`)
-- `resources`: Resource requirements (default: `{"gpu_count": 1, "gpu_type": "h100"}`)
-- `environment`: Environment variables as dict
+- `ssh_public_key`: SSH public key (default: auto-detected from `~/.ssh/basilica_*.pub`)
+- `gpu_type`: GPU type to request (default: "h100")
 - `executor_id`: Specific executor to use
+- `environment`: Environment variables as dict
 - `ports`: Port mappings list
 - `command`: Command to run as list
-- `volumes`: Volume mounts list
 - `no_ssh`: Disable SSH access (default: False)
 
 **Returns:** Rental response with rental ID and details
 
-#### `wait_for_rental(rental_id: str, target_state: str = "Active", timeout: int = 300, poll_interval: int = 5) -> Dict[str, Any]`
-
-Wait for a rental to reach a specific state.
-
-**Parameters:**
-- `rental_id`: The rental ID to wait for
-- `target_state`: The state to wait for (default: "Active")
-- `timeout`: Maximum time to wait in seconds (default: 300)
-- `poll_interval`: How often to check status in seconds (default: 5)
-
-**Returns:** Final rental status
-
-**Raises:**
-- `TimeoutError`: If timeout is reached before target state
-- `RuntimeError`: If rental reaches a terminal error state
 
 #### `get_rental(rental_id: str) -> Dict[str, Any]`
 
@@ -142,43 +120,111 @@ List your rentals.
 
 Check the health of the API.
 
+### SSH Utilities
+
+The SDK includes helpful utilities for working with SSH credentials:
+
+#### `parse_ssh_credentials(credentials: str) -> Tuple[str, str, int]`
+
+Parse SSH credentials string in format 'user@host:port'.
+
+**Parameters:**
+- `credentials`: SSH credentials string (e.g., 'root@84.200.81.243:32776')
+
+**Returns:** Tuple of (user, host, port)
+
+**Raises:** `ValueError` if credentials format is invalid
+
+#### `format_ssh_command(credentials: str, ssh_key_path: Optional[str] = None) -> str`
+
+Generate a complete SSH command from credentials string.
+
+**Parameters:**
+- `credentials`: SSH credentials string (e.g., 'root@84.200.81.243:32776')
+- `ssh_key_path`: Optional path to SSH private key (default: `~/.ssh/basilica_ed25519`)
+
+**Returns:** Complete SSH command string
+
+#### `print_ssh_instructions(credentials: Optional[str], rental_id: str, ssh_key_path: Optional[str] = None) -> None`
+
+Print formatted SSH connection instructions to console.
+
+**Parameters:**
+- `credentials`: SSH credentials string or None
+- `rental_id`: Rental ID for context
+- `ssh_key_path`: Optional path to SSH private key
+
 ## Examples
 
 ### Quickstart (Minimal Code)
 ```python
 from basilica import BasilicaClient
+from basilica.ssh_utils import format_ssh_command
 
 client = BasilicaClient()
 rental = client.start_rental()
-status = client.wait_for_rental(rental["rental_id"])
-print(f"SSH: ssh -p {status['ssh_access']['port']} root@{status['ssh_access']['host']}")
+
+# SSH credentials are available immediately in the rental response
+if rental.ssh_credentials:
+    ssh_command = format_ssh_command(rental.ssh_credentials)
+    print(f"Connect with: {ssh_command}")
 ```
 
-### Custom Configuration
+### Custom Configuration with SSH Utilities
 ```python
 from basilica import BasilicaClient
+from basilica.ssh_utils import print_ssh_instructions
 
 client = BasilicaClient()
 
 # Start with custom settings
 rental = client.start_rental(
     container_image="pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime",
-    resources={
-        "gpu_count": 2,
-        "gpu_type": "a100"
-    },
+    gpu_type="a100",
     environment={
         "CUDA_VISIBLE_DEVICES": "0,1",
         "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512"
-    }
+    },
+    ports=[
+        {"container_port": 8888, "host_port": 8888, "protocol": "tcp"},  # Jupyter
+        {"container_port": 6006, "host_port": 6006, "protocol": "tcp"},  # TensorBoard
+    ]
 )
 
-# Wait with custom timeout
-status = client.wait_for_rental(
-    rental["rental_id"],
-    timeout=600,  # 10 minutes
-    poll_interval=10  # Check every 10 seconds
-)
+# Print formatted SSH instructions
+print_ssh_instructions(rental.ssh_credentials, rental.rental_id)
+
+# Get updated status with executor details
+status = client.get_rental(rental.rental_id)
+print(f"Running on executor: {status.executor.id}")
+for gpu in status.executor.gpu_specs:
+    print(f"GPU: {gpu.name} - {gpu.memory_gb} GB")
+```
+
+### SSH Utilities Usage
+```python
+from basilica import BasilicaClient
+from basilica.ssh_utils import parse_ssh_credentials, format_ssh_command, print_ssh_instructions
+
+client = BasilicaClient()
+rental = client.start_rental(gpu_type="h100")
+
+# Different ways to work with SSH credentials
+if rental.ssh_credentials:
+    # Parse credentials into components
+    user, host, port = parse_ssh_credentials(rental.ssh_credentials)
+    print(f"User: {user}, Host: {host}, Port: {port}")
+    
+    # Generate SSH command with default key
+    ssh_cmd = format_ssh_command(rental.ssh_credentials)
+    print(f"SSH command: {ssh_cmd}")
+    
+    # Generate SSH command with custom key
+    ssh_cmd_custom = format_ssh_command(rental.ssh_credentials, "~/.ssh/my_custom_key")
+    print(f"Custom key SSH: {ssh_cmd_custom}")
+    
+    # Print formatted instructions
+    print_ssh_instructions(rental.ssh_credentials, rental.rental_id)
 ```
 
 ### List Available GPUs
@@ -193,15 +239,15 @@ executors = client.list_executors(
     gpu_type="h100"
 )
 
-for executor in executors["available_executors"]:
-    print(f"Executor {executor['id']}: {executor['gpu_count']}x {executor['gpu_type']}")
+for executor in executors:
+    print(f"Executor {executor.id}: {len(executor.gpu_specs)}x {executor.gpu_specs[0].name}")
 ```
 
 See the `examples/` directory for more complete examples:
-- `quickstart.py` - Minimal example
-- `start_rental.py` - Simple rental with defaults
-- `start_rental_advanced.py` - Custom configuration example
+- `quickstart.py` - Minimal example with SSH utilities
+- `start_rental.py` - Full rental example with SSH instructions
 - `list_executors.py` - List available GPU executors
+- `health_check.py` - API health check example
 
 ## Development
 
@@ -227,7 +273,19 @@ pytest tests/
 
 - `BASILICA_API_URL`: API endpoint (default: `https://api.basilica.ai`)
 - `BASILICA_API_TOKEN`: Your authentication token
-- `SSH_PUBLIC_KEY`: Override SSH key auto-detection
+
+### SSH Key Configuration
+
+The SDK automatically detects SSH keys from `~/.ssh/basilica_*.pub` (e.g., `basilica_ed25519.pub`, `basilica_rsa.pub`). 
+
+To set up SSH keys for Basilica:
+```bash
+# Generate a Basilica-specific SSH key
+ssh-keygen -t ed25519 -f ~/.ssh/basilica_ed25519 -C "your-email@example.com"
+
+# The public key will be auto-detected by the SDK
+ls ~/.ssh/basilica_ed25519.pub
+```
 
 ## License
 

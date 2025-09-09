@@ -6,11 +6,21 @@ Demonstrates how to start GPU rentals with various configurations.
 """
 
 from basilica import BasilicaClient
+from ssh_utils import print_ssh_instructions
 
 
 def main():
+    print("Starting Basilica GPU rental...")
+    print("Initializing client...")
+    
     # Initialize client (uses BASILICA_API_URL and BASILICA_API_TOKEN from environment)
     client = BasilicaClient()
+    
+    print("\nConfiguration:")
+    print("  GPU Type: h100")
+    print("  Container: pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime")
+    print("  Ports: 8888 (Jupyter), 6006 (TensorBoard), 5000 (API)")
+    print("\nRequesting GPU rental...")
     
     # Start a rental with all available configuration options
     rental = client.start_rental(
@@ -20,7 +30,7 @@ def main():
         # GPU selection - choose one method:
 
         # Method 1: Specify GPU type
-        gpu_type="h100",  # Options: h100, a100, etc.
+        gpu_type="b200",  # Options: h100, a100, etc.
         
         # Method 2: Target a specific executor by ID (find the id manually or by using list_rentals method)
         # executor_id="executor-uuid-here",  # Use specific executor
@@ -44,12 +54,15 @@ def main():
         command=["/bin/bash"],
     )
     
+    print("\nRental started successfully!")
+    
     # Access rental details
     print(f"Rental ID: {rental.rental_id}")
     print(f"Container: {rental.container_name}")
     print(f"Status: {rental.status}")
-    if rental.ssh_credentials:
-        print(f"SSH: {rental.ssh_credentials}")
+    
+    # Print SSH connection instructions
+    print_ssh_instructions(rental.ssh_credentials, rental.rental_id)
     
     # Get updated rental status
     status = client.get_rental(rental.rental_id)

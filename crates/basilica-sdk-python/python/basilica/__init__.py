@@ -105,7 +105,7 @@ class BasilicaClient:
             token = os.environ.get("BASILICA_API_TOKEN")
         
         # Always use the default timeout
-        self._client = _BasilicaClient(base_url, token, DEFAULT_TIMEOUT_SECS)
+        self._client = _BasilicaClient(base_url, token, True)
     
     def health_check(self) -> HealthCheckResponse:
         """
