@@ -20,24 +20,17 @@ def main():
         
         rental_id = rental.rental_id  # Now using typed attribute access!
         print(f"Rental started with ID: {rental_id}")
-        
-        # Use the new blocking wait method
-        print("Waiting for rental to become active...")
-        status = client.wait_for_rental(rental_id)
-        
         print("Rental is now active!")
         
         # Display rental details using typed attributes
-        if status.ssh_credentials:
-            print(f"\nSSH credentials: {status.ssh_credentials}")
+        if rental.ssh_credentials:
+            print(f"\nSSH credentials: {rental.ssh_credentials}")
         
         # # Optionally stop the rental
         # print("\nStopping rental...")
         # client.stop_rental(rental_id)
         # print("Rental stopped")
         
-    except TimeoutError as e:
-        print(f"Error: {e}")
     except Exception as e:
         print(f"Error: {e}")
 

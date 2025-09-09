@@ -59,7 +59,8 @@ impl TokenResolver {
 
     /// Try to get token from CLI keyring
     async fn from_cli_data_dir() -> Option<TokenSet> {
-        match TokenStore::new(get_sdk_data_dir().ok()?) {
+        let sdk_data_dir = get_sdk_data_dir().unwrap();
+        match TokenStore::new(sdk_data_dir) {
             Ok(store) => match store.get_tokens().await {
                 Ok(Some(tokens)) => {
                     if !tokens.is_expired() {

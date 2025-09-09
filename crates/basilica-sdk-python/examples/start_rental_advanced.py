@@ -38,20 +38,14 @@ def main():
         print(f"Rental started with ID: {rental_id}")
         print(f"Container: {rental.container_name}")
         print(f"Status: {rental.status}")
-        
-        # Wait for rental with custom timeout and poll interval
-        print("Waiting for rental to become active...")
-        status = client.wait_for_rental(
-            rental_id,
-            timeout=600,  # Wait up to 10 minutes
-            poll_interval=10  # Check every 10 seconds
-        )
-        
         print("Rental is now active!")
         
         # Display rental details using typed attributes
-        if status.ssh_credentials:
-            print(f"\nSSH credentials: {status.ssh_credentials}")
+        if rental.ssh_credentials:
+            print(f"\nSSH credentials: {rental.ssh_credentials}")
+        
+        # If you need to get updated status later, use get_rental
+        status = client.get_rental(rental_id)
         
         # Display executor details
         executor = status.executor
@@ -60,8 +54,6 @@ def main():
         for gpu in executor.gpu_specs:
             print(f"  GPU: {gpu.name} - {gpu.memory_gb} GB")
         
-    except TimeoutError as e:
-        print(f"Timeout: {e}")
     except Exception as e:
         print(f"Error: {e}")
 

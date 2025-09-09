@@ -7,16 +7,8 @@ from basilica import BasilicaClient
 import os
 
 def main():
-    # Get API URL and token from environment variables
-    api_url = os.environ.get("BASILICA_API_URL", "https://api.basilica.ai")
-    api_token = os.environ.get("BASILICA_API_TOKEN")
-    
-    if not api_token:
-        print("Please set BASILICA_API_TOKEN environment variable")
-        return
-    
     # Create client
-    client = BasilicaClient(api_url, token=api_token)
+    client = BasilicaClient()
     
     # Check API health - returns typed HealthCheckResponse
     print("Checking API health...")

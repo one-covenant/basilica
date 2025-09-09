@@ -3,6 +3,7 @@
 //! This module defines all the types used throughout the auth module
 //! including configuration, token data, and error types.
 
+use etcetera::{choose_base_strategy, BaseStrategy};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -196,10 +197,10 @@ pub enum AuthError {
 /// Get the default data directory for SDK token storage
 /// Returns platform-specific data directory (e.g., ~/.local/share/basilica on Linux)
 pub fn get_sdk_data_dir() -> AuthResult<PathBuf> {
-    let base_dir = directories::BaseDirs::new().ok_or_else(|| {
-        AuthError::ConfigError("Failed to determine base directories".to_string())
+    let strategy = choose_base_strategy().map_err(|e| {
+        AuthError::ConfigError(format!("Failed to determine base directories: {}", e))
     })?;
 
     // Use the same path as the CLI for consistency
-    Ok(base_dir.data_dir().join("basilica"))
+    Ok(strategy.data_dir().join("basilica"))
 }

@@ -45,10 +45,6 @@ from basilica.constants import (
     DEFAULT_CPU_CORES,
     DEFAULT_MEMORY_MB,
     DEFAULT_STORAGE_MB,
-    DEFAULT_WAIT_TIMEOUT_SECS,
-    DEFAULT_POLL_INTERVAL_SECS,
-    RENTAL_STATE_ACTIVE,
-    TERMINAL_RENTAL_STATES,
 )
 
 __version__ = "0.1.0"
@@ -342,43 +338,3 @@ class BasilicaClient:
             return self._client.list_rentals(query)
         else:
             return self._client.list_rentals(None)
-    
-    def wait_for_rental(
-        self,
-        rental_id: str,
-        target_state: str = RENTAL_STATE_ACTIVE,
-        timeout: int = DEFAULT_WAIT_TIMEOUT_SECS,
-        poll_interval: int = DEFAULT_POLL_INTERVAL_SECS
-    ) -> RentalStatusWithSshResponse:
-        """
-        Wait for a rental to reach a specific state.
-        
-        Args:
-            rental_id: The rental ID to wait for
-            target_state: The state to wait for (default: RENTAL_STATE_ACTIVE)
-            timeout: Maximum time to wait in seconds (default: DEFAULT_WAIT_TIMEOUT_SECS)
-            poll_interval: How often to check status in seconds (default: DEFAULT_POLL_INTERVAL_SECS)
-            
-        Returns:
-            RentalStatusWithSshResponse: Final rental status
-            
-        Raises:
-            TimeoutError: If timeout is reached before target state
-        """
-        import time
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
-            status = self.get_rental(rental_id)
-            current_state = status.status.state
-            
-            if current_state == target_state:
-                return status
-            
-            # Check for terminal states that won't transition to target
-            if current_state in TERMINAL_RENTAL_STATES:
-                raise RuntimeError(f"Rental reached terminal state: {current_state}")
-            
-            time.sleep(poll_interval)
-        
-        raise TimeoutError(f"Timeout waiting for rental to reach {target_state} state")
