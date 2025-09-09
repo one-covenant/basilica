@@ -314,6 +314,114 @@ impl ValidationWorkerQueue {
         }
     }
 
+    /// Helper method to create MinerInfo from WorkItem
+    fn create_miner_info(
+        item: &WorkItem,
+        verification_score: f64,
+    ) -> Result<super::types::MinerInfo> {
+        let hotkey = basilica_common::identity::Hotkey::new(item.miner_hotkey.clone())
+            .map_err(|e| anyhow::anyhow!("Invalid hotkey: {}", e))?;
+        Ok(super::types::MinerInfo {
+            uid: basilica_common::identity::MinerUid::new(item.miner_uid),
+            hotkey,
+            endpoint: item.miner_endpoint.clone(),
+            stake_tao: item.task.stake_tao,
+            is_validator: item.task.is_validator,
+            last_verified: None,
+            verification_score,
+        })
+    }
+
+    /// Helper method to store a successful validation result
+    async fn store_successful_validation(
+        verification_engine: &Arc<VerificationEngine>,
+        item: &WorkItem,
+        executor_key: &ExecutorKey,
+        verification_result: &super::types::ExecutorVerificationResult,
+    ) {
+        match Self::create_miner_info(item, verification_result.verification_score) {
+            Ok(miner_info) => {
+                if let Err(e) = verification_engine
+                    .store_executor_verification_result_with_miner_info(
+                        item.miner_uid,
+                        verification_result,
+                        &miner_info,
+                    )
+                    .await
+                {
+                    error!(
+                        "Failed to store verification result for executor {} (miner {}): {}",
+                        executor_key.executor_id, executor_key.miner_uid, e
+                    );
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Invalid miner hotkey '{}' for miner {}: {}",
+                    item.miner_hotkey, item.miner_uid, e
+                );
+            }
+        }
+    }
+
+    /// Helper method to create and store a failed validation result
+    async fn store_failed_validation(
+        verification_engine: &Arc<VerificationEngine>,
+        item: &WorkItem,
+        executor_key: &ExecutorKey,
+        error_message: String,
+        execution_time: Duration,
+        validation_type: ValidationType,
+    ) {
+        // Create a failed verification result
+        let failed_result = super::types::ExecutorVerificationResult {
+            executor_id: item.executor_info.id.clone(),
+            grpc_endpoint: item.executor_info.grpc_endpoint.clone(),
+            verification_score: 0.0,
+            ssh_connection_successful: false,
+            binary_validation_successful: false,
+            executor_result: None,
+            error: Some(error_message.clone()),
+            execution_time,
+            validation_details: super::types::ValidationDetails {
+                ssh_test_duration: Duration::from_secs(0),
+                binary_upload_duration: Duration::from_secs(0),
+                binary_execution_duration: Duration::from_secs(0),
+                total_validation_duration: execution_time,
+                ssh_score: 0.0,
+                binary_score: 0.0,
+                combined_score: 0.0,
+            },
+            gpu_count: 0,
+            validation_type,
+        };
+
+        // Attempt to store the failed result
+        match Self::create_miner_info(item, 0.0) {
+            Ok(miner_info) => {
+                if let Err(e) = verification_engine
+                    .store_executor_verification_result_with_miner_info(
+                        item.miner_uid,
+                        &failed_result,
+                        &miner_info,
+                    )
+                    .await
+                {
+                    error!(
+                        "Failed to store failed validation result for executor {} (miner {}): {}",
+                        executor_key.executor_id, executor_key.miner_uid, e
+                    );
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Invalid miner hotkey '{}' for miner {} (failed validation): {}",
+                    item.miner_hotkey, item.miner_uid, e
+                );
+            }
+        }
+    }
+
     pub async fn start(&self) -> Result<()> {
         match self
             .running
@@ -515,39 +623,13 @@ impl ValidationWorkerQueue {
                     );
 
                     // Store verification result to database
-                    match basilica_common::identity::Hotkey::new(item.miner_hotkey.clone()) {
-                        Ok(hotkey) => {
-                            let miner_info = super::types::MinerInfo {
-                                uid: basilica_common::identity::MinerUid::new(item.miner_uid),
-                                hotkey,
-                                endpoint: item.miner_endpoint.clone(),
-                                stake_tao: item.task.stake_tao,
-                                is_validator: item.task.is_validator,
-                                last_verified: None,
-                                verification_score: verification_result.verification_score,
-                            };
-
-                            if let Err(e) = verification_engine
-                                .store_executor_verification_result_with_miner_info(
-                                    item.miner_uid,
-                                    &verification_result,
-                                    &miner_info,
-                                )
-                                .await
-                            {
-                                error!(
-                                    "Failed to store verification result for executor {} (miner {}): {}",
-                                    executor_key.executor_id, executor_key.miner_uid, e
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "Invalid miner hotkey '{}' for miner {}: {}",
-                                item.miner_hotkey, item.miner_uid, e
-                            );
-                        }
-                    }
+                    Self::store_successful_validation(
+                        &verification_engine,
+                        &item,
+                        &executor_key,
+                        &verification_result,
+                    )
+                    .await;
                 }
                 Ok(Err(e)) => {
                     state.rollback(executor_key.clone());
@@ -572,15 +654,27 @@ impl ValidationWorkerQueue {
                         Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
+                        let error_msg = format!(
+                            "Verification failed after {} retries: {}",
+                            config.max_retries, e
+                        );
                         let status = CompletionStatus::Failed {
                             completed_at: Instant::now(),
-                            error: format!(
-                                "Verification failed after {} retries: {}",
-                                config.max_retries, e
-                            ),
+                            error: error_msg.clone(),
                         };
-                        state.complete(executor_key, status);
+                        state.complete(executor_key.clone(), status);
                         metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                        // Store failed validation result
+                        Self::store_failed_validation(
+                            &verification_engine,
+                            &item,
+                            &executor_key,
+                            error_msg,
+                            start_time.elapsed(),
+                            ValidationType::Full,
+                        )
+                        .await;
                     }
                 }
                 Err(_) => {
@@ -606,15 +700,27 @@ impl ValidationWorkerQueue {
                         Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
+                        let error_msg = format!(
+                            "Verification timed out after {}s ({} retries)",
+                            config.max_processing_time_secs, config.max_retries
+                        );
                         let status = CompletionStatus::Failed {
                             completed_at: Instant::now(),
-                            error: format!(
-                                "Verification timed out after {}s ({} retries)",
-                                config.max_processing_time_secs, config.max_retries
-                            ),
+                            error: error_msg.clone(),
                         };
-                        state.complete(executor_key, status);
+                        state.complete(executor_key.clone(), status);
                         metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                        // Store failed validation result
+                        Self::store_failed_validation(
+                            &verification_engine,
+                            &item,
+                            &executor_key,
+                            error_msg,
+                            start_time.elapsed(),
+                            ValidationType::Full,
+                        )
+                        .await;
                     }
                 }
             }
@@ -695,39 +801,13 @@ impl ValidationWorkerQueue {
                     );
 
                     // Store verification result to database
-                    match basilica_common::identity::Hotkey::new(item.miner_hotkey.clone()) {
-                        Ok(hotkey) => {
-                            let miner_info = super::types::MinerInfo {
-                                uid: basilica_common::identity::MinerUid::new(item.miner_uid),
-                                hotkey,
-                                endpoint: item.miner_endpoint.clone(),
-                                stake_tao: item.task.stake_tao,
-                                is_validator: item.task.is_validator,
-                                last_verified: None,
-                                verification_score: verification_result.verification_score,
-                            };
-
-                            if let Err(e) = verification_engine
-                                .store_executor_verification_result_with_miner_info(
-                                    item.miner_uid,
-                                    &verification_result,
-                                    &miner_info,
-                                )
-                                .await
-                            {
-                                error!(
-                                    "Failed to store verification result for executor {} (miner {}): {}",
-                                    executor_key.executor_id, executor_key.miner_uid, e
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "Invalid miner hotkey '{}' for miner {}: {}",
-                                item.miner_hotkey, item.miner_uid, e
-                            );
-                        }
-                    }
+                    Self::store_successful_validation(
+                        &verification_engine,
+                        &item,
+                        &executor_key,
+                        &verification_result,
+                    )
+                    .await;
                 }
                 Ok(Err(e)) => {
                     state.rollback(executor_key.clone());
@@ -752,15 +832,27 @@ impl ValidationWorkerQueue {
                             .await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
+                        let error_msg = format!(
+                            "Lightweight verification failed after {} retries: {}",
+                            config.max_retries, e
+                        );
                         let status = CompletionStatus::Failed {
                             completed_at: Instant::now(),
-                            error: format!(
-                                "Lightweight verification failed after {} retries: {}",
-                                config.max_retries, e
-                            ),
+                            error: error_msg.clone(),
                         };
-                        state.complete(executor_key, status);
+                        state.complete(executor_key.clone(), status);
                         metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                        // Store failed validation result
+                        Self::store_failed_validation(
+                            &verification_engine,
+                            &item,
+                            &executor_key,
+                            error_msg,
+                            start_time.elapsed(),
+                            ValidationType::Lightweight,
+                        )
+                        .await;
                     }
                 }
                 Err(_) => {
@@ -786,15 +878,27 @@ impl ValidationWorkerQueue {
                             .await;
                         metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
+                        let error_msg = format!(
+                            "Lightweight verification timed out after {}s ({} retries)",
+                            config.lightweight_processing_time_secs, config.max_retries
+                        );
                         let status = CompletionStatus::Failed {
                             completed_at: Instant::now(),
-                            error: format!(
-                                "Lightweight verification timed out after {}s ({} retries)",
-                                config.lightweight_processing_time_secs, config.max_retries
-                            ),
+                            error: error_msg.clone(),
                         };
-                        state.complete(executor_key, status);
+                        state.complete(executor_key.clone(), status);
                         metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                        // Store failed validation result
+                        Self::store_failed_validation(
+                            &verification_engine,
+                            &item,
+                            &executor_key,
+                            error_msg,
+                            start_time.elapsed(),
+                            ValidationType::Lightweight,
+                        )
+                        .await;
                     }
                 }
             }
