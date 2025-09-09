@@ -9,6 +9,9 @@ use super::types::{
     ValidationType,
 };
 use super::validation_binary::BinaryValidator;
+use super::validation_hardware::HardwareCollector;
+use super::validation_network::NetworkProfileCollector;
+use super::validation_speedtest::NetworkSpeedCollector;
 use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::SimplePersistence;
@@ -46,6 +49,9 @@ pub struct ValidationStrategySelector {
 pub struct ValidationExecutor {
     ssh_client: Arc<ValidatorSshClient>,
     binary_validator: BinaryValidator,
+    hardware_collector: HardwareCollector,
+    network_collector: NetworkProfileCollector,
+    speedtest_collector: NetworkSpeedCollector,
     metrics: Option<Arc<ValidatorMetrics>>,
 }
 
@@ -282,11 +288,19 @@ impl ValidationExecutor {
     pub fn new(
         ssh_client: Arc<ValidatorSshClient>,
         metrics: Option<Arc<ValidatorMetrics>>,
+        persistence: Arc<SimplePersistence>,
     ) -> Self {
         let binary_validator = BinaryValidator::new(ssh_client.clone());
+        let hardware_collector = HardwareCollector::new(ssh_client.clone(), persistence.clone());
+        let network_collector =
+            NetworkProfileCollector::new(ssh_client.clone(), persistence.clone());
+        let speedtest_collector = NetworkSpeedCollector::new(ssh_client.clone(), persistence);
         Self {
             ssh_client,
             binary_validator,
+            hardware_collector,
+            network_collector,
+            speedtest_collector,
             metrics,
         }
     }
@@ -419,6 +433,7 @@ impl ValidationExecutor {
         session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         binary_config: &crate::config::BinaryValidationConfig,
         _validator_hotkey: &Hotkey,
+        miner_uid: u16,
     ) -> Result<ExecutorVerificationResult> {
         info!(
             executor_id = %executor_info.id,
@@ -459,6 +474,25 @@ impl ValidationExecutor {
 
         validation_details.ssh_test_duration = ssh_test_start.elapsed();
         validation_details.ssh_score = if ssh_connection_successful { 0.8 } else { 0.0 };
+
+        // Phase 1.5: Node Profiling Collection
+        if ssh_connection_successful {
+            let executor_id = executor_info.id.to_string();
+
+            let hardware_future =
+                self.hardware_collector
+                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+            let network_future =
+                self.network_collector
+                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+            let speedtest_future = self.speedtest_collector.collect_with_fallback(
+                &executor_id,
+                miner_uid,
+                ssh_details,
+            );
+
+            tokio::join!(hardware_future, network_future, speedtest_future);
+        }
 
         // Phase 2: Binary Validation
         let mut binary_validation_successful = false;

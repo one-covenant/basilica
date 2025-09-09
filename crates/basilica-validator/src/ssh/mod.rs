@@ -47,8 +47,8 @@ mod tests;
 use anyhow::Result;
 use basilica_common::identity::ExecutorId;
 use basilica_common::ssh::{
-    SshConnectionConfig, SshConnectionDetails, SshConnectionManager, SshFileTransferManager,
-    StandardSshClient,
+    PackageManager, SshConnectionConfig, SshConnectionDetails, SshConnectionManager,
+    SshFileTransferManager, StandardSshClient,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -748,5 +748,177 @@ impl ValidatorSshClient {
 
         // Default to not retrying unknown errors
         false
+    }
+
+    /// Ensures a command is installed on the remote system, installing it if necessary
+    ///
+    /// # Arguments
+    /// * `ssh_details` - SSH connection details for the remote system
+    /// * `command_name` - The name of the command to check (e.g., "lshw", "curl")
+    /// * `package_name` - The package to install if the command is not found (may differ from command_name, e.g., "openssh-server" for "sshd")
+    ///
+    /// # Returns
+    /// * `Ok(())` if the command is already installed or successfully installed
+    /// * `Err` if installation fails or package manager is not supported
+    ///
+    /// # Example
+    /// ```
+    /// // Ensure lshw is installed (command and package have same name)
+    /// client.ensure_installed(ssh_details, "lshw", "lshw").await?;
+    ///
+    /// // Ensure sshd is installed (command and package have different names)
+    /// client.ensure_installed(ssh_details, "sshd", "openssh-server").await?;
+    /// ```
+    pub async fn ensure_installed(
+        &self,
+        ssh_details: &SshConnectionDetails,
+        command_name: &str,
+        package_name: &str,
+    ) -> Result<()> {
+        debug!(
+            command = command_name,
+            package = package_name,
+            "Checking if command is installed"
+        );
+
+        // Check if command exists using `command -v` (more portable than `which`)
+        let check_cmd = format!("command -v {}", command_name);
+        match self.execute_command(ssh_details, &check_cmd, true).await {
+            Ok(output) if !output.trim().is_empty() => {
+                debug!(
+                    command = command_name,
+                    path = output.trim(),
+                    "Command is already installed"
+                );
+                return Ok(());
+            }
+            _ => {
+                info!(
+                    command = command_name,
+                    package = package_name,
+                    "Command not found, attempting to install"
+                );
+            }
+        }
+
+        // Check if we're running as root or if sudo is available
+        let is_root = self
+            .execute_command(ssh_details, "test \"$(id -u)\" -eq 0", false)
+            .await
+            .is_ok();
+        let has_sudo = if is_root {
+            false // If we're root, we don't need sudo
+        } else {
+            self.execute_command(ssh_details, "command -v sudo", false)
+                .await
+                .is_ok()
+        };
+
+        debug!(
+            is_root = is_root,
+            has_sudo = has_sudo,
+            "Detected privilege level for package installation"
+        );
+
+        // Detect package manager
+        let package_manager = self.detect_package_manager(ssh_details).await?;
+
+        // Install package based on detected package manager
+        info!(
+            package = package_name,
+            package_manager = %package_manager,
+            is_root = is_root,
+            has_sudo = has_sudo,
+            "Installing package"
+        );
+
+        // Determine if we should use sudo based on root status and sudo availability
+        let use_sudo = !is_root && has_sudo;
+
+        if !is_root && !has_sudo {
+            warn!("Neither root access nor sudo is available - package installation may fail");
+        }
+
+        let install_cmd = package_manager.install_command(package_name, use_sudo);
+
+        // Use a longer timeout for package installation operations (5 minutes)
+        let mut install_details = ssh_details.clone();
+        install_details.timeout = Duration::from_secs(300);
+
+        self.execute_command(&install_details, &install_cmd, true)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to install {} via {}: {}",
+                    package_name,
+                    package_manager,
+                    e
+                )
+            })?;
+
+        // Verify installation was successful
+        let verify_cmd = format!("command -v {}", command_name);
+        match self.execute_command(ssh_details, &verify_cmd, true).await {
+            Ok(output) if !output.trim().is_empty() => {
+                info!(
+                    command = command_name,
+                    package = package_name,
+                    path = output.trim(),
+                    "Successfully installed command"
+                );
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!(
+                "Package {} was installed but command {} is still not available",
+                package_name,
+                command_name
+            )),
+        }
+    }
+
+    /// Detects the package manager available on the remote system
+    async fn detect_package_manager(
+        &self,
+        ssh_details: &SshConnectionDetails,
+    ) -> Result<PackageManager> {
+        // Check for apt-get (Debian/Ubuntu)
+        if self
+            .execute_command(ssh_details, PackageManager::Apt.check_command(), true)
+            .await
+            .is_ok()
+        {
+            return Ok(PackageManager::Apt);
+        }
+
+        // Check for dnf first (newer Fedora/RHEL 8+)
+        if self
+            .execute_command(ssh_details, PackageManager::Dnf.check_command(), true)
+            .await
+            .is_ok()
+        {
+            return Ok(PackageManager::Dnf);
+        }
+
+        // Check for yum (older RHEL/CentOS/Fedora)
+        if self
+            .execute_command(ssh_details, PackageManager::Yum.check_command(), true)
+            .await
+            .is_ok()
+        {
+            return Ok(PackageManager::Yum);
+        }
+
+        // Check for apk (Alpine)
+        if self
+            .execute_command(ssh_details, PackageManager::Apk.check_command(), true)
+            .await
+            .is_ok()
+        {
+            return Ok(PackageManager::Apk);
+        }
+
+        Err(anyhow::anyhow!(
+            "Could not detect a supported package manager (apt, dnf, yum, or apk)"
+        ))
     }
 }

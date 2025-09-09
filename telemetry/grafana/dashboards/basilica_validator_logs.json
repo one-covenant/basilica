@@ -19,9 +19,68 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 2,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "bolt",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Basilica.ai",
+      "tooltip": "visit Basilica",
+      "type": "link",
+      "url": "https://basilica.ai/"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Discord",
+      "tooltip": "Join Discord",
+      "type": "link",
+      "url": "https://discord.gg/SPCu77SV"
+    },
+    {
+      "asDropdown": false,
+      "icon": "info",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "github",
+      "tooltip": "github",
+      "type": "link",
+      "url": "https://github.com/tplr-ai/basilica/"
+    }
+  ],
   "liveNow": true,
   "panels": [
+    {
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 13,
+      "links": [],
+      "options": {
+        "code": {
+          "language": "html",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "# <img width=50 class=\"logo\" alt=\"BASILICA logo\" src=\"https://www.synapz.org/assets/basilica/basilica_logo200x200.png\"> Basilica - Sacred Compute\n\n<p align=\"center\">\n  <a href=\"https://github.com/tplr-ai/basilica/tree/main/docs\">Docs</a> • \n  <a href=\"https://github.com/tplr-ai/basilica/blob/main/docs/quickstart.md\">Quick Start</a> • \n  <a href=\"https://github.com/tplr-ai/basilica/blob/main/docs/architecture.md\">Architecture</a>\n</p>\n\n---\n\n```bash\n$ curl -sSL https://basilica.ai/install.sh | bash\n```\n",
+        "mode": "markdown"
+      },
+      "pluginVersion": "10.2.0",
+      "transparent": true,
+      "type": "text"
+    },
     {
       "datasource": {
         "type": "prometheus",
@@ -50,7 +109,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 5
       },
       "id": 5,
       "options": {
@@ -77,13 +136,13 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "count(count by (executor_id, gpu_model) (basilica_validator_executor_gpu_count))",
+          "expr": "count(count by (executor_id, gpu_model) (basilica_validator_executor_gpu_count > 0))",
           "legendFormat": "Total GPUs",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Total Validated GPUs in Network",
+      "title": "Total Validated GPU Servers in the Network",
       "type": "stat"
     },
     {
@@ -111,7 +170,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 5
       },
       "id": 6,
       "options": {
@@ -215,26 +274,23 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 6
+        "y": 11
       },
       "id": 7,
       "options": {
         "cellHeight": "sm",
         "footer": {
           "countRows": false,
-          "fields": "",
+          "fields": [
+            "Value"
+          ],
           "reducer": [
             "sum"
           ],
           "show": false
         },
         "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "GPU Count"
-          }
-        ]
+        "sortBy": []
       },
       "pluginVersion": "10.2.0",
       "targets": [
@@ -244,13 +300,13 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "count by (miner_uid, gpu_profile) (count by (miner_uid, gpu_profile, executor_id) (basilica_validator_miner_gpu_profiles))",
+          "expr": "count by (miner_uid, gpu_model) (max by (executor_id, gpu_model, miner_uid) (basilica_validator_executor_gpu_count > 0))",
           "format": "table",
           "instant": true,
           "refId": "A"
         }
       ],
-      "title": "GPUs per Miner by Type",
+      "title": "Executors per Miner by GPU Type",
       "transformations": [
         {
           "id": "organize",
@@ -302,7 +358,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 6
+        "y": 11
       },
       "id": 8,
       "options": {
@@ -331,7 +387,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "max by (executor_id, gpu_model, miner_uid) (basilica_validator_executor_gpu_count)",
+          "expr": "max by (executor_id, gpu_model, miner_uid) (basilica_validator_executor_gpu_count > 0)",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -369,6 +425,230 @@
       "type": "table"
     },
     {
+      "datasource": {},
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-greens"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false,
+            "minWidth": 50
+          },
+          "mappings": [],
+          "noValue": "0",
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {
+                "color": "super-light-green",
+                "value": null
+              },
+              {
+                "color": "super-light-red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Current Rate (max)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "evals/h"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Evals per hour"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total (24h) (max)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Total Evals (24h)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "miner_uid"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 24,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "enablePagination": true,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Total Evals (24h)"
+          }
+        ]
+      },
+      "pluginVersion": "10.2.0",
+      "targets": [
+        {
+          "datasource": {
+            "uid": "${datasource}"
+          },
+          "expr": "increase(basilica_validator_miner_successful_validations[24h])",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "increase(basilica_validator_miner_successful_validations[1h])",
+          "format": "table",
+          "hide": false,
+          "instant": true,
+          "legendFormat": "",
+          "refId": "D"
+        }
+      ],
+      "title": "Miner Performance Table",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true,
+              "__name__": true,
+              "cluster": true,
+              "component": true,
+              "deployment": true,
+              "environment": true,
+              "instance": true,
+              "job": true,
+              "netuid": true,
+              "node_type": true,
+              "project": true,
+              "replica": true,
+              "validator_uid": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "Value #A": 15,
+              "Value #B": 16,
+              "Value #C": 18,
+              "Value #D": 14,
+              "__name__": 17,
+              "cluster": 1,
+              "component": 2,
+              "deployment": 3,
+              "environment": 4,
+              "executor_id": 6,
+              "instance": 7,
+              "job": 8,
+              "miner_uid": 5,
+              "netuid": 9,
+              "node_type": 10,
+              "project": 11,
+              "replica": 12,
+              "validator_uid": 13
+            },
+            "renameByName": {
+              "Value #A": "Current Rate",
+              "Value #B": "Total (24h)",
+              "Value #C": "All-time Total",
+              "Value #D": "Current Rate",
+              "miner": "Miner"
+            }
+          }
+        },
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "Current Rate": {
+                "aggregations": [
+                  "max"
+                ],
+                "operation": "aggregate"
+              },
+              "Total (24h)": {
+                "aggregations": [
+                  "max"
+                ],
+                "operation": "aggregate"
+              },
+              "executor_id": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "miner_uid": {
+                "aggregations": [],
+                "operation": "groupby"
+              }
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
       "datasource": {
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
@@ -376,72 +656,224 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "continuous-greens"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false,
+            "minWidth": 50
           },
           "mappings": [],
+          "noValue": "0",
           "thresholds": {
-            "mode": "absolute",
+            "mode": "percentage",
             "steps": [
               {
-                "color": "green",
+                "color": "super-light-green",
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 50
+                "color": "super-light-red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Current Rate (max)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "evals/h"
               },
               {
-                "color": "red",
-                "value": 100
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Evals per hour"
               }
             ]
           },
-          "unit": "none"
-        },
-        "overrides": []
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total (24h) (max)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Total Evals (24h)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "miner_uid"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 8,
+        "h": 14,
         "w": 12,
-        "x": 0,
-        "y": 14
+        "x": 12,
+        "y": 19
       },
-      "id": 9,
+      "id": 12,
       "options": {
-        "displayMode": "gradient",
-        "maxVizHeight": 300,
-        "minVizHeight": 10,
-        "minVizWidth": 0,
-        "namePlacement": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "enablePagination": true,
           "fields": "",
-          "values": false
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "text": {},
-        "valueMode": "color"
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Total Evals (24h)"
+          }
+        ]
       },
       "pluginVersion": "10.2.0",
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "topk(500, max by (miner_uid) (basilica_validator_miner_successful_validations))",
+          "expr": "basilica_validator_miner_successful_validations",
+          "format": "table",
           "instant": true,
-          "legendFormat": "Miner {{miner_uid}}",
-          "refId": "A"
+          "legendFormat": "",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "increase(basilica_validator_miner_successful_validations[24h])",
+          "format": "table",
+          "hide": false,
+          "instant": true,
+          "legendFormat": "",
+          "refId": "D"
         }
       ],
       "title": "Successful Validations per miner",
-      "type": "bargauge"
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true,
+              "__name__": true,
+              "cluster": true,
+              "component": true,
+              "deployment": true,
+              "environment": true,
+              "instance": true,
+              "job": true,
+              "netuid": true,
+              "node_type": true,
+              "project": true,
+              "replica": true,
+              "validator_uid": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "Value #A": 15,
+              "Value #B": 16,
+              "Value #C": 18,
+              "Value #D": 14,
+              "__name__": 17,
+              "cluster": 1,
+              "component": 2,
+              "deployment": 3,
+              "environment": 4,
+              "executor_id": 6,
+              "instance": 7,
+              "job": 8,
+              "miner_uid": 5,
+              "netuid": 9,
+              "node_type": 10,
+              "project": 11,
+              "replica": 12,
+              "validator_uid": 13
+            },
+            "renameByName": {
+              "Value #A": "Current Rate",
+              "Value #B": "Total (24h)",
+              "Value #C": "All-time Total",
+              "Value #D": "Current Rate",
+              "miner": "Miner"
+            }
+          }
+        },
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "Current Rate": {
+                "aggregations": [
+                  "max"
+                ],
+                "operation": "aggregate"
+              },
+              "Total (24h)": {
+                "aggregations": [
+                  "max"
+                ],
+                "operation": "aggregate"
+              },
+              "executor_id": {
+                "aggregations": []
+              },
+              "miner_uid": {
+                "aggregations": [],
+                "operation": "groupby"
+              }
+            }
+          }
+        }
+      ],
+      "type": "table"
     },
     {
       "datasource": {
@@ -469,10 +901,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 10,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 33
       },
       "id": 10,
       "options": {
@@ -575,7 +1007,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 43
       },
       "id": 1,
       "options": {
@@ -614,7 +1046,7 @@
         "h": 49,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 51
       },
       "id": 4,
       "options": {
@@ -644,7 +1076,7 @@
       "type": "logs"
     }
   ],
-  "refresh": "",
+  "refresh": "1m",
   "schemaVersion": 38,
   "tags": [
     "basilica",
@@ -655,6 +1087,7 @@
     "list": [
       {
         "current": {
+          "selected": true,
           "text": "204",
           "value": "204"
         },
@@ -675,6 +1108,7 @@
       },
       {
         "current": {
+          "selected": true,
           "text": "39",
           "value": "39"
         },
@@ -696,8 +1130,8 @@
       {
         "current": {
           "selected": false,
-          "text": "",
-          "value": ""
+          "text": "rental",
+          "value": "rental"
         },
         "description": "Free text search (supports regex)",
         "hide": 0,
@@ -705,18 +1139,18 @@
         "name": "search_text",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": "",
             "value": ""
           }
         ],
-        "query": "",
+        "query": "rental",
         "skipUrlSync": false,
         "type": "textbox"
       },
       {
         "current": {
-          "selected": true,
+          "selected": false,
           "text": [
             "debug",
             "info",
@@ -762,17 +1196,28 @@
         "queryValue": "",
         "skipUrlSync": false,
         "type": "custom"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PBFA97CFB590B2093"
+        },
+        "filters": [],
+        "hide": 0,
+        "name": "Filters",
+        "skipUrlSync": false,
+        "type": "adhoc"
       }
     ]
   },
   "time": {
-    "from": "now-3h",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Basilica Validator Logs",
   "uid": "basilica_validator_logs",
-  "version": 24,
+  "version": 35,
   "weekStart": ""
 }

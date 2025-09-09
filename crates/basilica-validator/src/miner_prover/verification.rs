@@ -1895,9 +1895,13 @@ impl VerificationEngine {
             ssh_session_manager: Arc::new(SshSessionManager::new()),
             validation_strategy_selector: Arc::new(ValidationStrategySelector::new(
                 config,
-                persistence,
+                persistence.clone(),
             )),
-            validation_executor: Arc::new(ValidationExecutor::new(ssh_client, metrics)),
+            validation_executor: Arc::new(ValidationExecutor::new(
+                ssh_client.clone(),
+                metrics,
+                persistence.clone(),
+            )),
             worker_queue: None, // Will be set separately if needed
         })
     }
@@ -2478,6 +2482,7 @@ impl VerificationEngine {
                         &session_info,
                         binary_config,
                         &self.validator_hotkey,
+                        miner_uid,
                     )
                     .await
             }

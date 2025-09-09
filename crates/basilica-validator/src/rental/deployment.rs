@@ -441,7 +441,6 @@ impl DeploymentManager {
             return Ok(());
         }
 
-        // Check if SSH is available in the container
         let check_ssh =
             format!("docker exec {container_id} which sshd 2>/dev/null || echo 'not_found'");
         let ssh_check_result = client

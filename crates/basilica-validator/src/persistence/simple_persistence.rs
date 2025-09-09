@@ -234,6 +234,51 @@ impl SimplePersistence {
                 CONSTRAINT valid_gpu_memory CHECK (gpu_memory_gb >= 0)
             );
 
+            CREATE TABLE IF NOT EXISTS executor_hardware_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                cpu_model TEXT,
+                cpu_cores INTEGER,
+                ram_gb INTEGER,
+                disk_gb INTEGER,
+                full_hardware_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS executor_speedtest_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                download_mbps REAL,
+                upload_mbps REAL,
+                test_timestamp TEXT NOT NULL,
+                test_server TEXT,
+                full_result_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS executor_network_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                ip_address TEXT,
+                hostname TEXT,
+                city TEXT,
+                region TEXT,
+                country TEXT,
+                location TEXT,
+                organization TEXT,
+                postal_code TEXT,
+                timezone TEXT,
+                test_timestamp TEXT NOT NULL,
+                full_result_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
             CREATE TABLE IF NOT EXISTS weight_allocation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 miner_uid INTEGER NOT NULL,
@@ -266,6 +311,13 @@ impl SimplePersistence {
             CREATE INDEX IF NOT EXISTS idx_weight_history_miner ON weight_allocation_history(miner_uid);
             CREATE INDEX IF NOT EXISTS idx_weight_history_category ON weight_allocation_history(gpu_category);
             CREATE INDEX IF NOT EXISTS idx_weight_history_block ON weight_allocation_history(weight_set_block);
+            CREATE INDEX IF NOT EXISTS idx_executor_hardware_miner ON executor_hardware_profile(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_executor_hardware_updated ON executor_hardware_profile(updated_at);
+            CREATE INDEX IF NOT EXISTS idx_executor_speedtest_miner ON executor_speedtest_profile(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_executor_speedtest_timestamp ON executor_speedtest_profile(test_timestamp);
+            CREATE INDEX IF NOT EXISTS idx_executor_network_miner ON executor_network_profile(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_executor_network_timestamp ON executor_network_profile(test_timestamp);
+            CREATE INDEX IF NOT EXISTS idx_executor_network_country ON executor_network_profile(country);
             "#,
         )
         .execute(&self.pool)
@@ -1819,6 +1871,319 @@ impl SimplePersistence {
         }
 
         Ok(known_executors)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// Store executor hardware profile information
+    #[allow(clippy::too_many_arguments)]
+    pub async fn store_executor_hardware_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        cpu_model: Option<String>,
+        cpu_cores: Option<i32>,
+        ram_gb: Option<i32>,
+        disk_gb: Option<i32>,
+        full_hardware_json: &str,
+    ) -> Result<(), anyhow::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO executor_hardware_profile
+            (miner_uid, executor_id, cpu_model, cpu_cores, ram_gb, disk_gb, full_hardware_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                cpu_model = excluded.cpu_model,
+                cpu_cores = excluded.cpu_cores,
+                ram_gb = excluded.ram_gb,
+                disk_gb = excluded.disk_gb,
+                full_hardware_json = excluded.full_hardware_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(cpu_model)
+        .bind(cpu_cores)
+        .bind(ram_gb)
+        .bind(disk_gb)
+        .bind(full_hardware_json)
+        .execute(&self.pool)
+        .await?;
+
+        info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
+            "Stored hardware profile for executor"
+        );
+
+        Ok(())
+    }
+
+    /// Retrieve executor hardware profile from database
+    pub async fn get_executor_hardware_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<
+        Option<(
+            String,
+            Option<String>,
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+        )>,
+        anyhow::Error,
+    > {
+        let row = sqlx::query(
+            r#"
+            SELECT cpu_model, cpu_cores, ram_gb, disk_gb, full_hardware_json
+            FROM executor_hardware_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let full_hardware_json: String = row.get("full_hardware_json");
+            let cpu_model: Option<String> = row.get("cpu_model");
+            let cpu_cores: Option<i32> = row.get("cpu_cores");
+            let ram_gb: Option<i32> = row.get("ram_gb");
+            let disk_gb: Option<i32> = row.get("disk_gb");
+
+            Ok(Some((
+                full_hardware_json,
+                cpu_model,
+                cpu_cores,
+                ram_gb,
+                disk_gb,
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Store executor network speedtest profile information
+    #[allow(clippy::too_many_arguments)]
+    pub async fn store_executor_speedtest_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        download_mbps: Option<f64>,
+        upload_mbps: Option<f64>,
+        test_timestamp: &str,
+        test_server: Option<String>,
+        full_result_json: &str,
+    ) -> Result<(), anyhow::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO executor_speedtest_profile
+            (miner_uid, executor_id, download_mbps, upload_mbps, test_timestamp, test_server, full_result_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                download_mbps = excluded.download_mbps,
+                upload_mbps = excluded.upload_mbps,
+                test_timestamp = excluded.test_timestamp,
+                test_server = excluded.test_server,
+                full_result_json = excluded.full_result_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(download_mbps)
+        .bind(upload_mbps)
+        .bind(test_timestamp)
+        .bind(test_server)
+        .bind(full_result_json)
+        .execute(&self.pool)
+        .await?;
+
+        info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
+            download_mbps = download_mbps.unwrap_or(0.0),
+            upload_mbps = upload_mbps.unwrap_or(0.0),
+            "Stored speedtest profile for executor"
+        );
+
+        Ok(())
+    }
+
+    /// Retrieve executor speedtest profile from database
+    pub async fn get_executor_speedtest_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<Option<(String, Option<f64>, Option<f64>, String, Option<String>)>, anyhow::Error>
+    {
+        let row = sqlx::query(
+            r#"
+            SELECT download_mbps, upload_mbps, test_timestamp, test_server, full_result_json
+            FROM executor_speedtest_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let full_result_json: String = row.get("full_result_json");
+            let download_mbps: Option<f64> = row.get("download_mbps");
+            let upload_mbps: Option<f64> = row.get("upload_mbps");
+            let test_timestamp: String = row.get("test_timestamp");
+            let test_server: Option<String> = row.get("test_server");
+
+            Ok(Some((
+                full_result_json,
+                download_mbps,
+                upload_mbps,
+                test_timestamp,
+                test_server,
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Store executor network geolocation profile information
+    #[allow(clippy::too_many_arguments)]
+    pub async fn store_executor_network_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        ip_address: Option<String>,
+        hostname: Option<String>,
+        city: Option<String>,
+        region: Option<String>,
+        country: Option<String>,
+        location: Option<String>,
+        organization: Option<String>,
+        postal_code: Option<String>,
+        timezone: Option<String>,
+        test_timestamp: &str,
+        full_result_json: &str,
+    ) -> Result<(), anyhow::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO executor_network_profile
+            (miner_uid, executor_id, ip_address, hostname, city, region, country, location, 
+             organization, postal_code, timezone, test_timestamp, full_result_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                ip_address = excluded.ip_address,
+                hostname = excluded.hostname,
+                city = excluded.city,
+                region = excluded.region,
+                country = excluded.country,
+                location = excluded.location,
+                organization = excluded.organization,
+                postal_code = excluded.postal_code,
+                timezone = excluded.timezone,
+                test_timestamp = excluded.test_timestamp,
+                full_result_json = excluded.full_result_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(ip_address.clone())
+        .bind(hostname)
+        .bind(city.clone())
+        .bind(region.clone())
+        .bind(country.clone())
+        .bind(location.clone())
+        .bind(organization.clone())
+        .bind(postal_code)
+        .bind(timezone)
+        .bind(test_timestamp)
+        .bind(full_result_json)
+        .execute(&self.pool)
+        .await?;
+
+        info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
+            ip = ip_address.unwrap_or_else(|| "Unknown".to_string()),
+            country = country.unwrap_or_else(|| "Unknown".to_string()),
+            city = city.unwrap_or_else(|| "Unknown".to_string()),
+            region = region.unwrap_or_else(|| "Unknown".to_string()),
+            organization = organization.unwrap_or_else(|| "Unknown".to_string()),
+            location = location.unwrap_or_else(|| "Unknown".to_string()),
+            "Stored network profile for executor"
+        );
+
+        Ok(())
+    }
+
+    /// Retrieve executor network profile from database
+    #[allow(clippy::type_complexity)]
+    pub async fn get_executor_network_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<
+        Option<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+        )>,
+        anyhow::Error,
+    > {
+        let row = sqlx::query(
+            r#"
+            SELECT ip_address, hostname, city, region, country, location, organization,
+                   postal_code, timezone, test_timestamp, full_result_json
+            FROM executor_network_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let full_result_json: String = row.get("full_result_json");
+            let ip_address: Option<String> = row.get("ip_address");
+            let hostname: Option<String> = row.get("hostname");
+            let city: Option<String> = row.get("city");
+            let region: Option<String> = row.get("region");
+            let country: Option<String> = row.get("country");
+            let location: Option<String> = row.get("location");
+            let organization: Option<String> = row.get("organization");
+            let postal_code: Option<String> = row.get("postal_code");
+            let timezone: Option<String> = row.get("timezone");
+            let test_timestamp: String = row.get("test_timestamp");
+
+            Ok(Some((
+                full_result_json,
+                ip_address,
+                hostname,
+                city,
+                region,
+                country,
+                location,
+                organization,
+                postal_code,
+                timezone,
+                test_timestamp,
+            )))
+        } else {
+            Ok(None)
+        }
     }
 }
 
