@@ -32,11 +32,8 @@ from basilica._basilica import (
     VolumeMountRequest,
     ListAvailableExecutorsQuery,
     ListRentalsQuery,
-)
-
-from basilica.constants import (
+    # Constants from Rust
     DEFAULT_API_URL,
-    DEFAULT_COMMAND,
     DEFAULT_TIMEOUT_SECS,
     DEFAULT_CONTAINER_IMAGE,
     DEFAULT_GPU_TYPE,
@@ -46,6 +43,9 @@ from basilica.constants import (
     DEFAULT_MEMORY_MB,
     DEFAULT_STORAGE_MB,
 )
+
+# Default command is a list in Python
+DEFAULT_COMMAND = ["/bin/bash"]
 
 __version__ = "0.1.0"
 __all__ = [
@@ -159,7 +159,7 @@ class BasilicaClient:
         environment: Optional[Dict[str, str]] = None,
         ports: Optional[List[Dict[str, Any]]] = None,
         resources: Optional[Dict[str, Any]] = None,
-        command: Optional[List[str]] = DEFAULT_COMMAND,
+        command: Optional[List[str]] = None,
         volumes: Optional[List[Dict[str, str]]] = None,
         no_ssh: bool = False
     ) -> RentalResponse:
@@ -175,7 +175,7 @@ class BasilicaClient:
             environment: Environment variables
             ports: Port mappings
             resources: Resource requirements (uses defaults if not provided)
-            command: Command to run
+            command: Command to run (default: ["/bin/bash"])
             volumes: Volume mounts
             no_ssh: Disable SSH access
             
@@ -284,7 +284,7 @@ class BasilicaClient:
             environment=environment or {},
             ports=port_mappings,
             resources=resource_req,
-            command=command or [],
+            command=command if command is not None else DEFAULT_COMMAND,
             volumes=volume_mounts,
             no_ssh=no_ssh
         )

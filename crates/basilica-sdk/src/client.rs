@@ -40,6 +40,12 @@ use crate::{
     },
     StartRentalApiRequest,
 };
+
+/// Default API URL when not specified
+pub const DEFAULT_API_URL: &str = "http://localhost:8000";
+
+/// Default timeout in seconds for API requests
+pub const DEFAULT_TIMEOUT_SECS: u64 = 1200;
 use basilica_validator::api::types::ListAvailableExecutorsResponse;
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -356,7 +362,7 @@ impl ClientBuilder {
         // Build HTTP client
         let mut client_builder = reqwest::Client::builder();
 
-        client_builder = client_builder.timeout(self.timeout.unwrap_or(Duration::from_secs(1200)));
+        client_builder = client_builder.timeout(self.timeout.unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECS)));
 
         if let Some(timeout) = self.connect_timeout {
             client_builder = client_builder.connect_timeout(timeout);

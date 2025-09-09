@@ -3,7 +3,7 @@
 
 mod types;
 
-use basilica_sdk::{BasilicaClient as RustClient, ClientBuilder};
+use basilica_sdk::{BasilicaClient as RustClient, ClientBuilder, client::{DEFAULT_API_URL, DEFAULT_TIMEOUT_SECS}};
 use pyo3::exceptions::{
     PyConnectionError, PyKeyError, PyPermissionError, PyRuntimeError, PyValueError,
 };
@@ -232,6 +232,20 @@ fn executor_by_gpu(gpu_requirements: types::GpuRequirements) -> types::ExecutorS
 /// Python module for Basilica SDK
 #[pymodule]
 fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Add constants
+    m.add("DEFAULT_API_URL", DEFAULT_API_URL)?;
+    m.add("DEFAULT_TIMEOUT_SECS", DEFAULT_TIMEOUT_SECS)?;
+    m.add("DEFAULT_CONTAINER_IMAGE", "nvidia/cuda:12.2.0-base-ubuntu22.04")?;
+    m.add("DEFAULT_GPU_TYPE", "b200")?;
+    m.add("DEFAULT_GPU_COUNT", 1)?;
+    m.add("DEFAULT_GPU_MIN_MEMORY_GB", 0)?;
+    m.add("DEFAULT_CPU_CORES", 0.0)?;
+    m.add("DEFAULT_MEMORY_MB", 0)?;
+    m.add("DEFAULT_STORAGE_MB", 0)?;
+    m.add("DEFAULT_PORT_PROTOCOL", "tcp")?;
+    m.add("DEFAULT_SSH_USER", "root")?;
+    m.add("DEFAULT_SSH_PORT", 22)?;
+    
     // Core client
     m.add_class::<BasilicaClient>()?;
 

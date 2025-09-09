@@ -28,6 +28,16 @@ pub struct GpuRequirements {
     pub gpu_count: u32,
 }
 
+impl Default for GpuRequirements {
+    fn default() -> Self {
+        Self {
+            min_memory_gb: 0,
+            gpu_type: Some("b200".to_string()),
+            gpu_count: 1,
+        }
+    }
+}
+
 /// Response for capacity rental request
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

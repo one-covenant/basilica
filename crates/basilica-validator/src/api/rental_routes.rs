@@ -35,12 +35,32 @@ pub struct StartRentalRequest {
     pub ports: Vec<PortMappingRequest>,
     #[serde(default)]
     pub resources: ResourceRequirementsRequest,
-    #[serde(default)]
+    #[serde(default = "default_command")]
     pub command: Vec<String>,
     #[serde(default)]
     pub volumes: Vec<VolumeMountRequest>,
     #[serde(default)]
     pub no_ssh: bool,
+}
+
+fn default_command() -> Vec<String> {
+    vec!["/bin/bash".to_string()]
+}
+
+impl Default for StartRentalRequest {
+    fn default() -> Self {
+        Self {
+            executor_id: String::new(),
+            container_image: "nvidia/cuda:12.2.0-base-ubuntu22.04".to_string(),
+            ssh_public_key: String::new(),
+            environment: std::collections::HashMap::new(),
+            ports: Vec::new(),
+            resources: ResourceRequirementsRequest::default(),
+            command: default_command(),
+            volumes: Vec::new(),
+            no_ssh: false,
+        }
+    }
 }
 
 /// Port mapping request
@@ -55,6 +75,16 @@ pub struct PortMappingRequest {
 
 fn default_protocol() -> String {
     "tcp".to_string()
+}
+
+impl Default for PortMappingRequest {
+    fn default() -> Self {
+        Self {
+            container_port: 0,
+            host_port: 0,
+            protocol: "tcp".to_string(),
+        }
+    }
 }
 
 impl From<basilica_common::utils::PortMapping> for PortMappingRequest {
@@ -78,7 +108,7 @@ impl From<PortMappingRequest> for crate::rental::PortMapping {
 }
 
 /// Resource requirements request
-#[derive(Debug, Default, Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResourceRequirementsRequest {
     pub cpu_cores: f64,
@@ -87,6 +117,18 @@ pub struct ResourceRequirementsRequest {
     pub gpu_count: u32,
     #[serde(default)]
     pub gpu_types: Vec<String>,
+}
+
+impl Default for ResourceRequirementsRequest {
+    fn default() -> Self {
+        Self {
+            cpu_cores: 0.0,
+            memory_mb: 0,
+            storage_mb: 0,
+            gpu_count: 1,
+            gpu_types: Vec::new(),
+        }
+    }
 }
 
 impl From<ResourceRequirementsRequest> for crate::rental::ResourceRequirements {
