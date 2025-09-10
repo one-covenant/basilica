@@ -226,25 +226,25 @@ pub async fn handle_export_token(
             }
             println!("# Generated: {}", chrono::Utc::now().to_rfc3339());
             println!("export BASILICA_API_TOKEN=\"{}\"", tokens.access_token);
-            if let Some(refresh) = &tokens.refresh_token {
-                println!("export BASILICA_REFRESH_TOKEN=\"{}\"", refresh);
-            }
+            println!("export BASILICA_REFRESH_TOKEN=\"{}\"", tokens.refresh_token);
         }
         "json" => {
             let output = serde_json::json!({
                 "name": name,
                 "access_token": tokens.access_token,
                 "refresh_token": tokens.refresh_token,
-                "expires_at": tokens.expires_at.and_then(|e| chrono::DateTime::<chrono::Utc>::from_timestamp(e as i64, 0).map(|dt| dt.to_rfc3339())),
+                // Expiry is now extracted from JWT when needed
+                "expires_at": tokens.time_until_expiry().map(|d| {
+                    let exp = chrono::Utc::now() + chrono::Duration::seconds(d.as_secs() as i64);
+                    exp.to_rfc3339()
+                }),
                 "generated_at": chrono::Utc::now().to_rfc3339(),
             });
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
         "shell" => {
             println!("BASILICA_API_TOKEN=\"{}\"", tokens.access_token);
-            if let Some(refresh) = &tokens.refresh_token {
-                println!("BASILICA_REFRESH_TOKEN=\"{}\"", refresh);
-            }
+            println!("BASILICA_REFRESH_TOKEN=\"{}\"", tokens.refresh_token);
         }
         _ => {
             return Err(eyre!("Unknown format: {}. Use 'env', 'json', or 'shell'", format).into());

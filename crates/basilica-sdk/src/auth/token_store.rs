@@ -3,7 +3,6 @@
 //! This module provides secure storage for OAuth tokens using file-based storage.
 
 use super::types::{AuthError, AuthResult, TokenSet};
-use std::collections::HashMap; // Still needed for migration from old format
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -11,7 +10,7 @@ use std::time::Duration;
 const REFRESH_BUFFER_MINUTES: u64 = 5;
 
 /// Secure token storage implementation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TokenStore {
     auth_file_path: PathBuf,
 }
@@ -101,18 +100,6 @@ impl TokenStore {
         // Try to parse as direct TokenSet first (new format)
         if let Ok(tokens) = serde_json::from_str::<TokenSet>(&content) {
             return Ok(Some(tokens));
-        }
-
-        // Try to parse as old format (HashMap with service names)
-        if let Ok(auth_data) = serde_json::from_str::<HashMap<String, TokenSet>>(&content) {
-            // Migrate from old format: extract basilica-cli tokens
-            if let Some(tokens) = auth_data.get("basilica-cli") {
-                // Automatically migrate to new format
-                let migrated_tokens = tokens.clone();
-                // Store in new format (this will overwrite the file)
-                self.store_in_file(&migrated_tokens).await?;
-                return Ok(Some(migrated_tokens));
-            }
         }
 
         Ok(None)

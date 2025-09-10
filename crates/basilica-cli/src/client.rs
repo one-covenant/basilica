@@ -62,7 +62,9 @@ async fn get_valid_jwt_tokens(_config: &CliConfig) -> Result<crate::auth::types:
     if tokens.needs_refresh() {
         debug!("Token needs refresh, attempting to refresh pre-emptively");
 
-        if let Some(refresh_token) = &tokens.refresh_token {
+        // refresh_token is now always present (not optional)
+        {
+            let refresh_token = &tokens.refresh_token;
             let auth_config = crate::config::create_auth_config_with_port(0);
             let oauth_flow = OAuthFlow::new(auth_config);
 
@@ -80,8 +82,6 @@ async fn get_valid_jwt_tokens(_config: &CliConfig) -> Result<crate::auth::types:
                     // Continue with existing token - it might still work
                 }
             }
-        } else {
-            debug!("No refresh token available for pre-emptive refresh");
         }
     }
 

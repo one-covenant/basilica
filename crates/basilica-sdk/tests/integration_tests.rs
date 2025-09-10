@@ -21,7 +21,7 @@ async fn test_client_creation_with_file_auth() {
 async fn test_client_with_auth() {
     let client = ClientBuilder::default()
         .base_url("https://api.basilica.ai")
-        .with_tokens("test-token", None)
+        .with_tokens("test-token", "refresh-token")
         .timeout(Duration::from_secs(30))
         .build();
 
@@ -47,7 +47,7 @@ async fn test_health_check_success() {
 
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
-        .with_tokens("test-token", None)
+        .with_tokens("test-token", "refresh-token")
         .build()
         .unwrap();
     let health = client.health_check().await.unwrap();
@@ -77,7 +77,7 @@ async fn test_authentication_required() {
 
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
-        .with_tokens("test-token", None)
+        .with_tokens("test-token", "refresh-token")
         .build()
         .unwrap();
     let result = client.list_rentals(None).await;
@@ -109,7 +109,7 @@ async fn test_rate_limit_exceeded() {
 
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
-        .with_tokens("test-token", None)
+        .with_tokens("test-token", "refresh-token")
         .build()
         .unwrap();
 
@@ -135,7 +135,7 @@ async fn test_list_executors_with_auth() {
 
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
-        .with_tokens("test-token", None)
+        .with_tokens("test-token", "refresh-token")
         .build()
         .unwrap();
 
@@ -163,7 +163,7 @@ async fn test_not_found_error() {
 
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
-        .with_tokens("test-token", None)
+        .with_tokens("test-token", "refresh-token")
         .build()
         .unwrap();
 
@@ -184,7 +184,7 @@ async fn test_builder_configuration() {
     // Test with all options
     let client = ClientBuilder::default()
         .base_url("https://api.basilica.ai")
-        .with_tokens("token", None)
+        .with_tokens("token", "refresh-token")
         .timeout(Duration::from_secs(60))
         .connect_timeout(Duration::from_secs(10))
         .pool_max_idle_per_host(50)

@@ -33,47 +33,24 @@ pub struct AuthConfig {
     pub additional_params: std::collections::HashMap<String, String>,
 }
 
-/// OAuth token set containing access token and optional refresh token
+/// OAuth token set containing access token and refresh token
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenSet {
     /// Access token for API requests
     pub access_token: String,
-    /// Optional refresh token for token renewal
-    pub refresh_token: Option<String>,
-    /// Token type (usually "Bearer")
-    pub token_type: String,
-    /// Token expiration time as Unix timestamp
-    pub expires_at: Option<u64>,
-    /// OAuth scopes granted with this token
-    pub scopes: Vec<String>,
+    /// Refresh token for token renewal (always required)
+    pub refresh_token: String,
 }
 
 impl TokenSet {
     /// Create a new token set
-    pub fn new(
-        access_token: String,
-        refresh_token: Option<String>,
-        token_type: String,
-        expires_in: Option<u64>,
-        scopes: Vec<String>,
-    ) -> Self {
-        let expires_at = expires_in.map(|seconds| {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + seconds
-        });
-
+    pub fn new(access_token: String, refresh_token: String) -> Self {
         Self {
             access_token,
             refresh_token,
-            token_type,
-            expires_at,
-            scopes,
         }
     }
-    
+
     /// Extract expiration from JWT token
     /// Returns the exp claim from the JWT if it can be decoded
     fn decode_jwt_exp(token: &str) -> Option<u64> {
@@ -82,33 +59,28 @@ impl TokenSet {
         if parts.len() != 3 {
             return None;
         }
-        
+
         // Decode the payload (second part)
         let payload = parts[1];
-        
+
         // Add padding if necessary for base64 decoding
         let padded = match payload.len() % 4 {
             2 => format!("{}==", payload),
             3 => format!("{}=", payload),
             _ => payload.to_string(),
         };
-        
+
         // Decode base64
         let decoded = URL_SAFE_NO_PAD.decode(padded.as_bytes()).ok()?;
-        
+
         // Parse JSON and extract exp claim
         let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
         json.get("exp")?.as_u64()
     }
-    
-    /// Get the expiration time, either from stored value or by decoding JWT
+
+    /// Get the expiration time by decoding JWT
     fn get_expiration(&self) -> Option<u64> {
-        // Use stored expiration if available
-        if let Some(exp) = self.expires_at {
-            return Some(exp);
-        }
-        
-        // Otherwise try to decode from JWT token
+        // Always decode from JWT token
         Self::decode_jwt_exp(&self.access_token)
     }
 
@@ -165,16 +137,15 @@ impl TokenSet {
     }
 }
 
-/// Authentication source for the SDK
+/// Authentication method for the SDK
 #[derive(Debug, Clone)]
-pub enum AuthSource {
+pub enum AuthMethod {
     /// Direct tokens provided by the user
-    Direct {
-        access_token: String,
-        refresh_token: Option<String>,
+    Direct { tokens: TokenSet },
+    /// Tokens loaded from file storage  
+    FileBased {
+        store: crate::auth::token_store::TokenStore,
     },
-    /// Tokens loaded from file storage
-    FileBased,
 }
 
 /// Authentication errors
@@ -233,7 +204,7 @@ pub enum AuthError {
     Timeout,
 
     /// User is not logged in / no tokens found
-    #[error("User not logged in. Run 'basilica login' to authenticate")]
+    #[error("Authentication required. Please use one of the following methods:\n  • Run 'basilica login' to authenticate via CLI\n  • Provide access_token and refresh_token to the client\n  • Set BASILICA_API_TOKEN and BASILICA_REFRESH_TOKEN environment variables")]
     UserNotLoggedIn,
 
     /// Generic IO error

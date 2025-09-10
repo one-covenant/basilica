@@ -275,26 +275,27 @@ impl OAuthFlow {
         let refresh_token = token_response
             .refresh_token()
             .map(|rt| rt.secret().to_string());
-        let token_type = "Bearer".to_string();
-        let expires_in = token_response
+        // These are no longer needed since TokenSet only stores access and refresh tokens
+        let _token_type = "Bearer".to_string();
+        let _expires_in = token_response
             .expires_in()
             .map(|duration| duration.as_secs());
-        let scopes = token_response
+        let _scopes = token_response
             .scopes()
             .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
             .unwrap_or_else(|| self.config.scopes.clone());
 
+        // Create simplified TokenSet (now only contains access and refresh tokens)
         let token_set = TokenSet::new(
             access_token,
-            refresh_token,
-            token_type,
-            expires_in,
-            scopes.clone(),
+            refresh_token.ok_or(AuthError::InvalidResponse(
+                "No refresh token provided".to_string(),
+            ))?,
         );
 
         info!(
             "Token exchange completed successfully. Scopes in token: {:?}",
-            scopes
+            _scopes
         );
         Ok(token_set)
     }
@@ -329,21 +330,22 @@ impl OAuthFlow {
             .refresh_token()
             .map(|rt| rt.secret().to_string())
             .or_else(|| Some(refresh_token.to_string())); // Keep old refresh token if new one not provided
-        let token_type = "Bearer".to_string();
-        let expires_in = token_response
+                                                          // These are no longer needed since TokenSet only stores access and refresh tokens
+        let _token_type = "Bearer".to_string();
+        let _expires_in = token_response
             .expires_in()
             .map(|duration| duration.as_secs());
-        let scopes = token_response
+        let _scopes = token_response
             .scopes()
             .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
             .unwrap_or_else(|| self.config.scopes.clone());
 
+        // Create simplified TokenSet (now only contains access and refresh tokens)
         let token_set = TokenSet::new(
             access_token,
-            new_refresh_token,
-            token_type,
-            expires_in,
-            scopes,
+            new_refresh_token.ok_or(AuthError::InvalidResponse(
+                "No refresh token provided".to_string(),
+            ))?,
         );
 
         info!("Token refresh completed successfully");
@@ -360,11 +362,8 @@ impl OAuthFlow {
                 AuthError::ConfigError("Revoke endpoint not configured".to_string())
             })?;
 
-        // Prioritize refresh token for revocation as it revokes the entire grant
-        let token_to_revoke = token_set
-            .refresh_token
-            .as_ref()
-            .unwrap_or(&token_set.access_token);
+        // Use refresh token for revocation as it revokes the entire grant
+        let token_to_revoke = &token_set.refresh_token;
 
         debug!("Revoking token at endpoint: {}", revoke_endpoint);
 

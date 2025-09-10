@@ -3,9 +3,6 @@
 //! This module defines all the types used throughout the auth module
 //! including configuration, token data, and error types.
 
-use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
-
 /// Result type for authentication operations
 pub type AuthResult<T> = Result<T, AuthError>;
 
@@ -30,99 +27,10 @@ pub struct AuthConfig {
     pub additional_params: std::collections::HashMap<String, String>,
 }
 
-/// OAuth token set containing access token and optional refresh token
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenSet {
-    /// Access token for API requests
-    pub access_token: String,
-    /// Optional refresh token for token renewal
-    pub refresh_token: Option<String>,
-    /// Token type (usually "Bearer")
-    pub token_type: String,
-    /// Token expiration time as Unix timestamp
-    pub expires_at: Option<u64>,
-    /// OAuth scopes granted with this token
-    pub scopes: Vec<String>,
-}
+// Re-export TokenSet from SDK to avoid duplication
+pub use basilica_sdk::auth::TokenSet;
 
-impl TokenSet {
-    /// Create a new token set
-    pub fn new(
-        access_token: String,
-        refresh_token: Option<String>,
-        token_type: String,
-        expires_in: Option<u64>,
-        scopes: Vec<String>,
-    ) -> Self {
-        let expires_at = expires_in.map(|seconds| {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + seconds
-        });
-
-        Self {
-            access_token,
-            refresh_token,
-            token_type,
-            expires_at,
-            scopes,
-        }
-    }
-
-    /// Check if the access token is expired
-    pub fn is_expired(&self) -> bool {
-        match self.expires_at {
-            Some(expires_at) => {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                now >= expires_at
-            }
-            None => false, // No expiration time means token doesn't expire
-        }
-    }
-
-    /// Check if the token needs refresh (expires within 60 minutes)
-    pub fn needs_refresh(&self) -> bool {
-        self.expires_within(std::time::Duration::from_secs(60 * 60))
-    }
-
-    /// Check if the token expires within the specified duration
-    pub fn expires_within(&self, duration: std::time::Duration) -> bool {
-        match self.expires_at {
-            Some(expires_at) => {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                let threshold = now + duration.as_secs();
-                expires_at <= threshold
-            }
-            None => false, // No expiration time means token doesn't expire soon
-        }
-    }
-
-    /// Get time until token expiration
-    pub fn time_until_expiry(&self) -> Option<std::time::Duration> {
-        match self.expires_at {
-            Some(expires_at) => {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                if expires_at > now {
-                    Some(std::time::Duration::from_secs(expires_at - now))
-                } else {
-                    Some(std::time::Duration::from_secs(0)) // Already expired
-                }
-            }
-            None => None, // No expiration time
-        }
-    }
-}
+// TokenSet implementation is now in SDK
 
 /// Authentication errors
 #[derive(Debug, thiserror::Error)]

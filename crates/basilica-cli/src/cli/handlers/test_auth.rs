@@ -224,7 +224,9 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
     }
 
     // Test refresh if we have a refresh token
-    if let Some(refresh_token) = &tokens.refresh_token {
+    // refresh_token is now always present (not optional)
+    {
+        let refresh_token = &tokens.refresh_token;
         println!("\nAttempting to refresh token (even if not expired)...");
 
         let auth_config = crate::config::create_auth_config_with_port(0);
@@ -252,15 +254,6 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
                 println!("     Continuing with existing token...");
             }
         }
-    } else {
-        println!("\n  ⚠️  No refresh token available (cannot test refresh)");
-        println!("     This usually means one of:");
-        println!("     1. Auth0 API needs 'Allow Offline Access' enabled");
-        println!("     2. You need to re-authenticate after the setting is enabled");
-        println!("\n  ℹ️  To fix this:");
-        println!("     1. Go to Auth0 Dashboard → APIs → Your API → Settings");
-        println!("     2. Enable 'Allow Offline Access' toggle");
-        println!("     3. Run 'basilica logout' then 'basilica login' again");
     }
 
     println!("\n──────────────────────────────────");

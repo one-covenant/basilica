@@ -22,7 +22,7 @@
 //! // Direct token authentication with refresh support
 //! let client = ClientBuilder::default()
 //!     .base_url("https://api.basilica.ai")
-//!     .with_tokens("access_token", Some("refresh_token".into()), None)
+//!     .with_tokens("access_token", "refresh_token")
 //!     .build()?;
 //!
 //! // Or use file-based authentication (reads from ~/.local/share/basilica/)
@@ -36,7 +36,7 @@
 //! ```
 
 use crate::{
-    auth::{token_resolver::TokenResolver, TokenManager},
+    auth::TokenManager,
     error::{ApiError, ErrorResponse, Result},
     types::{
         ApiListRentalsResponse, HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
@@ -317,14 +317,14 @@ impl ClientBuilder {
         self
     }
 
-    /// Set tokens for direct authentication
+    /// Set tokens for direct authentication (both tokens required)
     pub fn with_tokens(
         mut self,
         access_token: impl Into<String>,
-        refresh_token: Option<String>,
+        refresh_token: impl Into<String>,
     ) -> Self {
         self.access_token = Some(access_token.into());
-        self.refresh_token = refresh_token;
+        self.refresh_token = Some(refresh_token.into());
         self.use_file_auth = false;
         self
     }
@@ -360,22 +360,10 @@ impl ClientBuilder {
     pub async fn build_auto(self) -> Result<BasilicaClient> {
         let base_url = self.base_url.unwrap_or_else(|| DEFAULT_API_URL.to_string());
 
-        // Try to resolve tokens automatically
-        let token_manager = if let Some(token_set) = TokenResolver::resolve().await {
-            // Create token manager from resolved tokens
-            TokenManager::from_tokens(
-                token_set.access_token,
-                token_set.refresh_token,
-            )
-            .map_err(|e| ApiError::Internal {
-                message: format!("Failed to create token manager: {}", e),
-            })?
-        } else {
-            // Fall back to file-based auth
-            TokenManager::file_based().map_err(|e| ApiError::Internal {
-                message: format!("Failed to create token manager: {}", e),
-            })?
-        };
+        // Always try file-based auth for auto mode
+        let token_manager = TokenManager::new_file_based().map_err(|e| ApiError::Internal {
+            message: format!("Failed to create file-based token manager: {}", e),
+        })?;
 
         let timeout = self
             .timeout
@@ -390,18 +378,16 @@ impl ClientBuilder {
 
         // Create token manager based on auth configuration
         let token_manager = if self.use_file_auth {
-            TokenManager::file_based().map_err(|e| ApiError::Internal {
+            TokenManager::new_file_based().map_err(|e| ApiError::Internal {
                 message: format!("Failed to create file-based token manager: {}", e),
             })?
-        } else if let Some(access_token) = self.access_token {
-            TokenManager::from_tokens(access_token, self.refresh_token).map_err(
-                |e| ApiError::Internal {
-                    message: format!("Failed to create token manager: {}", e),
-                },
-            )?
+        } else if let (Some(access_token), Some(refresh_token)) =
+            (self.access_token, self.refresh_token)
+        {
+            TokenManager::new_direct(access_token, refresh_token)
         } else {
             return Err(ApiError::InvalidRequest {
-                message: "Either use with_tokens() or with_file_auth() to configure authentication"
+                message: "Either use with_tokens() with both access and refresh tokens, or with_file_auth()"
                     .into(),
             });
         };
@@ -440,7 +426,7 @@ mod tests {
 
         let client = ClientBuilder::default()
             .base_url(mock_server.uri())
-            .with_tokens("test-token", None)
+            .with_tokens("test-token", "refresh-token")
             .build()
             .unwrap();
         let health = client.health_check().await.unwrap();
@@ -468,7 +454,7 @@ mod tests {
 
         let client = ClientBuilder::default()
             .base_url(mock_server.uri())
-            .with_tokens("test-token", Some("refresh-token".into()))
+            .with_tokens("test-token", "refresh-token")
             .build()
             .unwrap();
 
@@ -496,7 +482,7 @@ mod tests {
 
         let client = ClientBuilder::default()
             .base_url(mock_server.uri())
-            .with_tokens("test-token", None)
+            .with_tokens("test-token", "refresh-token")
             .build()
             .unwrap();
         let result = client.health_check().await;
@@ -522,7 +508,7 @@ mod tests {
     fn test_builder_with_all_options() {
         let client = ClientBuilder::default()
             .base_url("https://api.basilica.ai")
-            .with_tokens("test-token", Some("refresh-token".into()))
+            .with_tokens("test-token", "refresh-token")
             .timeout(Duration::from_secs(60))
             .connect_timeout(Duration::from_secs(10))
             .pool_max_idle_per_host(100)

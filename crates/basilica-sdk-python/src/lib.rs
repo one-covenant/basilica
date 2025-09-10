@@ -46,8 +46,8 @@ impl BasilicaClient {
     ///
     /// Args:
     ///     base_url: The base URL of the Basilica API
-    ///     access_token: Optional access token for authentication
-    ///     refresh_token: Optional refresh token for automatic token refresh
+    ///     access_token: Optional access token for authentication (requires refresh_token if provided)
+    ///     refresh_token: Optional refresh token for automatic token refresh (requires access_token if provided)
     ///     auto_auth: Use file-based authentication from CLI (default: True if no tokens provided)
     #[new]
     #[pyo3(signature = (base_url, access_token=None, refresh_token=None, auto_auth=None))]
@@ -67,8 +67,8 @@ impl BasilicaClient {
                     .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
 
                 // Determine auth method based on provided parameters
-                if let Some(access_token) = access_token {
-                    // Use direct token authentication
+                if let (Some(access_token), Some(refresh_token)) = (access_token, refresh_token) {
+                    // Use direct token authentication (both tokens required)
                     builder = builder.with_tokens(access_token, refresh_token);
                     builder.build()
                 } else if auto_auth.unwrap_or(true) {
