@@ -30,10 +30,10 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
         .base_url(api_url)
         .timeout(Duration::from_secs(config.api.request_timeout));
 
-    // Use JWT authentication
-    if let Ok(jwt_token) = get_valid_jwt_token(config).await {
-        debug!("Using JWT authentication with pre-emptive token refresh");
-        builder = builder.with_bearer_token(jwt_token);
+    // Use JWT authentication with token manager support
+    if let Ok(tokens) = get_valid_jwt_tokens(config).await {
+        debug!("Using JWT authentication with automatic token refresh");
+        builder = builder.with_tokens(tokens.access_token, tokens.refresh_token);
     } else {
         // Provide a more helpful error message using our custom error type
         return Err(CliError::from(AuthError::UserNotLoggedIn));
@@ -44,11 +44,11 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
         .map_err(|e| eyre!("Failed to build client: {}", e).into())
 }
 
-/// Gets a valid JWT token with pre-emptive refresh
+/// Gets valid JWT tokens with pre-emptive refresh
 ///
 /// This function checks if the stored token needs refresh and refreshes it
-/// before returning, ensuring the API client always gets a valid token.
-async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
+/// before returning, ensuring the API client always gets valid tokens.
+async fn get_valid_jwt_tokens(_config: &CliConfig) -> Result<crate::auth::types::TokenSet> {
     let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
     let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
 
@@ -85,7 +85,7 @@ async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
         }
     }
 
-    Ok(tokens.access_token)
+    Ok(tokens)
 }
 
 /// Checks if the user is authenticated (has valid tokens)

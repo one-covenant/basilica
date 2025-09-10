@@ -3,6 +3,7 @@
 //! This module defines all the types used throughout the auth module
 //! including configuration, token data, and error types.
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use etcetera::{choose_base_strategy, BaseStrategy};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -72,10 +73,48 @@ impl TokenSet {
             scopes,
         }
     }
+    
+    /// Extract expiration from JWT token
+    /// Returns the exp claim from the JWT if it can be decoded
+    fn decode_jwt_exp(token: &str) -> Option<u64> {
+        // JWT has three parts: header.payload.signature
+        let parts: Vec<&str> = token.split('.').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+        
+        // Decode the payload (second part)
+        let payload = parts[1];
+        
+        // Add padding if necessary for base64 decoding
+        let padded = match payload.len() % 4 {
+            2 => format!("{}==", payload),
+            3 => format!("{}=", payload),
+            _ => payload.to_string(),
+        };
+        
+        // Decode base64
+        let decoded = URL_SAFE_NO_PAD.decode(padded.as_bytes()).ok()?;
+        
+        // Parse JSON and extract exp claim
+        let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+        json.get("exp")?.as_u64()
+    }
+    
+    /// Get the expiration time, either from stored value or by decoding JWT
+    fn get_expiration(&self) -> Option<u64> {
+        // Use stored expiration if available
+        if let Some(exp) = self.expires_at {
+            return Some(exp);
+        }
+        
+        // Otherwise try to decode from JWT token
+        Self::decode_jwt_exp(&self.access_token)
+    }
 
     /// Check if the access token is expired
     pub fn is_expired(&self) -> bool {
-        match self.expires_at {
+        match self.get_expiration() {
             Some(expires_at) => {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -94,7 +133,7 @@ impl TokenSet {
 
     /// Check if the token expires within the specified duration
     pub fn expires_within(&self, duration: std::time::Duration) -> bool {
-        match self.expires_at {
+        match self.get_expiration() {
             Some(expires_at) => {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -109,7 +148,7 @@ impl TokenSet {
 
     /// Get time until token expiration
     pub fn time_until_expiry(&self) -> Option<std::time::Duration> {
-        match self.expires_at {
+        match self.get_expiration() {
             Some(expires_at) => {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -124,6 +163,18 @@ impl TokenSet {
             None => None, // No expiration time
         }
     }
+}
+
+/// Authentication source for the SDK
+#[derive(Debug, Clone)]
+pub enum AuthSource {
+    /// Direct tokens provided by the user
+    Direct {
+        access_token: String,
+        refresh_token: Option<String>,
+    },
+    /// Tokens loaded from file storage
+    FileBased,
 }
 
 /// Authentication errors

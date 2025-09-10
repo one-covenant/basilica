@@ -5,58 +5,27 @@
 
 use super::providers::TokenProvider;
 use super::token_store::TokenStore;
-use super::types::{get_sdk_data_dir, AuthResult, TokenSet};
+use super::types::{get_sdk_data_dir, AuthResult, AuthSource, TokenSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
-/// Token cache with thread-safe access
-struct TokenCache {
-    token_set: Option<TokenSet>,
-}
-
-impl TokenCache {
-    fn new() -> Self {
-        Self { token_set: None }
-    }
-
-    fn get(&self) -> Option<&TokenSet> {
-        self.token_set.as_ref()
-    }
-
-    fn set(&mut self, token_set: TokenSet) {
-        self.token_set = Some(token_set);
-    }
-
-    fn clear(&mut self) {
-        self.token_set = None;
-    }
-}
-
-/// Manages tokens with automatic refresh and caching
+/// Manages tokens with automatic refresh
+#[derive(Debug)]
 pub struct TokenManager {
     provider: TokenProvider,
-    storage: TokenStore,
-    cache: Arc<RwLock<TokenCache>>,
+    storage: Option<TokenStore>,
+    current_tokens: Arc<RwLock<Option<TokenSet>>>,
+    auth_source: AuthSource,
 }
 
 impl TokenManager {
     /// Pre-emptive refresh threshold (60 minutes before expiry)
     const REFRESH_THRESHOLD: Duration = Duration::from_secs(3600);
 
-    /// Create a new token manager with the given provider
-    pub fn new(provider: TokenProvider) -> AuthResult<Self> {
-        Ok(Self {
-            provider,
-            storage: TokenStore::new(get_sdk_data_dir()?)?,
-            cache: Arc::new(RwLock::new(TokenCache::new())),
-        })
-    }
-
-    /// Create a token manager from an existing token set
-    /// This is useful when tokens are already available (e.g., from CLI)
-    pub fn from_token_set(token_set: TokenSet) -> AuthResult<Self> {
+    /// Create a new token manager with file-based authentication
+    pub fn file_based() -> AuthResult<Self> {
         use super::types::AuthConfig;
 
         // Create auth config for refresh support
@@ -67,20 +36,60 @@ impl TokenManager {
             token_endpoint: format!("https://{}/oauth/token", domain),
             device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),
             revoke_endpoint: Some(format!("https://{}/oauth/revoke", domain)),
-            redirect_uri: String::new(), // Not needed for refresh
-            scopes: vec![],              // Not needed for refresh
+            redirect_uri: String::new(),
+            scopes: vec![],
             additional_params: std::collections::HashMap::new(),
         };
 
-        let provider = TokenProvider::with_config(token_set.clone(), auth_config);
+        let provider = TokenProvider::new(auth_config);
         let storage = TokenStore::new(get_sdk_data_dir()?)?;
-        let mut cache = TokenCache::new();
-        cache.set(token_set);
 
         Ok(Self {
             provider,
-            storage,
-            cache: Arc::new(RwLock::new(cache)),
+            storage: Some(storage),
+            current_tokens: Arc::new(RwLock::new(None)),
+            auth_source: AuthSource::FileBased,
+        })
+    }
+
+    /// Create a token manager with direct tokens
+    pub fn from_tokens(
+        access_token: String,
+        refresh_token: Option<String>,
+    ) -> AuthResult<Self> {
+        use super::types::AuthConfig;
+
+        // Create auth config for refresh support
+        let domain = basilica_common::auth0_domain();
+        let auth_config = AuthConfig {
+            client_id: basilica_common::auth0_client_id().to_string(),
+            auth_endpoint: format!("https://{}/authorize", domain),
+            token_endpoint: format!("https://{}/oauth/token", domain),
+            device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),
+            revoke_endpoint: Some(format!("https://{}/oauth/revoke", domain)),
+            redirect_uri: String::new(),
+            scopes: vec![],
+            additional_params: std::collections::HashMap::new(),
+        };
+
+        let token_set = TokenSet::new(
+            access_token.clone(),
+            refresh_token.clone(),
+            "Bearer".to_string(),
+            None, // No expires_in, will decode from JWT
+            vec![],
+        );
+
+        let provider = TokenProvider::with_config(token_set.clone(), auth_config);
+
+        Ok(Self {
+            provider,
+            storage: None, // No file storage for direct tokens
+            current_tokens: Arc::new(RwLock::new(Some(token_set))),
+            auth_source: AuthSource::Direct {
+                access_token,
+                refresh_token,
+            },
         })
     }
 
@@ -88,52 +97,75 @@ impl TokenManager {
     pub async fn get_access_token(&self) -> AuthResult<String> {
         debug!("Getting access token from TokenManager");
 
-        // 1. Check cache for valid token
+        // 1. Check current tokens in memory
         {
-            let cache = self.cache.read().await;
-            if let Some(token_set) = cache.get() {
+            let tokens = self.current_tokens.read().await;
+            if let Some(token_set) = tokens.as_ref() {
                 if !self.should_refresh(token_set) {
-                    debug!("Using cached token");
+                    debug!("Using current token");
                     return Ok(token_set.access_token.clone());
                 }
             }
         }
 
-        // 2. Check storage for valid token
-        if let Some(token_set) = self.storage.retrieve().await? {
-            if !self.should_refresh(&token_set) {
-                debug!("Using stored token");
-                // Update cache
-                self.cache.write().await.set(token_set.clone());
-                return Ok(token_set.access_token);
-            }
+        // 2. For file-based auth, try loading from storage
+        if matches!(self.auth_source, AuthSource::FileBased) {
+            if let Some(storage) = &self.storage {
+                if let Some(token_set) = storage.retrieve().await? {
+                    if !self.should_refresh(&token_set) {
+                        debug!("Using stored token");
+                        // Update current tokens
+                        *self.current_tokens.write().await = Some(token_set.clone());
+                        return Ok(token_set.access_token);
+                    }
 
-            // 3. Try to refresh if expired/expiring
-            if let Some(refresh_token) = &token_set.refresh_token {
-                if self.provider.supports_refresh() {
-                    debug!("Token expired or expiring soon, refreshing");
-                    match self.provider.refresh(refresh_token).await {
-                        Ok(new_tokens) => {
-                            info!("Token refreshed successfully");
-                            self.store_tokens(new_tokens.clone()).await?;
-                            return Ok(new_tokens.access_token);
-                        }
-                        Err(e) => {
-                            debug!("Token refresh failed: {}, re-authenticating", e);
+                    // Store for refresh attempt below
+                    *self.current_tokens.write().await = Some(token_set);
+                }
+            }
+        }
+
+        // 3. Try to refresh if we have a refresh token
+        let refresh_token = {
+            let tokens = self.current_tokens.read().await;
+            if let Some(token_set) = tokens.as_ref() {
+                token_set.refresh_token.clone()
+            } else {
+                None
+            }
+        };
+
+        if let Some(refresh_token) = refresh_token {
+            if self.provider.supports_refresh() {
+                debug!("Token expired or expiring soon, refreshing");
+
+                match self.provider.refresh(&refresh_token).await {
+                    Ok(new_tokens) => {
+                        info!("Token refreshed successfully");
+                        self.store_tokens(new_tokens.clone()).await?;
+                        return Ok(new_tokens.access_token);
+                    }
+                    Err(e) => {
+                        debug!("Token refresh failed: {}", e);
+                        // For direct tokens, we can't re-authenticate
+                        if matches!(self.auth_source, AuthSource::Direct { .. }) {
+                            return Err(super::types::AuthError::TokenExpired);
                         }
                     }
                 }
             }
         }
 
-        // 4. Re-authenticate if refresh fails or no tokens available
-        info!(
-            "No valid tokens available, authenticating with {}",
-            self.provider.name()
-        );
-        let tokens = self.provider.authenticate().await?;
-        self.store_tokens(tokens.clone()).await?;
-        Ok(tokens.access_token)
+        // 4. Re-authenticate only for file-based auth
+        if matches!(self.auth_source, AuthSource::FileBased) {
+            info!("Re-authenticating with {}", self.provider.name());
+            let tokens = self.provider.authenticate().await?;
+            self.store_tokens(tokens.clone()).await?;
+            Ok(tokens.access_token)
+        } else {
+            // For direct tokens, if refresh failed, the token is expired
+            Err(super::types::AuthError::TokenExpired)
+        }
     }
 
     /// Force re-authentication
@@ -146,7 +178,8 @@ impl TokenManager {
 
     /// Revoke current tokens
     pub async fn revoke(&self) -> AuthResult<()> {
-        if let Some(token_set) = self.storage.retrieve().await? {
+        let tokens = self.current_tokens.read().await;
+        if let Some(token_set) = tokens.as_ref() {
             // Prioritize refresh token for revocation as it revokes the entire grant
             let token = token_set
                 .refresh_token
@@ -154,23 +187,30 @@ impl TokenManager {
                 .unwrap_or(&token_set.access_token);
 
             self.provider.revoke(token).await?;
+            drop(tokens); // Release read lock
 
-            // Clear storage and cache
-            self.storage.delete().await?;
-            self.cache.write().await.clear();
+            // Clear storage if file-based
+            if let Some(storage) = &self.storage {
+                storage.delete().await?;
+            }
+
+            // Clear current tokens
+            *self.current_tokens.write().await = None;
 
             info!("Tokens revoked successfully");
         }
         Ok(())
     }
 
-    /// Store tokens in both storage and cache
+    /// Store tokens in memory and optionally in file storage
     async fn store_tokens(&self, tokens: TokenSet) -> AuthResult<()> {
-        // Store in persistent storage
-        self.storage.store(&tokens).await?;
+        // Store in file storage if available (file-based auth)
+        if let Some(storage) = &self.storage {
+            storage.store(&tokens).await?;
+        }
 
-        // Update cache
-        self.cache.write().await.set(tokens);
+        // Update current tokens
+        *self.current_tokens.write().await = Some(tokens);
 
         Ok(())
     }
@@ -182,21 +222,11 @@ impl TokenManager {
         }
 
         // Pre-emptive refresh if expiring within threshold
-        if let Some(expires_at) = token_set.expires_at {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-
-            let time_until_expiry = expires_at.saturating_sub(now);
-            return time_until_expiry < Self::REFRESH_THRESHOLD.as_secs();
-        }
-
-        false
+        token_set.expires_within(Self::REFRESH_THRESHOLD)
     }
 
-    /// Get the current cached token set (if any)
-    pub async fn get_cached_tokens(&self) -> Option<TokenSet> {
-        self.cache.read().await.get().cloned()
+    /// Get the current token set (if any)
+    pub async fn get_current_tokens(&self) -> Option<TokenSet> {
+        self.current_tokens.read().await.clone()
     }
 }

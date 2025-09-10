@@ -267,7 +267,8 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
     println!("Testing token validity with Auth0...\n");
 
     // Get the authenticated client (will use refreshed token if available)
-    let client = create_authenticated_client(config).await?;
+    // We create it to ensure the SDK can be properly authenticated
+    let _client = create_authenticated_client(config).await?;
 
     // Use Auth0 domain from constants
     let userinfo_url = format!("https://{}/userinfo", basilica_common::auth0_domain());
@@ -277,10 +278,14 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
     // Make a direct HTTP request to the userinfo endpoint
     let http_client = reqwest::Client::new();
 
-    // Get the bearer token from our client
-    let token = client
-        .get_bearer_token()
+    // Get the bearer token from TokenStore
+    let data_dir = CliConfig::data_dir()?;
+    let token_store = TokenStore::new(data_dir)?;
+    let tokens = token_store
+        .retrieve()
+        .await?
         .ok_or_else(|| eyre!("No authentication token found. Please run 'basilica login' first"))?;
+    let token = tokens.access_token;
 
     let response = http_client
         .get(&userinfo_url)
@@ -319,7 +324,7 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
         // Display OAuth scopes from the JWT token
         println!("\nToken Scopes:");
         println!("─────────────");
-        match decode_jwt_scopes(token) {
+        match decode_jwt_scopes(&token) {
             Some(scopes) => {
                 if scopes.is_empty() {
                     println!("  No scopes found in token");

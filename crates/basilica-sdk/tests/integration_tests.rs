@@ -1,15 +1,16 @@
 //! Integration tests for the Basilica SDK
 
-use basilica_sdk::{ApiError, BasilicaClient, ClientBuilder};
+use basilica_sdk::{ApiError, ClientBuilder};
 use serde_json::json;
 use std::time::Duration;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
-async fn test_client_creation() {
+async fn test_client_creation_with_file_auth() {
     let client = ClientBuilder::default()
         .base_url("https://api.basilica.ai")
+        .with_file_auth()
         .timeout(Duration::from_secs(30))
         .build();
 
@@ -20,13 +21,11 @@ async fn test_client_creation() {
 async fn test_client_with_auth() {
     let client = ClientBuilder::default()
         .base_url("https://api.basilica.ai")
-        .with_bearer_token("test-token")
+        .with_tokens("test-token", None)
         .timeout(Duration::from_secs(30))
         .build();
 
     assert!(client.is_ok());
-    let client = client.unwrap();
-    assert_eq!(client.get_bearer_token(), Some("test-token"));
 }
 
 #[tokio::test]
@@ -35,6 +34,7 @@ async fn test_health_check_success() {
 
     Mock::given(method("GET"))
         .and(path("/health"))
+        .and(header("Authorization", "Bearer test-token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "status": "healthy",
             "version": "1.0.0",
@@ -45,7 +45,11 @@ async fn test_health_check_success() {
         .mount(&mock_server)
         .await;
 
-    let client = BasilicaClient::new(mock_server.uri(), Duration::from_secs(30)).unwrap();
+    let client = ClientBuilder::default()
+        .base_url(mock_server.uri())
+        .with_tokens("test-token", None)
+        .build()
+        .unwrap();
     let health = client.health_check().await.unwrap();
 
     assert_eq!(health.status, "healthy");
@@ -59,6 +63,7 @@ async fn test_authentication_required() {
 
     Mock::given(method("GET"))
         .and(path("/rentals"))
+        .and(header("Authorization", "Bearer test-token"))
         .respond_with(ResponseTemplate::new(401).set_body_json(json!({
             "error": {
                 "code": "BASILICA_API_AUTH_MISSING",
@@ -70,7 +75,11 @@ async fn test_authentication_required() {
         .mount(&mock_server)
         .await;
 
-    let client = BasilicaClient::new(mock_server.uri(), Duration::from_secs(30)).unwrap();
+    let client = ClientBuilder::default()
+        .base_url(mock_server.uri())
+        .with_tokens("test-token", None)
+        .build()
+        .unwrap();
     let result = client.list_rentals(None).await;
 
     assert!(result.is_err());
@@ -86,6 +95,7 @@ async fn test_rate_limit_exceeded() {
 
     Mock::given(method("GET"))
         .and(path("/executors"))
+        .and(header("Authorization", "Bearer test-token"))
         .respond_with(ResponseTemplate::new(429).set_body_json(json!({
             "error": {
                 "code": "BASILICA_API_RATE_LIMIT",
@@ -99,7 +109,7 @@ async fn test_rate_limit_exceeded() {
 
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
-        .with_bearer_token("test-token")
+        .with_tokens("test-token", None)
         .build()
         .unwrap();
 
@@ -125,7 +135,7 @@ async fn test_list_executors_with_auth() {
 
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
-        .with_bearer_token("test-token")
+        .with_tokens("test-token", None)
         .build()
         .unwrap();
 
@@ -139,6 +149,7 @@ async fn test_not_found_error() {
 
     Mock::given(method("GET"))
         .and(path("/rentals/nonexistent"))
+        .and(header("Authorization", "Bearer test-token"))
         .respond_with(ResponseTemplate::new(404).set_body_json(json!({
             "error": {
                 "code": "BASILICA_API_NOT_FOUND",
@@ -152,7 +163,7 @@ async fn test_not_found_error() {
 
     let client = ClientBuilder::default()
         .base_url(mock_server.uri())
-        .with_bearer_token("test-token")
+        .with_tokens("test-token", None)
         .build()
         .unwrap();
 
@@ -164,14 +175,16 @@ async fn test_not_found_error() {
 
 #[tokio::test]
 async fn test_builder_configuration() {
-    // Test that builder requires base_url
-    let result = ClientBuilder::default().build();
+    // Test that builder requires authentication
+    let result = ClientBuilder::default()
+        .base_url("https://api.basilica.ai")
+        .build();
     assert!(result.is_err());
 
     // Test with all options
     let client = ClientBuilder::default()
         .base_url("https://api.basilica.ai")
-        .with_bearer_token("token")
+        .with_tokens("token", None)
         .timeout(Duration::from_secs(60))
         .connect_timeout(Duration::from_secs(10))
         .pool_max_idle_per_host(50)

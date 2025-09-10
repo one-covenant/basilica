@@ -87,7 +87,9 @@ class BasilicaClient:
     def __init__(
         self,
         base_url: Optional[str] = None,
-        token: Optional[str] = None
+        token: Optional[str] = None,
+        refresh_token: Optional[str] = None,
+        auto_auth: Optional[bool] = None
     ):
         """
         Initialize a new Basilica client.
@@ -95,6 +97,8 @@ class BasilicaClient:
         Args:
             base_url: The base URL of the Basilica API (default: from BASILICA_API_URL env or DEFAULT_API_URL)
             token: Optional authentication token (default: from BASILICA_API_TOKEN env)
+            refresh_token: Optional refresh token for automatic token refresh (default: from BASILICA_REFRESH_TOKEN env)
+            auto_auth: Use file-based authentication from CLI (default: True if no tokens provided)
         """
         # Auto-detect base_url if not provided
         if base_url is None:
@@ -104,8 +108,13 @@ class BasilicaClient:
         if token is None:
             token = os.environ.get("BASILICA_API_TOKEN")
         
-        # Always use the default timeout
-        self._client = _BasilicaClient(base_url, token, True)
+        # Auto-detect refresh token if not provided
+        if refresh_token is None:
+            refresh_token = os.environ.get("BASILICA_REFRESH_TOKEN")
+        
+        # Call the Rust binding with the correct parameters
+        # The Rust binding expects: base_url, access_token, refresh_token, auto_auth
+        self._client = _BasilicaClient(base_url, token, refresh_token, auto_auth)
     
     def health_check(self) -> HealthCheckResponse:
         """

@@ -46,11 +46,17 @@ impl BasilicaClient {
     ///
     /// Args:
     ///     base_url: The base URL of the Basilica API
-    ///     token: Optional authentication token. If not provided, will try to use CLI tokens
-    ///     auto_auth: Automatically use CLI tokens if available (default: True)
+    ///     access_token: Optional access token for authentication
+    ///     refresh_token: Optional refresh token for automatic token refresh
+    ///     auto_auth: Use file-based authentication from CLI (default: True if no tokens provided)
     #[new]
-    #[pyo3(signature = (base_url, token=None, auto_auth=true))]
-    fn new(base_url: String, token: Option<String>, auto_auth: bool) -> PyResult<Self> {
+    #[pyo3(signature = (base_url, access_token=None, refresh_token=None, auto_auth=None))]
+    fn new(
+        base_url: String,
+        access_token: Option<String>,
+        refresh_token: Option<String>,
+        auto_auth: Option<bool>,
+    ) -> PyResult<Self> {
         let runtime = Runtime::new()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
 
@@ -60,13 +66,17 @@ impl BasilicaClient {
                     .base_url(base_url)
                     .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
 
-                if let Some(t) = token {
-                    builder = builder.with_bearer_token(t);
+                // Determine auth method based on provided parameters
+                if let Some(access_token) = access_token {
+                    // Use direct token authentication
+                    builder = builder.with_tokens(access_token, refresh_token);
                     builder.build()
-                } else if auto_auth {
-                    // Try automatic authentication from CLI tokens
+                } else if auto_auth.unwrap_or(true) {
+                    // Try automatic authentication (will use file-based or resolved tokens)
                     builder.build_auto().await
                 } else {
+                    // Use file-based authentication explicitly
+                    builder = builder.with_file_auth();
                     builder.build()
                 }
             })

@@ -5,17 +5,26 @@
 
 use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
 
-/// Provider that uses an existing token set
+/// Provider that handles OAuth operations
+#[derive(Debug)]
 pub struct TokenProvider {
-    token_set: TokenSet,
+    token_set: Option<TokenSet>,
     auth_config: AuthConfig,
 }
 
 impl TokenProvider {
+    /// Create a new provider with just config (for file-based auth)
+    pub fn new(auth_config: AuthConfig) -> Self {
+        Self {
+            token_set: None,
+            auth_config,
+        }
+    }
+
     /// Create a provider with existing tokens and config for refresh
     pub fn with_config(token_set: TokenSet, auth_config: AuthConfig) -> Self {
         Self {
-            token_set,
+            token_set: Some(token_set),
             auth_config,
         }
     }
@@ -23,14 +32,21 @@ impl TokenProvider {
 
 impl TokenProvider {
     pub async fn authenticate(&self) -> AuthResult<TokenSet> {
-        Ok(self.token_set.clone())
+        self.token_set
+            .clone()
+            .ok_or(AuthError::AuthenticationRequired)
     }
 
     pub async fn get_token(&self) -> AuthResult<String> {
-        if self.token_set.is_expired() {
+        let token_set = self
+            .token_set
+            .as_ref()
+            .ok_or(AuthError::AuthenticationRequired)?;
+
+        if token_set.is_expired() {
             return Err(AuthError::TokenExpired);
         }
-        Ok(self.token_set.access_token.clone())
+        Ok(token_set.access_token.clone())
     }
 
     pub async fn refresh(&self, refresh_token: &str) -> AuthResult<TokenSet> {

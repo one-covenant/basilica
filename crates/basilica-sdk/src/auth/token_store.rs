@@ -11,6 +11,7 @@ use std::time::Duration;
 const REFRESH_BUFFER_MINUTES: u64 = 5;
 
 /// Secure token storage implementation
+#[derive(Debug)]
 pub struct TokenStore {
     auth_file_path: PathBuf,
 }
