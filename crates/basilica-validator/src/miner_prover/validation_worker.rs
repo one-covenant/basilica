@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Notify, RwLock, Semaphore};
+use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::{interval, timeout};
 use tracing::{debug, error, info, warn};
@@ -291,7 +291,6 @@ pub struct ValidationWorkerQueue {
     lightweight_queue: Arc<RwLock<QueueState>>,
     full_workers: Arc<RwLock<Vec<JoinHandle<()>>>>,
     lightweight_workers: Arc<RwLock<Vec<JoinHandle<()>>>>,
-    full_semaphore: Arc<Semaphore>,
     verification_engine: Arc<VerificationEngine>,
     metrics: Arc<QueueMetrics>,
     shutdown: Arc<Notify>,
@@ -299,11 +298,7 @@ pub struct ValidationWorkerQueue {
 }
 
 impl ValidationWorkerQueue {
-    pub fn new(
-        config: WorkerQueueConfig,
-        verification_engine: Arc<VerificationEngine>,
-        full_semaphore: Arc<Semaphore>,
-    ) -> Self {
+    pub fn new(config: WorkerQueueConfig, verification_engine: Arc<VerificationEngine>) -> Self {
         let completed_capacity = 1000;
 
         Self {
@@ -312,7 +307,6 @@ impl ValidationWorkerQueue {
             lightweight_queue: Arc::new(RwLock::new(QueueState::new(completed_capacity))),
             full_workers: Arc::new(RwLock::new(Vec::new())),
             lightweight_workers: Arc::new(RwLock::new(Vec::new())),
-            full_semaphore,
             verification_engine,
             metrics: Arc::new(QueueMetrics::new()),
             shutdown: Arc::new(Notify::new()),
@@ -475,7 +469,6 @@ impl ValidationWorkerQueue {
 
     async fn spawn_full_worker(&self, worker_id: usize) -> Result<JoinHandle<()>> {
         let queue = self.full_queue.clone();
-        let semaphore = self.full_semaphore.clone();
         let verification_engine = self.verification_engine.clone();
         let metrics = self.metrics.clone();
         let shutdown = self.shutdown.clone();
@@ -494,7 +487,6 @@ impl ValidationWorkerQueue {
                     }
                     _ = Self::process_full_validation_item(
                         queue.clone(),
-                        semaphore.clone(),
                         verification_engine.clone(),
                         metrics.clone(),
                         worker_uuid,
@@ -547,7 +539,6 @@ impl ValidationWorkerQueue {
 
     async fn process_full_validation_item(
         queue: Arc<RwLock<QueueState>>,
-        semaphore: Arc<Semaphore>,
         verification_engine: Arc<VerificationEngine>,
         metrics: Arc<QueueMetrics>,
         worker_id: Uuid,
@@ -568,18 +559,12 @@ impl ValidationWorkerQueue {
             metrics.pending_full.fetch_sub(1, AtomicOrdering::Relaxed);
 
             debug!(
+                miner_uid = executor_key.miner_uid,
+                executor_id = %executor_key.executor_id,
+                worker_id = %worker_id,
                 "Full worker {:?} processing executor {} for miner {}",
                 worker_id, executor_key.executor_id, executor_key.miner_uid
             );
-
-            let permit = match semaphore.acquire().await {
-                Ok(permit) => permit,
-                Err(e) => {
-                    error!("Failed to acquire semaphore permit: {}", e);
-                    Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
-                    return;
-                }
-            };
 
             {
                 let mut state = queue.write().await;
@@ -597,8 +582,6 @@ impl ValidationWorkerQueue {
                 ),
             )
             .await;
-
-            drop(permit);
 
             let mut state = queue.write().await;
 
@@ -622,6 +605,9 @@ impl ValidationWorkerQueue {
                         .store(duration_ms, AtomicOrdering::Relaxed);
 
                     info!(
+                        miner_uid = executor_key.miner_uid,
+                        executor_id = %executor_key.executor_id,
+                        worker_id = %worker_id,
                         "Full validation completed for executor {} (miner {}): score={:.2}",
                         executor_key.executor_id,
                         executor_key.miner_uid,
@@ -778,6 +764,9 @@ impl ValidationWorkerQueue {
                 .fetch_sub(1, AtomicOrdering::Relaxed);
 
             debug!(
+                miner_uid = executor_key.miner_uid,
+                executor_id = %executor_key.executor_id,
+                worker_id = %worker_id,
                 "Lightweight worker {:?} processing executor {} for miner {}",
                 worker_id, executor_key.executor_id, executor_key.miner_uid
             );
@@ -821,6 +810,9 @@ impl ValidationWorkerQueue {
                         .store(duration_ms, AtomicOrdering::Relaxed);
 
                     info!(
+                        miner_uid = executor_key.miner_uid,
+                        executor_id = %executor_key.executor_id,
+                        worker_id = %worker_id,
                         "Lightweight validation completed for executor {} (miner {}): score={:.2}",
                         executor_key.executor_id,
                         executor_key.miner_uid,
@@ -1268,8 +1260,7 @@ mod tests {
         .await
         .unwrap();
 
-        let semaphore = Arc::new(Semaphore::new(1));
-        let queue = ValidationWorkerQueue::new(config, Arc::new(verification_engine), semaphore);
+        let queue = ValidationWorkerQueue::new(config, Arc::new(verification_engine));
 
         let executor = create_test_executor_info("exec1");
         let task = create_test_task(1, ValidationType::Lightweight);

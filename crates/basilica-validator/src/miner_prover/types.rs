@@ -62,7 +62,7 @@ pub enum ValidationError {
 pub type ValidationResult<T> = Result<T, ValidationError>;
 
 /// Validation type enum to distinguish between full and lightweight validation
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationType {
     Full,
     Lightweight,

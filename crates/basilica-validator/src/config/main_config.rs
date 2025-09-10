@@ -160,7 +160,7 @@ fn default_enable_worker_queue() -> bool {
 }
 
 fn default_max_concurrent_full_validations() -> usize {
-    1 // Conservative default: only 1 concurrent full validation to prevent resource contention
+    1024 // Allow up to 1024 concurrent validation requests to the server
 }
 
 impl VerificationConfig {
@@ -207,6 +207,93 @@ pub struct BinaryValidationConfig {
     /// Default executor port for SSH tunnel cleanup
     #[serde(default = "default_executor_port")]
     pub executor_port: u16,
+    /// Server mode configuration
+    #[serde(default)]
+    pub server_mode: ValidationServerConfig,
+}
+
+/// Configuration for validation server mode
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationServerConfig {
+    /// Server bind address
+    #[serde(default = "default_server_bind_address")]
+    pub bind_address: String,
+    /// Maximum concurrent remote operations
+    #[serde(default = "default_remote_concurrency")]
+    pub remote_concurrency: usize,
+    /// Maximum concurrent verification operations
+    #[serde(default = "default_verify_concurrency")]
+    pub verify_concurrency: usize,
+    /// Queue capacity for pending jobs
+    #[serde(default = "default_queue_capacity")]
+    pub queue_capacity: usize,
+    /// Health check interval in seconds
+    #[serde(default = "default_health_check_interval")]
+    pub health_check_interval_secs: u64,
+    /// Job polling interval in milliseconds
+    #[serde(default = "default_job_poll_interval_ms")]
+    pub job_poll_interval_ms: u64,
+    /// Maximum polling attempts before timing out
+    #[serde(default = "default_max_poll_attempts")]
+    pub max_poll_attempts: usize,
+    /// Maximum time to wait for server to become ready (seconds)
+    #[serde(default = "default_server_ready_timeout_secs")]
+    pub server_ready_timeout_secs: u64,
+    /// Interval between server readiness checks (milliseconds)
+    #[serde(default = "default_server_ready_check_interval_ms")]
+    pub server_ready_check_interval_ms: u64,
+}
+
+impl Default for ValidationServerConfig {
+    fn default() -> Self {
+        Self {
+            bind_address: default_server_bind_address(),
+            remote_concurrency: default_remote_concurrency(),
+            verify_concurrency: default_verify_concurrency(),
+            queue_capacity: default_queue_capacity(),
+            health_check_interval_secs: default_health_check_interval(),
+            job_poll_interval_ms: default_job_poll_interval_ms(),
+            max_poll_attempts: default_max_poll_attempts(),
+            server_ready_timeout_secs: default_server_ready_timeout_secs(),
+            server_ready_check_interval_ms: default_server_ready_check_interval_ms(),
+        }
+    }
+}
+
+fn default_server_bind_address() -> String {
+    "127.0.0.1:4010".to_string()
+}
+
+fn default_remote_concurrency() -> usize {
+    1024
+}
+
+fn default_verify_concurrency() -> usize {
+    1 // Only one GPU validation at a time on the server
+}
+
+fn default_queue_capacity() -> usize {
+    4096
+}
+
+fn default_health_check_interval() -> u64 {
+    30 // 30 seconds
+}
+
+fn default_job_poll_interval_ms() -> u64 {
+    500 // Poll every 500ms initially
+}
+
+fn default_max_poll_attempts() -> usize {
+    2400 // 20 minutes with 500ms intervals
+}
+
+fn default_server_ready_timeout_secs() -> u64 {
+    30 // 30 seconds to wait for server to become ready
+}
+
+fn default_server_ready_check_interval_ms() -> u64 {
+    500 // Check every 500ms
 }
 
 fn default_executor_port() -> u16 {
@@ -218,11 +305,12 @@ impl Default for BinaryValidationConfig {
         Self {
             validator_binary_path: PathBuf::from("./validator-binary"),
             executor_binary_path: PathBuf::from("./executor-binary"),
-            execution_timeout_secs: 30,
+            execution_timeout_secs: 1200,
             output_format: "json".to_string(),
             enabled: true,
             score_weight: 0.8,
             executor_port: default_executor_port(),
+            server_mode: ValidationServerConfig::default(),
         }
     }
 }

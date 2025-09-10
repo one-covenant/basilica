@@ -305,6 +305,21 @@ impl ValidationExecutor {
         }
     }
 
+    /// Initialize server mode for binary validator if configured
+    pub async fn initialize_server_mode(
+        &mut self,
+        binary_config: &crate::config::BinaryValidationConfig,
+    ) -> Result<()> {
+        self.binary_validator
+            .initialize_server_mode(binary_config)
+            .await
+    }
+
+    /// Shutdown server mode cleanly
+    pub async fn shutdown_server_mode(&self) -> Result<()> {
+        self.binary_validator.shutdown().await
+    }
+
     /// Execute lightweight validation (connectivity check only)
     #[allow(clippy::too_many_arguments)]
     pub async fn execute_lightweight_validation(
@@ -436,6 +451,7 @@ impl ValidationExecutor {
         miner_uid: u16,
     ) -> Result<ExecutorVerificationResult> {
         info!(
+            miner_uid = miner_uid,
             executor_id = %executor_info.id,
             "[EVAL_FLOW] Executing full validation"
         );
@@ -457,6 +473,7 @@ impl ValidationExecutor {
             match self.ssh_client.test_connection(ssh_details).await {
                 Ok(_) => {
                     info!(
+                        miner_uid = miner_uid,
                         executor_id = %executor_info.id,
                         "[EVAL_FLOW] SSH connection test successful"
                     );
@@ -464,6 +481,7 @@ impl ValidationExecutor {
                 }
                 Err(e) => {
                     error!(
+                        miner_uid = miner_uid,
                         executor_id = %executor_info.id,
                         error = %e,
                         "[EVAL_FLOW] SSH connection test failed"
@@ -529,6 +547,7 @@ impl ValidationExecutor {
                 }
                 Err(e) => {
                     error!(
+                        miner_uid = miner_uid,
                         executor_id = %executor_info.id,
                         error = %e,
                         "[EVAL_FLOW] Binary validation failed"
