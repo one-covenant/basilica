@@ -273,10 +273,9 @@ impl ValidationServerManager {
         // Configure for process group isolation
         ProcessGroup::configure_command(&mut command);
 
-        // Capture output for debugging
         command
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit());
 
         command
             .spawn()
