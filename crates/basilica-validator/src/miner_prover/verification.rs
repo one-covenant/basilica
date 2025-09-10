@@ -20,13 +20,13 @@ use crate::ssh::{SshSessionManager, ValidatorSshClient, ValidatorSshKeyManager};
 use anyhow::{Context, Result};
 use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
 use chrono::Utc;
+use futures::future::join_all;
 use sqlx::Row;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 #[derive(Clone)]
@@ -49,7 +49,7 @@ pub struct VerificationEngine {
     /// Validation strategy selector for determining validation approach
     validation_strategy_selector: Arc<ValidationStrategySelector>,
     /// Validation executor for running validation strategies
-    validation_executor: Arc<ValidationExecutor>,
+    validation_executor: Arc<tokio::sync::RwLock<ValidationExecutor>>,
     /// Optional worker queue for decoupled execution
     worker_queue: Option<Arc<ValidationWorkerQueue>>,
 }
@@ -93,7 +93,9 @@ impl VerificationEngine {
         task: &super::scheduler::VerificationTask,
     ) -> Result<VerificationResult> {
         info!(
-            "Executing verification workflow for miner {} (intended strategy: {:?})",
+            miner_uid = task.miner_uid,
+            intended_strategy = ?task.intended_validation_strategy,
+            "[EVAL_FLOW] Executing verification workflow for miner {} (intended strategy: {:?})",
             task.miner_uid, task.intended_validation_strategy
         );
 
@@ -125,6 +127,7 @@ impl VerificationEngine {
         if executor_list.is_empty() {
             info!(
                 miner_uid = task.miner_uid,
+                intended_strategy = ?task.intended_validation_strategy,
                 "[EVAL_FLOW] No executors found for miner {}", task.miner_uid
             );
 
@@ -142,6 +145,7 @@ impl VerificationEngine {
             info!(
                 miner_uid = task.miner_uid,
                 executor_count = executor_list.len(),
+                intended_strategy = ?task.intended_validation_strategy,
                 "[EVAL_FLOW] Routing {} executors to worker queue for miner {}",
                 executor_list.len(),
                 task.miner_uid
@@ -162,28 +166,57 @@ impl VerificationEngine {
         let mut executors_skipped_for_strategy = 0;
         let total_executors = executor_list.len();
 
-        for executor_info in executor_list {
-            info!(
-                miner_uid = task.miner_uid,
-                executor_id = %executor_info.id,
-                "[EVAL_FLOW] Starting SSH verification for executor"
-            );
+        info!(
+            miner_uid = task.miner_uid,
+            executor_count = total_executors,
+            intended_strategy = ?task.intended_validation_strategy,
+            "[EVAL_FLOW] Starting executors verification"
+        );
 
-            match self
-                .verify_executor(
-                    &task.miner_endpoint,
-                    &executor_info,
-                    task.miner_uid,
-                    task.intended_validation_strategy.clone(),
-                )
-                .await
-            {
+        // Create futures for all executor validations
+        let validation_futures: Vec<_> = executor_list
+            .into_iter()
+            .map(|executor_info| {
+                let self_clone = self.clone();
+                let miner_endpoint = task.miner_endpoint.clone();
+                let miner_uid = task.miner_uid;
+                let intended_strategy = task.intended_validation_strategy;
+
+                async move {
+                    info!(
+                        miner_uid = miner_uid,
+                        executor_id = %executor_info.id,
+                        intended_strategy = ?intended_strategy,
+                        "[EVAL_FLOW] Starting verification for executor"
+                    );
+
+                    let result = self_clone
+                        .verify_executor(
+                            &miner_endpoint,
+                            &executor_info,
+                            miner_uid,
+                            intended_strategy,
+                        )
+                        .await;
+
+                    (executor_info, result)
+                }
+            })
+            .collect();
+
+        // Execute all validations concurrently
+        let validation_results = join_all(validation_futures).await;
+
+        // Process all validation results
+        for (executor_info, result) in validation_results {
+            match result {
                 Ok(result) => {
                     let score = result.verification_score;
                     info!(
                         miner_uid = task.miner_uid,
                         executor_id = %executor_info.id,
                         verification_score = score,
+                        intended_strategy = ?task.intended_validation_strategy,
                         "[EVAL_FLOW] SSH verification completed"
                     );
                     executor_results.push(result);
@@ -200,6 +233,7 @@ impl VerificationEngine {
                         miner_uid = task.miner_uid,
                         executor_id = %executor_info.id,
                         pipeline_type = ?task.intended_validation_strategy,
+                        intended_strategy = ?task.intended_validation_strategy,
                         "[EVAL_FLOW] Executor requires different validation type, will be handled by other pipeline"
                     );
                     verification_steps.push(VerificationStep {
@@ -214,7 +248,8 @@ impl VerificationEngine {
                         miner_uid = task.miner_uid,
                         executor_id = %executor_info.id,
                         error = %e,
-                        "[EVAL_FLOW] SSH verification failed"
+                        intended_strategy = ?task.intended_validation_strategy,
+                        "[EVAL_FLOW] verification failed"
                     );
                     verification_steps.push(VerificationStep {
                         step_name: format!("ssh_verification_{}", executor_info.id),
@@ -233,6 +268,7 @@ impl VerificationEngine {
             if executors_skipped_for_strategy == total_executors && total_executors > 0 {
                 debug!(
                     miner_uid = task.miner_uid,
+                    intended_strategy = ?task.intended_validation_strategy,
                     skipped_count = executors_skipped_for_strategy,
                     pipeline_type = ?task.intended_validation_strategy,
                     "[EVAL_FLOW] All executors require different validation type, score will come from other pipeline"
@@ -248,12 +284,13 @@ impl VerificationEngine {
 
             info!(
                 miner_uid = task.miner_uid,
+                intended_strategy = ?task.intended_validation_strategy,
                 validated_count = executor_results.len(),
                 skipped_count = executors_skipped_for_strategy,
                 total_executors = total_executors,
                 average_score = avg_score,
                 pipeline_type = ?task.intended_validation_strategy,
-                "[EVAL_FLOW] Partial validation completed for miner"
+                "[EVAL_FLOW] Validation completed for miner"
             );
 
             avg_score
@@ -292,6 +329,7 @@ impl VerificationEngine {
 
         info!(
             miner_uid = task.miner_uid,
+            intended_strategy = ?task.intended_validation_strategy,
             validated_executors = executor_results.len(),
             skipped_executors = executors_skipped_for_strategy,
             total_executors = total_executors,
@@ -1897,13 +1935,30 @@ impl VerificationEngine {
                 config,
                 persistence.clone(),
             )),
-            validation_executor: Arc::new(ValidationExecutor::new(
+            validation_executor: Arc::new(tokio::sync::RwLock::new(ValidationExecutor::new(
                 ssh_client.clone(),
                 metrics,
                 persistence.clone(),
-            )),
+            ))),
             worker_queue: None, // Will be set separately if needed
         })
+    }
+
+    /// Initialize validation server mode
+    pub async fn initialize_validation_server(&mut self) -> Result<()> {
+        info!("Initializing validation server mode for VerificationEngine");
+        let mut executor = self.validation_executor.write().await;
+        executor
+            .initialize_server_mode(&self.config.binary_validation)
+            .await?;
+        info!("Validation server mode initialized successfully");
+        Ok(())
+    }
+
+    /// Shutdown validation server cleanly
+    pub async fn shutdown_validation_server(&self) -> Result<()> {
+        let executor = self.validation_executor.read().await;
+        executor.shutdown_server_mode().await
     }
 
     /// Check if SSH automation is properly configured
@@ -1948,13 +2003,9 @@ impl VerificationEngine {
     }
 
     /// Initialize and start worker queue
-    pub async fn init_worker_queue(&mut self, semaphore: Arc<Semaphore>) -> Result<()> {
+    pub async fn init_worker_queue(&mut self) -> Result<()> {
         let config = WorkerQueueConfig::default();
-        let queue = Arc::new(ValidationWorkerQueue::new(
-            config,
-            Arc::new(self.clone()),
-            semaphore,
-        ));
+        let queue = Arc::new(ValidationWorkerQueue::new(config, Arc::new(self.clone())));
 
         queue.start().await?;
         self.worker_queue = Some(queue);
@@ -2369,45 +2420,13 @@ impl VerificationEngine {
         intended_strategy: ValidationType,
     ) -> Result<ExecutorVerificationResult> {
         info!(
+            miner_uid = miner_uid,
             executor_id = %executor_info.id,
             miner_endpoint = %miner_endpoint,
             "[EVAL_FLOW] Starting executor verification"
         );
 
-        // Step 1: Acquire session lock
-        self.ssh_session_manager
-            .acquire_session(&executor_info.id.to_string())
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to acquire SSH session for executor {}: {}",
-                    executor_info.id,
-                    e
-                )
-            })?;
-
-        // Step 2: Establish connection and SSH session
-        let client = self.create_authenticated_client()?;
-        let mut connection = client.connect_and_authenticate(miner_endpoint).await?;
-
-        let (ssh_details, session_info) = if let Some(ref key_manager) = self.ssh_key_manager {
-            let key_provider = crate::ssh::session::ValidatorSshKeyProvider::new(key_manager);
-            crate::ssh::session::SshSessionHelper::establish_ssh_session(
-                &mut connection,
-                &executor_info.id.to_string(),
-                &self.validator_hotkey,
-                &key_provider,
-                None,
-            )
-            .await?
-        } else {
-            self.ssh_session_manager
-                .release_session(&executor_info.id.to_string())
-                .await;
-            return Err(anyhow::anyhow!("SSH key manager not available"));
-        };
-
-        // Step 3: Determine validation strategy
+        // Step 1: Determine validation strategy
         let strategy = match self
             .validation_strategy_selector
             .determine_validation_strategy(&executor_info.id.to_string(), miner_uid)
@@ -2416,6 +2435,7 @@ impl VerificationEngine {
             Ok(s) => s,
             Err(e) => {
                 error!(
+                    miner_uid = miner_uid,
                     executor_id = %executor_info.id,
                     error = %e,
                     "[EVAL_FLOW] Failed to determine validation strategy, defaulting to full"
@@ -2442,14 +2462,43 @@ impl VerificationEngine {
                 "[EVAL_FLOW] Strategy mismatch - executor needs different validation type"
             );
 
-            self.ssh_session_manager
-                .release_session(&executor_info.id.to_string())
-                .await;
-
             return Err(anyhow::anyhow!(
                 "Strategy mismatch: executor needs different validation type"
             ));
         }
+
+        // Step 2: Acquire session lock
+        self.ssh_session_manager
+            .acquire_session(&executor_info.id.to_string())
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to acquire SSH session for executor {}: {}",
+                    executor_info.id,
+                    e
+                )
+            })?;
+
+        // Step 3: Establish connection and SSH session
+        let client = self.create_authenticated_client()?;
+        let mut connection = client.connect_and_authenticate(miner_endpoint).await?;
+
+        let (ssh_details, session_info) = if let Some(ref key_manager) = self.ssh_key_manager {
+            let key_provider = crate::ssh::session::ValidatorSshKeyProvider::new(key_manager);
+            crate::ssh::session::SshSessionHelper::establish_ssh_session(
+                &mut connection,
+                &executor_info.id.to_string(),
+                &self.validator_hotkey,
+                &key_provider,
+                None,
+            )
+            .await?
+        } else {
+            self.ssh_session_manager
+                .release_session(&executor_info.id.to_string())
+                .await;
+            return Err(anyhow::anyhow!("SSH key manager not available"));
+        };
 
         // Step 4: Execute validation based on strategy
         let result = match strategy {
@@ -2460,6 +2509,8 @@ impl VerificationEngine {
                 binary_validation_successful,
             } => {
                 self.validation_executor
+                    .read()
+                    .await
                     .execute_lightweight_validation(
                         executor_info,
                         &ssh_details,
@@ -2476,6 +2527,8 @@ impl VerificationEngine {
             ValidationStrategy::Full => {
                 let binary_config = &self.config.binary_validation;
                 self.validation_executor
+                    .read()
+                    .await
                     .execute_full_validation(
                         executor_info,
                         &ssh_details,

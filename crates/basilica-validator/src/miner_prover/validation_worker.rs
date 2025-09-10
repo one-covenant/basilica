@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Notify, RwLock, Semaphore};
+use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::{interval, timeout};
 use tracing::{debug, error, info, warn};
@@ -93,12 +93,18 @@ pub struct WorkItem {
 #[derive(Debug, Clone)]
 struct ProcessingEntry {
     started_at: Instant,
+    work_item: WorkItem,
 }
 
 #[derive(Debug, Clone)]
 enum CompletionStatus {
-    Success { completed_at: Instant },
-    Failed { completed_at: Instant },
+    Success {
+        completed_at: Instant,
+    },
+    Failed {
+        completed_at: Instant,
+        error: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -163,7 +169,9 @@ impl QueueState {
         if let Some(status) = self.completed.peek(key) {
             match status {
                 CompletionStatus::Success { completed_at, .. }
-                | CompletionStatus::Failed { completed_at } => completed_at.elapsed() > cooldown,
+                | CompletionStatus::Failed { completed_at, .. } => {
+                    completed_at.elapsed() > cooldown
+                }
             }
         } else {
             true
@@ -198,23 +206,42 @@ impl QueueState {
         }
     }
 
-    fn mark_processing(&mut self, executor_key: ExecutorKey) {
+    fn mark_processing(&mut self, executor_key: ExecutorKey, work_item: WorkItem) {
         self.processing.insert(
             executor_key,
             ProcessingEntry {
                 started_at: Instant::now(),
+                work_item,
             },
         );
     }
 
     fn complete(&mut self, key: ExecutorKey, status: CompletionStatus) -> Option<ProcessingEntry> {
         let entry = self.processing.remove(&key);
+
+        // Log failed completions with their error for diagnostics
+        if let CompletionStatus::Failed { ref error, .. } = &status {
+            debug!(
+                miner_uid = key.miner_uid,
+                executor_id = %key.executor_id,
+                error = %error,
+                "Task for executor {} (miner {}) failed: {}",
+                key.executor_id,
+                key.miner_uid,
+                error
+            );
+        }
+
         self.completed.put(key, status);
         entry
     }
 
     fn rollback(&mut self, key: ExecutorKey) -> Option<ProcessingEntry> {
         self.processing.remove(&key)
+    }
+
+    fn rollback_for_retry(&mut self, key: ExecutorKey) -> Option<WorkItem> {
+        self.processing.remove(&key).map(|entry| entry.work_item)
     }
 }
 
@@ -264,7 +291,6 @@ pub struct ValidationWorkerQueue {
     lightweight_queue: Arc<RwLock<QueueState>>,
     full_workers: Arc<RwLock<Vec<JoinHandle<()>>>>,
     lightweight_workers: Arc<RwLock<Vec<JoinHandle<()>>>>,
-    full_semaphore: Arc<Semaphore>,
     verification_engine: Arc<VerificationEngine>,
     metrics: Arc<QueueMetrics>,
     shutdown: Arc<Notify>,
@@ -272,11 +298,7 @@ pub struct ValidationWorkerQueue {
 }
 
 impl ValidationWorkerQueue {
-    pub fn new(
-        config: WorkerQueueConfig,
-        verification_engine: Arc<VerificationEngine>,
-        full_semaphore: Arc<Semaphore>,
-    ) -> Self {
+    pub fn new(config: WorkerQueueConfig, verification_engine: Arc<VerificationEngine>) -> Self {
         let completed_capacity = 1000;
 
         Self {
@@ -285,11 +307,118 @@ impl ValidationWorkerQueue {
             lightweight_queue: Arc::new(RwLock::new(QueueState::new(completed_capacity))),
             full_workers: Arc::new(RwLock::new(Vec::new())),
             lightweight_workers: Arc::new(RwLock::new(Vec::new())),
-            full_semaphore,
             verification_engine,
             metrics: Arc::new(QueueMetrics::new()),
             shutdown: Arc::new(Notify::new()),
             running: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Helper method to create MinerInfo from WorkItem
+    fn create_miner_info(
+        item: &WorkItem,
+        verification_score: f64,
+    ) -> Result<super::types::MinerInfo> {
+        let hotkey = basilica_common::identity::Hotkey::new(item.miner_hotkey.clone())
+            .map_err(|e| anyhow::anyhow!("Invalid hotkey: {}", e))?;
+        Ok(super::types::MinerInfo {
+            uid: basilica_common::identity::MinerUid::new(item.miner_uid),
+            hotkey,
+            endpoint: item.miner_endpoint.clone(),
+            stake_tao: item.task.stake_tao,
+            is_validator: item.task.is_validator,
+            last_verified: None,
+            verification_score,
+        })
+    }
+
+    /// Helper method to store a successful validation result
+    async fn store_successful_validation(
+        verification_engine: &Arc<VerificationEngine>,
+        item: &WorkItem,
+        executor_key: &ExecutorKey,
+        verification_result: &super::types::ExecutorVerificationResult,
+    ) {
+        match Self::create_miner_info(item, verification_result.verification_score) {
+            Ok(miner_info) => {
+                if let Err(e) = verification_engine
+                    .store_executor_verification_result_with_miner_info(
+                        item.miner_uid,
+                        verification_result,
+                        &miner_info,
+                    )
+                    .await
+                {
+                    error!(
+                        "Failed to store verification result for executor {} (miner {}): {}",
+                        executor_key.executor_id, executor_key.miner_uid, e
+                    );
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Invalid miner hotkey '{}' for miner {}: {}",
+                    item.miner_hotkey, item.miner_uid, e
+                );
+            }
+        }
+    }
+
+    /// Helper method to create and store a failed validation result
+    async fn store_failed_validation(
+        verification_engine: &Arc<VerificationEngine>,
+        item: &WorkItem,
+        executor_key: &ExecutorKey,
+        error_message: String,
+        execution_time: Duration,
+        validation_type: ValidationType,
+    ) {
+        // Create a failed verification result
+        let failed_result = super::types::ExecutorVerificationResult {
+            executor_id: item.executor_info.id.clone(),
+            grpc_endpoint: item.executor_info.grpc_endpoint.clone(),
+            verification_score: 0.0,
+            ssh_connection_successful: false,
+            binary_validation_successful: false,
+            executor_result: None,
+            error: Some(error_message.clone()),
+            execution_time,
+            validation_details: super::types::ValidationDetails {
+                ssh_test_duration: Duration::from_secs(0),
+                binary_upload_duration: Duration::from_secs(0),
+                binary_execution_duration: Duration::from_secs(0),
+                total_validation_duration: execution_time,
+                ssh_score: 0.0,
+                binary_score: 0.0,
+                combined_score: 0.0,
+            },
+            gpu_count: 0,
+            validation_type,
+        };
+
+        // Attempt to store the failed result
+        match Self::create_miner_info(item, 0.0) {
+            Ok(miner_info) => {
+                if let Err(e) = verification_engine
+                    .store_executor_verification_result_with_miner_info(
+                        item.miner_uid,
+                        &failed_result,
+                        &miner_info,
+                    )
+                    .await
+                {
+                    error!(
+                        "Failed to store failed validation result for executor {} (miner {}): {}",
+                        executor_key.executor_id, executor_key.miner_uid, e
+                    );
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Invalid miner hotkey '{}' for miner {} (failed validation): {}",
+                    item.miner_hotkey, item.miner_uid, e
+                );
+            }
         }
     }
 
@@ -340,7 +469,6 @@ impl ValidationWorkerQueue {
 
     async fn spawn_full_worker(&self, worker_id: usize) -> Result<JoinHandle<()>> {
         let queue = self.full_queue.clone();
-        let semaphore = self.full_semaphore.clone();
         let verification_engine = self.verification_engine.clone();
         let metrics = self.metrics.clone();
         let shutdown = self.shutdown.clone();
@@ -359,7 +487,6 @@ impl ValidationWorkerQueue {
                     }
                     _ = Self::process_full_validation_item(
                         queue.clone(),
-                        semaphore.clone(),
                         verification_engine.clone(),
                         metrics.clone(),
                         worker_uuid,
@@ -412,7 +539,6 @@ impl ValidationWorkerQueue {
 
     async fn process_full_validation_item(
         queue: Arc<RwLock<QueueState>>,
-        semaphore: Arc<Semaphore>,
         verification_engine: Arc<VerificationEngine>,
         metrics: Arc<QueueMetrics>,
         worker_id: Uuid,
@@ -424,7 +550,7 @@ impl ValidationWorkerQueue {
             state.pop_next()
         };
 
-        if let Some(mut item) = work_item {
+        if let Some(item) = work_item {
             let executor_key = ExecutorKey::new(item.miner_uid, item.executor_info.id.clone());
 
             metrics
@@ -433,22 +559,16 @@ impl ValidationWorkerQueue {
             metrics.pending_full.fetch_sub(1, AtomicOrdering::Relaxed);
 
             debug!(
+                miner_uid = executor_key.miner_uid,
+                executor_id = %executor_key.executor_id,
+                worker_id = %worker_id,
                 "Full worker {:?} processing executor {} for miner {}",
                 worker_id, executor_key.executor_id, executor_key.miner_uid
             );
 
-            let permit = match semaphore.acquire().await {
-                Ok(permit) => permit,
-                Err(e) => {
-                    error!("Failed to acquire semaphore permit: {}", e);
-                    Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
-                    return;
-                }
-            };
-
             {
                 let mut state = queue.write().await;
-                state.mark_processing(executor_key.clone());
+                state.mark_processing(executor_key.clone(), item.clone());
             }
 
             let start_time = Instant::now();
@@ -458,12 +578,10 @@ impl ValidationWorkerQueue {
                     &item.task.miner_endpoint,
                     &item.executor_info,
                     item.miner_uid,
-                    item.task.intended_validation_strategy.clone(),
+                    item.task.intended_validation_strategy,
                 ),
             )
             .await;
-
-            drop(permit);
 
             let mut state = queue.write().await;
 
@@ -487,105 +605,135 @@ impl ValidationWorkerQueue {
                         .store(duration_ms, AtomicOrdering::Relaxed);
 
                     info!(
+                        miner_uid = executor_key.miner_uid,
+                        executor_id = %executor_key.executor_id,
+                        worker_id = %worker_id,
                         "Full validation completed for executor {} (miner {}): score={:.2}",
                         executor_key.executor_id,
                         executor_key.miner_uid,
                         verification_result.verification_score
                     );
 
-                    // Store verification result to database
-                    match basilica_common::identity::Hotkey::new(item.miner_hotkey.clone()) {
-                        Ok(hotkey) => {
-                            let miner_info = super::types::MinerInfo {
-                                uid: basilica_common::identity::MinerUid::new(item.miner_uid),
-                                hotkey,
-                                endpoint: item.miner_endpoint.clone(),
-                                stake_tao: item.task.stake_tao,
-                                is_validator: item.task.is_validator,
-                                last_verified: None,
-                                verification_score: verification_result.verification_score,
-                            };
-
-                            if let Err(e) = verification_engine
-                                .store_executor_verification_result_with_miner_info(
-                                    item.miner_uid,
-                                    &verification_result,
-                                    &miner_info,
-                                )
-                                .await
-                            {
-                                error!(
-                                    "Failed to store verification result for executor {} (miner {}): {}",
-                                    executor_key.executor_id, executor_key.miner_uid, e
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "Invalid miner hotkey '{}' for miner {}: {}",
-                                item.miner_hotkey, item.miner_uid, e
-                            );
-                        }
-                    }
+                    // Store verification result to database (release lock before await)
+                    drop(state);
+                    Self::store_successful_validation(
+                        &verification_engine,
+                        &item,
+                        &executor_key,
+                        &verification_result,
+                    )
+                    .await;
                 }
-                Ok(Err(_e)) => {
-                    state.rollback(executor_key.clone());
-                    metrics
-                        .processing_full
-                        .fetch_sub(1, AtomicOrdering::Relaxed);
+                Ok(Err(e)) => {
+                    // Use rollback_for_retry to get the work item with its current retry count
+                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                        metrics
+                            .processing_full
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < config.max_retries {
-                        item.retry_count += 1;
-                        item.priority = Priority::Low;
-                        drop(state);
+                        if retry_item.retry_count < config.max_retries {
+                            retry_item.retry_count += 1;
+                            retry_item.priority = Priority::Low;
+                            drop(state);
 
-                        let attempt = item.retry_count as u32;
-                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
-                        let mut delay_seconds =
-                            config.retry_backoff_base_secs.saturating_mul(factor);
-                        let cap = config.max_processing_time_secs / 2;
-                        if cap > 0 {
-                            delay_seconds = delay_seconds.min(cap);
+                            let attempt = retry_item.retry_count as u32;
+                            let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                            let mut delay_seconds =
+                                config.retry_backoff_base_secs.saturating_mul(factor);
+                            let cap = config.max_processing_time_secs / 2;
+                            if cap > 0 {
+                                delay_seconds = delay_seconds.min(cap);
+                            }
+                            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+                            Self::requeue_item(queue, retry_item, &metrics, ValidationType::Full)
+                                .await;
+                            metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        } else {
+                            let error_msg = format!(
+                                "Verification failed after {} retries: {}",
+                                config.max_retries, e
+                            );
+                            let status = CompletionStatus::Failed {
+                                completed_at: Instant::now(),
+                                error: error_msg.clone(),
+                            };
+                            state.complete(executor_key.clone(), status);
+                            metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                            // Store failed validation result (release lock before await)
+                            drop(state);
+                            Self::store_failed_validation(
+                                &verification_engine,
+                                &retry_item,
+                                &executor_key,
+                                error_msg,
+                                start_time.elapsed(),
+                                ValidationType::Full,
+                            )
+                            .await;
                         }
-                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-                        Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
-                        metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
-                        let status = CompletionStatus::Failed {
-                            completed_at: Instant::now(),
-                        };
-                        state.complete(executor_key, status);
-                        metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        // Should not happen but handle gracefully
+                        state.rollback(executor_key.clone());
+                        metrics
+                            .processing_full
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
                     }
                 }
                 Err(_) => {
-                    state.rollback(executor_key.clone());
-                    metrics
-                        .processing_full
-                        .fetch_sub(1, AtomicOrdering::Relaxed);
+                    // Timeout case - use rollback_for_retry to get the work item
+                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                        metrics
+                            .processing_full
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < config.max_retries {
-                        item.retry_count += 1;
-                        item.priority = Priority::Low;
-                        drop(state);
+                        if retry_item.retry_count < config.max_retries {
+                            retry_item.retry_count += 1;
+                            retry_item.priority = Priority::Low;
+                            drop(state);
 
-                        let attempt = item.retry_count as u32;
-                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
-                        let mut delay_seconds =
-                            config.retry_backoff_base_secs.saturating_mul(factor);
-                        let cap = config.max_processing_time_secs / 2;
-                        if cap > 0 {
-                            delay_seconds = delay_seconds.min(cap);
+                            let attempt = retry_item.retry_count as u32;
+                            let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                            let mut delay_seconds =
+                                config.retry_backoff_base_secs.saturating_mul(factor);
+                            let cap = config.max_processing_time_secs / 2;
+                            if cap > 0 {
+                                delay_seconds = delay_seconds.min(cap);
+                            }
+                            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+                            Self::requeue_item(queue, retry_item, &metrics, ValidationType::Full)
+                                .await;
+                            metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        } else {
+                            let error_msg = format!(
+                                "Verification timed out after {}s ({} retries)",
+                                config.max_processing_time_secs, config.max_retries
+                            );
+                            let status = CompletionStatus::Failed {
+                                completed_at: Instant::now(),
+                                error: error_msg.clone(),
+                            };
+                            state.complete(executor_key.clone(), status);
+                            metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                            // Store failed validation result (release lock before await)
+                            drop(state);
+                            Self::store_failed_validation(
+                                &verification_engine,
+                                &retry_item,
+                                &executor_key,
+                                error_msg,
+                                start_time.elapsed(),
+                                ValidationType::Full,
+                            )
+                            .await;
                         }
-                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-                        Self::requeue_item(queue, item, &metrics, ValidationType::Full).await;
-                        metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
                     } else {
-                        let status = CompletionStatus::Failed {
-                            completed_at: Instant::now(),
-                        };
-                        state.complete(executor_key, status);
-                        metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        // Should not happen but handle gracefully
+                        state.rollback(executor_key.clone());
+                        metrics
+                            .processing_full
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
                     }
                 }
             }
@@ -605,7 +753,7 @@ impl ValidationWorkerQueue {
             state.pop_next()
         };
 
-        if let Some(mut item) = work_item {
+        if let Some(item) = work_item {
             let executor_key = ExecutorKey::new(item.miner_uid, item.executor_info.id.clone());
 
             metrics
@@ -616,13 +764,16 @@ impl ValidationWorkerQueue {
                 .fetch_sub(1, AtomicOrdering::Relaxed);
 
             debug!(
+                miner_uid = executor_key.miner_uid,
+                executor_id = %executor_key.executor_id,
+                worker_id = %worker_id,
                 "Lightweight worker {:?} processing executor {} for miner {}",
                 worker_id, executor_key.executor_id, executor_key.miner_uid
             );
 
             {
                 let mut state = queue.write().await;
-                state.mark_processing(executor_key.clone());
+                state.mark_processing(executor_key.clone(), item.clone());
             }
 
             let start_time = Instant::now();
@@ -632,7 +783,7 @@ impl ValidationWorkerQueue {
                     &item.task.miner_endpoint,
                     &item.executor_info,
                     item.miner_uid,
-                    item.task.intended_validation_strategy.clone(),
+                    item.task.intended_validation_strategy,
                 ),
             )
             .await;
@@ -659,105 +810,143 @@ impl ValidationWorkerQueue {
                         .store(duration_ms, AtomicOrdering::Relaxed);
 
                     info!(
+                        miner_uid = executor_key.miner_uid,
+                        executor_id = %executor_key.executor_id,
+                        worker_id = %worker_id,
                         "Lightweight validation completed for executor {} (miner {}): score={:.2}",
                         executor_key.executor_id,
                         executor_key.miner_uid,
                         verification_result.verification_score
                     );
 
-                    // Store verification result to database
-                    match basilica_common::identity::Hotkey::new(item.miner_hotkey.clone()) {
-                        Ok(hotkey) => {
-                            let miner_info = super::types::MinerInfo {
-                                uid: basilica_common::identity::MinerUid::new(item.miner_uid),
-                                hotkey,
-                                endpoint: item.miner_endpoint.clone(),
-                                stake_tao: item.task.stake_tao,
-                                is_validator: item.task.is_validator,
-                                last_verified: None,
-                                verification_score: verification_result.verification_score,
-                            };
-
-                            if let Err(e) = verification_engine
-                                .store_executor_verification_result_with_miner_info(
-                                    item.miner_uid,
-                                    &verification_result,
-                                    &miner_info,
-                                )
-                                .await
-                            {
-                                error!(
-                                    "Failed to store verification result for executor {} (miner {}): {}",
-                                    executor_key.executor_id, executor_key.miner_uid, e
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "Invalid miner hotkey '{}' for miner {}: {}",
-                                item.miner_hotkey, item.miner_uid, e
-                            );
-                        }
-                    }
+                    // Store verification result to database (release lock before await)
+                    drop(state);
+                    Self::store_successful_validation(
+                        &verification_engine,
+                        &item,
+                        &executor_key,
+                        &verification_result,
+                    )
+                    .await;
                 }
-                Ok(Err(_e)) => {
-                    state.rollback(executor_key.clone());
-                    metrics
-                        .processing_lightweight
-                        .fetch_sub(1, AtomicOrdering::Relaxed);
+                Ok(Err(e)) => {
+                    // Use rollback_for_retry to get the work item with current retry count
+                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                        metrics
+                            .processing_lightweight
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < config.max_retries {
-                        item.retry_count += 1;
-                        drop(state);
+                        if retry_item.retry_count < config.max_retries {
+                            retry_item.retry_count += 1;
+                            drop(state);
 
-                        let attempt = item.retry_count as u32;
-                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
-                        let mut delay_seconds =
-                            config.retry_backoff_base_secs.saturating_mul(factor);
-                        let cap = config.lightweight_processing_time_secs / 2;
-                        if cap > 0 {
-                            delay_seconds = delay_seconds.min(cap);
-                        }
-                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-                        Self::requeue_item(queue, item, &metrics, ValidationType::Lightweight)
+                            let attempt = retry_item.retry_count as u32;
+                            let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                            let mut delay_seconds =
+                                config.retry_backoff_base_secs.saturating_mul(factor);
+                            let cap = config.lightweight_processing_time_secs / 2;
+                            if cap > 0 {
+                                delay_seconds = delay_seconds.min(cap);
+                            }
+                            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+                            Self::requeue_item(
+                                queue,
+                                retry_item,
+                                &metrics,
+                                ValidationType::Lightweight,
+                            )
                             .await;
-                        metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                            metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        } else {
+                            let error_msg = format!(
+                                "Lightweight verification failed after {} retries: {}",
+                                config.max_retries, e
+                            );
+                            let status = CompletionStatus::Failed {
+                                completed_at: Instant::now(),
+                                error: error_msg.clone(),
+                            };
+                            state.complete(executor_key.clone(), status);
+                            metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                            // Store failed validation result (release lock before await)
+                            drop(state);
+                            Self::store_failed_validation(
+                                &verification_engine,
+                                &retry_item,
+                                &executor_key,
+                                error_msg,
+                                start_time.elapsed(),
+                                ValidationType::Lightweight,
+                            )
+                            .await;
+                        }
                     } else {
-                        let status = CompletionStatus::Failed {
-                            completed_at: Instant::now(),
-                        };
-                        state.complete(executor_key, status);
-                        metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        // Should not happen but handle gracefully
+                        state.rollback(executor_key.clone());
+                        metrics
+                            .processing_lightweight
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
                     }
                 }
                 Err(_) => {
-                    state.rollback(executor_key.clone());
-                    metrics
-                        .processing_lightweight
-                        .fetch_sub(1, AtomicOrdering::Relaxed);
+                    // Timeout case - use rollback_for_retry to get the work item
+                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                        metrics
+                            .processing_lightweight
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
 
-                    if item.retry_count < config.max_retries {
-                        item.retry_count += 1;
-                        drop(state);
+                        if retry_item.retry_count < config.max_retries {
+                            retry_item.retry_count += 1;
+                            drop(state);
 
-                        let attempt = item.retry_count as u32;
-                        let factor = 1u64 << attempt.saturating_sub(1).min(63);
-                        let mut delay_seconds =
-                            config.retry_backoff_base_secs.saturating_mul(factor);
-                        let cap = config.lightweight_processing_time_secs / 2;
-                        if cap > 0 {
-                            delay_seconds = delay_seconds.min(cap);
-                        }
-                        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-                        Self::requeue_item(queue, item, &metrics, ValidationType::Lightweight)
+                            let attempt = retry_item.retry_count as u32;
+                            let factor = 1u64 << attempt.saturating_sub(1).min(63);
+                            let mut delay_seconds =
+                                config.retry_backoff_base_secs.saturating_mul(factor);
+                            let cap = config.lightweight_processing_time_secs / 2;
+                            if cap > 0 {
+                                delay_seconds = delay_seconds.min(cap);
+                            }
+                            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+                            Self::requeue_item(
+                                queue,
+                                retry_item,
+                                &metrics,
+                                ValidationType::Lightweight,
+                            )
                             .await;
-                        metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                            metrics.retried_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        } else {
+                            let error_msg = format!(
+                                "Lightweight verification timed out after {}s ({} retries)",
+                                config.lightweight_processing_time_secs, config.max_retries
+                            );
+                            let status = CompletionStatus::Failed {
+                                completed_at: Instant::now(),
+                                error: error_msg.clone(),
+                            };
+                            state.complete(executor_key.clone(), status);
+                            metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+
+                            // Store failed validation result (release lock before await)
+                            drop(state);
+                            Self::store_failed_validation(
+                                &verification_engine,
+                                &retry_item,
+                                &executor_key,
+                                error_msg,
+                                start_time.elapsed(),
+                                ValidationType::Lightweight,
+                            )
+                            .await;
+                        }
                     } else {
-                        let status = CompletionStatus::Failed {
-                            completed_at: Instant::now(),
-                        };
-                        state.complete(executor_key, status);
-                        metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
+                        // Should not happen but handle gracefully
+                        state.rollback(executor_key.clone());
+                        metrics
+                            .processing_lightweight
+                            .fetch_sub(1, AtomicOrdering::Relaxed);
                     }
                 }
             }
@@ -791,6 +980,7 @@ impl ValidationWorkerQueue {
         let full_queue = self.full_queue.clone();
         let lightweight_queue = self.lightweight_queue.clone();
         let shutdown = self.shutdown.clone();
+        let verification_engine = self.verification_engine.clone();
 
         tokio::spawn(async move {
             let mut health_interval = interval(Duration::from_secs(interval_secs));
@@ -806,13 +996,15 @@ impl ValidationWorkerQueue {
                             full_queue.clone(),
                             Duration::from_secs(full_stale_timeout_secs),
                             metrics.clone(),
-                            ValidationType::Full
+                            ValidationType::Full,
+                            verification_engine.clone()
                         ).await;
                         Self::check_stale_items(
                             lightweight_queue.clone(),
                             Duration::from_secs(lightweight_stale_timeout_secs),
                             metrics.clone(),
-                            ValidationType::Lightweight
+                            ValidationType::Lightweight,
+                            verification_engine.clone()
                         ).await;
                         metrics.report();
                     }
@@ -828,36 +1020,73 @@ impl ValidationWorkerQueue {
         max_age: Duration,
         metrics: Arc<QueueMetrics>,
         validation_type: ValidationType,
+        verification_engine: Arc<VerificationEngine>,
     ) {
-        let mut state = queue.write().await;
         let now = Instant::now();
 
-        let stale_keys: Vec<ExecutorKey> = state
-            .processing
-            .iter()
-            .filter(|(_, entry)| now.duration_since(entry.started_at) > max_age)
-            .map(|(key, _)| key.clone())
-            .collect();
+        // Collect stale items with their data
+        let stale_items: Vec<(ExecutorKey, WorkItem, Duration)> = {
+            let state = queue.read().await;
+            state
+                .processing
+                .iter()
+                .filter(|(_, entry)| now.duration_since(entry.started_at) > max_age)
+                .map(|(key, entry)| {
+                    (
+                        key.clone(),
+                        entry.work_item.clone(),
+                        now.duration_since(entry.started_at),
+                    )
+                })
+                .collect()
+        };
 
-        for key in stale_keys {
+        // Process each stale item
+        for (key, work_item, elapsed) in stale_items {
             warn!("Removing stale processing item: {:?}", key);
-            if let Some(_entry) = state.rollback(key.clone()) {
-                let status = CompletionStatus::Failed { completed_at: now };
-                state.completed.put(key, status);
-                match validation_type {
-                    ValidationType::Full => {
-                        metrics
-                            .processing_full
-                            .fetch_sub(1, AtomicOrdering::Relaxed);
+
+            let error_msg = format!(
+                "Processing stale after {}s (exceeded {}s timeout)",
+                elapsed.as_secs(),
+                max_age.as_secs()
+            );
+
+            // Update state
+            {
+                let mut state = queue.write().await;
+                if let Some(_entry) = state.rollback(key.clone()) {
+                    let status = CompletionStatus::Failed {
+                        completed_at: now,
+                        error: error_msg.clone(),
+                    };
+                    state.completed.put(key.clone(), status);
+
+                    match validation_type {
+                        ValidationType::Full => {
+                            metrics
+                                .processing_full
+                                .fetch_sub(1, AtomicOrdering::Relaxed);
+                        }
+                        ValidationType::Lightweight => {
+                            metrics
+                                .processing_lightweight
+                                .fetch_sub(1, AtomicOrdering::Relaxed);
+                        }
                     }
-                    ValidationType::Lightweight => {
-                        metrics
-                            .processing_lightweight
-                            .fetch_sub(1, AtomicOrdering::Relaxed);
-                    }
+                    metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
                 }
-                metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
             }
+
+            // Store failed validation result (outside lock)
+            Self::store_failed_validation(
+                &verification_engine,
+                &work_item,
+                &key,
+                error_msg,
+                elapsed,
+                validation_type,
+            )
+            .await;
         }
     }
 
@@ -867,7 +1096,7 @@ impl ValidationWorkerQueue {
         task: VerificationTask,
     ) -> Result<()> {
         let executor_key = ExecutorKey::new(task.miner_uid, executor.id.clone());
-        let validation_type = task.intended_validation_strategy.clone();
+        let validation_type = task.intended_validation_strategy;
 
         let queue = match validation_type {
             ValidationType::Full => &self.full_queue,
@@ -1031,8 +1260,7 @@ mod tests {
         .await
         .unwrap();
 
-        let semaphore = Arc::new(Semaphore::new(1));
-        let queue = ValidationWorkerQueue::new(config, Arc::new(verification_engine), semaphore);
+        let queue = ValidationWorkerQueue::new(config, Arc::new(verification_engine));
 
         let executor = create_test_executor_info("exec1");
         let task = create_test_task(1, ValidationType::Lightweight);
