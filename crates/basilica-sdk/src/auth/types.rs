@@ -63,15 +63,8 @@ impl TokenSet {
         // Decode the payload (second part)
         let payload = parts[1];
 
-        // Add padding if necessary for base64 decoding
-        let padded = match payload.len() % 4 {
-            2 => format!("{}==", payload),
-            3 => format!("{}=", payload),
-            _ => payload.to_string(),
-        };
-
-        // Decode base64
-        let decoded = URL_SAFE_NO_PAD.decode(padded.as_bytes()).ok()?;
+        // Decode base64url without padding (JWT uses base64url encoding)
+        let decoded = URL_SAFE_NO_PAD.decode(payload).ok()?;
 
         // Parse JSON and extract exp claim
         let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
