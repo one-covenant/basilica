@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0]
+
 ### Added
 - Use registered callback ports for OAuth flow instead of dynamic port allocation
 - Add coloring to clap help page with clap v3 styles for better readability
