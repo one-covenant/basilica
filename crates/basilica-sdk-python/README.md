@@ -89,7 +89,7 @@ Start a new GPU rental with smart defaults.
 
 **Parameters (all optional):**
 - `container_image`: Docker image to run (default: `nvidia/cuda:12.2.0-base-ubuntu22.04`)
-- `ssh_public_key`: SSH public key (default: auto-detected from `~/.ssh/basilica_*.pub`)
+- `ssh_pubkey_path`: Path to SSH public key file (default: `~/.ssh/basilica_ed25519.pub`)
 - `gpu_type`: GPU type to request (default: "h100")
 - `executor_id`: Specific executor to use
 - `environment`: Environment variables as dict

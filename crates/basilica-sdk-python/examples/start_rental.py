@@ -36,8 +36,8 @@ def main():
         # executor_id="executor-uuid-here",  # Use specific executor
         
         # SSH configuration
-        # ssh_public_key="ssh-rsa AAAAB3... user@host",  # Explicit SSH key
-        # Auto-detects from ~/.ssh/basilica_*.pub if not specified
+        # ssh_pubkey_path="~/.ssh/id_rsa.pub",  # Explicit SSH key path
+        # Auto-uses ~/.ssh/basilica_ed25519.pub if not specified
         
         # Set custom Environment variables that will be set in the container
         environment={

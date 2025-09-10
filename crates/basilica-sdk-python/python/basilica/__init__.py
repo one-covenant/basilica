@@ -151,7 +151,7 @@ class BasilicaClient:
         container_image: Optional[str] = None,
         executor_id: Optional[str] = None,
         gpu_type: Optional[str] = None,
-        ssh_public_key: Optional[str] = None,
+        ssh_pubkey_path: Optional[str] = None,
         environment: Optional[Dict[str, str]] = None,
         ports: Optional[List[Dict[str, Any]]] = None,
         command: Optional[List[str]] = None,
@@ -164,7 +164,8 @@ class BasilicaClient:
             container_image: Docker image to run (default: DEFAULT_CONTAINER_IMAGE)
             executor_id: Optional specific executor to use
             gpu_type: GPU type to request (default: DEFAULT_GPU_TYPE)
-            ssh_public_key: SSH public key for access (auto-detected from ~/.ssh/id_*.pub if not provided)
+            ssh_pubkey_path: Path to SSH public key file (e.g., "~/.ssh/id_rsa.pub").
+                If None, defaults to ~/.ssh/basilica_ed25519.pub
             environment: Environment variables
             ports: Port mappings
             command: Command to run (default: ["/bin/bash"])
@@ -180,13 +181,25 @@ class BasilicaClient:
         if gpu_type is None:
             gpu_type = DEFAULT_GPU_TYPE
         
-        if ssh_public_key is None and not no_ssh:
-            # Auto-detect SSH key
-            import glob
-            ssh_key_paths = glob.glob(os.path.expanduser("~/.ssh/basilica_*.pub"))
-            if ssh_key_paths:
-                with open(ssh_key_paths[0]) as f:
+        ssh_public_key = None  # This will hold the actual key content
+        if not no_ssh:
+            # Determine which SSH key file to use
+            if ssh_pubkey_path is not None:
+                # User provided a custom path
+                ssh_key_path = os.path.expanduser(ssh_pubkey_path)
+            else:
+                # Use default path
+                ssh_key_path = os.path.expanduser("~/.ssh/basilica_ed25519.pub")
+            
+            # Read the SSH key from the file
+            if os.path.exists(ssh_key_path):
+                with open(ssh_key_path) as f:
                     ssh_public_key = f.read().strip()
+            else:
+                # If user specified a path that doesn't exist, raise an error
+                if ssh_pubkey_path is not None:
+                    raise FileNotFoundError(f"SSH public key file not found: {ssh_key_path}")
+                # Otherwise, leave as None (no SSH key available)
         
         # Always use default resources internally
         resources = {
