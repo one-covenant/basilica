@@ -284,7 +284,6 @@ async fn spawn_validation_pipeline(
             let shared_state = shared_state.clone();
             let verification = verification.clone();
             let config = config.clone();
-            let intended_strategy = intended_strategy;
 
             async move {
                 let miner_uid = miner.uid.as_u16();
