@@ -20,7 +20,7 @@ use basilica_sdk::types::{
 use basilica_validator::rental::RentalResponse as SdkRentalResponse;
 use pyo3::prelude::*;
 #[cfg(feature = "stub-gen")]
-use pyo3_stub_gen_derive::{gen_stub_pyclass, gen_stub_pymethods};
+use pyo3_stub_gen_derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 use std::collections::HashMap;
 
 /// SSH access information for a rental
@@ -281,6 +281,7 @@ impl From<basilica_sdk::types::HealthCheckResponse> for HealthCheckResponse {
 // Request types for Python bindings
 
 /// GPU requirements for executor selection
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct GpuRequirements {
@@ -292,6 +293,7 @@ pub struct GpuRequirements {
     pub min_memory_gb: u32,
 }
 
+#[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
 impl GpuRequirements {
     #[new]
@@ -316,6 +318,7 @@ impl From<GpuRequirements> for SdkGpuRequirements {
 }
 
 /// Executor selection strategy
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass_enum)]
 #[pyclass]
 #[derive(Clone)]
 pub enum ExecutorSelection {
@@ -476,6 +479,7 @@ impl From<VolumeMountRequest> for SdkVolumeMountRequest {
 }
 
 /// Start rental API request
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
 pub struct StartRentalApiRequest {
@@ -499,6 +503,7 @@ pub struct StartRentalApiRequest {
     pub no_ssh: bool,
 }
 
+#[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
 impl StartRentalApiRequest {
     #[new]

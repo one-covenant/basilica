@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "stub-gen")]
 use pyo3_stub_gen::define_stub_info_gatherer;
 #[cfg(feature = "stub-gen")]
-use pyo3_stub_gen::derive::gen_stub_pyclass;
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction};
 use pythonize::pythonize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -224,12 +224,14 @@ impl BasilicaClient {
 }
 
 /// Helper function to create executor selection by ID
+#[cfg_attr(feature = "stub-gen", gen_stub_pyfunction)]
 #[pyfunction]
 fn executor_by_id(executor_id: String) -> types::ExecutorSelection {
     types::ExecutorSelection::ExecutorId { executor_id }
 }
 
 /// Helper function to create executor selection by GPU requirements
+#[cfg_attr(feature = "stub-gen", gen_stub_pyfunction)]
 #[pyfunction]
 fn executor_by_gpu(gpu_requirements: types::GpuRequirements) -> types::ExecutorSelection {
     types::ExecutorSelection::GpuRequirements { gpu_requirements }

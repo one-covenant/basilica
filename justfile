@@ -288,7 +288,7 @@ develop-python:
     # Generate type stubs
     echo "Generating type stubs..."
     cd crates/basilica-sdk-python
-    cargo run --bin stub_gen
+    cargo run --bin stub_gen --features stub-gen
     
     echo "✓ Python SDK installed with type stubs"
     echo "✓ Stub file generated at: python/basilica/_basilica.pyi"
