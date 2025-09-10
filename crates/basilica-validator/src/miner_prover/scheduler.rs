@@ -8,6 +8,7 @@ use super::types::{MinerInfo, ValidationType};
 use super::verification::VerificationEngine;
 use crate::config::VerificationConfig;
 use anyhow::Result;
+use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -271,8 +272,6 @@ async fn spawn_validation_pipeline(
     verification: &VerificationEngine,
     intended_strategy: ValidationType,
 ) -> Result<usize> {
-    let mut tasks_spawned = 0;
-
     info!(
         intended_strategy = ?intended_strategy,
         "[EVAL_FLOW] Starting {:?} validation pipeline for {} miners",
@@ -280,27 +279,47 @@ async fn spawn_validation_pipeline(
         miners.len()
     );
 
-    for miner in miners {
-        let verification_task = VerificationTask {
-            miner_uid: miner.uid.as_u16(),
-            miner_hotkey: miner.hotkey.to_string(),
-            miner_endpoint: miner.endpoint.clone(),
-            stake_tao: miner.stake_tao,
-            is_validator: miner.is_validator,
-            verification_type: VerificationType::AutomatedWithSsh,
-            intended_validation_strategy: intended_strategy,
-            created_at: chrono::Utc::now(),
-            timeout: config.challenge_timeout,
-        };
+    let results: Vec<_> = stream::iter(miners)
+        .map(|miner| {
+            let shared_state = shared_state.clone();
+            let verification = verification.clone();
+            let config = config.clone();
+            let intended_strategy = intended_strategy;
 
-        match spawn_verification_task(shared_state, verification_task, verification).await {
+            async move {
+                let miner_uid = miner.uid.as_u16();
+                let verification_task = VerificationTask {
+                    miner_uid,
+                    miner_hotkey: miner.hotkey.to_string(),
+                    miner_endpoint: miner.endpoint.clone(),
+                    stake_tao: miner.stake_tao,
+                    is_validator: miner.is_validator,
+                    verification_type: VerificationType::AutomatedWithSsh,
+                    intended_validation_strategy: intended_strategy,
+                    created_at: chrono::Utc::now(),
+                    timeout: config.challenge_timeout,
+                };
+
+                let result =
+                    spawn_verification_task(&shared_state, verification_task, &verification).await;
+                (miner_uid, intended_strategy, result)
+            }
+        })
+        .buffer_unordered(5)
+        .collect()
+        .await;
+
+    // Count successful spawns and log failures
+    let mut tasks_spawned = 0;
+    for (miner_uid, strategy, result) in results {
+        match result {
             Ok(_) => tasks_spawned += 1,
             Err(e) => warn!(
-                miner_uid = miner.uid.as_u16(),
-                intended_strategy = ?intended_strategy,
+                miner_uid = miner_uid,
+                intended_strategy = ?strategy,
                 error = %e,
                 "[EVAL_FLOW] Failed to spawn {:?} validation task",
-                intended_strategy
+                strategy
             ),
         }
     }

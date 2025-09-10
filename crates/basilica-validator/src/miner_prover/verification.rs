@@ -20,6 +20,7 @@ use crate::ssh::{SshSessionManager, ValidatorSshClient, ValidatorSshKeyManager};
 use anyhow::{Context, Result};
 use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
 use chrono::Utc;
+use futures::future::join_all;
 use sqlx::Row;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -165,23 +166,50 @@ impl VerificationEngine {
         let mut executors_skipped_for_strategy = 0;
         let total_executors = executor_list.len();
 
-        for executor_info in executor_list {
-            info!(
-                miner_uid = task.miner_uid,
-                executor_id = %executor_info.id,
-                intended_strategy = ?task.intended_validation_strategy,
-                "[EVAL_FLOW] Starting verification for executor"
-            );
+        info!(
+            miner_uid = task.miner_uid,
+            executor_count = total_executors,
+            intended_strategy = ?task.intended_validation_strategy,
+            "[EVAL_FLOW] Starting executors verification"
+        );
 
-            match self
-                .verify_executor(
-                    &task.miner_endpoint,
-                    &executor_info,
-                    task.miner_uid,
-                    task.intended_validation_strategy,
-                )
-                .await
-            {
+        // Create futures for all executor validations
+        let validation_futures: Vec<_> = executor_list
+            .into_iter()
+            .map(|executor_info| {
+                let self_clone = self.clone();
+                let miner_endpoint = task.miner_endpoint.clone();
+                let miner_uid = task.miner_uid;
+                let intended_strategy = task.intended_validation_strategy;
+
+                async move {
+                    info!(
+                        miner_uid = miner_uid,
+                        executor_id = %executor_info.id,
+                        intended_strategy = ?intended_strategy,
+                        "[EVAL_FLOW] Starting verification for executor"
+                    );
+
+                    let result = self_clone
+                        .verify_executor(
+                            &miner_endpoint,
+                            &executor_info,
+                            miner_uid,
+                            intended_strategy,
+                        )
+                        .await;
+
+                    (executor_info, result)
+                }
+            })
+            .collect();
+
+        // Execute all validations concurrently
+        let validation_results = join_all(validation_futures).await;
+
+        // Process all validation results
+        for (executor_info, result) in validation_results {
+            match result {
                 Ok(result) => {
                     let score = result.verification_score;
                     info!(
