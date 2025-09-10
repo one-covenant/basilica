@@ -279,7 +279,7 @@ async fn spawn_validation_pipeline(
         miners.len()
     );
 
-    let concurrency = config.max_concurrent_verifications.max(4).min(miners.len());
+    let concurrency = miners.len().min(config.max_concurrent_verifications.max(5));
 
     let concurrency = config
         .max_concurrent_verifications
