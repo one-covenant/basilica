@@ -9,7 +9,7 @@ services:
     privileged: true
 
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=info,sqlx::query=error,sqlx::query_as=error,basilica_validator=debug,alloy_rpc_client=info,collateral_contract=info
       - RUST_BACKTRACE=1
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
