@@ -79,7 +79,7 @@ RUN useradd -m -u 1000 -s /bin/bash basilica
 RUN mkdir -p /etc/basilica && chown basilica:basilica /etc/basilica
 RUN mkdir -p /home/basilica/.bittensor/wallets && chown -R basilica:basilica /home/basilica/.bittensor
 
-COPY scripts/api/dummy_wallet/wallets/default /home/basilica/.bittensor/wallets/default
+COPY ./scripts/api/service-wallet/default /home/basilica/.bittensor/wallets/default
 RUN chown -R basilica:basilica /home/basilica/.bittensor
 
 # Switch to non-root user

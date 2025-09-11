@@ -257,20 +257,6 @@ docs-open:
 # PYTHON SDK
 # =============================================================================
 
-# Generate Python stub files for the SDK
-gen-stubs:
-    #!/usr/bin/env bash
-    echo "Generating Python stub files..."
-    cd crates/basilica-sdk-python && cargo run --features stub-gen --bin stub_gen
-    echo "Stub files generated successfully!"
-
-# Build Python SDK wheel
-build-python:
-    #!/usr/bin/env bash
-    echo "Building Python SDK wheel..."
-    cd crates/basilica-sdk-python && maturin build --release
-    echo "Python SDK built successfully!"
-
 # Develop Python SDK (install in editable mode with auto-generated stubs)
 develop-python:
     #!/usr/bin/env bash

@@ -19,20 +19,11 @@ services:
       - basilica_network_dev
 
   basilica-api:
-    # To build with proper ulimits, run:
-    # docker build --ulimit nofile=65536:65536 -f scripts/api/Dockerfile -t basilica-api ../..
-    image: basilica-api:latest
     build:
       context: ../..
       dockerfile: scripts/api/Dockerfile
-      args:
-        BUILD_MODE: release
     container_name: basilica-api-dev
     restart: unless-stopped
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
     
     environment:
       - RUST_LOG='basilica_api=debug'
