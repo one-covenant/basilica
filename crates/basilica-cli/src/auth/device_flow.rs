@@ -3,8 +3,9 @@
 //! This module implements OAuth 2.0 Device Authorization Grant for
 //! devices that lack a web browser or have limited input capabilities.
 
-use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
+use super::types::{AuthConfig, AuthError, AuthResult};
 use crate::output::print_info;
+use basilica_sdk::auth::TokenSet;
 use console::{style, Term};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};

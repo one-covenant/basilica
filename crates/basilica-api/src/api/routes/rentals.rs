@@ -7,11 +7,6 @@ use crate::{
             OwnedRental,
         },
         middleware::Auth0Claims,
-        types::{
-            ApiListRentalsResponse, ApiRentalListItem, ExecutorSelection, ListRentalsQuery,
-            LogStreamQuery, RentalStatusWithSshResponse, StartRentalApiRequest,
-            TerminateRentalRequest,
-        },
     },
     error::Result,
     server::AppState,
@@ -21,6 +16,10 @@ use axum::{
     http::Uri,
     response::{sse::Event, IntoResponse, Response, Sse},
     Json,
+};
+use basilica_sdk::types::{
+    ApiListRentalsResponse, ApiRentalListItem, ExecutorSelection, ListRentalsQuery, LogStreamQuery,
+    RentalStatusWithSshResponse, StartRentalApiRequest, TerminateRentalRequest,
 };
 use basilica_validator::{
     api::{

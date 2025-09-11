@@ -4,10 +4,11 @@
 //! for secure authentication without requiring client secrets.
 
 use super::callback_server::CallbackServer;
-use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
+use super::types::{AuthConfig, AuthError, AuthResult};
 use crate::output::print_info;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use basilica_sdk::auth::TokenSet;
 use console::{style, Term};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,

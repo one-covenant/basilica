@@ -48,7 +48,7 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
 ///
 /// This function checks if the stored token needs refresh and refreshes it
 /// before returning, ensuring the API client always gets valid tokens.
-async fn get_valid_jwt_tokens(_config: &CliConfig) -> Result<crate::auth::types::TokenSet> {
+async fn get_valid_jwt_tokens(_config: &CliConfig) -> Result<basilica_sdk::auth::TokenSet> {
     let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
     let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
 

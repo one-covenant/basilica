@@ -2,7 +2,8 @@
 //!
 //! This module provides secure storage for OAuth tokens using file-based storage.
 
-use super::types::{AuthError, AuthResult, TokenSet};
+use super::types::{AuthError, AuthResult};
+use basilica_sdk::auth::TokenSet;
 use std::collections::HashMap; // Still needed for migration from old format
 use std::fs;
 use std::path::PathBuf;

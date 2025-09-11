@@ -27,9 +27,6 @@ pub struct AuthConfig {
     pub additional_params: std::collections::HashMap<String, String>,
 }
 
-// Re-export TokenSet from SDK to avoid duplication
-pub use basilica_sdk::auth::TokenSet;
-
 // TokenSet implementation is now in SDK
 
 /// Authentication errors
