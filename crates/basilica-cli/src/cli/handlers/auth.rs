@@ -211,10 +211,10 @@ pub async fn handle_export_token(
         .get_tokens()
         .await
         .wrap_err("Failed to retrieve tokens")?
-        .ok_or_else(|| eyre!("Not authenticated. Please run 'basilica login' first"))?;
+        .ok_or_else(|| CliError::Auth(crate::auth::AuthError::UserNotLoggedIn))?;
 
     if tokens.is_expired() {
-        return Err(eyre!("Authentication expired. Please run 'basilica login' to refresh").into());
+        return Err(CliError::Auth(crate::auth::AuthError::TokenExpired));
     }
 
     // Format output based on requested format
