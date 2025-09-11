@@ -181,17 +181,6 @@ impl MinerClient {
 
         // Generate authentication request
         let nonce = uuid::Uuid::new_v4().to_string();
-        let _timestamp = chrono::Utc::now();
-
-        // Create signature for authentication
-        // The signature needs to be created using the validator's keypair
-        // Since we have a Hotkey, we need to sign the nonce with it
-        // In production, this would use the actual validator's signing key
-
-        // For Bittensor compatibility, we expect the signature to be a hex-encoded string
-        // The miner will verify this using verify_bittensor_signature
-        let signature_payload = format!("{}:{}", nonce, target_miner_hotkey);
-        let signature = self.create_validator_signature(&signature_payload)?;
 
         // Create current timestamp
         let now = std::time::SystemTime::now()
@@ -202,6 +191,18 @@ impl MinerClient {
             seconds: now.as_secs() as i64,
             nanos: now.subsec_nanos() as i32,
         };
+
+        const AUTH_PREFIX: &str = "BASILICA_AUTH_V1";
+        let signature_payload = format!(
+            "{}:{}:{}:{}",
+            AUTH_PREFIX, nonce, target_miner_hotkey, timestamp.seconds
+        );
+        let signature = self.create_validator_signature(&signature_payload)?;
+
+        debug!(
+            "Creating canonical auth signature with timestamp {} for target miner {}",
+            timestamp.seconds, target_miner_hotkey
+        );
 
         let auth_request = ValidatorAuthRequest {
             validator_hotkey: self.validator_hotkey.to_string(),

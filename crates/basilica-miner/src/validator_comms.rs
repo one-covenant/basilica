@@ -368,21 +368,77 @@ impl MinerDiscovery for MinerDiscoveryService {
             let validator_hotkey = Hotkey::new(auth_request.validator_hotkey.clone())
                 .map_err(|e| Status::invalid_argument(format!("Invalid hotkey: {e}")))?;
 
-            // Verify signature using bittensor crate
-            let signature_payload: String = format!(
+            // Extract timestamp if provided
+            let timestamp_secs = auth_request
+                .timestamp
+                .as_ref()
+                .and_then(|t| t.value.as_ref())
+                .map(|pt| pt.seconds)
+                .unwrap_or(0);
+
+            // Canonical payload with prefix and timestamp (preferred)
+            const AUTH_PREFIX: &str = "BASILICA_AUTH_V1";
+            let canonical_payload = format!(
+                "{}:{}:{}:{}",
+                AUTH_PREFIX, auth_request.nonce, auth_request.target_miner_hotkey, timestamp_secs
+            );
+
+            // Legacy payload for backward compatibility
+            let legacy_payload = format!(
                 "{}:{}",
                 auth_request.nonce, auth_request.target_miner_hotkey
             );
-            if let Err(e) = bittensor::utils::verify_bittensor_signature(
+
+            // Try canonical verification first
+            let canonical_valid = bittensor::utils::verify_bittensor_signature(
                 &validator_hotkey,
                 &auth_request.signature,
-                signature_payload.as_bytes(),
-            ) {
-                warn!(
-                    "Signature verification failed for validator {}: {}",
-                    auth_request.validator_hotkey, e
+                canonical_payload.as_bytes(),
+            )
+            .is_ok();
+
+            if canonical_valid {
+                debug!(
+                    "Validator {} using canonical auth payload with timestamp",
+                    auth_request.validator_hotkey
                 );
-                return Err(Status::unauthenticated("Invalid signature"));
+
+                // Validate timestamp freshness (5 minute window)
+                if timestamp_secs > 0 {
+                    let now = chrono::Utc::now().timestamp();
+                    let time_diff = (now - timestamp_secs).abs();
+                    if time_diff > 300 {
+                        warn!(
+                            "Authentication timestamp outside allowed window for validator {}. Time diff: {} seconds",
+                            auth_request.validator_hotkey, time_diff
+                        );
+                        return Err(Status::unauthenticated(
+                            "Authentication timestamp outside allowed window (5 minutes)",
+                        ));
+                    }
+                    debug!(
+                        "Timestamp validated successfully, within {} seconds",
+                        time_diff
+                    );
+                }
+            } else {
+                // Fall back to legacy verification
+                if let Err(e) = bittensor::utils::verify_bittensor_signature(
+                    &validator_hotkey,
+                    &auth_request.signature,
+                    legacy_payload.as_bytes(),
+                ) {
+                    warn!(
+                        "Signature verification failed for validator {} (tried both canonical and legacy): {}",
+                        auth_request.validator_hotkey, e
+                    );
+                    return Err(Status::unauthenticated("Invalid signature"));
+                } else {
+                    warn!(
+                        "Validator {} using legacy auth payload. Please upgrade validator to use canonical format with timestamp",
+                        auth_request.validator_hotkey
+                    );
+                }
             }
         }
 
