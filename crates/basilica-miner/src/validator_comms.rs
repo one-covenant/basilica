@@ -337,10 +337,30 @@ impl MinerDiscovery for MinerDiscoveryService {
     ) -> Result<Response<MinerAuthResponse>, Status> {
         let auth_request = request.into_inner();
 
+        if auth_request.target_miner_hotkey.trim().is_empty() {
+            return Err(Status::invalid_argument("target_miner_hotkey is required"));
+        }
+
         debug!(
-            "Received authentication request from validator: {}",
-            auth_request.validator_hotkey
+            "Received authentication request from validator: {} for target miner: {}",
+            auth_request.validator_hotkey, auth_request.target_miner_hotkey
         );
+
+        if let Some(ref bittensor_service) = self.bittensor_service {
+            let our_hotkey = bittensor_service.get_account_id().to_string();
+            if auth_request.target_miner_hotkey != our_hotkey {
+                warn!(
+                    "Authentication request intended for different miner. Target: {}, Our hotkey: {}. Rejecting to prevent axon hijacking.",
+                    auth_request.target_miner_hotkey, our_hotkey
+                );
+                return Err(Status::permission_denied(
+                    "Authentication request not intended for this miner",
+                ));
+            }
+            debug!("Target miner hotkey matches our hotkey, proceeding with authentication");
+        } else {
+            warn!("No bittensor service available to verify target miner hotkey");
+        }
 
         // Verify the signature if enabled
         if self.security_config.verify_signatures {
@@ -348,17 +368,77 @@ impl MinerDiscovery for MinerDiscoveryService {
             let validator_hotkey = Hotkey::new(auth_request.validator_hotkey.clone())
                 .map_err(|e| Status::invalid_argument(format!("Invalid hotkey: {e}")))?;
 
-            // Verify signature using bittensor crate
-            if let Err(e) = bittensor::utils::verify_bittensor_signature(
+            // Extract timestamp if provided
+            let timestamp_secs = auth_request
+                .timestamp
+                .as_ref()
+                .and_then(|t| t.value.as_ref())
+                .map(|pt| pt.seconds)
+                .unwrap_or(0);
+
+            // Canonical payload with prefix and timestamp (preferred)
+            const AUTH_PREFIX: &str = "BASILICA_AUTH_V1";
+            let canonical_payload = format!(
+                "{}:{}:{}:{}",
+                AUTH_PREFIX, auth_request.nonce, auth_request.target_miner_hotkey, timestamp_secs
+            );
+
+            // Legacy payload for backward compatibility
+            let legacy_payload = format!(
+                "{}:{}",
+                auth_request.nonce, auth_request.target_miner_hotkey
+            );
+
+            // Try canonical verification first
+            let canonical_valid = bittensor::utils::verify_bittensor_signature(
                 &validator_hotkey,
                 &auth_request.signature,
-                auth_request.nonce.as_bytes(),
-            ) {
-                warn!(
-                    "Signature verification failed for validator {}: {}",
-                    auth_request.validator_hotkey, e
+                canonical_payload.as_bytes(),
+            )
+            .is_ok();
+
+            if canonical_valid {
+                debug!(
+                    "Validator {} using canonical auth payload with timestamp",
+                    auth_request.validator_hotkey
                 );
-                return Err(Status::unauthenticated("Invalid signature"));
+
+                // Validate timestamp freshness (5 minute window)
+                if timestamp_secs > 0 {
+                    let now = chrono::Utc::now().timestamp();
+                    let time_diff = (now - timestamp_secs).abs();
+                    if time_diff > 300 {
+                        warn!(
+                            "Authentication timestamp outside allowed window for validator {}. Time diff: {} seconds",
+                            auth_request.validator_hotkey, time_diff
+                        );
+                        return Err(Status::unauthenticated(
+                            "Authentication timestamp outside allowed window (5 minutes)",
+                        ));
+                    }
+                    debug!(
+                        "Timestamp validated successfully, within {} seconds",
+                        time_diff
+                    );
+                }
+            } else {
+                // Fall back to legacy verification
+                if let Err(e) = bittensor::utils::verify_bittensor_signature(
+                    &validator_hotkey,
+                    &auth_request.signature,
+                    legacy_payload.as_bytes(),
+                ) {
+                    warn!(
+                        "Signature verification failed for validator {} (tried both canonical and legacy): {}",
+                        auth_request.validator_hotkey, e
+                    );
+                    return Err(Status::unauthenticated("Invalid signature"));
+                } else {
+                    warn!(
+                        "Validator {} using legacy auth payload. Please upgrade validator to use canonical format with timestamp",
+                        auth_request.validator_hotkey
+                    );
+                }
             }
         }
 
@@ -903,6 +983,7 @@ mod tests {
             signature: invalid_signature,
             nonce: nonce.to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         // This should fail authentication due to invalid signature
@@ -1004,6 +1085,7 @@ mod tests {
             signature: "validator_signature".to_string(), // Dummy sig since we disabled verification
             nonce: nonce.to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         // Call authenticate_validator
@@ -1113,6 +1195,7 @@ mod tests {
             signature: "".to_string(),
             nonce: "test-nonce".to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         let result = service.authenticate_validator(Request::new(request)).await;
@@ -1124,6 +1207,7 @@ mod tests {
             signature: "invalid_hex_!@#$".to_string(),
             nonce: "test-nonce".to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         let result = service.authenticate_validator(Request::new(request)).await;
@@ -1135,6 +1219,7 @@ mod tests {
             signature: "deadbeef".to_string(), // Too short
             nonce: "test-nonce".to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         let result = service.authenticate_validator(Request::new(request)).await;

@@ -10,6 +10,8 @@ pub struct ValidatorAuthRequest {
     pub nonce: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
     pub timestamp: ::core::option::Option<super::super::common::v1::Timestamp>,
+    #[prost(string, tag = "5")]
+    pub target_miner_hotkey: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
