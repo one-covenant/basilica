@@ -337,6 +337,10 @@ impl MinerDiscovery for MinerDiscoveryService {
     ) -> Result<Response<MinerAuthResponse>, Status> {
         let auth_request = request.into_inner();
 
+        if auth_request.target_miner_hotkey.trim().is_empty() {
+            return Err(Status::invalid_argument("target_miner_hotkey is required"));
+        }
+
         debug!(
             "Received authentication request from validator: {} for target miner: {}",
             auth_request.validator_hotkey, auth_request.target_miner_hotkey
