@@ -275,7 +275,23 @@ impl GpuScoringEngine {
                         let normalized_model = GpuCategorizer::normalize_gpu_model(gpu_model);
                         // Only include GPUs configured in emission config for rewards
                         if self.is_gpu_model_rewardable(gpu_model) {
-                            Some((normalized_model, gpu_count))
+                            // Check if miner meets minimum GPU count requirement
+                            if let Some(allocation) = self.emission_config.get_gpu_allocation(&normalized_model) {
+                                if gpu_count >= allocation.min_gpu_count {
+                                    Some((normalized_model, gpu_count))
+                                } else {
+                                    debug!(
+                                        miner_uid = profile.miner_uid.as_u16(),
+                                        gpu_model = %gpu_model,
+                                        gpu_count = gpu_count,
+                                        min_required = allocation.min_gpu_count,
+                                        "Skipping miner: Does not meet minimum GPU count requirement"
+                                    );
+                                    None
+                                }
+                            } else {
+                                None
+                            }
                         } else {
                             None
                         }
@@ -335,7 +351,18 @@ impl GpuScoringEngine {
                         let normalized_model = GpuCategorizer::normalize_gpu_model(gpu_model);
                         // Only include GPUs configured in emission config for rewards
                         if self.is_gpu_model_rewardable(gpu_model) {
-                            Some((normalized_model, gpu_count))
+                            // Check if miner meets minimum GPU count requirement
+                            if let Some(allocation) =
+                                self.emission_config.get_gpu_allocation(&normalized_model)
+                            {
+                                if gpu_count >= allocation.min_gpu_count {
+                                    Some((normalized_model, gpu_count))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
                         } else {
                             None
                         }
@@ -977,14 +1004,21 @@ mod tests {
 
         // Create custom emission config with only H100 and B200 (exclude H200)
         let mut custom_gpu_allocations = HashMap::new();
-        custom_gpu_allocations.insert("H100".to_string(), 20.0);
-        custom_gpu_allocations.insert("B200".to_string(), 80.0);
+        custom_gpu_allocations.insert(
+            "H100".to_string(),
+            crate::config::emission::GpuAllocation::new(20.0),
+        );
+        custom_gpu_allocations.insert(
+            "B200".to_string(),
+            crate::config::emission::GpuAllocation::new(80.0),
+        );
         // Note: H200 is excluded
 
         let custom_emission_config = EmissionConfig {
             burn_percentage: 10.0,
             burn_uid: 999,
             gpu_allocations: custom_gpu_allocations,
+            min_miners_per_category: 1,
             weight_set_interval_blocks: 360,
             weight_version_key: 0,
         };
@@ -1099,13 +1133,20 @@ mod tests {
     fn test_is_gpu_model_rewardable_normalization() {
         // Create test emission config
         let mut gpu_allocations = HashMap::new();
-        gpu_allocations.insert("H100".to_string(), 20.0);
-        gpu_allocations.insert("B200".to_string(), 80.0);
+        gpu_allocations.insert(
+            "H100".to_string(),
+            crate::config::emission::GpuAllocation::new(20.0),
+        );
+        gpu_allocations.insert(
+            "B200".to_string(),
+            crate::config::emission::GpuAllocation::new(80.0),
+        );
 
         let emission_config = EmissionConfig {
             burn_percentage: 10.0,
             burn_uid: 999,
             gpu_allocations,
+            min_miners_per_category: 1,
             weight_set_interval_blocks: 360,
             weight_version_key: 0,
         };
@@ -1144,5 +1185,156 @@ mod tests {
                 model, normalized, should_be_rewardable, is_rewardable
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_min_gpu_count_filtering() {
+        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+
+        // Create custom emission config with min_gpu_count requirements
+        let mut gpu_allocations = HashMap::new();
+        gpu_allocations.insert(
+            "H100".to_string(),
+            crate::config::emission::GpuAllocation::with_min_count(25.0, 4),
+        );
+        gpu_allocations.insert(
+            "H200".to_string(),
+            crate::config::emission::GpuAllocation::with_min_count(25.0, 2),
+        );
+        gpu_allocations.insert(
+            "B200".to_string(),
+            crate::config::emission::GpuAllocation::with_min_count(50.0, 8),
+        );
+
+        let emission_config = EmissionConfig {
+            burn_percentage: 10.0,
+            burn_uid: 999,
+            gpu_allocations,
+            min_miners_per_category: 1,
+            weight_set_interval_blocks: 360,
+            weight_version_key: 0,
+        };
+
+        let engine = GpuScoringEngine::new(repo.clone(), emission_config);
+
+        // Create profiles with different GPU counts
+        let now = Utc::now();
+        let profiles = vec![
+            // Miner 1: Has 3x H100 (below min of 4) - should be excluded
+            MinerGpuProfile {
+                miner_uid: MinerUid::new(1),
+                gpu_counts: {
+                    let mut counts = HashMap::new();
+                    counts.insert("H100".to_string(), 3);
+                    counts
+                },
+                total_score: 0.9,
+                verification_count: 1,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
+            },
+            // Miner 2: Has 4x H100 (meets min of 4) - should be included
+            MinerGpuProfile {
+                miner_uid: MinerUid::new(2),
+                gpu_counts: {
+                    let mut counts = HashMap::new();
+                    counts.insert("H100".to_string(), 4);
+                    counts
+                },
+                total_score: 0.8,
+                verification_count: 1,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
+            },
+            // Miner 3: Has 1x H200 (below min of 2) - should be excluded
+            MinerGpuProfile {
+                miner_uid: MinerUid::new(3),
+                gpu_counts: {
+                    let mut counts = HashMap::new();
+                    counts.insert("H200".to_string(), 1);
+                    counts
+                },
+                total_score: 0.7,
+                verification_count: 1,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
+            },
+            // Miner 4: Has 2x H200 (meets min of 2) - should be included
+            MinerGpuProfile {
+                miner_uid: MinerUid::new(4),
+                gpu_counts: {
+                    let mut counts = HashMap::new();
+                    counts.insert("H200".to_string(), 2);
+                    counts
+                },
+                total_score: 0.8,
+                verification_count: 1,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
+            },
+            // Miner 5: Has 7x B200 (below min of 8) - should be excluded
+            MinerGpuProfile {
+                miner_uid: MinerUid::new(5),
+                gpu_counts: {
+                    let mut counts = HashMap::new();
+                    counts.insert("B200".to_string(), 7);
+                    counts
+                },
+                total_score: 1.0,
+                verification_count: 1,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
+            },
+            // Miner 6: Has 8x B200 (meets min of 8) - should be included
+            MinerGpuProfile {
+                miner_uid: MinerUid::new(6),
+                gpu_counts: {
+                    let mut counts = HashMap::new();
+                    counts.insert("B200".to_string(), 8);
+                    counts
+                },
+                total_score: 1.0,
+                verification_count: 1,
+                last_updated: now,
+                last_successful_validation: Some(now - chrono::Duration::hours(1)),
+            },
+        ];
+
+        // Seed all required data
+        let persistence = crate::persistence::SimplePersistence::with_pool(repo.pool().clone());
+        seed_test_data(&persistence, &repo, &profiles)
+            .await
+            .unwrap();
+
+        // Test category statistics respect min_gpu_count
+        let stats = engine.get_category_statistics().await.unwrap();
+
+        // Check H100 category - should only have miner 2
+        assert_eq!(
+            stats.get("H100").unwrap().miner_count,
+            1,
+            "H100 should have 1 miner (miner 2)"
+        );
+        assert_eq!(stats.get("H100").unwrap().total_score, 0.8);
+
+        // Check H200 category - should only have miner 4
+        assert_eq!(
+            stats.get("H200").unwrap().miner_count,
+            1,
+            "H200 should have 1 miner (miner 4)"
+        );
+        assert_eq!(stats.get("H200").unwrap().total_score, 0.8);
+
+        // Check B200 category - should only have miner 6
+        assert_eq!(
+            stats.get("B200").unwrap().miner_count,
+            1,
+            "B200 should have 1 miner (miner 6)"
+        );
+        assert_eq!(stats.get("B200").unwrap().total_score, 1.0);
+
+        // Test get_miners_by_gpu_category_since_epoch is skipped
+        // The metagraph type requires complex initialization that comes from the chain
+        // The important min_gpu_count filtering logic is already tested in get_category_statistics above
     }
 }

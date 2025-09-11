@@ -201,21 +201,21 @@ impl WeightAllocationEngine {
     ) -> Result<HashMap<String, Vec<(MinerUid, f64)>>> {
         let mut filtered = HashMap::new();
 
-        // Hardcoded minimum of 1 miner per category
-        const MIN_MINERS_PER_CATEGORY: usize = 1;
+        // Use configured minimum miners per category from emission config
+        let min_miners_per_category = self.emission_config.min_miners_per_category as usize;
 
         for (category, miners) in miners_by_category {
             // Remove score threshold filtering - include all miners regardless of score
             let valid_miners: Vec<(MinerUid, f64)> = miners;
 
-            // Only include categories with minimum number of miners (hardcoded to 1)
-            if valid_miners.len() >= MIN_MINERS_PER_CATEGORY {
+            // Only include categories with minimum number of miners
+            if valid_miners.len() >= min_miners_per_category {
                 filtered.insert(category, valid_miners);
             } else {
                 debug!(
                     category = %category,
                     miners = valid_miners.len(),
-                    required = MIN_MINERS_PER_CATEGORY,
+                    required = min_miners_per_category,
                     "Category excluded due to insufficient miners"
                 );
             }
@@ -232,9 +232,8 @@ impl WeightAllocationEngine {
         let mut category_pools = HashMap::new();
 
         // Get all configured GPU categories from emission config
-        for (category, allocation_percentage) in &self.emission_config.gpu_allocations {
-            let weight_pool =
-                (total_remaining_weight as f64 * allocation_percentage / 100.0) as u64;
+        for (category, allocation) in &self.emission_config.gpu_allocations {
+            let weight_pool = (total_remaining_weight as f64 * allocation.weight / 100.0) as u64;
             category_pools.insert(category.clone(), weight_pool);
         }
 
@@ -386,14 +385,24 @@ mod tests {
 
     fn create_test_config() -> EmissionConfig {
         let mut gpu_allocations = HashMap::new();
-        gpu_allocations.insert("H100".to_string(), 8.0);
-        gpu_allocations.insert("H200".to_string(), 12.0);
-        gpu_allocations.insert("B200".to_string(), 80.0);
+        gpu_allocations.insert(
+            "H100".to_string(),
+            crate::config::emission::GpuAllocation::new(8.0),
+        );
+        gpu_allocations.insert(
+            "H200".to_string(),
+            crate::config::emission::GpuAllocation::new(12.0),
+        );
+        gpu_allocations.insert(
+            "B200".to_string(),
+            crate::config::emission::GpuAllocation::new(80.0),
+        );
 
         EmissionConfig {
             burn_percentage: 10.0,
             burn_uid: 999,
             gpu_allocations,
+            min_miners_per_category: 1,
             weight_set_interval_blocks: 360,
             weight_version_key: 0,
         }
@@ -646,9 +655,18 @@ mod tests {
         let mut config = create_test_config();
         // Set up 3 categories for testing
         config.gpu_allocations.clear();
-        config.gpu_allocations.insert("H100".to_string(), 40.0);
-        config.gpu_allocations.insert("H200".to_string(), 30.0);
-        config.gpu_allocations.insert("A100".to_string(), 30.0);
+        config.gpu_allocations.insert(
+            "H100".to_string(),
+            crate::config::emission::GpuAllocation::new(40.0),
+        );
+        config.gpu_allocations.insert(
+            "H200".to_string(),
+            crate::config::emission::GpuAllocation::new(30.0),
+        );
+        config.gpu_allocations.insert(
+            "A100".to_string(),
+            crate::config::emission::GpuAllocation::new(30.0),
+        );
 
         let engine = WeightAllocationEngine::new(config, 0.0);
 
@@ -670,20 +688,24 @@ mod tests {
     }
 
     #[test]
-    fn test_hardcoded_min_miners_per_category() {
-        let config = create_test_config();
+    fn test_min_miners_per_category() {
+        let mut config = create_test_config();
+        config.min_miners_per_category = 2; // Set minimum to 2 for testing
         let engine = WeightAllocationEngine::new(config, 0.0);
 
-        // Create category with 0 miners (empty list)
+        // Create categories with different miner counts
         let mut miners = HashMap::new();
-        miners.insert("H100".to_string(), vec![]);
-        miners.insert("H200".to_string(), vec![(MinerUid::new(1), 0.5)]);
+        miners.insert("H100".to_string(), vec![(MinerUid::new(1), 0.5)]); // 1 miner (< 2)
+        miners.insert(
+            "H200".to_string(),
+            vec![(MinerUid::new(2), 0.5), (MinerUid::new(3), 0.6)],
+        ); // 2 miners (>= 2)
 
         let filtered = engine.filter_miners_by_score(miners).unwrap();
 
-        // H100 should be excluded (0 < 1 minimum)
+        // H100 should be excluded (1 < 2 minimum)
         assert!(!filtered.contains_key("H100"));
-        // H200 should be included (1 >= 1 minimum)
+        // H200 should be included (2 >= 2 minimum)
         assert!(filtered.contains_key("H200"));
     }
 
