@@ -134,7 +134,7 @@ impl InteractiveSelector {
                 let category = GpuCategory::from_str(&gpu.name)
                     .unwrap_or(GpuCategory::Other(gpu.name.clone()));
                 let gpu_count = executor.executor.gpu_specs.len() as u32;
-                format!("{}_{}_{}GB", gpu_count, category, gpu.memory_gb)
+                format!("{}_{}_{}", gpu_count, category, gpu.memory_gb)
             };
 
             gpu_groups.entry(key).or_insert_with(|| {
@@ -163,14 +163,14 @@ impl InteractiveSelector {
         // Create display items with GPU use case descriptions
         let selector_items: Vec<String> = gpu_configs
             .iter()
-            .map(|(_, gpu_type, count, memory)| {
+            .map(|(_, gpu_type, count, _memory)| {
                 if gpu_type.is_empty() {
                     format!("{:<30} {}", "No GPUs", "General compute")
                 } else {
                     let gpu_info = if *count > 1 {
-                        format!("{}x {} ({}GB)", count, gpu_type, memory)
+                        format!("{}x {}", count, gpu_type)
                     } else {
-                        format!("1x {} ({}GB)", gpu_type, memory)
+                        format!("1x {}", gpu_type)
                     };
                     // Parse the category string directly to get the enum and its description
                     let category = GpuCategory::from_str(gpu_type)
@@ -258,15 +258,25 @@ impl InteractiveSelector {
                                 .unwrap_or(GpuCategory::Other(first_gpu.name.clone()));
                             category.to_string()
                         };
-                        if rental.gpu_specs.len() > 1 {
-                            format!(
-                                "{}x {} ({}GB)",
-                                rental.gpu_specs.len(),
-                                gpu_display_name,
-                                first_gpu.memory_gb
-                            )
+                        if detailed {
+                            // Detailed mode: show memory
+                            if rental.gpu_specs.len() > 1 {
+                                format!(
+                                    "{}x {} ({}GB)",
+                                    rental.gpu_specs.len(),
+                                    gpu_display_name,
+                                    first_gpu.memory_gb
+                                )
+                            } else {
+                                format!("1x {} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                            }
                         } else {
-                            format!("1x {} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                            // Non-detailed mode: no memory
+                            if rental.gpu_specs.len() > 1 {
+                                format!("{}x {}", rental.gpu_specs.len(), gpu_display_name)
+                            } else {
+                                format!("1x {}", gpu_display_name)
+                            }
                         }
                     } else {
                         rental
@@ -280,7 +290,11 @@ impl InteractiveSelector {
                                         .unwrap_or(GpuCategory::Other(g.name.clone()));
                                     category.to_string()
                                 };
-                                format!("{} ({}GB)", display_name, g.memory_gb)
+                                if detailed {
+                                    format!("{} ({}GB)", display_name, g.memory_gb)
+                                } else {
+                                    display_name
+                                }
                             })
                             .collect::<Vec<_>>()
                             .join(", ")

@@ -144,15 +144,25 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Re
                         GpuCategory::from_str(&first_gpu.name).unwrap().to_string()
                     };
 
-                    if rental.gpu_specs.len() > 1 {
-                        format!(
-                            "{}x {} ({}GB)",
-                            rental.gpu_specs.len(),
-                            gpu_display_name,
-                            first_gpu.memory_gb
-                        )
+                    if detailed {
+                        // Detailed mode: show memory
+                        if rental.gpu_specs.len() > 1 {
+                            format!(
+                                "{}x {} ({}GB)",
+                                rental.gpu_specs.len(),
+                                gpu_display_name,
+                                first_gpu.memory_gb
+                            )
+                        } else {
+                            format!("1x {} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                        }
                     } else {
-                        format!("1x {} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                        // Non-detailed mode: no memory
+                        if rental.gpu_specs.len() > 1 {
+                            format!("{}x {}", rental.gpu_specs.len(), gpu_display_name)
+                        } else {
+                            format!("1x {}", gpu_display_name)
+                        }
                     }
                 } else {
                     // List each GPU
@@ -165,7 +175,11 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Re
                             } else {
                                 GpuCategory::from_str(&g.name).unwrap().to_string()
                             };
-                            format!("{} ({}GB)", display_name, g.memory_gb)
+                            if detailed {
+                                format!("{} ({}GB)", display_name, g.memory_gb)
+                            } else {
+                                display_name
+                            }
                         })
                         .collect::<Vec<_>>()
                         .join(", ")
@@ -244,7 +258,7 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
             let gpu = &executor.executor.gpu_specs[0];
             let category = GpuCategory::from_str(&gpu.name).unwrap();
             let gpu_count = executor.executor.gpu_specs.len();
-            format!("{}x {} ({}GB)", gpu_count, category, gpu.memory_gb)
+            format!("{}x {}", gpu_count, category)
         };
 
         location_groups
