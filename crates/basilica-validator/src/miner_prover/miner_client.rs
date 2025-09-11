@@ -278,6 +278,19 @@ impl MinerClient {
                 ));
             }
 
+            if auth_response.miner_hotkey != target_miner_hotkey {
+                error!(
+                    "Miner hotkey mismatch! Expected: {}, Got: {}. Possible MITM attack.",
+                    target_miner_hotkey, auth_response.miner_hotkey
+                );
+                return Err(anyhow::anyhow!(
+                    "Security violation: Miner hotkey mismatch. Expected {}, but got {}",
+                    target_miner_hotkey,
+                    auth_response.miner_hotkey
+                ));
+            }
+            debug!("Miner hotkey matches expected target, proceeding with signature verification");
+
             info!(
                 "Successfully verified miner signature from {}",
                 auth_response.miner_hotkey
