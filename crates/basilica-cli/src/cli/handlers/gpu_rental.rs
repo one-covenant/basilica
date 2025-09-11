@@ -95,7 +95,7 @@ pub async fn handle_ls(
         available: Some(true), // Filter for available executors only
         min_gpu_memory: filters.memory_min,
         gpu_type: filters.gpu_type,
-        min_gpu_count: filters.gpu_min,
+        min_gpu_count: Some(filters.gpu_min.unwrap_or(1)),
     };
 
     let spinner = create_spinner("Scanning global GPU availability...");
