@@ -457,7 +457,10 @@ impl VerificationEngine {
             miner_endpoint
         );
         let connection_start = std::time::Instant::now();
-        let mut connection = match client.connect_and_authenticate(miner_endpoint, miner_hotkey).await {
+        let mut connection = match client
+            .connect_and_authenticate(miner_endpoint, miner_hotkey)
+            .await
+        {
             Ok(conn) => {
                 info!(
                     "[EVAL_FLOW] Successfully connected and authenticated to miner in {:?}",
@@ -2485,7 +2488,9 @@ impl VerificationEngine {
 
         // Step 3: Establish connection and SSH session
         let client = self.create_authenticated_client()?;
-        let mut connection = client.connect_and_authenticate(miner_endpoint, miner_hotkey).await?;
+        let mut connection = client
+            .connect_and_authenticate(miner_endpoint, miner_hotkey)
+            .await?;
 
         let (ssh_details, session_info) = if let Some(ref key_manager) = self.ssh_key_manager {
             let key_provider = crate::ssh::session::ValidatorSshKeyProvider::new(key_manager);
