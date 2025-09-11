@@ -277,11 +277,7 @@ impl OAuthFlow {
             .refresh_token()
             .map(|rt| rt.secret().to_string());
         // These are no longer needed since TokenSet only stores access and refresh tokens
-        let _token_type = "Bearer".to_string();
-        let _expires_in = token_response
-            .expires_in()
-            .map(|duration| duration.as_secs());
-        let _scopes = token_response
+        let scopes = token_response
             .scopes()
             .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
             .unwrap_or_else(|| self.config.scopes.clone());
@@ -296,7 +292,7 @@ impl OAuthFlow {
 
         info!(
             "Token exchange completed successfully. Scopes in token: {:?}",
-            _scopes
+            scopes
         );
         Ok(token_set)
     }
@@ -331,15 +327,6 @@ impl OAuthFlow {
             .refresh_token()
             .map(|rt| rt.secret().to_string())
             .or_else(|| Some(refresh_token.to_string())); // Keep old refresh token if new one not provided
-                                                          // These are no longer needed since TokenSet only stores access and refresh tokens
-        let _token_type = "Bearer".to_string();
-        let _expires_in = token_response
-            .expires_in()
-            .map(|duration| duration.as_secs());
-        let _scopes = token_response
-            .scopes()
-            .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
-            .unwrap_or_else(|| self.config.scopes.clone());
 
         // Create simplified TokenSet (now only contains access and refresh tokens)
         let token_set = TokenSet::new(

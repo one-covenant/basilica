@@ -885,34 +885,6 @@ fn display_ssh_connection_instructions(
     Ok(())
 }
 
-// TODO: Re-implement rental cache functionality
-// /// Verify rental is still active and clean up cache if not
-// async fn verify_rental_status_and_cleanup_cache(
-//     rental_id: &str,
-//     api_client: &basilica_sdk::BasilicaClient,
-//     cache: &mut RentalCache,
-// ) -> Result<()> {
-//     let status = api_client
-//         .get_rental_status(rental_id)
-//         .await
-//         .map_err(|e| CliError::api_request_failed("get rental status", e.to_string()))?;
-
-//     if matches!(
-//         status.status,
-//         RentalStatus::Terminated | RentalStatus::Failed
-//     ) {
-//         cache.remove_rental(rental_id);
-//         cache.save().await?;
-//         return Err(CliError::not_found(format!(
-//             "Rental {} is no longer active (status: {:?})",
-//             rental_id, status.status
-//         ))
-//         .with_suggestion("Run 'basilica ps' to see currently active rentals"));
-//     }
-
-//     Ok(())
-// }
-
 fn load_ssh_public_key(key_path: &Option<PathBuf>, config: &CliConfig) -> Result<String, CliError> {
     let path = key_path.as_ref().unwrap_or(&config.ssh.key_path);
 

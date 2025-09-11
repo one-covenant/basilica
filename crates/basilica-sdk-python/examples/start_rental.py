@@ -74,7 +74,7 @@ def main():
         print(f"GPU: {gpu.name} - {gpu.memory_gb} GB")
     
     # Stop rental when done
-    # client.stop_rental(rental.rental_id)
+    client.stop_rental(rental.rental_id)
 
 
 if __name__ == "__main__":

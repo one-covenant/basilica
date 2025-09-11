@@ -27,8 +27,6 @@ pub struct AuthConfig {
     pub additional_params: std::collections::HashMap<String, String>,
 }
 
-// TokenSet implementation is now in SDK
-
 /// Authentication errors
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
