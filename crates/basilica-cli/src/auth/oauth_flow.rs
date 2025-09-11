@@ -12,8 +12,7 @@ use basilica_sdk::auth::TokenSet;
 use console::{style, Term};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
-    CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope,
-    TokenResponse, TokenUrl,
+    CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use rand::Rng;
 use reqwest;
@@ -299,45 +298,14 @@ impl OAuthFlow {
 
     /// Refresh an expired access token using the refresh token
     pub async fn refresh_access_token(&self, refresh_token: &str) -> AuthResult<TokenSet> {
-        debug!("Refreshing access token");
-
-        // Create OAuth2 client
-        let client = BasicClient::new(
-            ClientId::new(self.config.client_id.clone()),
-            None, // No client secret for PKCE flow
-            AuthUrl::new(self.config.auth_endpoint.clone())
-                .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
-            Some(
-                TokenUrl::new(self.config.token_endpoint.clone()).map_err(|e| {
-                    AuthError::ConfigError(format!("Invalid token endpoint: {}", e))
-                })?,
-            ),
-        );
-
-        // Refresh token
-        let token_response = client
-            .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-            .request_async(async_http_client)
-            .await
-            .map_err(|e| AuthError::NetworkError(format!("Token refresh failed: {}", e)))?;
-
-        // Extract token information
-        let access_token = token_response.access_token().secret().to_string();
-        let new_refresh_token = token_response
-            .refresh_token()
-            .map(|rt| rt.secret().to_string())
-            .or_else(|| Some(refresh_token.to_string())); // Keep old refresh token if new one not provided
-
-        // Create simplified TokenSet (now only contains access and refresh tokens)
-        let token_set = TokenSet::new(
-            access_token,
-            new_refresh_token.ok_or(AuthError::InvalidResponse(
-                "No refresh token provided".to_string(),
-            ))?,
-        );
-
-        info!("Token refresh completed successfully");
-        Ok(token_set)
+        // Use the SDK's refresh function with our OAuth config
+        basilica_sdk::auth::refresh_access_token(
+            refresh_token,
+            Some(&self.config.client_id),
+            Some(&self.config.token_endpoint),
+        )
+        .await
+        .map_err(|e| AuthError::NetworkError(format!("Token refresh failed: {}", e)))
     }
 
     /// Revoke a token with the OAuth provider

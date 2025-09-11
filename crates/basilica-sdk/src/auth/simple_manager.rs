@@ -53,7 +53,8 @@ impl TokenManager {
                 // Check if token needs refresh
                 if self.should_refresh(tokens) {
                     debug!("Direct token needs refresh");
-                    let new_tokens = refresh_access_token(&tokens.refresh_token).await?;
+                    let new_tokens =
+                        refresh_access_token(&tokens.refresh_token, None, None).await?;
                     info!("Token refreshed successfully");
                     *tokens = new_tokens.clone();
                     Ok(new_tokens.access_token)
@@ -69,7 +70,8 @@ impl TokenManager {
                 // Check if token needs refresh
                 if self.should_refresh(&stored_tokens) {
                     debug!("File-based token needs refresh");
-                    let new_tokens = refresh_access_token(&stored_tokens.refresh_token).await?;
+                    let new_tokens =
+                        refresh_access_token(&stored_tokens.refresh_token, None, None).await?;
                     info!("Token refreshed successfully");
 
                     // Store the new tokens
