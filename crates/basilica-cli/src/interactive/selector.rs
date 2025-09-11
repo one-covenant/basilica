@@ -1,9 +1,11 @@
 //! Interactive selection utilities
 
-use basilica_api::api::types::{ApiRentalListItem, ExecutorSelection, GpuRequirements};
+use crate::error::Result;
+use basilica_sdk::types::{ApiRentalListItem, ExecutorSelection};
+use basilica_sdk::GpuRequirements;
 use basilica_validator::api::types::AvailableExecutor;
 use basilica_validator::gpu::GpuCategory;
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::eyre;
 use console::Term;
 use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};
 use std::collections::HashMap;
@@ -30,7 +32,7 @@ impl InteractiveSelector {
         detailed: bool,
     ) -> Result<ExecutorSelection> {
         if executors.is_empty() {
-            return Err(eyre!("No executors available"));
+            return Err(eyre!("No executors available").into());
         }
 
         if detailed {
@@ -103,7 +105,7 @@ impl InteractiveSelector {
 
         let selection = match selection {
             Some(s) => s,
-            None => return Err(eyre!("Selection cancelled")),
+            None => return Err(eyre!("Selection cancelled").into()),
         };
 
         // Get the selected executor ID
@@ -188,7 +190,7 @@ impl InteractiveSelector {
 
         let selection = match selection {
             Some(s) => s,
-            None => return Err(eyre!("Selection cancelled")),
+            None => return Err(eyre!("Selection cancelled").into()),
         };
 
         let selected_config = &gpu_configs[selection];
@@ -206,7 +208,7 @@ impl InteractiveSelector {
             .map_err(|e| eyre!("Confirmation failed: {}", e))?;
 
         if !confirmed {
-            return Err(eyre!("Selection cancelled"));
+            return Err(eyre!("Selection cancelled").into());
         }
 
         // Return GPU requirements for automatic selection
@@ -232,7 +234,7 @@ impl InteractiveSelector {
     /// Let user select a single instance from active instances
     pub fn select_rental(&self, rentals: &[ApiRentalListItem], detailed: bool) -> Result<String> {
         if rentals.is_empty() {
-            return Err(eyre!("No active instances"));
+            return Err(eyre!("No active instances").into());
         }
 
         let items: Vec<String> = rentals
@@ -299,7 +301,7 @@ impl InteractiveSelector {
 
         let selection = match selection {
             Some(s) => s,
-            None => return Err(eyre!("Selection cancelled")),
+            None => return Err(eyre!("Selection cancelled").into()),
         };
 
         // Clear the selection prompt line
@@ -315,7 +317,7 @@ impl InteractiveSelector {
         rentals: &[ApiRentalListItem],
     ) -> Result<Vec<String>> {
         if rentals.is_empty() {
-            return Err(eyre!("No active instances"));
+            return Err(eyre!("No active instances").into());
         }
 
         let items: Vec<String> = rentals
@@ -360,7 +362,7 @@ impl InteractiveSelector {
             .map_err(|e| eyre!("Selection failed: {}", e))?;
 
         if selections.is_empty() {
-            return Err(eyre!("No instances selected"));
+            return Err(eyre!("No instances selected").into());
         }
 
         let selected_ids: Vec<String> = selections

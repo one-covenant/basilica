@@ -1,0 +1,68 @@
+[package]
+name = "basilica-sdk"
+version = "0.1.0"
+edition = "2021"
+authors = ["Basilica Team"]
+description = "SDK for interacting with the Basilica GPU rental network"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
+
+# Async runtime
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tokio-stream = "0.1"
+async-trait = { workspace = true }
+async-stream = "0.3"
+futures = "0.3"
+futures-util = "0.3"
+bytes = "1.5"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+url = "2.5"
+
+# OpenAPI support (optional)
+utoipa = { version = "4.1", features = ["chrono", "uuid"], optional = true }
+
+# Auth dependencies (moved from CLI)
+oauth2 = "4.4"
+base64 = "0.21"
+sha2 = "0.10"
+rand = { workspace = true }
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "linux-native"] }
+etcetera = "0.8"
+webbrowser = "0.8"
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors"] }
+console = "0.15"
+dialoguer = "0.11"
+indicatif = "0.17"
+
+# Internal dependencies
+basilica-common = { path = "../basilica-common" }
+basilica-validator = { path = "../basilica-validator", features = ["client", "openapi"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { workspace = true, features = ["full", "test-util"] }
+
+[features]
+default = []
+openapi = ["utoipa"]
+client = []

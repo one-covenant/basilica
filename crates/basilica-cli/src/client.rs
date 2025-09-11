@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use crate::auth::{AuthError, OAuthFlow, TokenStore};
 use crate::config::CliConfig;
-use crate::error::CliError;
-use basilica_api::client::{BasilicaClient, ClientBuilder};
-use color_eyre::eyre::{eyre, Result, WrapErr};
+use crate::error::{CliError, Result};
+use basilica_sdk::{BasilicaClient, ClientBuilder};
+use color_eyre::eyre::{eyre, Context};
 use tracing::{debug, warn};
 
 /// Creates an authenticated BasilicaClient with JWT
@@ -23,17 +23,17 @@ use tracing::{debug, warn};
 ///
 /// # Arguments
 /// * `config` - CLI configuration
-pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaClient, CliError> {
+pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaClient> {
     let api_url = config.api.base_url.clone();
 
     let mut builder = ClientBuilder::default()
         .base_url(api_url)
         .timeout(Duration::from_secs(config.api.request_timeout));
 
-    // Use JWT authentication
-    if let Ok(jwt_token) = get_valid_jwt_token(config).await {
-        debug!("Using JWT authentication with pre-emptive token refresh");
-        builder = builder.with_bearer_token(jwt_token);
+    // Use JWT authentication with token manager support
+    if let Ok(tokens) = get_valid_jwt_tokens(config).await {
+        debug!("Using JWT authentication with automatic token refresh");
+        builder = builder.with_tokens(tokens.access_token, tokens.refresh_token);
     } else {
         // Provide a more helpful error message using our custom error type
         return Err(CliError::from(AuthError::UserNotLoggedIn));
@@ -44,11 +44,11 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
         .map_err(|e| eyre!("Failed to build client: {}", e).into())
 }
 
-/// Gets a valid JWT token with pre-emptive refresh
+/// Gets valid JWT tokens with pre-emptive refresh
 ///
 /// This function checks if the stored token needs refresh and refreshes it
-/// before returning, ensuring the API client always gets a valid token.
-async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
+/// before returning, ensuring the API client always gets valid tokens.
+async fn get_valid_jwt_tokens(_config: &CliConfig) -> Result<basilica_sdk::auth::TokenSet> {
     let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
     let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
 
@@ -62,7 +62,9 @@ async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
     if tokens.needs_refresh() {
         debug!("Token needs refresh, attempting to refresh pre-emptively");
 
-        if let Some(refresh_token) = &tokens.refresh_token {
+        // refresh_token is now always present (not optional)
+        {
+            let refresh_token = &tokens.refresh_token;
             let auth_config = crate::config::create_auth_config_with_port(0);
             let oauth_flow = OAuthFlow::new(auth_config);
 
@@ -80,12 +82,10 @@ async fn get_valid_jwt_token(_config: &CliConfig) -> Result<String> {
                     // Continue with existing token - it might still work
                 }
             }
-        } else {
-            debug!("No refresh token available for pre-emptive refresh");
         }
     }
 
-    Ok(tokens.access_token)
+    Ok(tokens)
 }
 
 /// Checks if the user is authenticated (has valid tokens)

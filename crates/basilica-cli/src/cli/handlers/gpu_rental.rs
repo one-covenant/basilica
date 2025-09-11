@@ -10,17 +10,14 @@ use crate::output::{
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{parse_ssh_credentials, SshClient};
 use crate::CliError;
-use basilica_api::api::types::{
-    ExecutorSelection, GpuRequirements, ListRentalsQuery, ResourceRequirementsRequest, SshAccess,
-    StartRentalApiRequest,
-};
-use basilica_api::error::ApiError;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
-use basilica_validator::api::types::ListAvailableExecutorsQuery;
-use basilica_validator::api::types::RentalStatusResponse;
+use basilica_sdk::types::{
+    ExecutorSelection, GpuRequirements, ListAvailableExecutorsQuery, ListRentalsQuery, RentalState,
+    RentalStatusResponse, ResourceRequirementsRequest, SshAccess, StartRentalApiRequest,
+};
+use basilica_sdk::ApiError;
 use basilica_validator::gpu::categorization::GpuCategory;
-use basilica_validator::rental::types::RentalState;
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::eyre;
 use color_eyre::Section;
 use console::style;
 use reqwest::StatusCode;
@@ -208,7 +205,7 @@ pub async fn handle_up(
         })?;
 
     // Parse port mappings if provided
-    let port_mappings: Vec<basilica_api::api::types::PortMappingRequest> =
+    let port_mappings: Vec<basilica_sdk::types::PortMappingRequest> =
         parse_port_mappings(&options.ports)
             .map_err(|e| eyre!("Invalid argument: {}", e.to_string()))
             .inspect_err(|_e| {
@@ -775,7 +772,7 @@ pub async fn handle_cp(
 /// Poll rental status until it becomes active or timeout
 async fn poll_rental_status(
     rental_id: &str,
-    api_client: &basilica_api::client::BasilicaClient,
+    api_client: &basilica_sdk::BasilicaClient,
 ) -> Result<bool, CliError> {
     const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
     const INITIAL_INTERVAL: Duration = Duration::from_secs(2);
@@ -799,7 +796,7 @@ async fn poll_rental_status(
         // Check rental status
         match api_client.get_rental_status(rental_id).await {
             Ok(status) => {
-                use basilica_api::api::types::RentalStatus;
+                use basilica_sdk::types::RentalStatus;
                 match status.status {
                     RentalStatus::Active => {
                         complete_spinner_and_clear(spinner);

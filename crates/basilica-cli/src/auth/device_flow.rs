@@ -3,8 +3,9 @@
 //! This module implements OAuth 2.0 Device Authorization Grant for
 //! devices that lack a web browser or have limited input capabilities.
 
-use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
+use super::types::{AuthConfig, AuthError, AuthResult};
 use crate::output::print_info;
+use basilica_sdk::auth::TokenSet;
 use console::{style, Term};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -44,8 +45,6 @@ struct PollResponse {
     error_description: Option<String>,
     access_token: Option<String>,
     refresh_token: Option<String>,
-    token_type: Option<String>,
-    expires_in: Option<u64>,
     scope: Option<String>,
 }
 
@@ -252,24 +251,23 @@ impl DeviceFlow {
 
         // Handle successful response
         if let Some(access_token) = poll_response.access_token {
-            let scopes = poll_response
+            // Scopes are no longer stored in TokenSet (JWT contains this info)
+            let _scopes = poll_response
                 .scope
                 .map(|s| {
                     s.split_whitespace()
                         .map(|scope| scope.to_string())
-                        .collect()
+                        .collect::<Vec<_>>()
                 })
                 .unwrap_or_else(|| self.config.scopes.clone());
 
-            let token_set = TokenSet::new(
-                access_token,
-                poll_response.refresh_token,
-                poll_response
-                    .token_type
-                    .unwrap_or_else(|| "Bearer".to_string()),
-                poll_response.expires_in,
-                scopes,
-            );
+            // Create simplified TokenSet (now only contains access and refresh tokens)
+            let refresh_token = poll_response
+                .refresh_token
+                .ok_or(AuthError::InvalidResponse(
+                    "No refresh token provided".to_string(),
+                ))?;
+            let token_set = TokenSet::new(access_token, refresh_token);
 
             Ok(Some(token_set))
         } else {

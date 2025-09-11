@@ -1,9 +1,8 @@
 //! Common helper functions for GPU rental operations
 
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
-use basilica_api::api::types::ListRentalsQuery;
-use basilica_api::client::BasilicaClient;
-use basilica_validator::rental::types::RentalState;
+use basilica_sdk::types::{ListRentalsQuery, RentalState};
+use basilica_sdk::BasilicaClient;
 use color_eyre::eyre::{eyre, Result};
 
 /// Resolve target rental ID - if not provided, fetch active rentals and prompt for selection
@@ -64,5 +63,5 @@ pub async fn resolve_target_rental(
 
     // Use interactive selector to choose a rental (use compact mode for better readability)
     let selector = crate::interactive::InteractiveSelector::new();
-    selector.select_rental(&eligible_rentals, false)
+    Ok(selector.select_rental(&eligible_rentals, false)?)
 }

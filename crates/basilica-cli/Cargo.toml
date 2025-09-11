@@ -69,7 +69,7 @@ url = "2.4"
 
 # Internal crate dependencies
 basilica-common = { path = "../basilica-common" }
-basilica-api = { path = "../basilica-api", features = ["client"] }
+basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = [
     "client",
     "openapi",

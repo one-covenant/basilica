@@ -13,11 +13,12 @@ pub mod token_store;
 pub mod types;
 
 // Re-export commonly used types and functions
+pub use basilica_sdk::auth::TokenSet;
 pub use callback_server::CallbackServer;
 pub use device_flow::DeviceFlow;
 pub use oauth_flow::OAuthFlow;
 pub use token_store::TokenStore;
-pub use types::{AuthConfig, AuthError, AuthResult, TokenSet};
+pub use types::{AuthConfig, AuthError, AuthResult};
 
 /// Environment detection utilities for determining authentication flow
 /// Detect if running in Windows Subsystem for Linux (WSL)

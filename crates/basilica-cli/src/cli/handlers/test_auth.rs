@@ -224,7 +224,9 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
     }
 
     // Test refresh if we have a refresh token
-    if let Some(refresh_token) = &tokens.refresh_token {
+    // refresh_token is now always present (not optional)
+    {
+        let refresh_token = &tokens.refresh_token;
         println!("\nAttempting to refresh token (even if not expired)...");
 
         let auth_config = crate::config::create_auth_config_with_port(0);
@@ -252,22 +254,14 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
                 println!("     Continuing with existing token...");
             }
         }
-    } else {
-        println!("\n  ⚠️  No refresh token available (cannot test refresh)");
-        println!("     This usually means one of:");
-        println!("     1. Auth0 API needs 'Allow Offline Access' enabled");
-        println!("     2. You need to re-authenticate after the setting is enabled");
-        println!("\n  ℹ️  To fix this:");
-        println!("     1. Go to Auth0 Dashboard → APIs → Your API → Settings");
-        println!("     2. Enable 'Allow Offline Access' toggle");
-        println!("     3. Run 'basilica logout' then 'basilica login' again");
     }
 
     println!("\n──────────────────────────────────");
     println!("Testing token validity with Auth0...\n");
 
     // Get the authenticated client (will use refreshed token if available)
-    let client = create_authenticated_client(config).await?;
+    // We create it to ensure the SDK can be properly authenticated
+    let _client = create_authenticated_client(config).await?;
 
     // Use Auth0 domain from constants
     let userinfo_url = format!("https://{}/userinfo", basilica_common::auth0_domain());
@@ -277,10 +271,14 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
     // Make a direct HTTP request to the userinfo endpoint
     let http_client = reqwest::Client::new();
 
-    // Get the bearer token from our client
-    let token = client
-        .get_bearer_token()
+    // Get the bearer token from TokenStore
+    let data_dir = CliConfig::data_dir()?;
+    let token_store = TokenStore::new(data_dir)?;
+    let tokens = token_store
+        .retrieve()
+        .await?
         .ok_or_else(|| eyre!("No authentication token found. Please run 'basilica login' first"))?;
+    let token = tokens.access_token;
 
     let response = http_client
         .get(&userinfo_url)
@@ -319,7 +317,7 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
         // Display OAuth scopes from the JWT token
         println!("\nToken Scopes:");
         println!("─────────────");
-        match decode_jwt_scopes(token) {
+        match decode_jwt_scopes(&token) {
             Some(scopes) => {
                 if scopes.is_empty() {
                     println!("  No scopes found in token");

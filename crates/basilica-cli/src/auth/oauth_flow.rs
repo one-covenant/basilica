@@ -4,15 +4,15 @@
 //! for secure authentication without requiring client secrets.
 
 use super::callback_server::CallbackServer;
-use super::types::{AuthConfig, AuthError, AuthResult, TokenSet};
+use super::types::{AuthConfig, AuthError, AuthResult};
 use crate::output::print_info;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use basilica_sdk::auth::TokenSet;
 use console::{style, Term};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
-    CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope,
-    TokenResponse, TokenUrl,
+    CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use rand::Rng;
 use reqwest;
@@ -275,21 +275,18 @@ impl OAuthFlow {
         let refresh_token = token_response
             .refresh_token()
             .map(|rt| rt.secret().to_string());
-        let token_type = "Bearer".to_string();
-        let expires_in = token_response
-            .expires_in()
-            .map(|duration| duration.as_secs());
+        // These are no longer needed since TokenSet only stores access and refresh tokens
         let scopes = token_response
             .scopes()
             .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
             .unwrap_or_else(|| self.config.scopes.clone());
 
+        // Create simplified TokenSet (now only contains access and refresh tokens)
         let token_set = TokenSet::new(
             access_token,
-            refresh_token,
-            token_type,
-            expires_in,
-            scopes.clone(),
+            refresh_token.ok_or(AuthError::InvalidResponse(
+                "No refresh token provided".to_string(),
+            ))?,
         );
 
         info!(
@@ -301,53 +298,14 @@ impl OAuthFlow {
 
     /// Refresh an expired access token using the refresh token
     pub async fn refresh_access_token(&self, refresh_token: &str) -> AuthResult<TokenSet> {
-        debug!("Refreshing access token");
-
-        // Create OAuth2 client
-        let client = BasicClient::new(
-            ClientId::new(self.config.client_id.clone()),
-            None, // No client secret for PKCE flow
-            AuthUrl::new(self.config.auth_endpoint.clone())
-                .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
-            Some(
-                TokenUrl::new(self.config.token_endpoint.clone()).map_err(|e| {
-                    AuthError::ConfigError(format!("Invalid token endpoint: {}", e))
-                })?,
-            ),
-        );
-
-        // Refresh token
-        let token_response = client
-            .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-            .request_async(async_http_client)
-            .await
-            .map_err(|e| AuthError::NetworkError(format!("Token refresh failed: {}", e)))?;
-
-        // Extract token information
-        let access_token = token_response.access_token().secret().to_string();
-        let new_refresh_token = token_response
-            .refresh_token()
-            .map(|rt| rt.secret().to_string())
-            .or_else(|| Some(refresh_token.to_string())); // Keep old refresh token if new one not provided
-        let token_type = "Bearer".to_string();
-        let expires_in = token_response
-            .expires_in()
-            .map(|duration| duration.as_secs());
-        let scopes = token_response
-            .scopes()
-            .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
-            .unwrap_or_else(|| self.config.scopes.clone());
-
-        let token_set = TokenSet::new(
-            access_token,
-            new_refresh_token,
-            token_type,
-            expires_in,
-            scopes,
-        );
-
-        info!("Token refresh completed successfully");
-        Ok(token_set)
+        // Use the SDK's refresh function with our OAuth config
+        basilica_sdk::auth::refresh_access_token(
+            refresh_token,
+            Some(&self.config.client_id),
+            Some(&self.config.token_endpoint),
+        )
+        .await
+        .map_err(|e| AuthError::NetworkError(format!("Token refresh failed: {}", e)))
     }
 
     /// Revoke a token with the OAuth provider
@@ -360,11 +318,8 @@ impl OAuthFlow {
                 AuthError::ConfigError("Revoke endpoint not configured".to_string())
             })?;
 
-        // Prioritize refresh token for revocation as it revokes the entire grant
-        let token_to_revoke = token_set
-            .refresh_token
-            .as_ref()
-            .unwrap_or(&token_set.access_token);
+        // Use refresh token for revocation as it revokes the entire grant
+        let token_to_revoke = &token_set.refresh_token;
 
         debug!("Revoking token at endpoint: {}", revoke_endpoint);
 

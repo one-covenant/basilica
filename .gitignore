@@ -121,3 +121,12 @@ CLAUDE.md
 scripts/web/basilica-linux-amd64
 scripts/web/basilica-macos-arm64
 plans/
+
+# Python SDK
+crates/basilica-sdk-python/python/basilica/_basilica.abi3.so
+crates/basilica-sdk-python/python/basilica/*.so
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+crates/basilica-sdk-python/.venv/

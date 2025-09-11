@@ -128,6 +128,9 @@ impl Args {
                 handlers::auth::handle_login(*device_code, config).await?;
             }
             Commands::Logout => handlers::auth::handle_logout(config).await?,
+            Commands::ExportToken { name, format } => {
+                handlers::auth::handle_export_token(name.clone(), format, config).await?
+            }
             #[cfg(debug_assertions)]
             Commands::TestAuth { api } => {
                 if *api {

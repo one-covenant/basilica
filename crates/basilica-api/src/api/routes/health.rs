@@ -1,7 +1,8 @@
 //! Health check route handler
 
-use crate::{api::types::HealthCheckResponse, server::AppState};
+use crate::server::AppState;
 use axum::{extract::State, Json};
+use basilica_sdk::types::HealthCheckResponse;
 
 /// Health check endpoint
 #[utoipa::path(

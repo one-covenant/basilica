@@ -17,18 +17,10 @@ pub mod config;
 pub mod error;
 pub mod server;
 
-// Client module (conditionally compiled)
-#[cfg(feature = "client")]
-pub mod client;
-
 // Re-export commonly used types
 pub use config::Config;
 pub use error::{ApiError, Result};
 pub use server::Server;
-
-// Re-export client types when client feature is enabled
-#[cfg(feature = "client")]
-pub use client::{BasilicaClient, ClientBuilder};
 
 /// Version of the basilica-api crate
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

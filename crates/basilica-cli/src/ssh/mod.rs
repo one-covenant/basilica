@@ -1,12 +1,13 @@
 //! SSH operations module
 
 use crate::config::SshConfig;
-use basilica_api::api::types::{RentalStatusResponse, SshAccess};
+use crate::error::{CliError, Result};
 use basilica_common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, SshFileTransferManager,
     StandardSshClient,
 };
-use color_eyre::eyre::{eyre, Result, WrapErr};
+use basilica_sdk::types::{RentalStatusResponse, SshAccess};
+use color_eyre::eyre::{eyre, WrapErr};
 use color_eyre::Section;
 use std::path::Path;
 use std::time::Duration;
@@ -56,7 +57,8 @@ impl SshClient {
                 private_key_path.display()
             )
             .suggestion("SSH keys are automatically generated during login. Run 'basilica login' to create them")
-            .note("Or generate manually with 'ssh-keygen -t ed25519 -f ~/.ssh/basilica_ed25519'"));
+            .note("Or generate manually with 'ssh-keygen -t ed25519 -f ~/.ssh/basilica_ed25519'")
+            .into());
         }
 
         Ok(SshConnectionDetails {
@@ -98,7 +100,8 @@ impl SshClient {
     ) -> Result<()> {
         Err(eyre!(
             "SSH access details must be provided separately - use execute_command with SshAccess"
-        ))
+        )
+        .into())
     }
 
     /// Open interactive SSH session
@@ -129,10 +132,11 @@ impl SshClient {
             .arg("LogLevel=error")
             .arg(format!("{}@{}", details.username, details.host));
 
-        let status = cmd.status().map_err(|e| {
+        let status = cmd.status().map_err(|e| -> CliError {
             eyre!("Failed to start SSH session: {}", e)
                 .suggestion("Check your SSH key permissions and network connectivity")
                 .note("Ensure the rental is active and accessible")
+                .into()
         })?;
 
         // Only treat exit code 255 as an SSH error (SSH's own error code)
@@ -140,7 +144,8 @@ impl SshClient {
         if status.code() == Some(255) {
             return Err(eyre!("SSH connection failed")
                 .suggestion("Check if the rental is still active and SSH port is exposed")
-                .note("Run 'basilica status <rental-id>' to check rental status"));
+                .note("Run 'basilica status <rental-id>' to check rental status")
+                .into());
         }
 
         Ok(())
@@ -270,10 +275,11 @@ impl SshClient {
         // Add the target host
         cmd.arg(format!("{}@{}", details.username, details.host));
 
-        let status = cmd.status().map_err(|e| {
+        let status = cmd.status().map_err(|e| -> CliError {
             eyre!("Failed to start SSH session: {}", e)
                 .suggestion("Check your SSH key permissions and network connectivity")
                 .note("Ensure the rental is active and accessible")
+                .into()
         })?;
 
         // Only treat exit code 255 as an SSH error (SSH's own error code)
@@ -281,7 +287,8 @@ impl SshClient {
         if status.code() == Some(255) {
             return Err(eyre!("SSH connection failed")
                 .suggestion("Check if the rental is still active and SSH port is exposed")
-                .note("Run 'basilica status <rental-id>' to check rental status"));
+                .note("Run 'basilica status <rental-id>' to check rental status")
+                .into());
         }
 
         Ok(())
@@ -431,7 +438,7 @@ pub async fn ensure_ssh_keys_exist(config: &SshConfig) -> Result<()> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(eyre!("Failed to generate SSH keys: {}", stderr));
+        return Err(eyre!("Failed to generate SSH keys: {}", stderr).into());
     }
 
     // Set appropriate permissions for the private key (600)

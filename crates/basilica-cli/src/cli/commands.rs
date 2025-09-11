@@ -1,7 +1,8 @@
-use crate::cli::handlers::gpu_rental::TargetType;
-use basilica_validator::rental::types::RentalState;
+use basilica_sdk::types::RentalState;
 use clap::{Subcommand, ValueHint};
 use std::path::PathBuf;
+
+use crate::handlers::gpu_rental::TargetType;
 
 /// Main CLI commands
 #[derive(Subcommand, Debug, Clone)]
@@ -116,6 +117,17 @@ pub enum Commands {
     /// Log out of Basilica
     Logout,
 
+    /// Export authentication token for automation
+    ExportToken {
+        /// Name for the token (for documentation)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Output format (env, json, or shell)
+        #[arg(long, default_value = "env")]
+        format: String,
+    },
+
     /// Test authentication token
     #[cfg(debug_assertions)]
     TestAuth {
@@ -138,7 +150,8 @@ impl Commands {
             | Commands::Down { .. }
             | Commands::Exec { .. }
             | Commands::Ssh { .. }
-            | Commands::Cp { .. } => true,
+            | Commands::Cp { .. }
+            | Commands::ExportToken { .. } => true,
 
             // Authentication and delegation commands don't require auth
             Commands::Login { .. }

@@ -254,6 +254,33 @@ docs-open:
     cargo doc --workspace --no-deps --document-private-items --open
 
 # =============================================================================
+# PYTHON SDK
+# =============================================================================
+
+# Develop Python SDK (install in editable mode with auto-generated stubs)
+develop-python:
+    #!/usr/bin/env bash
+    
+    # Create venv if needed
+    if [ ! -d ".venv" ]; then
+        echo "Creating virtual environment..."
+        uv venv
+    fi
+    
+    # Install Python SDK in editable mode
+    echo "Installing Python SDK..."
+    uv pip install -e crates/basilica-sdk-python
+    
+    # Generate type stubs
+    echo "Generating type stubs..."
+    cd crates/basilica-sdk-python
+    cargo run --bin stub_gen --features stub-gen
+    
+    echo "✓ Python SDK installed with type stubs"
+    echo "✓ Stub file generated at: python/basilica/_basilica.pyi"
+    echo "✓ Virtual environment: .venv (root directory)"
+
+# =============================================================================
 # INTEGRATION TESTS
 # =============================================================================
 

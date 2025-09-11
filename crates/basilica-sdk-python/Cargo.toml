@@ -1,0 +1,37 @@
+[package]
+name = "basilica-sdk-python"
+version = "0.1.0"
+edition = "2021"
+authors = ["Basilica Team"]
+description = "Python bindings for the Basilica SDK"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "basilica"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "stub_gen"
+
+[features]
+default = []
+extension-module = ["pyo3/extension-module"]
+stub-gen = ["dep:pyo3-stub-gen", "dep:pyo3-stub-gen-derive"]
+
+[dependencies]
+basilica-sdk = { path = "../basilica-sdk" }
+basilica-validator = { path = "../basilica-validator", features = [
+    "client",
+    "openapi",
+] }
+pyo3 = { version = "0.26", features = ["abi3-py310"] }
+pyo3-stub-gen = { version = "0.13.1", optional = true }
+pyo3-stub-gen-derive = { version = "0.13.1", optional = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+pythonize = "0.26"
+futures = "0.3"
+
+[build-dependencies]
+pyo3-build-config = "0.26"

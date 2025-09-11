@@ -1,50 +1,31 @@
-//! API types for the Basilica API Gateway
+//! Type definitions for the Basilica SDK
 
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-// Re-export common types from validator that now have ToSchema support
+// Re-export types from basilica-validator that are used by the client
 pub use basilica_validator::api::types::{
     AvailabilityInfo, AvailableExecutor, CpuSpec, ExecutorDetails, GpuRequirements, GpuSpec,
     ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, RentCapacityRequest,
-    RentCapacityResponse, RentalStatus, RentalStatusResponse, SshAccess, TerminateRentalRequest,
+    RentCapacityResponse, RentalListItem, RentalStatus,
+    RentalStatusResponse as ValidatorRentalStatusResponse, SshAccess, TerminateRentalRequest,
 };
 
 // Re-export rental-specific types from validator
 pub use basilica_validator::api::rental_routes::{
-    PortMappingRequest, ResourceRequirementsRequest, VolumeMountRequest,
+    PortMappingRequest, ResourceRequirementsRequest, StartRentalRequest, VolumeMountRequest,
 };
 
-// Import RentalState from validator
-use basilica_validator::rental::types::RentalState;
+// Re-export RentalState from validator for SDK consumers
+pub use basilica_validator::rental::types::RentalState;
 
-// API-specific types that don't exist in validator
-
-/// API rental list item with GPU information
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ApiRentalListItem {
-    pub rental_id: String,
-    pub executor_id: String,
-    pub container_id: String,
-    pub state: RentalState,
-    pub created_at: String,
-    pub miner_id: String,
-    pub container_image: String,
-    /// GPU specifications for this rental
-    pub gpu_specs: Vec<GpuSpec>,
-    /// Whether SSH credentials are available for this rental
-    pub has_ssh: bool,
-}
-
-/// API list rentals response with GPU information
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ApiListRentalsResponse {
-    pub rentals: Vec<ApiRentalListItem>,
-    pub total_count: usize,
-}
+// SDK-specific types
 
 /// Health check response
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct HealthCheckResponse {
     /// Service status
     pub status: String,
@@ -63,7 +44,8 @@ pub struct HealthCheckResponse {
 }
 
 /// List rentals query
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ListRentalsQuery {
     /// Status filter
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -78,22 +60,53 @@ pub struct ListRentalsQuery {
     pub min_gpu_count: Option<u32>,
 }
 
+/// Rental status response (alias for compatibility)
+pub type RentalStatusResponse = ValidatorRentalStatusResponse;
+
+/// API rental list item with GPU information
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ApiRentalListItem {
+    pub rental_id: String,
+    pub executor_id: String,
+    pub container_id: String,
+    pub state: RentalState,
+    pub created_at: String,
+    pub miner_id: String,
+    pub container_image: String,
+    /// GPU specifications for this rental
+    pub gpu_specs: Vec<GpuSpec>,
+    /// Whether SSH credentials are available for this rental
+    pub has_ssh: bool,
+}
+
+/// API list rentals response with GPU information
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ApiListRentalsResponse {
+    pub rentals: Vec<ApiRentalListItem>,
+    pub total_count: usize,
+}
+
 /// Rental status query parameters
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentalStatusQuery {
     #[allow(dead_code)]
     pub include_resource_usage: Option<bool>,
 }
 
 /// Log streaming query parameters
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct LogStreamQuery {
     pub follow: Option<bool>,
     pub tail: Option<u32>,
 }
 
 /// Executor selection strategy for rental requests
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ExecutorSelection {
     /// Select a specific executor by ID
@@ -103,7 +116,8 @@ pub enum ExecutorSelection {
 }
 
 /// Start rental request with flexible executor selection
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct StartRentalApiRequest {
     /// How to select the executor for this rental
     pub executor_selection: ExecutorSelection,
@@ -140,7 +154,8 @@ pub struct StartRentalApiRequest {
 }
 
 /// Extended rental status response that includes SSH credentials from the database
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentalStatusWithSshResponse {
     /// Rental ID
     pub rental_id: String,
@@ -165,7 +180,7 @@ pub struct RentalStatusWithSshResponse {
 impl RentalStatusWithSshResponse {
     /// Create from validator response and database SSH credentials
     pub fn from_validator_response(
-        response: RentalStatusResponse,
+        response: ValidatorRentalStatusResponse,
         ssh_credentials: Option<String>,
     ) -> Self {
         Self {

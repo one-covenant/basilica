@@ -4,7 +4,6 @@ pub mod auth;
 pub mod extractors;
 pub mod middleware;
 pub mod routes;
-pub mod types;
 
 use crate::server::AppState;
 use axum::{
@@ -67,21 +66,21 @@ pub fn docs_routes() -> Router<AppState> {
     ),
     components(schemas(
         // Rental types
-        types::RentalStatusResponse,
-        types::LogStreamQuery,
-        types::PortMappingRequest,
-        types::ResourceRequirementsRequest,
-        types::VolumeMountRequest,
+        basilica_sdk::types::RentalStatusResponse,
+        basilica_sdk::types::LogStreamQuery,
+        basilica_sdk::types::PortMappingRequest,
+        basilica_sdk::types::ResourceRequirementsRequest,
+        basilica_sdk::types::VolumeMountRequest,
 
         // Common types
-        types::GpuSpec,
-        types::CpuSpec,
-        types::SshAccess,
-        types::RentalStatus,
-        types::ExecutorDetails,
+        basilica_sdk::types::GpuSpec,
+        basilica_sdk::types::CpuSpec,
+        basilica_sdk::types::SshAccess,
+        basilica_sdk::types::RentalStatus,
+        basilica_sdk::types::ExecutorDetails,
 
         // Health types
-        types::HealthCheckResponse,
+        basilica_sdk::types::HealthCheckResponse,
 
         // Error response
         crate::error::ErrorResponse,
