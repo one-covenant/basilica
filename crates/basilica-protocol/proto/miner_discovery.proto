@@ -9,13 +9,13 @@ import "common.proto";
 service MinerDiscovery {
   // Authenticate validator with the miner
   rpc AuthenticateValidator(ValidatorAuthRequest) returns (MinerAuthResponse);
-  
+
   // Request available executor leases from miner
   rpc RequestExecutorLease(LeaseRequest) returns (LeaseOfferResponse);
-  
+
   // Initiate session with specific executor
   rpc InitiateExecutorSession(SessionInitRequest) returns (SessionInitResponse);
-  
+
   // SSH Session Management
   rpc InitiateSshSession(InitiateSshSessionRequest) returns (InitiateSshSessionResponse);
   rpc CloseSshSession(CloseSshSessionRequest) returns (CloseSshSessionResponse);
@@ -27,6 +27,7 @@ message ValidatorAuthRequest {
   string signature = 2;
   string nonce = 3;
   basilca.common.v1.Timestamp timestamp = 4;
+  string target_miner_hotkey = 5;
 }
 
 message MinerAuthResponse {
@@ -34,7 +35,7 @@ message MinerAuthResponse {
   string session_token = 2;
   basilca.common.v1.Timestamp expires_at = 3;
   basilca.common.v1.ErrorInfo error = 4;
-  
+
   // Miner identity verification fields
   string miner_hotkey = 5;       // Miner's hotkey for verification
   string miner_signature = 6;     // Signature proving miner's identity
@@ -131,4 +132,4 @@ message SshSession {
   int64 created_at = 4;
   int64 expires_at = 5;
   SshSessionStatus status = 6;
-} 
+}

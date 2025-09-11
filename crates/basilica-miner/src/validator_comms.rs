@@ -338,9 +338,25 @@ impl MinerDiscovery for MinerDiscoveryService {
         let auth_request = request.into_inner();
 
         debug!(
-            "Received authentication request from validator: {}",
-            auth_request.validator_hotkey
+            "Received authentication request from validator: {} for target miner: {}",
+            auth_request.validator_hotkey, auth_request.target_miner_hotkey
         );
+
+        if let Some(ref bittensor_service) = self.bittensor_service {
+            let our_hotkey = bittensor_service.get_account_id().to_string();
+            if auth_request.target_miner_hotkey != our_hotkey {
+                warn!(
+                    "Authentication request intended for different miner. Target: {}, Our hotkey: {}. Rejecting to prevent axon hijacking.",
+                    auth_request.target_miner_hotkey, our_hotkey
+                );
+                return Err(Status::permission_denied(
+                    "Authentication request not intended for this miner",
+                ));
+            }
+            debug!("Target miner hotkey matches our hotkey, proceeding with authentication");
+        } else {
+            warn!("No bittensor service available to verify target miner hotkey");
+        }
 
         // Verify the signature if enabled
         if self.security_config.verify_signatures {
@@ -349,10 +365,14 @@ impl MinerDiscovery for MinerDiscoveryService {
                 .map_err(|e| Status::invalid_argument(format!("Invalid hotkey: {e}")))?;
 
             // Verify signature using bittensor crate
+            let signature_payload: String = format!(
+                "{}:{}",
+                auth_request.nonce, auth_request.target_miner_hotkey
+            );
             if let Err(e) = bittensor::utils::verify_bittensor_signature(
                 &validator_hotkey,
                 &auth_request.signature,
-                auth_request.nonce.as_bytes(),
+                signature_payload.as_bytes(),
             ) {
                 warn!(
                     "Signature verification failed for validator {}: {}",
@@ -903,6 +923,7 @@ mod tests {
             signature: invalid_signature,
             nonce: nonce.to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         // This should fail authentication due to invalid signature
@@ -1004,6 +1025,7 @@ mod tests {
             signature: "validator_signature".to_string(), // Dummy sig since we disabled verification
             nonce: nonce.to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         // Call authenticate_validator
@@ -1113,6 +1135,7 @@ mod tests {
             signature: "".to_string(),
             nonce: "test-nonce".to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         let result = service.authenticate_validator(Request::new(request)).await;
@@ -1124,6 +1147,7 @@ mod tests {
             signature: "invalid_hex_!@#$".to_string(),
             nonce: "test-nonce".to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         let result = service.authenticate_validator(Request::new(request)).await;
@@ -1135,6 +1159,7 @@ mod tests {
             signature: "deadbeef".to_string(), // Too short
             nonce: "test-nonce".to_string(),
             timestamp: None,
+            target_miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         };
 
         let result = service.authenticate_validator(Request::new(request)).await;

@@ -162,6 +162,7 @@ impl MinerClient {
     pub async fn connect_and_authenticate(
         &self,
         axon_endpoint: &str,
+        target_miner_hotkey: &str,
     ) -> Result<AuthenticatedMinerConnection> {
         let grpc_endpoint = self.axon_to_grpc_endpoint(axon_endpoint)?;
         info!(
@@ -189,7 +190,8 @@ impl MinerClient {
 
         // For Bittensor compatibility, we expect the signature to be a hex-encoded string
         // The miner will verify this using verify_bittensor_signature
-        let signature = self.create_validator_signature(&nonce)?;
+        let signature_payload = format!("{}:{}", nonce, target_miner_hotkey);
+        let signature = self.create_validator_signature(&signature_payload)?;
 
         // Create current timestamp
         let now = std::time::SystemTime::now()
@@ -208,6 +210,7 @@ impl MinerClient {
             timestamp: Some(basilica_protocol::common::Timestamp {
                 value: Some(timestamp),
             }),
+            target_miner_hotkey: target_miner_hotkey.to_string(),
         };
 
         debug!(

@@ -267,7 +267,7 @@ pub async fn start_rental(
 
     // Connect to miner
     let mut miner_connection = miner_client
-        .connect_and_authenticate(&miner_data.endpoint)
+        .connect_and_authenticate(&miner_data.endpoint, &miner_data.hotkey)
         .await
         .map_err(|e| {
             error!("Failed to connect to miner: {}", e);

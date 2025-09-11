@@ -578,6 +578,7 @@ impl ValidationWorkerQueue {
                     &item.task.miner_endpoint,
                     &item.executor_info,
                     item.miner_uid,
+                    &item.task.miner_hotkey,
                     item.task.intended_validation_strategy,
                 ),
             )
@@ -783,6 +784,7 @@ impl ValidationWorkerQueue {
                     &item.task.miner_endpoint,
                     &item.executor_info,
                     item.miner_uid,
+                    &item.task.miner_hotkey,
                     item.task.intended_validation_strategy,
                 ),
             )

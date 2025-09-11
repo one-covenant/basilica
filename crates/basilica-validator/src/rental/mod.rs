@@ -440,7 +440,7 @@ impl RentalManager {
 
         let mut miner_connection = self
             .miner_client
-            .connect_and_authenticate(&miner_data.endpoint)
+            .connect_and_authenticate(&miner_data.endpoint, &miner_data.hotkey)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to reconnect to miner: {}", e))?;
 

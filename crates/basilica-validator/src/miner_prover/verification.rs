@@ -103,7 +103,7 @@ impl VerificationEngine {
         let mut verification_steps = Vec::new();
 
         // Step 1: Get executors from discovery + database fallback
-        let discovered_executors = self.discover_miner_executors(&task.miner_endpoint).await
+        let discovered_executors = self.discover_miner_executors(&task.miner_endpoint, &task.miner_hotkey).await
             .unwrap_or_else(|e| {
                 warn!("Failed to discover executors for miner {} via gRPC: {}. Using database fallback.", task.miner_uid, e);
                 Vec::new()
@@ -180,6 +180,7 @@ impl VerificationEngine {
                 let self_clone = self.clone();
                 let miner_endpoint = task.miner_endpoint.clone();
                 let miner_uid = task.miner_uid;
+                let miner_hotkey = task.miner_hotkey.clone();
                 let intended_strategy = task.intended_validation_strategy;
 
                 async move {
@@ -195,6 +196,7 @@ impl VerificationEngine {
                             &miner_endpoint,
                             &executor_info,
                             miner_uid,
+                            &miner_hotkey,
                             intended_strategy,
                         )
                         .await;
@@ -412,6 +414,7 @@ impl VerificationEngine {
     async fn discover_miner_executors(
         &self,
         miner_endpoint: &str,
+        miner_hotkey: &str,
     ) -> Result<Vec<ExecutorInfoDetailed>> {
         info!(
             "[EVAL_FLOW] Starting executor discovery from miner at: {}",
@@ -454,7 +457,7 @@ impl VerificationEngine {
             miner_endpoint
         );
         let connection_start = std::time::Instant::now();
-        let mut connection = match client.connect_and_authenticate(miner_endpoint).await {
+        let mut connection = match client.connect_and_authenticate(miner_endpoint, miner_hotkey).await {
             Ok(conn) => {
                 info!(
                     "[EVAL_FLOW] Successfully connected and authenticated to miner in {:?}",
@@ -2417,6 +2420,7 @@ impl VerificationEngine {
         miner_endpoint: &str,
         executor_info: &ExecutorInfoDetailed,
         miner_uid: u16,
+        miner_hotkey: &str,
         intended_strategy: ValidationType,
     ) -> Result<ExecutorVerificationResult> {
         info!(
@@ -2481,7 +2485,7 @@ impl VerificationEngine {
 
         // Step 3: Establish connection and SSH session
         let client = self.create_authenticated_client()?;
-        let mut connection = client.connect_and_authenticate(miner_endpoint).await?;
+        let mut connection = client.connect_and_authenticate(miner_endpoint, miner_hotkey).await?;
 
         let (ssh_details, session_info) = if let Some(ref key_manager) = self.ssh_key_manager {
             let key_provider = crate::ssh::session::ValidatorSshKeyProvider::new(key_manager);
