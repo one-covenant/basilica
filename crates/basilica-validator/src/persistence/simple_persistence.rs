@@ -702,16 +702,16 @@ impl SimplePersistence {
                 AND (me.status IS NULL OR me.status != 'offline')",
         );
 
-        // Add location filters if specified
+        // Add location filters if specified (case-insensitive comparison)
         if let Some(ref loc) = location {
             if let Some(ref country) = loc.country {
-                query_str.push_str(&format!(" AND enp.country = '{}'", country));
+                query_str.push_str(&format!(" AND LOWER(enp.country) = LOWER('{}')", country));
             }
             if let Some(ref region) = loc.region {
-                query_str.push_str(&format!(" AND enp.region = '{}'", region));
+                query_str.push_str(&format!(" AND LOWER(enp.region) = LOWER('{}')", region));
             }
             if let Some(ref city) = loc.city {
-                query_str.push_str(&format!(" AND enp.city = '{}'", city));
+                query_str.push_str(&format!(" AND LOWER(enp.city) = LOWER('{}')", city));
             }
         }
 

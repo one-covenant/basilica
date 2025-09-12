@@ -8,6 +8,7 @@ use crate::{
         },
         middleware::Auth0Claims,
     },
+    country_mapping::normalize_country_code,
     error::Result,
     server::AppState,
 };
@@ -447,6 +448,13 @@ pub async fn list_available_executors(
     // Default to available=true for /executors endpoint
     if query.available.is_none() && uri.path() == "/executors" {
         query.available = Some(true);
+    }
+
+    // Normalize country code if location is provided
+    if let Some(ref mut location) = query.location {
+        if let Some(ref country) = location.country {
+            location.country = Some(normalize_country_code(country));
+        }
     }
 
     info!("Listing executors with filters: {:?}", query);
