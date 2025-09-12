@@ -676,8 +676,6 @@ impl SimplePersistence {
             "SELECT
                 me.executor_id,
                 me.miner_id,
-                me.gpu_specs,
-                me.cpu_specs,
                 me.location,
                 me.status,
                 me.gpu_count,
@@ -703,13 +701,10 @@ impl SimplePersistence {
 
         let mut executors = Vec::new();
         for row in rows {
-            let gpu_specs_json: String = row.get("gpu_specs");
-            let cpu_specs_json: String = row.get("cpu_specs");
-
             // Get GPU data from gpu_uuid_assignments join
             let gpu_names: Option<String> = row.get("gpu_names");
 
-            // Parse GPU specs - first try from gpu_uuid_assignments data, then fall back to JSON
+            // Parse GPU specs from gpu_uuid_assignments data only
             let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
 
             if let Some(names) = gpu_names {
@@ -726,17 +721,6 @@ impl SimplePersistence {
                         });
                     }
                 }
-            }
-
-            // If no GPU data from joins, try parsing the JSON
-            if gpu_specs.is_empty() && !gpu_specs_json.is_empty() && gpu_specs_json != "{}" {
-                gpu_specs = match serde_json::from_str(&gpu_specs_json) {
-                    Ok(specs) => specs,
-                    Err(e) => {
-                        tracing::debug!("Failed to parse GPU specs JSON: {}", e);
-                        vec![]
-                    }
-                };
             }
 
             // Apply GPU memory filter if specified
@@ -759,27 +743,12 @@ impl SimplePersistence {
                 }
             }
 
-            // Parse CPU specs if JSON is available
-            let cpu_specs: crate::api::types::CpuSpec =
-                if !cpu_specs_json.is_empty() && cpu_specs_json != "{}" {
-                    match serde_json::from_str(&cpu_specs_json) {
-                        Ok(specs) => specs,
-                        Err(e) => {
-                            tracing::debug!("Failed to parse CPU specs JSON: {}", e);
-                            crate::api::types::CpuSpec {
-                                cores: 0,
-                                model: "Unknown".to_string(),
-                                memory_gb: 0,
-                            }
-                        }
-                    }
-                } else {
-                    crate::api::types::CpuSpec {
-                        cores: 0,
-                        model: "Unknown".to_string(),
-                        memory_gb: 0,
-                    }
-                };
+            // CPU specs are not available in the database yet, use defaults
+            let cpu_specs = crate::api::types::CpuSpec {
+                cores: 0,
+                model: "Unknown".to_string(),
+                memory_gb: 0,
+            };
 
             executors.push(AvailableExecutorData {
                 executor_id: row.get("executor_id"),
