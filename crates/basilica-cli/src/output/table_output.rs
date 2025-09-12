@@ -426,7 +426,10 @@ pub fn display_available_executors_detailed(
             DetailedExecutorRow {
                 gpu_info,
                 id: executor_id,
-                cpu: format!("{} cores", executor.executor.cpu_specs.cores),
+                cpu: format!(
+                    "{} ({} cores)",
+                    executor.executor.cpu_specs.model, executor.executor.cpu_specs.cores
+                ),
                 ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
                 location,
             }
