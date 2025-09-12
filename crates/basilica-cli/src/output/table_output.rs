@@ -1,6 +1,7 @@
 //! Table formatting for CLI output
 
 use crate::error::Result;
+use basilica_api::country_mapping::get_country_name_from_code;
 use basilica_common::LocationProfile;
 use basilica_sdk::{
     types::{ApiRentalListItem, ExecutorDetails, RentalStatusResponse},
@@ -283,8 +284,9 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
     println!("Available GPU Instances by Country\n");
 
     for country in sorted_countries {
-        // Print country header
-        println!("{}", country);
+        // Print country header with full name
+        let country_display = get_country_name_from_code(&country);
+        println!("{}", country_display);
 
         #[derive(Tabled)]
         struct CompactRow {
