@@ -1938,10 +1938,11 @@ impl VerificationEngine {
             ssh_key_manager,
             ssh_session_manager: Arc::new(SshSessionManager::new()),
             validation_strategy_selector: Arc::new(ValidationStrategySelector::new(
-                config,
+                config.clone(),
                 persistence.clone(),
             )),
             validation_executor: Arc::new(tokio::sync::RwLock::new(ValidationExecutor::new(
+                config.clone(),
                 ssh_client.clone(),
                 metrics,
                 persistence.clone(),
