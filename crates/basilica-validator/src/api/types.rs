@@ -146,7 +146,7 @@ pub struct ListAvailableExecutorsQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_count: Option<u32>,
     /// Filter by location (city/region/country)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub location: Option<LocationProfile>,
 }
 

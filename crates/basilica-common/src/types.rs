@@ -7,8 +7,11 @@ use std::str::FromStr;
 /// Represents a geographic location profile with city, region, and country components
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocationProfile {
+    #[serde(rename = "location_city", skip_serializing_if = "Option::is_none")]
     pub city: Option<String>,
+    #[serde(rename = "location_region", skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
+    #[serde(rename = "location_country", skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
 }
 

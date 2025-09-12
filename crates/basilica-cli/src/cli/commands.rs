@@ -3,6 +3,7 @@ use clap::{Subcommand, ValueHint};
 use std::path::PathBuf;
 
 use crate::handlers::gpu_rental::TargetType;
+use basilica_validator::gpu::categorization::GpuCategory;
 
 /// Main CLI commands
 #[derive(Subcommand, Debug, Clone)]
@@ -10,6 +11,9 @@ pub enum Commands {
     /// List available GPU resources
     #[command(alias = "list")]
     Ls {
+        /// Filter by GPU category (e.g., 'h100', 'h200', 'b200') (optional)
+        gpu_type: Option<GpuCategory>,
+
         #[command(flatten)]
         filters: ListFilters,
     },
@@ -177,10 +181,6 @@ pub struct ListFilters {
     /// Maximum GPU count
     #[arg(long)]
     pub gpu_max: Option<u32>,
-
-    /// GPU type filter (e.g., h100, a100)
-    #[arg(long)]
-    pub gpu_type: Option<String>,
 
     /// Maximum price per hour
     #[arg(long)]

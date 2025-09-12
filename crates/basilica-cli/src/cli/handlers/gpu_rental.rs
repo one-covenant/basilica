@@ -85,17 +85,21 @@ impl FromStr for TargetType {
 
 /// Handle the `ls` command - list available executors for rental
 pub async fn handle_ls(
+    gpu_category: Option<GpuCategory>,
     filters: ListFilters,
     json: bool,
     config: &CliConfig,
 ) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
+    // Convert GPU category to string if provided
+    let gpu_type = gpu_category.map(|gc| gc.as_str());
+
     // Build query from filters
     let query = ListAvailableExecutorsQuery {
         available: Some(true), // Filter for available executors only
         min_gpu_memory: filters.memory_min,
-        gpu_type: filters.gpu_type,
+        gpu_type,
         min_gpu_count: Some(filters.gpu_min.unwrap_or(1)),
         location: filters.country.map(|country| LocationProfile {
             city: None,
