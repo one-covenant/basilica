@@ -168,7 +168,7 @@ impl VerificationConfig {
     pub fn test_default() -> Self {
         Self {
             verification_interval: Duration::from_secs(60),
-            max_concurrent_verifications: 5,
+            max_concurrent_verifications: 50,
             max_concurrent_full_validations: 1,
             challenge_timeout: Duration::from_secs(120),
             min_score_threshold: 0.1,
@@ -359,7 +359,7 @@ fn default_min_verification_interval_hours() -> u64 {
 }
 
 fn default_max_concurrent_verifications() -> usize {
-    5
+    50
 }
 
 fn default_enable_ssh_automation() -> bool {

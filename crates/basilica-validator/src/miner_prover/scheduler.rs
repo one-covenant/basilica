@@ -304,7 +304,7 @@ async fn spawn_validation_pipeline(
                 (miner_uid, intended_strategy, result)
             }
         })
-        .buffer_unordered(5)
+        .buffer_unordered(config.max_concurrent_verifications)
         .collect()
         .await;
 

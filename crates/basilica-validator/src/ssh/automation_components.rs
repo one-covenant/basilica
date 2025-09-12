@@ -463,7 +463,7 @@ mod tests {
 
         let verification_config = VerificationConfig {
             verification_interval: Duration::from_secs(600),
-            max_concurrent_verifications: 5,
+            max_concurrent_verifications: 50,
             max_concurrent_full_validations: 1,
             challenge_timeout: Duration::from_secs(30),
             min_score_threshold: 0.5,
@@ -486,7 +486,7 @@ mod tests {
             enabled: true,
             discovery_interval: 300,
             min_verification_interval_hours: 1,
-            max_concurrent_verifications: 5,
+            max_concurrent_verifications: 50,
             enable_ssh_automation: true,
         };
 
