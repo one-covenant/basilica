@@ -1,6 +1,7 @@
 //! Table formatting for CLI output
 
 use crate::error::Result;
+use basilica_common::LocationProfile;
 use basilica_sdk::{
     types::{ApiRentalListItem, ExecutorDetails, RentalStatusResponse},
     AvailableExecutor,
@@ -241,16 +242,22 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
         return Ok(());
     }
 
-    // Group executors by location and GPU configuration
-    let mut location_groups: HashMap<String, HashMap<String, Vec<&AvailableExecutor>>> =
+    // Group executors by country (extracted from location) and GPU configuration
+    let mut country_groups: HashMap<String, HashMap<String, Vec<&AvailableExecutor>>> =
         HashMap::new();
 
     for executor in executors {
-        let location = executor
+        // Parse location string using LocationProfile to extract country
+        let country = executor
             .executor
             .location
-            .clone()
-            .unwrap_or_else(|| "Unknown Region".to_string());
+            .as_ref()
+            .and_then(|loc| {
+                LocationProfile::from_str(loc)
+                    .ok()
+                    .and_then(|profile| profile.country)
+            })
+            .unwrap_or_else(|| "Unknown".to_string());
 
         let gpu_key = if executor.executor.gpu_specs.is_empty() {
             "No GPU".to_string()
@@ -261,23 +268,23 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
             format!("{}x {}", gpu_count, category)
         };
 
-        location_groups
-            .entry(location)
+        country_groups
+            .entry(country)
             .or_default()
             .entry(gpu_key)
             .or_default()
             .push(executor);
     }
 
-    // Sort locations for consistent display
-    let mut sorted_locations: Vec<_> = location_groups.keys().cloned().collect();
-    sorted_locations.sort();
+    // Sort countries for consistent display
+    let mut sorted_countries: Vec<_> = country_groups.keys().cloned().collect();
+    sorted_countries.sort();
 
-    println!("Available GPU Instances by Region\n");
+    println!("Available GPU Instances by Country\n");
 
-    for location in sorted_locations {
-        // Print location header
-        println!("{}", location);
+    for country in sorted_countries {
+        // Print country header
+        println!("{}", country);
 
         #[derive(Tabled)]
         struct CompactRow {
@@ -287,7 +294,7 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
             available: String,
         }
 
-        let gpu_groups = location_groups.get(&location).unwrap();
+        let gpu_groups = country_groups.get(&country).unwrap();
         let mut rows: Vec<CompactRow> = Vec::new();
 
         // Sort GPU configurations for consistent display

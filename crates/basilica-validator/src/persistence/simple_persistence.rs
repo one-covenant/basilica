@@ -672,6 +672,8 @@ impl SimplePersistence {
     ) -> Result<Vec<AvailableExecutorData>, anyhow::Error> {
         // Build the base query with LEFT JOIN to find executors without active rentals
         // Also join with gpu_uuid_assignments to get actual GPU data
+        // And join with hardware profile to get CPU/RAM information
+        // And join with network profile to get location information
         let mut query_str = String::from(
             "SELECT
                 me.executor_id,
@@ -681,12 +683,20 @@ impl SimplePersistence {
                 me.gpu_count,
                 m.verification_score,
                 m.uptime_percentage,
-                GROUP_CONCAT(gua.gpu_name) as gpu_names
+                GROUP_CONCAT(gua.gpu_name) as gpu_names,
+                ehp.cpu_model,
+                ehp.cpu_cores,
+                ehp.ram_gb,
+                enp.city,
+                enp.region,
+                enp.country
             FROM miner_executors me
             JOIN miners m ON me.miner_id = m.id
             LEFT JOIN rentals r ON me.executor_id = r.executor_id
                 AND r.state IN ('Active', 'Provisioning', 'active', 'provisioning')
             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
+            LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id
+            LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id
             WHERE r.id IS NULL
                 AND (me.status IS NULL OR me.status != 'offline')
             GROUP BY me.executor_id",
@@ -743,19 +753,32 @@ impl SimplePersistence {
                 }
             }
 
-            // CPU specs are not available in the database yet, use defaults
+            // Get hardware profile data if available, otherwise use defaults
+            let cpu_model: Option<String> = row.get("cpu_model");
+            let cpu_cores: Option<i32> = row.get("cpu_cores");
+            let ram_gb: Option<i32> = row.get("ram_gb");
+
             let cpu_specs = crate::api::types::CpuSpec {
-                cores: 0,
-                model: "Unknown".to_string(),
-                memory_gb: 0,
+                cores: cpu_cores.unwrap_or(0) as u32,
+                model: cpu_model.unwrap_or_else(|| "Unknown".to_string()),
+                memory_gb: ram_gb.unwrap_or(0) as u32,
             };
+
+            // Get network profile data for location
+            let city: Option<String> = row.get("city");
+            let region: Option<String> = row.get("region");
+            let country: Option<String> = row.get("country");
+
+            // Always use LocationProfile for consistent formatting
+            let location_profile = basilica_common::LocationProfile::new(city, region, country);
+            let location = Some(location_profile.to_string());
 
             executors.push(AvailableExecutorData {
                 executor_id: row.get("executor_id"),
                 miner_id: row.get("miner_id"),
                 gpu_specs,
                 cpu_specs,
-                location: row.get("location"),
+                location,
                 verification_score: row.get("verification_score"),
                 uptime_percentage: row.get("uptime_percentage"),
                 status: row.get("status"),
@@ -1449,9 +1472,21 @@ impl SimplePersistence {
         miner_id: &str,
     ) -> Result<Vec<ExecutorData>, anyhow::Error> {
         let rows = sqlx::query(
-            "SELECT executor_id, gpu_specs, cpu_specs, location
-             FROM miner_executors
-             WHERE miner_id = ?",
+            "SELECT 
+                me.executor_id, 
+                me.gpu_specs, 
+                me.cpu_specs, 
+                me.location,
+                ehp.cpu_model,
+                ehp.cpu_cores,
+                ehp.ram_gb,
+                enp.city,
+                enp.region,
+                enp.country
+             FROM miner_executors me
+             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id
+             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id
+             WHERE me.miner_id = ?",
         )
         .bind(miner_id)
         .fetch_all(&self.pool)
@@ -1463,13 +1498,38 @@ impl SimplePersistence {
             let cpu_specs_str: String = row.get("cpu_specs");
 
             let gpu_specs: Vec<crate::api::types::GpuSpec> = serde_json::from_str(&gpu_specs_str)?;
-            let cpu_specs: crate::api::types::CpuSpec = serde_json::from_str(&cpu_specs_str)?;
+
+            // Try to get hardware profile data first, fall back to stored cpu_specs if not available
+            let cpu_model: Option<String> = row.get("cpu_model");
+            let cpu_cores: Option<i32> = row.get("cpu_cores");
+            let ram_gb: Option<i32> = row.get("ram_gb");
+
+            let cpu_specs = if cpu_model.is_some() || cpu_cores.is_some() || ram_gb.is_some() {
+                // Use hardware profile data if available
+                crate::api::types::CpuSpec {
+                    cores: cpu_cores.unwrap_or(0) as u32,
+                    model: cpu_model.unwrap_or_else(|| "Unknown".to_string()),
+                    memory_gb: ram_gb.unwrap_or(0) as u32,
+                }
+            } else {
+                // Fall back to existing cpu_specs JSON
+                serde_json::from_str(&cpu_specs_str)?
+            };
+
+            // Get network profile data for location
+            let city: Option<String> = row.get("city");
+            let region: Option<String> = row.get("region");
+            let country: Option<String> = row.get("country");
+
+            // Always use LocationProfile for consistent formatting
+            let location_profile = basilica_common::LocationProfile::new(city, region, country);
+            let location = Some(location_profile.to_string());
 
             executors.push(ExecutorData {
                 executor_id: row.get("executor_id"),
                 gpu_specs,
                 cpu_specs,
-                location: row.get("location"),
+                location,
             });
         }
 
@@ -2564,5 +2624,95 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(gpu_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_hardware_profile_enrichment() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "test_validator".to_string())
+            .await
+            .expect("Failed to create persistence");
+
+        // Register a miner with an executor
+        let executor = ExecutorRegistration {
+            executor_id: "exec1".to_string(),
+            grpc_address: "http://192.168.1.100:50051".to_string(),
+            gpu_count: 2,
+            gpu_specs: vec![],
+            cpu_specs: CpuSpec {
+                cores: 8,
+                model: "Intel i7".to_string(),
+                memory_gb: 32,
+            },
+        };
+
+        persistence
+            .register_miner("miner_1", "hotkey1", "http://miner1.com", &[executor])
+            .await
+            .unwrap();
+
+        // Store hardware profile for the executor
+        persistence
+            .store_executor_hardware_profile(
+                1, // miner_uid
+                "exec1",
+                Some("AMD EPYC 7763".to_string()),
+                Some(64),
+                Some(256),
+                Some(1000),
+                r#"{"cpu": "AMD EPYC 7763", "cores": 64, "ram": 256}"#,
+            )
+            .await
+            .unwrap();
+
+        // Store network profile for the executor
+        persistence
+            .store_executor_network_profile(
+                1, // miner_uid
+                "exec1",
+                Some("192.168.1.100".to_string()),
+                Some("exec1.example.com".to_string()),
+                Some("San Francisco".to_string()),
+                Some("California".to_string()),
+                Some("US".to_string()),
+                Some("37.7749,-122.4194".to_string()),
+                Some("AS12345 Example ISP".to_string()),
+                Some("94102".to_string()),
+                Some("America/Los_Angeles".to_string()),
+                &chrono::Utc::now().to_rfc3339(),
+                r#"{"city": "San Francisco", "region": "California", "country": "US"}"#,
+            )
+            .await
+            .unwrap();
+
+        // Get miner executors and verify hardware profile is used
+        let executors = persistence.get_miner_executors("miner_1").await.unwrap();
+        assert_eq!(executors.len(), 1);
+
+        let executor = &executors[0];
+        assert_eq!(executor.executor_id, "exec1");
+        assert_eq!(executor.cpu_specs.model, "AMD EPYC 7763");
+        assert_eq!(executor.cpu_specs.cores, 64);
+        assert_eq!(executor.cpu_specs.memory_gb, 256);
+        assert_eq!(
+            executor.location,
+            Some("San Francisco/California/US".to_string())
+        );
+
+        // Test get_available_executors with hardware profile
+        let available = persistence
+            .get_available_executors(None, None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(available.len(), 1);
+        let available_exec = &available[0];
+        assert_eq!(available_exec.cpu_specs.model, "AMD EPYC 7763");
+        assert_eq!(available_exec.cpu_specs.cores, 64);
+        assert_eq!(available_exec.cpu_specs.memory_gb, 256);
+        assert_eq!(
+            available_exec.location,
+            Some("San Francisco/California/US".to_string())
+        );
     }
 }
