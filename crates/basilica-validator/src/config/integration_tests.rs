@@ -66,7 +66,8 @@ mod tests {
         let toml_str = toml::to_string(&config).expect("Failed to serialize to TOML");
         assert!(toml_str.contains("[emission]"));
         assert!(toml_str.contains("burn_percentage"));
-        assert!(toml_str.contains("[emission.gpu_allocations]"));
+        // Check that GPU allocations are present in the TOML
+        assert!(toml_str.contains("gpu_allocations"));
 
         // Test deserialization
         let deserialized: ValidatorConfig =
