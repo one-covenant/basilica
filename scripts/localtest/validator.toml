@@ -69,7 +69,7 @@ chain_endpoint = "ws://localhost:9944"
 weight_interval_secs = 300
 
 [verification]
-max_concurrent_verifications = 3
+max_concurrent_verifications = 30
 min_score_threshold = 0.0
 min_stake_threshold = 0.0
 max_miners_per_round = 10
