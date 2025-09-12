@@ -2319,7 +2319,7 @@ impl SimplePersistence {
         full_json: &str,
     ) -> Result<(), anyhow::Error> {
         let images_json = serde_json::to_string(&images_pulled)?;
-        
+
         sqlx::query(
             r#"
             INSERT INTO executor_docker_profile

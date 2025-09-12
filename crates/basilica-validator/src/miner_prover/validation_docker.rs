@@ -414,19 +414,17 @@ impl DockerCollector {
     /// Check if Docker-in-Docker (DinD) is supported
     async fn check_dind_support(&self, ssh_details: &SshConnectionDetails) -> bool {
         let check_timeout = Duration::from_secs(30); // Give DinD more time to start
-        
+
         // Test DinD support by running a simple docker command inside a docker:dind container
         let dind_command = r#"docker run --rm --privileged docker:dind sh -c 'dockerd-entrypoint.sh 2>/dev/null & sleep 5 && docker version >/dev/null 2>&1 && echo "supported"'"#;
-        
+
         let result = timeout(check_timeout, async {
-            match self
-                .ssh_client
-                .execute_command(ssh_details, dind_command, false)
-                .await
-            {
-                Ok(output) if output.trim().contains("supported") => true,
-                _ => false,
-            }
+            matches!(
+                self.ssh_client
+                    .execute_command(ssh_details, dind_command, false)
+                    .await,
+                Ok(output) if output.trim().contains("supported")
+            )
         })
         .await;
 
@@ -458,7 +456,14 @@ impl DockerCollector {
             .await?;
 
         match result {
-            Some((full_json, service_active, docker_version, images_pulled, dind_supported, validation_error)) => {
+            Some((
+                full_json,
+                service_active,
+                docker_version,
+                images_pulled,
+                dind_supported,
+                validation_error,
+            )) => {
                 info!(
                     miner_uid = miner_uid,
                     executor_id = executor_id,
