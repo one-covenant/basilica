@@ -689,7 +689,7 @@ mod tests {
 
     #[test]
     fn test_min_miners_per_category() {
-        let mut config = create_test_config();
+        let mut config: EmissionConfig = create_test_config();
         config.min_miners_per_category = 2; // Set minimum to 2 for testing
         let engine = WeightAllocationEngine::new(config, 0.0);
 
