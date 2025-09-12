@@ -325,6 +325,7 @@ async fn handle_ls_executors(
         min_gpu_memory: memory_min,
         gpu_type,
         min_gpu_count: gpu_min,
+        location: None,
     };
 
     // List available executors via API

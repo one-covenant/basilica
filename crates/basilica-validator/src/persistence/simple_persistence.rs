@@ -669,6 +669,7 @@ impl SimplePersistence {
         min_gpu_memory: Option<u32>,
         gpu_type: Option<String>,
         min_gpu_count: Option<u32>,
+        location: Option<basilica_common::LocationProfile>,
     ) -> Result<Vec<AvailableExecutorData>, anyhow::Error> {
         // Build the base query with LEFT JOIN to find executors without active rentals
         // Also join with gpu_uuid_assignments to get actual GPU data
@@ -698,9 +699,23 @@ impl SimplePersistence {
             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id
             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id
             WHERE r.id IS NULL
-                AND (me.status IS NULL OR me.status != 'offline')
-            GROUP BY me.executor_id",
+                AND (me.status IS NULL OR me.status != 'offline')",
         );
+
+        // Add location filters if specified
+        if let Some(ref loc) = location {
+            if let Some(ref country) = loc.country {
+                query_str.push_str(&format!(" AND enp.country = '{}'", country));
+            }
+            if let Some(ref region) = loc.region {
+                query_str.push_str(&format!(" AND enp.region = '{}'", region));
+            }
+            if let Some(ref city) = loc.city {
+                query_str.push_str(&format!(" AND enp.city = '{}'", city));
+            }
+        }
+
+        query_str.push_str(" GROUP BY me.executor_id");
 
         // Add GPU count filter if specified (use HAVING since we're grouping)
         if let Some(min_count) = min_gpu_count {
@@ -2701,7 +2716,7 @@ mod tests {
 
         // Test get_available_executors with hardware profile
         let available = persistence
-            .get_available_executors(None, None, None)
+            .get_available_executors(None, None, None, None)
             .await
             .unwrap();
 

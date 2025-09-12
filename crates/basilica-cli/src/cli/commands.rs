@@ -190,6 +190,10 @@ pub struct ListFilters {
     #[arg(long)]
     pub memory_min: Option<u32>,
 
+    /// Filter by country code (e.g., US, UK, DE)
+    #[arg(long)]
+    pub country: Option<String>,
+
     /// Show detailed GPU information (full GPU names)
     #[arg(long)]
     pub detailed: bool,
@@ -233,6 +237,10 @@ pub struct UpOptions {
     /// Command to run
     #[arg(long)]
     pub command: Vec<String>,
+
+    /// Filter by country code (e.g., US, UK, DE)
+    #[arg(long)]
+    pub country: Option<String>,
 
     /// Disable SSH access (faster startup)
     #[arg(long)]

@@ -1,10 +1,11 @@
 //! Common types used across Basilica components
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
 /// Represents a geographic location profile with city, region, and country components
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocationProfile {
     pub city: Option<String>,
     pub region: Option<String>,

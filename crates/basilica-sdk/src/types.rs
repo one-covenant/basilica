@@ -13,6 +13,9 @@ pub use basilica_validator::api::types::{
     RentalStatusResponse as ValidatorRentalStatusResponse, SshAccess, TerminateRentalRequest,
 };
 
+// Re-export LocationProfile for SDK consumers
+pub use basilica_common::LocationProfile;
+
 // Re-export rental-specific types from validator
 pub use basilica_validator::api::rental_routes::{
     PortMappingRequest, ResourceRequirementsRequest, StartRentalRequest, VolumeMountRequest,

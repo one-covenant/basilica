@@ -111,6 +111,7 @@ pub async fn start_rental(
                 min_gpu_memory: Some(gpu_requirements.min_memory_gb),
                 gpu_type: gpu_requirements.gpu_type.clone(),
                 min_gpu_count: Some(gpu_requirements.gpu_count),
+                location: None,
             };
 
             let executors_response = state

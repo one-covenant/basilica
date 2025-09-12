@@ -3,6 +3,7 @@
 //! All request/response types, enums, and shared data structures for the validator API
 
 use crate::rental::RentalState;
+use basilica_common::LocationProfile;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -144,6 +145,9 @@ pub struct ListAvailableExecutorsQuery {
     pub gpu_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_count: Option<u32>,
+    /// Filter by location (city/region/country)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<LocationProfile>,
 }
 
 /// Log streaming query parameters

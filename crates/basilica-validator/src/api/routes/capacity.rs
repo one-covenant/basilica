@@ -31,6 +31,7 @@ pub async fn list_available_executors(
             query.min_gpu_memory,
             query.gpu_type.clone(),
             query.min_gpu_count,
+            query.location.clone(),
         )
         .await
     {

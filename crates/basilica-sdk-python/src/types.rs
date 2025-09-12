@@ -592,6 +592,7 @@ impl From<ListAvailableExecutorsQuery> for SdkListAvailableExecutorsQuery {
             min_gpu_memory: query.min_gpu_memory,
             gpu_type: query.gpu_type,
             min_gpu_count: query.min_gpu_count,
+            location: None, // Python SDK doesn't support location filtering yet
         }
     }
 }
