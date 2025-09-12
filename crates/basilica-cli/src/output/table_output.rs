@@ -343,10 +343,8 @@ pub fn display_available_executors_detailed(
         cpu: String,
         #[tabled(rename = "RAM")]
         ram: String,
-        #[tabled(rename = "Score")]
-        score: String,
-        #[tabled(rename = "Uptime")]
-        uptime: String,
+        #[tabled(rename = "Location")]
+        location: String,
     }
 
     let rows: Vec<DetailedExecutorRow> = executors
@@ -410,13 +408,25 @@ pub fn display_available_executors_detailed(
                 None => executor.executor.id.clone(),
             };
 
+            // Parse and format location using LocationProfile's Display trait
+            let location = executor
+                .executor
+                .location
+                .as_ref()
+                .map(|loc| {
+                    LocationProfile::from_str(loc)
+                        .ok()
+                        .map(|profile| profile.to_string())
+                        .unwrap_or_else(|| loc.clone())
+                })
+                .unwrap_or_else(|| "Unknown".to_string());
+
             DetailedExecutorRow {
                 gpu_info,
                 id: executor_id,
                 cpu: format!("{} cores", executor.executor.cpu_specs.cores),
                 ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
-                score: format!("{:.2}", executor.availability.verification_score),
-                uptime: format!("{:.1}%", executor.availability.uptime_percentage),
+                location,
             }
         })
         .collect();
