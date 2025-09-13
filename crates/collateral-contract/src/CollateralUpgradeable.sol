@@ -79,7 +79,7 @@ contract CollateralUpgradeable is
         bytes32 indexed hotkey,
         bytes16 indexed executorId,
         address indexed miner,
-        uint256 amount,
+        uint256 slashAmount,
         string url,
         bytes16 urlContentMd5Checksum
     );
@@ -101,6 +101,7 @@ contract CollateralUpgradeable is
     error ReclaimNotFound();
     error TransferFailed();
     error InsufficientCollateralForReclaim();
+    error InsufficientCollateralForSlash();
 
     /// @notice Initializes the upgradeable collateral contract
     /// @param netuid The netuid of the subnet
@@ -265,7 +266,6 @@ contract CollateralUpgradeable is
         }
 
         collaterals[hotkey][executorId] -= amount;
-        executorToMiner[hotkey][executorId] = address(0);
 
         emit Reclaimed(reclaimRequestId, hotkey, executorId, miner, amount);
 
@@ -273,6 +273,10 @@ contract CollateralUpgradeable is
         (bool success, ) = payable(miner).call{value: amount}("");
         if (!success) {
             revert TransferFailed();
+        }
+
+        if (collaterals[hotkey][executorId] == 0) {
+            executorToMiner[hotkey][executorId] = address(0);
         }
     }
 
@@ -321,6 +325,7 @@ contract CollateralUpgradeable is
     function slashCollateral(
         bytes32 hotkey,
         bytes16 executorId,
+        uint256 slashAmount,
         string calldata url,
         bytes16 urlContentMd5Checksum
     ) external onlyTrustee {
@@ -330,20 +335,26 @@ contract CollateralUpgradeable is
             revert AmountZero();
         }
 
-        collaterals[hotkey][executorId] = 0;
+        if (slashAmount > amount) {
+            revert InsufficientCollateralForSlash();
+        }
+
+        collaterals[hotkey][executorId] = amount - slashAmount;
         address miner = executorToMiner[hotkey][executorId];
 
         // burn the collateral
-        (bool success, ) = payable(address(0)).call{value: amount}("");
+        (bool success, ) = payable(address(0)).call{value: slashAmount}("");
         if (!success) {
             revert TransferFailed();
         }
-        executorToMiner[hotkey][executorId] = address(0);
+        if (amount == slashAmount) {
+            executorToMiner[hotkey][executorId] = address(0);
+        }
         emit Slashed(
             hotkey,
             executorId,
             miner,
-            amount,
+            slashAmount,
             url,
             urlContentMd5Checksum
         );
