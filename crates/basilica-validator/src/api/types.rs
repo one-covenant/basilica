@@ -316,6 +316,15 @@ pub struct RentalListItem {
     pub created_at: String,
     pub miner_id: String,
     pub container_image: String,
+    /// GPU specifications for this rental's executor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_specs: Option<Vec<GpuSpec>>,
+    /// CPU specifications for this rental's executor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_specs: Option<CpuSpec>,
+    /// Location of the executor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
 }
 
 /// Response for listing rentals

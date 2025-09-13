@@ -537,6 +537,13 @@ pub async fn list_rentals(
             created_at: r.created_at.to_rfc3339(),
             miner_id: r.miner_id.clone(),
             container_image: r.container_spec.image.clone(),
+            gpu_specs: if r.executor_details.gpu_specs.is_empty() {
+                None
+            } else {
+                Some(r.executor_details.gpu_specs.clone())
+            },
+            cpu_specs: Some(r.executor_details.cpu_specs.clone()),
+            location: r.executor_details.location.clone(),
         })
         .collect();
 

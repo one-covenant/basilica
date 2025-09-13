@@ -1575,18 +1575,26 @@ impl SimplePersistence {
         executor_id: &str,
         miner_id: &str,
     ) -> Result<Option<crate::api::types::ExecutorDetails>, anyhow::Error> {
-        // First get the executor basic info with GPU data from gpu_uuid_assignments
+        // Get executor info with GPU data, hardware profile, and network profile
         let row = sqlx::query(
             "SELECT
                 me.executor_id,
-                me.gpu_specs,
-                me.cpu_specs,
                 me.location,
-                GROUP_CONCAT(gua.gpu_name) as gpu_names
+                GROUP_CONCAT(gua.gpu_name) as gpu_names,
+                ehp.cpu_model,
+                ehp.cpu_cores,
+                ehp.ram_gb,
+                enp.city,
+                enp.region,
+                enp.country
              FROM miner_executors me
              LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
+             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id
+             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id
              WHERE me.executor_id = ? AND me.miner_id = ?
-             GROUP BY me.executor_id, me.gpu_specs, me.cpu_specs, me.location
+             GROUP BY me.executor_id, me.location,
+                      ehp.cpu_model, ehp.cpu_cores, ehp.ram_gb,
+                      enp.city, enp.region, enp.country
              LIMIT 1",
         )
         .bind(executor_id)
@@ -1596,14 +1604,12 @@ impl SimplePersistence {
 
         if let Some(row) = row {
             let executor_id: String = row.get("executor_id");
-            let gpu_specs_json: String = row.get("gpu_specs");
-            let cpu_specs_json: String = row.get("cpu_specs");
             let location: Option<String> = row.get("location");
 
             // Get GPU data from gpu_uuid_assignments join
             let gpu_names: Option<String> = row.get("gpu_names");
 
-            // Parse GPU specs - first try from gpu_uuid_assignments data, then fall back to JSON
+            // Parse GPU specs from gpu_uuid_assignments data
             let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
 
             if let Some(names) = gpu_names {
@@ -1622,34 +1628,41 @@ impl SimplePersistence {
                 }
             }
 
-            // If no GPU data from joins, try parsing the JSON
-            if gpu_specs.is_empty() && !gpu_specs_json.is_empty() && gpu_specs_json != "{}" {
-                gpu_specs = serde_json::from_str(&gpu_specs_json).unwrap_or_default();
-            }
+            // Get hardware profile data from joined tables
+            let hw_cpu_model: Option<String> = row.get("cpu_model");
+            let hw_cpu_cores: Option<i32> = row.get("cpu_cores");
+            let hw_ram_gb: Option<i32> = row.get("ram_gb");
 
-            // Parse CPU specs if JSON is available
-            let cpu_specs: crate::api::types::CpuSpec =
-                if !cpu_specs_json.is_empty() && cpu_specs_json != "{}" {
-                    serde_json::from_str(&cpu_specs_json).unwrap_or_else(|_| {
-                        crate::api::types::CpuSpec {
-                            cores: 0,
-                            model: "Unknown".to_string(),
-                            memory_gb: 0,
-                        }
-                    })
+            // Get network profile data for location
+            let net_city: Option<String> = row.get("city");
+            let net_region: Option<String> = row.get("region");
+            let net_country: Option<String> = row.get("country");
+
+            // Parse CPU specs from hardware profile data
+            let cpu_specs: crate::api::types::CpuSpec = crate::api::types::CpuSpec {
+                cores: hw_cpu_cores.unwrap_or(0) as u32,
+                model: hw_cpu_model.unwrap_or_else(|| "Unknown".to_string()),
+                memory_gb: hw_ram_gb.unwrap_or(0) as u32,
+            };
+
+            // Build location string from network profile if available
+            let final_location =
+                if net_city.is_some() || net_region.is_some() || net_country.is_some() {
+                    let loc_profile = basilica_common::LocationProfile {
+                        city: net_city,
+                        region: net_region,
+                        country: net_country,
+                    };
+                    Some(loc_profile.to_string())
                 } else {
-                    crate::api::types::CpuSpec {
-                        cores: 0,
-                        model: "Unknown".to_string(),
-                        memory_gb: 0,
-                    }
+                    location
                 };
 
             Ok(Some(crate::api::types::ExecutorDetails {
                 id: executor_id,
                 gpu_specs,
                 cpu_specs,
-                location,
+                location: final_location,
             }))
         } else {
             Ok(None)
