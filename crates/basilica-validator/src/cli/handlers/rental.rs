@@ -365,11 +365,7 @@ async fn handle_ls_executors(
 
             if all_same {
                 // All GPUs are identical - use count prefix format
-                format!(
-                    "{}x {}",
-                    executor.executor.gpu_specs.len(),
-                    first_gpu.name
-                )
+                format!("{}x {}", executor.executor.gpu_specs.len(), first_gpu.name)
             } else {
                 // Different GPU models - list them individually
                 let gpu_names: Vec<String> = executor

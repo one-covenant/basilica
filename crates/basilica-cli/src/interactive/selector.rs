@@ -260,11 +260,7 @@ impl InteractiveSelector {
                         if detailed {
                             // Detailed mode: show memory
                             if rental.gpu_specs.len() > 1 {
-                                format!(
-                                    "{}x {}",
-                                    rental.gpu_specs.len(),
-                                    gpu_display_name
-                                )
+                                format!("{}x {}", rental.gpu_specs.len(), gpu_display_name)
                             } else {
                                 format!("1x {}", gpu_display_name)
                             }
@@ -281,17 +277,12 @@ impl InteractiveSelector {
                             .gpu_specs
                             .iter()
                             .map(|g| {
-                                let display_name = if detailed {
+                                if detailed {
                                     g.name.clone()
                                 } else {
                                     let category = GpuCategory::from_str(&g.name)
                                         .unwrap_or(GpuCategory::Other(g.name.clone()));
                                     category.to_string()
-                                };
-                                if detailed {
-                                    display_name
-                                } else {
-                                    display_name
                                 }
                             })
                             .collect::<Vec<_>>()
@@ -346,11 +337,7 @@ impl InteractiveSelector {
                         .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
 
                     if all_same {
-                        format!(
-                            "{}x {}",
-                            rental.gpu_specs.len(),
-                            first_gpu.name
-                        )
+                        format!("{}x {}", rental.gpu_specs.len(), first_gpu.name)
                     } else {
                         rental
                             .gpu_specs

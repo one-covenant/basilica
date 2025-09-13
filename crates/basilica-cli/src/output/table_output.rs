@@ -249,12 +249,11 @@ fn format_gpu_info(gpu_specs: &[GpuSpec], detailed: bool) -> String {
         gpu_specs
             .iter()
             .map(|g| {
-                let display_name = if detailed {
+                if detailed {
                     g.name.clone()
                 } else {
                     GpuCategory::from_str(&g.name).unwrap().to_string()
-                };
-                display_name
+                }
             })
             .collect::<Vec<_>>()
             .join(", ")
@@ -443,12 +442,11 @@ pub fn display_available_executors_detailed(
                         .gpu_specs
                         .iter()
                         .map(|g| {
-                            let display_name = if show_full_gpu_names {
+                            if show_full_gpu_names {
                                 g.name.clone()
                             } else {
                                 GpuCategory::from_str(&g.name).unwrap().to_string()
-                            };
-                            display_name
+                            }
                         })
                         .collect();
                     gpu_names.join(", ")
