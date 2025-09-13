@@ -81,6 +81,12 @@ pub struct ApiRentalListItem {
     pub gpu_specs: Vec<GpuSpec>,
     /// Whether SSH credentials are available for this rental
     pub has_ssh: bool,
+    /// Optional CPU specifications for detailed view
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_specs: Option<CpuSpec>,
+    /// Optional location for detailed view
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
 }
 
 /// API list rentals response with GPU information

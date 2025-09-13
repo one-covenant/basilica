@@ -4,7 +4,7 @@ use crate::error::Result;
 use basilica_api::country_mapping::get_country_name_from_code;
 use basilica_common::LocationProfile;
 use basilica_sdk::{
-    types::{ApiRentalListItem, ExecutorDetails, RentalStatusResponse},
+    types::{ApiRentalListItem, ExecutorDetails, GpuSpec, RentalStatusResponse},
     AvailableExecutor,
 };
 use basilica_validator::gpu::GpuCategory;
@@ -106,102 +106,159 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
 
 /// Display rental items in table format
 pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Result<()> {
-    #[derive(Tabled)]
-    struct RentalRow {
-        #[tabled(rename = "GPU")]
-        gpu: String,
-        #[tabled(rename = "Rental ID")]
-        rental_id: String,
-        #[tabled(rename = "State")]
-        state: String,
-        #[tabled(rename = "SSH")]
-        ssh: String,
-        #[tabled(rename = "Image")]
-        image: String,
-        #[tabled(rename = "Created")]
-        created: String,
+    if detailed {
+        // Detailed view with full information
+        #[derive(Tabled)]
+        struct DetailedRentalRow {
+            #[tabled(rename = "GPU")]
+            gpu: String,
+            #[tabled(rename = "Rental ID")]
+            rental_id: String,
+            #[tabled(rename = "State")]
+            state: String,
+            #[tabled(rename = "SSH")]
+            ssh: String,
+            #[tabled(rename = "Image")]
+            image: String,
+            #[tabled(rename = "CPU")]
+            cpu: String,
+            #[tabled(rename = "RAM")]
+            ram: String,
+            #[tabled(rename = "Location")]
+            location: String,
+            #[tabled(rename = "Created")]
+            created: String,
+        }
+
+        let rows: Vec<DetailedRentalRow> = rentals
+            .iter()
+            .map(|rental| {
+                // Format GPU info from specs
+                let gpu = format_gpu_info(&rental.gpu_specs, true);
+
+                // Format CPU info
+                let cpu = rental
+                    .cpu_specs
+                    .as_ref()
+                    .map(|cpu| format!("{} ({} cores)", cpu.model, cpu.cores))
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                // Format RAM info
+                let ram = rental
+                    .cpu_specs
+                    .as_ref()
+                    .map(|cpu| format!("{}GB", cpu.memory_gb))
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                // Format location
+                let location = rental
+                    .location
+                    .as_ref()
+                    .and_then(|loc| LocationProfile::from_str(loc).ok())
+                    .map(|profile| profile.to_string())
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                // Format SSH availability
+                let ssh = if rental.has_ssh { "✓" } else { "✗" };
+
+                DetailedRentalRow {
+                    gpu,
+                    rental_id: rental.rental_id.clone(),
+                    state: rental.state.to_string(),
+                    ssh: ssh.to_string(),
+                    image: rental.container_image.clone(),
+                    cpu,
+                    ram,
+                    location,
+                    created: format_timestamp(&rental.created_at),
+                }
+            })
+            .collect();
+
+        let mut table = Table::new(rows);
+        table.with(Style::modern());
+        println!("{table}");
+    } else {
+        // Compact view with essential information
+        #[derive(Tabled)]
+        struct CompactRentalRow {
+            #[tabled(rename = "GPU")]
+            gpu: String,
+            #[tabled(rename = "State")]
+            state: String,
+            #[tabled(rename = "SSH")]
+            ssh: String,
+            #[tabled(rename = "Created")]
+            created: String,
+        }
+
+        let rows: Vec<CompactRentalRow> = rentals
+            .iter()
+            .map(|rental| {
+                // Format GPU info from specs
+                let gpu = format_gpu_info(&rental.gpu_specs, false);
+
+                // Format SSH availability
+                let ssh = if rental.has_ssh { "✓" } else { "✗" };
+
+                CompactRentalRow {
+                    gpu,
+                    state: rental.state.to_string(),
+                    ssh: ssh.to_string(),
+                    created: format_timestamp(&rental.created_at),
+                }
+            })
+            .collect();
+
+        let mut table = Table::new(rows);
+        table.with(Style::modern());
+        println!("{table}");
     }
 
-    let rows: Vec<RentalRow> = rentals
-        .iter()
-        .map(|rental| {
-            // Format GPU info from specs
-            let gpu = if rental.gpu_specs.is_empty() {
-                "Unknown".to_string()
-            } else {
-                // Format like "2x H100 (80GB)" if all GPUs are the same,
-                // otherwise list them separately
-                let first_gpu = &rental.gpu_specs[0];
-                let all_same = rental
-                    .gpu_specs
-                    .iter()
-                    .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
-
-                if all_same {
-                    let gpu_display_name = if detailed {
-                        // Detailed mode: show full GPU name
-                        first_gpu.name.clone()
-                    } else {
-                        // Compact mode: show categorized name
-                        GpuCategory::from_str(&first_gpu.name).unwrap().to_string()
-                    };
-
-                    if detailed {
-                        // Detailed mode: show memory
-                        if rental.gpu_specs.len() > 1 {
-                            format!(
-                                "{}x {}",
-                                rental.gpu_specs.len(),
-                                gpu_display_name
-                            )
-                        } else {
-                            format!("1x {}", gpu_display_name)
-                        }
-                    } else {
-                        // Non-detailed mode: no memory
-                        if rental.gpu_specs.len() > 1 {
-                            format!("{}x {}", rental.gpu_specs.len(), gpu_display_name)
-                        } else {
-                            format!("1x {}", gpu_display_name)
-                        }
-                    }
-                } else {
-                    // List each GPU
-                    rental
-                        .gpu_specs
-                        .iter()
-                        .map(|g| {
-                            let display_name = if detailed {
-                                g.name.clone()
-                            } else {
-                                GpuCategory::from_str(&g.name).unwrap().to_string()
-                            };
-                            display_name
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                }
-            };
-
-            // Format SSH availability
-            let ssh = if rental.has_ssh { "✓" } else { "✗" };
-
-            RentalRow {
-                gpu,
-                rental_id: rental.rental_id.clone(),
-                state: rental.state.to_string(),
-                ssh: ssh.to_string(),
-                image: rental.container_image.clone(),
-                created: format_timestamp(&rental.created_at),
-            }
-        })
-        .collect();
-
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{table}");
-
     Ok(())
+}
+
+/// Helper function to format GPU info
+fn format_gpu_info(gpu_specs: &[GpuSpec], detailed: bool) -> String {
+    if gpu_specs.is_empty() {
+        return "Unknown".to_string();
+    }
+
+    // Check if all GPUs are the same
+    let first_gpu = &gpu_specs[0];
+    let all_same = gpu_specs
+        .iter()
+        .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
+
+    if all_same {
+        let gpu_display_name = if detailed {
+            // Detailed mode: show full GPU name
+            first_gpu.name.clone()
+        } else {
+            // Compact mode: show categorized name
+            GpuCategory::from_str(&first_gpu.name).unwrap().to_string()
+        };
+
+        if gpu_specs.len() > 1 {
+            format!("{}x {}", gpu_specs.len(), gpu_display_name)
+        } else {
+            format!("1x {}", gpu_display_name)
+        }
+    } else {
+        // List each GPU
+        gpu_specs
+            .iter()
+            .map(|g| {
+                let display_name = if detailed {
+                    g.name.clone()
+                } else {
+                    GpuCategory::from_str(&g.name).unwrap().to_string()
+                };
+                display_name
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 /// Display configuration in table format

@@ -384,12 +384,14 @@ pub async fn list_rentals_validator(
                     container_image: rental.container_image,
                     gpu_specs: vec![],
                     has_ssh,
+                    cpu_specs: None,
+                    location: None,
                 });
                 continue;
             }
         };
 
-        // Create API rental item with GPU specs from executor details
+        // Create API rental item with GPU specs and executor details
         api_rentals.push(ApiRentalListItem {
             rental_id: rental.rental_id,
             executor_id: rental.executor_id,
@@ -398,8 +400,10 @@ pub async fn list_rentals_validator(
             created_at: rental.created_at,
             miner_id: rental.miner_id,
             container_image: rental.container_image,
-            gpu_specs: rental_status.executor.gpu_specs,
+            gpu_specs: rental_status.executor.gpu_specs.clone(),
             has_ssh,
+            cpu_specs: Some(rental_status.executor.cpu_specs),
+            location: rental_status.executor.location,
         });
     }
 
