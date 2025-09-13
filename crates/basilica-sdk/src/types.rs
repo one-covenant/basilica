@@ -87,6 +87,9 @@ pub struct ApiRentalListItem {
     /// Optional location for detailed view
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    /// Optional network speed information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_speed: Option<NetworkSpeedInfo>,
 }
 
 /// API list rentals response with GPU information

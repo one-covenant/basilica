@@ -371,6 +371,7 @@ pub async fn list_rentals_validator(
             has_ssh,
             cpu_specs: rental.cpu_specs,
             location: rental.location,
+            network_speed: rental.network_speed,
         });
     }
 

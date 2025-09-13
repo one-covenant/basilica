@@ -335,6 +335,9 @@ pub struct RentalListItem {
     /// Location of the executor
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    /// Network speed information for this rental's executor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_speed: Option<NetworkSpeedInfo>,
 }
 
 /// Response for listing rentals

@@ -544,6 +544,7 @@ pub async fn list_rentals(
             },
             cpu_specs: Some(r.executor_details.cpu_specs.clone()),
             location: r.executor_details.location.clone(),
+            network_speed: r.executor_details.network_speed.clone(),
         })
         .collect();
 

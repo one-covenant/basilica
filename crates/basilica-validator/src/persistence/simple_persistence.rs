@@ -1595,7 +1595,7 @@ impl SimplePersistence {
         executor_id: &str,
         miner_id: &str,
     ) -> Result<Option<crate::api::types::ExecutorDetails>, anyhow::Error> {
-        // Get executor info with GPU data, hardware profile, and network profile
+        // Get executor info with GPU data, hardware profile, network profile, and speed test data
         let row = sqlx::query(
             "SELECT
                 me.executor_id,
@@ -1606,15 +1606,20 @@ impl SimplePersistence {
                 ehp.ram_gb,
                 enp.city,
                 enp.region,
-                enp.country
+                enp.country,
+                esp.download_mbps,
+                esp.upload_mbps,
+                esp.test_timestamp
              FROM miner_executors me
              LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
              LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id
              LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id
+             LEFT JOIN executor_speedtest_profile esp ON me.executor_id = esp.executor_id
              WHERE me.executor_id = ? AND me.miner_id = ?
              GROUP BY me.executor_id, me.location,
                       ehp.cpu_model, ehp.cpu_cores, ehp.ram_gb,
-                      enp.city, enp.region, enp.country
+                      enp.city, enp.region, enp.country,
+                      esp.download_mbps, esp.upload_mbps, esp.test_timestamp
              LIMIT 1",
         )
         .bind(executor_id)
@@ -1658,6 +1663,11 @@ impl SimplePersistence {
             let net_region: Option<String> = row.get("region");
             let net_country: Option<String> = row.get("country");
 
+            // Get speed test data
+            let download_mbps: Option<f64> = row.get("download_mbps");
+            let upload_mbps: Option<f64> = row.get("upload_mbps");
+            let test_timestamp: Option<String> = row.get("test_timestamp");
+
             // Parse CPU specs from hardware profile data
             let cpu_specs: crate::api::types::CpuSpec = crate::api::types::CpuSpec {
                 cores: hw_cpu_cores.unwrap_or(0) as u32,
@@ -1678,12 +1688,27 @@ impl SimplePersistence {
                     location
                 };
 
+            // Build network speed info if speed test data is available
+            let network_speed = if download_mbps.is_some() || upload_mbps.is_some() {
+                Some(crate::api::types::NetworkSpeedInfo {
+                    download_mbps,
+                    upload_mbps,
+                    test_timestamp: test_timestamp.and_then(|ts| {
+                        DateTime::parse_from_rfc3339(&ts)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    }),
+                })
+            } else {
+                None
+            };
+
             Ok(Some(crate::api::types::ExecutorDetails {
                 id: executor_id,
                 gpu_specs,
                 cpu_specs,
                 location: final_location,
-                network_speed: None,
+                network_speed,
             }))
         } else {
             Ok(None)
