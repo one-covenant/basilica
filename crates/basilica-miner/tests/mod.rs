@@ -220,6 +220,7 @@ mod tests {
         let slash_tx = contract.slashCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            amount,
             url.to_owned(),
             FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );
