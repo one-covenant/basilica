@@ -50,11 +50,21 @@ pub struct RentCapacityResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct NetworkSpeedInfo {
+    pub download_mbps: Option<f64>,
+    pub upload_mbps: Option<f64>,
+    pub test_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ExecutorDetails {
     pub id: String,
     pub gpu_specs: Vec<GpuSpec>,
     pub cpu_specs: CpuSpec,
     pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_speed: Option<NetworkSpeedInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

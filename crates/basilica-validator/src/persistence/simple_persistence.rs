@@ -675,6 +675,7 @@ impl SimplePersistence {
         // Also join with gpu_uuid_assignments to get actual GPU data
         // And join with hardware profile to get CPU/RAM information
         // And join with network profile to get location information
+        // And join with speedtest profile to get network speed information
         let mut query_str = String::from(
             "SELECT
                 me.executor_id,
@@ -690,7 +691,10 @@ impl SimplePersistence {
                 ehp.ram_gb,
                 enp.city,
                 enp.region,
-                enp.country
+                enp.country,
+                esp.download_mbps,
+                esp.upload_mbps,
+                esp.test_timestamp
             FROM miner_executors me
             JOIN miners m ON me.miner_id = m.id
             LEFT JOIN rentals r ON me.executor_id = r.executor_id
@@ -698,6 +702,7 @@ impl SimplePersistence {
             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id
             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id
+            LEFT JOIN executor_speedtest_profile esp ON me.executor_id = esp.executor_id
             WHERE r.id IS NULL
                 AND (me.status IS NULL OR me.status != 'offline')",
         );
@@ -788,6 +793,17 @@ impl SimplePersistence {
             let location_profile = basilica_common::LocationProfile::new(city, region, country);
             let location = Some(location_profile.to_string());
 
+            // Get speed test data if available
+            let download_mbps: Option<f64> = row.get("download_mbps");
+            let upload_mbps: Option<f64> = row.get("upload_mbps");
+            let test_timestamp_str: Option<String> = row.get("test_timestamp");
+
+            let speed_test_timestamp = test_timestamp_str.and_then(|ts| {
+                chrono::DateTime::parse_from_rfc3339(&ts)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            });
+
             executors.push(AvailableExecutorData {
                 executor_id: row.get("executor_id"),
                 miner_id: row.get("miner_id"),
@@ -797,6 +813,9 @@ impl SimplePersistence {
                 verification_score: row.get("verification_score"),
                 uptime_percentage: row.get("uptime_percentage"),
                 status: row.get("status"),
+                download_mbps,
+                upload_mbps,
+                speed_test_timestamp,
             });
         }
 
@@ -1049,6 +1068,7 @@ impl SimplePersistence {
                             memory_gb: 0,
                         },
                         location: None,
+                        network_speed: None,
                     }
                 }
             };
@@ -1663,6 +1683,7 @@ impl SimplePersistence {
                 gpu_specs,
                 cpu_specs,
                 location: final_location,
+                network_speed: None,
             }))
         } else {
             Ok(None)
@@ -2403,6 +2424,9 @@ pub struct AvailableExecutorData {
     pub verification_score: f64,
     pub uptime_percentage: f64,
     pub status: Option<String>,
+    pub download_mbps: Option<f64>,
+    pub upload_mbps: Option<f64>,
+    pub speed_test_timestamp: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[cfg(test)]

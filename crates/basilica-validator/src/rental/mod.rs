@@ -257,6 +257,7 @@ impl RentalManager {
                         memory_gb: 0,
                     },
                     location: None,
+                    network_speed: None,
                 }
             }
             Err(e) => {

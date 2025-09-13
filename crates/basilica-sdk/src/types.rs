@@ -8,8 +8,8 @@ use utoipa::ToSchema;
 // Re-export types from basilica-validator that are used by the client
 pub use basilica_validator::api::types::{
     AvailabilityInfo, AvailableExecutor, CpuSpec, ExecutorDetails, GpuRequirements, GpuSpec,
-    ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, RentCapacityRequest,
-    RentCapacityResponse, RentalListItem, RentalStatus,
+    ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, NetworkSpeedInfo,
+    RentCapacityRequest, RentCapacityResponse, RentalListItem, RentalStatus,
     RentalStatusResponse as ValidatorRentalStatusResponse, SshAccess, TerminateRentalRequest,
 };
 
