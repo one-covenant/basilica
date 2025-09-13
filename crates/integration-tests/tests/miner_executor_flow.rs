@@ -60,8 +60,8 @@ async fn miner_executor_validation_flow() -> Result<()> {
     info!("Miner {} has {} executors", miner.id, miner.executors.len());
     for executor in &miner.executors {
         info!(
-            "  - Executor {}: {} ({}GB)",
-            executor.id, executor.gpu_model, executor.vram_gb
+            "  - Executor {}: {}",
+            executor.id, executor.gpu_model
         );
     }
 

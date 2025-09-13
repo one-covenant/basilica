@@ -150,13 +150,12 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Re
                         // Detailed mode: show memory
                         if rental.gpu_specs.len() > 1 {
                             format!(
-                                "{}x {} ({}GB)",
+                                "{}x {}",
                                 rental.gpu_specs.len(),
-                                gpu_display_name,
-                                first_gpu.memory_gb
+                                gpu_display_name
                             )
                         } else {
-                            format!("1x {} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                            format!("1x {}", gpu_display_name)
                         }
                     } else {
                         // Non-detailed mode: no memory
@@ -177,11 +176,7 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Re
                             } else {
                                 GpuCategory::from_str(&g.name).unwrap().to_string()
                             };
-                            if detailed {
-                                format!("{} ({}GB)", display_name, g.memory_gb)
-                            } else {
-                                display_name
-                            }
+                            display_name
                         })
                         .collect::<Vec<_>>()
                         .join(", ")
@@ -362,7 +357,7 @@ pub fn display_available_executors_detailed(
                 } else {
                     GpuCategory::from_str(&gpu.name).unwrap().to_string()
                 };
-                format!("1x {} ({}GB)", gpu_display_name, gpu.memory_gb)
+                format!("1x {}", gpu_display_name)
             } else {
                 // Multiple GPUs - check if they're all the same model
                 let first_gpu = &executor.executor.gpu_specs[0];
@@ -380,10 +375,9 @@ pub fn display_available_executors_detailed(
                         GpuCategory::from_str(&first_gpu.name).unwrap().to_string()
                     };
                     format!(
-                        "{}x {} ({}GB)",
+                        "{}x {}",
                         executor.executor.gpu_specs.len(),
-                        gpu_display_name,
-                        first_gpu.memory_gb
+                        gpu_display_name
                     )
                 } else {
                     // Different GPU models - list them individually
@@ -397,7 +391,7 @@ pub fn display_available_executors_detailed(
                             } else {
                                 GpuCategory::from_str(&g.name).unwrap().to_string()
                             };
-                            format!("{} ({}GB)", display_name, g.memory_gb)
+                            display_name
                         })
                         .collect();
                     gpu_names.join(", ")

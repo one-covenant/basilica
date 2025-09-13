@@ -60,13 +60,12 @@ impl InteractiveSelector {
                     let gpu_display_name = gpu.name.clone(); // Full name in detailed mode
                     if executor.executor.gpu_specs.len() > 1 {
                         format!(
-                            "{}x {} ({}GB)",
+                            "{}x {}",
                             executor.executor.gpu_specs.len(),
-                            gpu_display_name,
-                            gpu.memory_gb
+                            gpu_display_name
                         )
                     } else {
-                        format!("1x {} ({}GB)", gpu_display_name, gpu.memory_gb)
+                        format!("1x {}", gpu_display_name)
                     }
                 }
             })
@@ -262,13 +261,12 @@ impl InteractiveSelector {
                             // Detailed mode: show memory
                             if rental.gpu_specs.len() > 1 {
                                 format!(
-                                    "{}x {} ({}GB)",
+                                    "{}x {}",
                                     rental.gpu_specs.len(),
-                                    gpu_display_name,
-                                    first_gpu.memory_gb
+                                    gpu_display_name
                                 )
                             } else {
-                                format!("1x {} ({}GB)", gpu_display_name, first_gpu.memory_gb)
+                                format!("1x {}", gpu_display_name)
                             }
                         } else {
                             // Non-detailed mode: no memory
@@ -291,7 +289,7 @@ impl InteractiveSelector {
                                     category.to_string()
                                 };
                                 if detailed {
-                                    format!("{} ({}GB)", display_name, g.memory_gb)
+                                    display_name
                                 } else {
                                     display_name
                                 }
@@ -349,16 +347,15 @@ impl InteractiveSelector {
 
                     if all_same {
                         format!(
-                            "{}x {} ({}GB)",
+                            "{}x {}",
                             rental.gpu_specs.len(),
-                            first_gpu.name,
-                            first_gpu.memory_gb
+                            first_gpu.name
                         )
                     } else {
                         rental
                             .gpu_specs
                             .iter()
-                            .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                            .map(|g| g.name.clone())
                             .collect::<Vec<_>>()
                             .join(", ")
                     }
