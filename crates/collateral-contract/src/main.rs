@@ -57,7 +57,7 @@ enum TxCommands {
         /// Executor ID as string
         #[arg(long)]
         executor_id: String,
-        /// Amount to deposit RAO
+        /// Amount to deposit in wei
         #[arg(long)]
         amount: String,
     },
@@ -114,7 +114,7 @@ enum TxCommands {
         /// Executor ID as string
         #[arg(long)]
         executor_id: String,
-        /// Amount to slash in RAO
+        /// Amount to slash in in wei
         #[arg(long)]
         slash_amount: String,
         /// URL for proof of slashing
@@ -216,7 +216,7 @@ async fn handle_tx_command(
             let executor_uuid = Uuid::parse_str(&executor_id)?;
 
             println!(
-                "Depositing {} RAO for executor {} with hotkey {}",
+                "Depositing {} in wei for executor {} with hotkey {}",
                 amount, executor_id, hotkey
             );
             collateral_contract::deposit(
@@ -337,7 +337,7 @@ async fn handle_query_command(
         }
         QueryCommands::MinCollateralIncrease => {
             let result = collateral_contract::min_collateral_increase(network_config).await?;
-            println!("Minimum collateral increase: {} RAO", result);
+            println!("Minimum collateral increase: {} in wei", result);
         }
         QueryCommands::ExecutorToMiner {
             hotkey,
@@ -371,7 +371,7 @@ async fn handle_query_command(
             )
             .await?;
             println!(
-                "Collateral for executor {}: {} RAO",
+                "Collateral for executor {}: {} in wei",
                 executor_id_clone, result
             );
         }
@@ -382,7 +382,7 @@ async fn handle_query_command(
             println!("  Hotkey: {}", hex::encode(result.hotkey));
             println!("  Executor ID: {}", Uuid::from_bytes(result.executor_id));
             println!("  Miner: {}", result.miner);
-            println!("  Amount: {} RAO", result.amount);
+            println!("  Amount: {} in wei", result.amount);
             println!("  Deny timeout: {}", result.deny_timeout);
         }
     }
@@ -467,7 +467,7 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                         hex::encode(deposit.executorId.as_slice())
                     );
                     println!("    Miner: {}", deposit.miner);
-                    println!("    Amount: {} RAO", deposit.amount);
+                    println!("    Amount: {} in wei", deposit.amount);
                 }
                 CollateralEvent::Reclaimed(reclaimed) => {
                     println!("    Type: Reclaimed");
@@ -478,7 +478,7 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                         hex::encode(reclaimed.executorId.as_slice())
                     );
                     println!("    Miner: {}", reclaimed.miner);
-                    println!("    Amount: {} RAO", reclaimed.amount);
+                    println!("    Amount: {} in wei", reclaimed.amount);
                 }
                 CollateralEvent::Slashed(slashed) => {
                     println!("    Type: Slashed");
@@ -488,7 +488,7 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                         hex::encode(slashed.executorId.as_slice())
                     );
                     println!("    Miner: {}", slashed.miner);
-                    println!("    Amount: {} RAO", slashed.slashAmount);
+                    println!("    Amount: {} in wei", slashed.slashAmount);
                     println!("    URL: {}", slashed.url);
                     println!(
                         "    URL Content MD5: {}",
