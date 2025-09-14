@@ -325,6 +325,7 @@ async fn handle_ls_executors(
         min_gpu_memory: memory_min,
         gpu_type,
         min_gpu_count: gpu_min,
+        location: None,
     };
 
     // List available executors via API
@@ -352,7 +353,7 @@ async fn handle_ls_executors(
         } else if executor.executor.gpu_specs.len() == 1 {
             // Single GPU
             let gpu = &executor.executor.gpu_specs[0];
-            format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+            gpu.name.clone()
         } else {
             // Multiple GPUs - check if they're all the same model
             let first_gpu = &executor.executor.gpu_specs[0];
@@ -364,19 +365,14 @@ async fn handle_ls_executors(
 
             if all_same {
                 // All GPUs are identical - use count prefix format
-                format!(
-                    "{}x {} ({}GB)",
-                    executor.executor.gpu_specs.len(),
-                    first_gpu.name,
-                    first_gpu.memory_gb
-                )
+                format!("{}x {}", executor.executor.gpu_specs.len(), first_gpu.name)
             } else {
                 // Different GPU models - list them individually
                 let gpu_names: Vec<String> = executor
                     .executor
                     .gpu_specs
                     .iter()
-                    .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                    .map(|g| g.name.clone())
                     .collect();
                 gpu_names.join(", ")
             }

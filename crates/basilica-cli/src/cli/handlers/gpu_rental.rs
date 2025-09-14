@@ -12,8 +12,9 @@ use crate::ssh::{parse_ssh_credentials, SshClient};
 use crate::CliError;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_sdk::types::{
-    ExecutorSelection, GpuRequirements, ListAvailableExecutorsQuery, ListRentalsQuery, RentalState,
-    RentalStatusResponse, ResourceRequirementsRequest, SshAccess, StartRentalApiRequest,
+    ExecutorSelection, GpuRequirements, ListAvailableExecutorsQuery, ListRentalsQuery,
+    LocationProfile, RentalState, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
+    StartRentalApiRequest,
 };
 use basilica_sdk::ApiError;
 use basilica_validator::gpu::categorization::GpuCategory;
@@ -84,18 +85,27 @@ impl FromStr for TargetType {
 
 /// Handle the `ls` command - list available executors for rental
 pub async fn handle_ls(
+    gpu_category: Option<GpuCategory>,
     filters: ListFilters,
     json: bool,
     config: &CliConfig,
 ) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
+    // Convert GPU category to string if provided
+    let gpu_type = gpu_category.map(|gc| gc.as_str());
+
     // Build query from filters
     let query = ListAvailableExecutorsQuery {
         available: Some(true), // Filter for available executors only
         min_gpu_memory: filters.memory_min,
-        gpu_type: filters.gpu_type,
+        gpu_type,
         min_gpu_count: Some(filters.gpu_min.unwrap_or(1)),
+        location: filters.country.map(|country| LocationProfile {
+            city: None,
+            region: None,
+            country: Some(country),
+        }),
     };
 
     let spinner = create_spinner("Scanning global GPU availability...");
@@ -171,6 +181,11 @@ pub async fn handle_up(
             min_gpu_memory: None,
             gpu_type: None,
             min_gpu_count: options.gpu_min,
+            location: options.country.as_ref().map(|country| LocationProfile {
+                city: None,
+                region: None,
+                country: Some(country.clone()),
+            }),
         };
 
         let response = api_client

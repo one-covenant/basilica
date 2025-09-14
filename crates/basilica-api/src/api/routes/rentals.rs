@@ -8,6 +8,7 @@ use crate::{
         },
         middleware::Auth0Claims,
     },
+    country_mapping::normalize_country_code,
     error::Result,
     server::AppState,
 };
@@ -111,6 +112,7 @@ pub async fn start_rental(
                 min_gpu_memory: Some(gpu_requirements.min_memory_gb),
                 gpu_type: gpu_requirements.gpu_type.clone(),
                 min_gpu_count: Some(gpu_requirements.gpu_count),
+                location: None,
             };
 
             let executors_response = state
@@ -346,7 +348,7 @@ pub async fn list_rentals_validator(
             message: format!("Failed to list rentals: {e}"),
         })?;
 
-    // Filter to only include user's rentals and fetch executor details
+    // Filter to only include user's rentals and use executor details from validator response
     let mut api_rentals = Vec::new();
 
     for rental in all_rentals.rentals {
@@ -356,38 +358,7 @@ pub async fn list_rentals_validator(
             None => continue, // User doesn't own this rental
         };
 
-        // Get rental status to fetch executor details with GPU specs
-        // TODO: fix n+1 api requests. we should get the status while listing rentals.
-        let rental_status = match state
-            .validator_client
-            .get_rental_status(&rental.rental_id)
-            .await
-        {
-            Ok(status) => status,
-            Err(e) => {
-                // Log error but continue with other rentals
-                tracing::warn!(
-                    "Failed to get rental status for {}: {}",
-                    rental.rental_id,
-                    e
-                );
-                // Create rental item without GPU specs
-                api_rentals.push(ApiRentalListItem {
-                    rental_id: rental.rental_id,
-                    executor_id: rental.executor_id,
-                    container_id: rental.container_id,
-                    state: rental.state,
-                    created_at: rental.created_at,
-                    miner_id: rental.miner_id,
-                    container_image: rental.container_image,
-                    gpu_specs: vec![],
-                    has_ssh,
-                });
-                continue;
-            }
-        };
-
-        // Create API rental item with GPU specs from executor details
+        // Create API rental item with executor details from validator response
         api_rentals.push(ApiRentalListItem {
             rental_id: rental.rental_id,
             executor_id: rental.executor_id,
@@ -396,8 +367,11 @@ pub async fn list_rentals_validator(
             created_at: rental.created_at,
             miner_id: rental.miner_id,
             container_image: rental.container_image,
-            gpu_specs: rental_status.executor.gpu_specs,
+            gpu_specs: rental.gpu_specs.unwrap_or_default(),
             has_ssh,
+            cpu_specs: rental.cpu_specs,
+            location: rental.location,
+            network_speed: rental.network_speed,
         });
     }
 
@@ -446,6 +420,13 @@ pub async fn list_available_executors(
     // Default to available=true for /executors endpoint
     if query.available.is_none() && uri.path() == "/executors" {
         query.available = Some(true);
+    }
+
+    // Normalize country code if location is provided
+    if let Some(ref mut location) = query.location {
+        if let Some(ref country) = location.country {
+            location.country = Some(normalize_country_code(country));
+        }
     }
 
     info!("Listing executors with filters: {:?}", query);

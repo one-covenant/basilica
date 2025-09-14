@@ -8,10 +8,13 @@ use utoipa::ToSchema;
 // Re-export types from basilica-validator that are used by the client
 pub use basilica_validator::api::types::{
     AvailabilityInfo, AvailableExecutor, CpuSpec, ExecutorDetails, GpuRequirements, GpuSpec,
-    ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, RentCapacityRequest,
-    RentCapacityResponse, RentalListItem, RentalStatus,
+    ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, NetworkSpeedInfo,
+    RentCapacityRequest, RentCapacityResponse, RentalListItem, RentalStatus,
     RentalStatusResponse as ValidatorRentalStatusResponse, SshAccess, TerminateRentalRequest,
 };
+
+// Re-export LocationProfile for SDK consumers
+pub use basilica_common::LocationProfile;
 
 // Re-export rental-specific types from validator
 pub use basilica_validator::api::rental_routes::{
@@ -78,6 +81,15 @@ pub struct ApiRentalListItem {
     pub gpu_specs: Vec<GpuSpec>,
     /// Whether SSH credentials are available for this rental
     pub has_ssh: bool,
+    /// Optional CPU specifications for detailed view
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_specs: Option<CpuSpec>,
+    /// Optional location for detailed view
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// Optional network speed information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_speed: Option<NetworkSpeedInfo>,
 }
 
 /// API list rentals response with GPU information

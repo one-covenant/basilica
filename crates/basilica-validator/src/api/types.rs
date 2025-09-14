@@ -3,6 +3,7 @@
 //! All request/response types, enums, and shared data structures for the validator API
 
 use crate::rental::RentalState;
+use basilica_common::LocationProfile;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -49,11 +50,21 @@ pub struct RentCapacityResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct NetworkSpeedInfo {
+    pub download_mbps: Option<f64>,
+    pub upload_mbps: Option<f64>,
+    pub test_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ExecutorDetails {
     pub id: String,
     pub gpu_specs: Vec<GpuSpec>,
     pub cpu_specs: CpuSpec,
     pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_speed: Option<NetworkSpeedInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -144,6 +155,9 @@ pub struct ListAvailableExecutorsQuery {
     pub gpu_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_count: Option<u32>,
+    /// Filter by location (city/region/country)
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub location: Option<LocationProfile>,
 }
 
 /// Log streaming query parameters
@@ -312,6 +326,18 @@ pub struct RentalListItem {
     pub created_at: String,
     pub miner_id: String,
     pub container_image: String,
+    /// GPU specifications for this rental's executor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_specs: Option<Vec<GpuSpec>>,
+    /// CPU specifications for this rental's executor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_specs: Option<CpuSpec>,
+    /// Location of the executor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// Network speed information for this rental's executor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_speed: Option<NetworkSpeedInfo>,
 }
 
 /// Response for listing rentals

@@ -141,8 +141,14 @@ impl Args {
             }
 
             // GPU rental operations
-            Commands::Ls { filters } => {
-                handlers::gpu_rental::handle_ls(filters.clone(), self.json, config).await?;
+            Commands::Ls { gpu_type, filters } => {
+                handlers::gpu_rental::handle_ls(
+                    gpu_type.clone(),
+                    filters.clone(),
+                    self.json,
+                    config,
+                )
+                .await?;
             }
             Commands::Up { target, options } => {
                 handlers::gpu_rental::handle_up(target.clone(), options.clone(), config).await?;
