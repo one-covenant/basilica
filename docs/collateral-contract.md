@@ -110,7 +110,7 @@ Below is a typical sequence for integrating and using this collateral contract w
   - Each miner **creates an Ethereum (H160) wallet**, links it to their hotkey, and funds it with enough TAO for transaction fees.
   - Miners **retrieve** the owner's contract address from the chain or another trusted source.
   - Upon confirmation, miners **deposit** collateral by calling the contract's `deposit(executorUuid)` function, specifying the **executor UUID** to associate the collateral with specific executors.
-  - Confirm on-chain that your collateral has been successfully locked for your miner and the specified executor.
+  - Confirm on-chain that your collateral is locked for your hotkey and the specified executorId.
 
 - **Slashing Misbehaving Miners**
   If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` with the `miner`, `slashAmount`, `executorUuid`, and justification details to reduce the miner’s collateral.
@@ -266,4 +266,4 @@ Miner's reclaim request will be declined when his executor is rented by customer
 
 ### What will happen when a miner's deposit is slashed?
 
-The miner may lose some or all collateral (via `slashAmount`) associated with the violated executor. The remaining collateral will continue to be used for miners.
+The miner loses `slashAmount` of collateral tied to the specified `executorId`. Any remaining collateral stays locked for that (`hotkey`, `executorId`) and continues to count toward eligibility/prioritization; the mapping entry is cleared only when the remaining collateral becomes zero.
