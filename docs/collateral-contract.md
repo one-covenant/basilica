@@ -10,6 +10,8 @@ This smart contract is **generic** and works with **any Bittensor subnet**.
 
 We provide the CLI to interact with collateral contract, the details could be found in [`README.md`](/crates/collateral-contract/README.md)
 
+The main adaptation is the basilica implementation extends the executorToMiner to double map, adding the hotkey as first dimension' key. And use the UUPSUpgradeable as upgrade framework, collateral contract can be upgraded in the future.
+
 ## ⚖️ A Note on Slashing Philosophy
 
 The power to slash collateral carries weight — it protects subnet quality, but also risks abuse if unchecked.  
@@ -262,4 +264,4 @@ Miner's reclaim request will be declined when his executor is rented by customer
 
 ### What will happen when a miner's deposit is slashed?
 
-Miner will lose deposited amount for violated executor; miner need to deposit for that executor again if they want to keep getting rewards for executor.
+Miner will lose deposited some amount or all collateral for violated executor; miner need to deposit for that executor again if they want to keep getting rewards for executor.
