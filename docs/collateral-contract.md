@@ -10,10 +10,11 @@ This smart contract is **generic** and works with **any Bittensor subnet**.
 
 We provide the CLI to interact with collateral contract, the details could be found in [`README.md`](/crates/collateral-contract/README.md)
 
-+Main adaptations:
-+- Extends `executorToMiner` to a double map keyed by (`hotkey`, `executorId`).
-+- Adopts OpenZeppelin’s `UUPSUpgradeable` pattern so the collateral contract can be upgraded without losing state.
-+- Introduces partial slashing: `slashCollateral(miner, executorId, slashAmount, ...)` validates and applies `slashAmount` (cannot exceed the executor’s current collateral). The (`hotkey`, `executorId`) entry is cleared only when the remaining collateral reaches zero.
+Main adaptations:
+
+- Extends `executorToMiner` to a double map keyed by (`hotkey`, `executorId`).
+- Adopts OpenZeppelin’s `UUPSUpgradeable` pattern so the collateral contract can be upgraded without losing state.
+- Introduces partial slashing: `slashCollateral(miner, executorId, slashAmount, ...)` validates and applies `slashAmount` (cannot exceed the executor’s current collateral). The (`hotkey`, `executorId`) entry is cleared only when the remaining collateral reaches zero.
 
 ## ⚖️ A Note on Slashing Philosophy
 
@@ -109,7 +110,7 @@ Below is a typical sequence for integrating and using this collateral contract w
   - Each miner **creates an Ethereum (H160) wallet**, links it to their hotkey, and funds it with enough TAO for transaction fees.
   - Miners **retrieve** the owner's contract address from the chain or another trusted source.
   - Upon confirmation, miners **deposit** collateral by calling the contract's `deposit(executorUuid)` function, specifying the **executor UUID** to associate the collateral with specific executors.
-  - Confirm on-chain that your collateral has been successfully locked for that your miner and the specified executor.
+  - Confirm on-chain that your collateral has been successfully locked for your miner and the specified executor.
 
 - **Slashing Misbehaving Miners**
   If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` with the `miner`, `slashAmount`, `executorUuid`, and justification details to reduce the miner’s collateral.
@@ -265,4 +266,4 @@ Miner's reclaim request will be declined when his executor is rented by customer
 
 ### What will happen when a miner's deposit is slashed?
 
-The miner may lose some or all collateral (via `slashAmount`) associated with the violated executor. the remaining collateral will continue to be used for miners.
+The miner may lose some or all collateral (via `slashAmount`) associated with the violated executor. The remaining collateral will continue to be used for miners.
