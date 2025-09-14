@@ -297,10 +297,13 @@ async fn handle_tx_command(
             let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
             let executor_uuid = Uuid::parse_str(&executor_id)?;
             let amount_u256 = parse_u256(&slash_amount)?;
+            if amount_u256.is_zero() {
+                anyhow::bail!("slash_amount must be > 0 wei");
+            }
 
             println!(
-                "Slashing collateral for executor {} with hotkey {}",
-                executor_id, hotkey
+                "Slashing collateral for executor {} with hotkey {} amount {}",
+                executor_id, hotkey, slash_amount
             );
             collateral_contract::slash_collateral(
                 &private_key,
@@ -533,7 +536,7 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "hotkey": hex::encode(slashed.hotkey.as_slice()),
                         "executorId": hex::encode(slashed.executorId.as_slice()),
                         "miner": slashed.miner.to_string(),
-                        "amount": slashed.slashAmount.to_string(),
+                        "slashAmount": slashed.slashAmount.to_string(),
                         "url": slashed.url,
                         "urlContentMd5Checksum": hex::encode(slashed.urlContentMd5Checksum.as_slice())
                     })
