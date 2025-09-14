@@ -10,7 +10,7 @@ This smart contract is **generic** and works with **any Bittensor subnet**.
 
 We provide the CLI to interact with collateral contract, the details could be found in [`README.md`](/crates/collateral-contract/README.md)
 
-The main adaptation is the basilica implementation extends the executorToMiner to double map, adding the hotkey as first dimension' key. And use the UUPSUpgradeable as upgrade framework, collateral contract can be upgraded in the future.
+The main adaptations: Basilica extends `executorToMiner` to a double map keyed by (`hotkey`, `executorId`), and adopts OpenZeppelin’s `UUPSUpgradeable` pattern so the collateral contract can be upgraded without losing state.
 
 ## ⚖️ A Note on Slashing Philosophy
 
@@ -264,4 +264,4 @@ Miner's reclaim request will be declined when his executor is rented by customer
 
 ### What will happen when a miner's deposit is slashed?
 
-Miner will lose deposited some amount or all collateral for violated executor; miner need to deposit for that executor again if they want to keep getting rewards for executor.
+The miner may lose some or all collateral associated with the violated executor. To continue earning rewards for that executor, the miner must redeposit to restore the required collateral.
