@@ -698,6 +698,7 @@ impl SimplePersistence {
             FROM miner_executors me
             JOIN miners m ON me.miner_id = m.id
             LEFT JOIN rentals r ON me.executor_id = r.executor_id
+                AND r.miner_id = me.miner_id
                 AND r.state IN ('Active', 'Provisioning', 'active', 'provisioning')
             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id AND gua.miner_id = me.miner_id
             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id AND me.miner_id = 'miner_' || ehp.miner_uid
