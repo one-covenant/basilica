@@ -8,7 +8,7 @@ use dialoguer::Confirm;
 /// Handle creating a new token
 pub async fn handle_create_token(client: &BasilicaClient, name: String) -> Result<(), CliError> {
     // Check if token already exists
-    let existing_key = client.get_api_key().await.map_err(|e| CliError::Api(e))?;
+    let existing_key = client.get_api_key().await.map_err(CliError::Api)?;
 
     if existing_key.is_some() {
         println!(
@@ -19,10 +19,7 @@ pub async fn handle_create_token(client: &BasilicaClient, name: String) -> Resul
     }
 
     // Create the new token
-    let response = client
-        .create_api_key(&name)
-        .await
-        .map_err(|e| CliError::Api(e))?;
+    let response = client.create_api_key(&name).await.map_err(CliError::Api)?;
 
     // Display the key with clear formatting
     println!();
@@ -54,7 +51,7 @@ pub async fn handle_create_token(client: &BasilicaClient, name: String) -> Resul
 
 /// Handle showing current token details
 pub async fn handle_show_token(client: &BasilicaClient) -> Result<(), CliError> {
-    let key = client.get_api_key().await.map_err(|e| CliError::Api(e))?;
+    let key = client.get_api_key().await.map_err(CliError::Api)?;
 
     if let Some(key) = key {
         println!();
@@ -91,7 +88,7 @@ pub async fn handle_revoke_token(
     skip_confirm: bool,
 ) -> Result<(), CliError> {
     // Check if token exists first
-    let key = client.get_api_key().await.map_err(|e| CliError::Api(e))?;
+    let key = client.get_api_key().await.map_err(CliError::Api)?;
 
     if key.is_none() {
         println!();
@@ -115,10 +112,7 @@ pub async fn handle_revoke_token(
     }
 
     // Revoke the token
-    client
-        .revoke_api_key()
-        .await
-        .map_err(|e| CliError::Api(e))?;
+    client.revoke_api_key().await.map_err(CliError::Api)?;
 
     println!();
     println!("{}", style("Token revoked successfully.").green());
