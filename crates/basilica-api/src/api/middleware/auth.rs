@@ -130,11 +130,8 @@ pub async fn auth_middleware(
         // JWT authentication (existing Auth0 logic)
         debug!("Attempting JWT authentication");
 
-        // Get the JWKS URL from Auth0 domain
-        let jwks_url = format!("https://{}/.well-known/jwks.json", auth0_domain());
-
         // Fetch the JWKS from Auth0
-        let jwks = fetch_jwks(&jwks_url).await.map_err(|e| {
+        let jwks = fetch_jwks(auth0_domain()).await.map_err(|e| {
             warn!("Failed to fetch JWKS from Auth0: {}", e);
             (
                 StatusCode::SERVICE_UNAVAILABLE,
