@@ -1,24 +1,24 @@
-//! API Key management handlers for the Basilica CLI
+//! Token management handlers for the Basilica CLI
 
 use crate::error::CliError;
 use basilica_sdk::BasilicaClient;
 use console::style;
 use dialoguer::Confirm;
 
-/// Handle creating a new API key
-pub async fn handle_create_key(client: &BasilicaClient, name: String) -> Result<(), CliError> {
-    // Check if key already exists
+/// Handle creating a new token
+pub async fn handle_create_token(client: &BasilicaClient, name: String) -> Result<(), CliError> {
+    // Check if token already exists
     let existing_key = client.get_api_key().await.map_err(|e| CliError::Api(e))?;
 
     if existing_key.is_some() {
         println!(
             "{}",
-            style("⚠️  Note: Creating a new key will revoke your existing key.").yellow()
+            style("⚠️  Note: Creating a new token will revoke your existing token.").yellow()
         );
         println!();
     }
 
-    // Create the new API key
+    // Create the new token
     let response = client
         .create_api_key(&name)
         .await
@@ -26,7 +26,7 @@ pub async fn handle_create_key(client: &BasilicaClient, name: String) -> Result<
 
     // Display the key with clear formatting
     println!();
-    println!("{}", style("API Key created successfully!").green().bold());
+    println!("{}", style("Token created successfully!").green().bold());
     println!();
     println!("  {}: {}", style("Name").bold(), response.name);
     println!(
@@ -45,20 +45,20 @@ pub async fn handle_create_key(client: &BasilicaClient, name: String) -> Result<
             .bold()
     );
     println!();
-    println!("To use this key:");
+    println!("To use this token:");
     println!("  export BASILICA_API_KEY=\"{}\"", response.token);
     println!();
 
     Ok(())
 }
 
-/// Handle showing current API key details
-pub async fn handle_show_key(client: &BasilicaClient) -> Result<(), CliError> {
+/// Handle showing current token details
+pub async fn handle_show_token(client: &BasilicaClient) -> Result<(), CliError> {
     let key = client.get_api_key().await.map_err(|e| CliError::Api(e))?;
 
     if let Some(key) = key {
         println!();
-        println!("{}", style("Current API Key:").bold());
+        println!("{}", style("Current Token:").bold());
         println!("  {}: {}", style("Name").bold(), key.name);
         println!(
             "  {}: {}",
@@ -75,27 +75,27 @@ pub async fn handle_show_key(client: &BasilicaClient) -> Result<(), CliError> {
         println!();
     } else {
         println!();
-        println!("No API key exists.");
+        println!("No token exists.");
         println!();
         println!("Create one with:");
-        println!("  {} api-key create <name>", style("basilica").cyan());
+        println!("  {} token create <name>", style("basilica").cyan());
         println!();
     }
 
     Ok(())
 }
 
-/// Handle revoking the API key
-pub async fn handle_revoke_key(
+/// Handle revoking the token
+pub async fn handle_revoke_token(
     client: &BasilicaClient,
     skip_confirm: bool,
 ) -> Result<(), CliError> {
-    // Check if key exists first
+    // Check if token exists first
     let key = client.get_api_key().await.map_err(|e| CliError::Api(e))?;
 
     if key.is_none() {
         println!();
-        println!("No API key exists to revoke.");
+        println!("No token exists to revoke.");
         println!();
         return Ok(());
     }
@@ -103,7 +103,7 @@ pub async fn handle_revoke_key(
     // Confirm revocation if not skipped
     if !skip_confirm {
         let confirmed = Confirm::new()
-            .with_prompt("Are you sure you want to revoke your API key?")
+            .with_prompt("Are you sure you want to revoke your token?")
             .default(false)
             .interact()
             .map_err(|e| CliError::Internal(e.into()))?;
@@ -114,14 +114,14 @@ pub async fn handle_revoke_key(
         }
     }
 
-    // Revoke the key
+    // Revoke the token
     client
         .revoke_api_key()
         .await
         .map_err(|e| CliError::Api(e))?;
 
     println!();
-    println!("{}", style("API key revoked successfully.").green());
+    println!("{}", style("Token revoked successfully.").green());
     println!();
 
     Ok(())

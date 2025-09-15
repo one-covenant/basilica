@@ -183,23 +183,23 @@ impl Args {
             Commands::Miner { args } => handlers::external::handle_miner(args.clone())?,
             Commands::Executor { args } => handlers::external::handle_executor(args.clone())?,
 
-            // API Key management
-            Commands::ApiKey { action } => {
-                use crate::cli::commands::ApiKeyAction;
+            // Token management
+            Commands::Token { action } => {
+                use crate::cli::commands::TokenAction;
                 use crate::client::create_client;
 
-                // Create client with file-based auth (JWT required for API key management)
+                // Create client with file-based auth (JWT required for token management)
                 let client = create_client(config).await?;
 
                 match action {
-                    ApiKeyAction::Create { name } => {
-                        handlers::api_keys::handle_create_key(&client, name.clone()).await?;
+                    TokenAction::Create { name } => {
+                        handlers::tokens::handle_create_token(&client, name.clone()).await?;
                     }
-                    ApiKeyAction::Show => {
-                        handlers::api_keys::handle_show_key(&client).await?;
+                    TokenAction::Show => {
+                        handlers::tokens::handle_show_token(&client).await?;
                     }
-                    ApiKeyAction::Revoke { yes } => {
-                        handlers::api_keys::handle_revoke_key(&client, *yes).await?;
+                    TokenAction::Revoke { yes } => {
+                        handlers::tokens::handle_revoke_token(&client, *yes).await?;
                     }
                 }
             }

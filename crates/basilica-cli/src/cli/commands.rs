@@ -140,26 +140,26 @@ pub enum Commands {
         api: bool,
     },
 
-    /// API Key management commands
-    ApiKey {
+    /// Token management commands
+    Token {
         #[command(subcommand)]
-        action: ApiKeyAction,
+        action: TokenAction,
     },
 }
 
-/// API Key management actions
+/// Token management actions
 #[derive(Subcommand, Debug, Clone)]
-pub enum ApiKeyAction {
-    /// Create a new API key (replaces any existing key)
+pub enum TokenAction {
+    /// Create a new token (replaces any existing token)
     Create {
-        /// Name for the API key
+        /// Name for the token
         name: String,
     },
 
-    /// Show current API key details
+    /// Show current token details
     Show,
 
-    /// Revoke the API key
+    /// Revoke the token
     Revoke {
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]
@@ -182,7 +182,7 @@ impl Commands {
             | Commands::Ssh { .. }
             | Commands::Cp { .. }
             | Commands::ExportToken { .. }
-            | Commands::ApiKey { .. } => true,
+            | Commands::Token { .. } => true,
 
             // Authentication and delegation commands don't require auth
             Commands::Login { .. }
