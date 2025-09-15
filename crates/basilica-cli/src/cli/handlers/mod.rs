@@ -1,5 +1,6 @@
 //! Command handlers for the Basilica CLI
 
+pub mod api_keys;
 pub mod auth;
 pub mod external;
 pub mod gpu_rental;

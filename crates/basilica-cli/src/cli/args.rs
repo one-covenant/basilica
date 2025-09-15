@@ -182,6 +182,27 @@ impl Args {
             Commands::Validator { args } => handlers::external::handle_validator(args.clone())?,
             Commands::Miner { args } => handlers::external::handle_miner(args.clone())?,
             Commands::Executor { args } => handlers::external::handle_executor(args.clone())?,
+
+            // API Key management
+            Commands::ApiKey { action } => {
+                use crate::cli::commands::ApiKeyAction;
+                use crate::client::create_client;
+
+                // Create client with file-based auth (JWT required for API key management)
+                let client = create_client(config).await?;
+
+                match action {
+                    ApiKeyAction::Create { name } => {
+                        handlers::api_keys::handle_create_key(&client, name.clone()).await?;
+                    }
+                    ApiKeyAction::Show => {
+                        handlers::api_keys::handle_show_key(&client).await?;
+                    }
+                    ApiKeyAction::Revoke { yes } => {
+                        handlers::api_keys::handle_revoke_key(&client, *yes).await?;
+                    }
+                }
+            }
         }
         Ok(())
     }

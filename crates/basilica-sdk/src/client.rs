@@ -39,7 +39,8 @@ use crate::{
     auth::TokenManager,
     error::{ApiError, ErrorResponse, Result},
     types::{
-        ApiListRentalsResponse, HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
+        ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, CreateApiKeyRequest,
+        HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
         RentalStatusWithSshResponse,
     },
     StartRentalApiRequest,
@@ -182,6 +183,45 @@ impl BasilicaClient {
         self.get("/health").await
     }
 
+    // ===== API Key Management =====
+
+    /// Create a new API key (requires JWT authentication)
+    /// The API key will inherit scopes from the current JWT token
+    pub async fn create_api_key(&self, name: &str) -> Result<ApiKeyResponse> {
+        let request = CreateApiKeyRequest {
+            name: name.to_string(),
+            scopes: None, // Will inherit from JWT
+        };
+        self.post("/api-keys", &request).await
+    }
+
+    /// Get current API key info (requires JWT authentication)
+    /// Returns the first active key if it exists
+    pub async fn get_api_key(&self) -> Result<Option<ApiKeyInfo>> {
+        let keys: Vec<ApiKeyInfo> = self.get("/api-keys").await?;
+        Ok(keys.into_iter().find(|k| k.revoked_at.is_none()))
+    }
+
+    /// Revoke the API key (requires JWT authentication)
+    /// Since only one active key is allowed, this will revoke the current key
+    pub async fn revoke_api_key(&self) -> Result<()> {
+        // First get the current key
+        let key = self.get_api_key().await?;
+        if let Some(key) = key {
+            let path = format!("/api-keys/{}", key.id);
+            let response = self.delete_empty(&path).await?;
+            if response.status().is_success() {
+                Ok(())
+            } else {
+                self.handle_error_response(response).await
+            }
+        } else {
+            Err(ApiError::NotFound {
+                resource: "No active API key found".into(),
+            })
+        }
+    }
+
     // ===== Private Helper Methods =====
 
     /// Apply authentication to request
@@ -303,6 +343,7 @@ pub struct ClientBuilder {
     connect_timeout: Option<Duration>,
     pool_max_idle_per_host: Option<usize>,
     use_file_auth: bool,
+    api_key: Option<String>,
 }
 
 impl ClientBuilder {
@@ -355,6 +396,12 @@ impl ClientBuilder {
         self
     }
 
+    /// Use API key for authentication (from provided string)
+    pub fn with_api_key(mut self, api_key: &str) -> Self {
+        self.api_key = Some(api_key.to_string());
+        self
+    }
+
     /// Build the client with automatic authentication detection
     /// This will automatically find and use CLI tokens if available
     pub async fn build_auto(self) -> Result<BasilicaClient> {
@@ -377,7 +424,11 @@ impl ClientBuilder {
         let base_url = self.base_url.unwrap_or_else(|| DEFAULT_API_URL.to_string());
 
         // Create token manager based on auth configuration
-        let token_manager = if self.use_file_auth {
+        let token_manager = if let Some(api_key) = self.api_key {
+            // API key takes precedence
+            TokenManager::new_api_key(api_key)
+        } else if self.use_file_auth {
+            // File-based auth (also checks for BASILICA_API_KEY env var)
             TokenManager::new_file_based().map_err(|e| ApiError::Internal {
                 message: format!("Failed to create file-based token manager: {}", e),
             })?
@@ -387,7 +438,7 @@ impl ClientBuilder {
             TokenManager::new_direct(access_token, refresh_token)
         } else {
             return Err(ApiError::InvalidRequest {
-                message: "Either use with_tokens() with both access and refresh tokens, or with_file_auth()"
+                message: "Either use with_tokens() with both access and refresh tokens, with_file_auth(), or with_api_key()"
                     .into(),
             });
         };

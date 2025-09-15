@@ -205,3 +205,63 @@ impl RentalStatusWithSshResponse {
         }
     }
 }
+
+// API Key Management Types
+
+/// Request to create a new API key
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateApiKeyRequest {
+    /// Name for the API key
+    pub name: String,
+
+    /// Optional scopes for the API key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<Vec<String>>,
+}
+
+/// Response after creating a new API key
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ApiKeyResponse {
+    /// ID of the created key
+    pub id: i64,
+
+    /// Name of the key
+    pub name: String,
+
+    /// Creation timestamp
+    pub created_at: chrono::DateTime<chrono::Utc>,
+
+    /// Key prefix for identification
+    pub prefix: String,
+
+    /// The full API key token (only returned once at creation)
+    pub token: String,
+}
+
+/// API key information (without the secret)
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ApiKeyInfo {
+    /// ID of the key
+    pub id: i64,
+
+    /// Key identifier (kid)
+    pub kid: String,
+
+    /// Name of the key
+    pub name: String,
+
+    /// Creation timestamp
+    pub created_at: chrono::DateTime<chrono::Utc>,
+
+    /// Revocation timestamp (if revoked)
+    pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+
+    /// Last usage timestamp
+    pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
+
+    /// Key prefix for identification
+    pub prefix: String,
+}
