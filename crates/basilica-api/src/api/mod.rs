@@ -20,7 +20,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
         // Health endpoint - no authentication required for ALB health checks
         .route("/health", get(routes::health::health_check));
 
-    // Protected routes with Auth0 authentication and scope validation
+    // Protected routes with unified authentication and scope validation
     let protected_routes = Router::new()
         .route("/rentals", get(routes::rentals::list_rentals_validator))
         .route("/rentals", post(routes::rentals::start_rental))
@@ -31,14 +31,20 @@ pub fn routes(state: AppState) -> Router<AppState> {
             get(routes::rentals::stream_rental_logs),
         )
         .route("/executors", get(routes::rentals::list_available_executors))
-        // Apply scope validation AFTER auth0 middleware
+        // API key management endpoints (JWT auth only)
+        .route(
+            "/api-keys",
+            post(routes::api_keys::create_key).get(routes::api_keys::list_keys),
+        )
+        .route("/api-keys/:id", delete(routes::api_keys::revoke_key))
+        // Apply scope validation AFTER auth middleware
         .layer(axum::middleware::from_fn(
             middleware::scope_validation_middleware,
         ))
-        // Apply auth0 authentication first
+        // Apply unified authentication first
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            middleware::auth0_middleware,
+            middleware::auth_middleware,
         ));
 
     // Build the router with both public and protected routes
@@ -63,6 +69,10 @@ pub fn docs_routes() -> Router<AppState> {
     paths(
         // Health and monitoring
         routes::health::health_check,
+        // API key management
+        routes::api_keys::create_key,
+        routes::api_keys::list_keys,
+        routes::api_keys::revoke_key,
     ),
     components(schemas(
         // Rental types
@@ -82,12 +92,18 @@ pub fn docs_routes() -> Router<AppState> {
         // Health types
         basilica_sdk::types::HealthCheckResponse,
 
+        // API key types
+        routes::api_keys::CreateKeyRequest,
+        routes::api_keys::CreateKeyResponse,
+        routes::api_keys::ListKeyItem,
+
         // Error response
         crate::error::ErrorResponse,
     )),
     tags(
         (name = "rentals", description = "GPU rental management"),
         (name = "health", description = "Health and monitoring"),
+        (name = "api-keys", description = "API key management"),
     ),
     info(
         title = "Basilica API",
