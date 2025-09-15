@@ -199,8 +199,6 @@ pub struct SmStat {
 #[derive(Debug, Clone)]
 pub struct ExecutorInfoDetailed {
     pub id: ExecutorId,
-    pub host: String,
-    pub port: u16,
     pub status: String,
     pub capabilities: Vec<String>,
     pub grpc_endpoint: String,
