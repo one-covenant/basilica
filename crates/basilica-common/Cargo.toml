@@ -50,6 +50,7 @@ data-encoding = "2"
 sha2 = "0.10"
 regex = "1.10"
 once_cell = "1.19"
+oci-client = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

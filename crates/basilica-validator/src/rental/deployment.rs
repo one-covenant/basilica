@@ -4,7 +4,7 @@
 //! including validation, resource allocation, and lifecycle management.
 
 use anyhow::{Context, Result};
-use basilica_common::utils::validate_docker_image_ref;
+use basilica_common::utils::validate_docker_image;
 use tracing::{debug, info, warn};
 
 use super::container_client::ContainerClient;
@@ -215,7 +215,7 @@ impl DeploymentManager {
 
     /// Validate container image
     fn validate_image(&self, image: &str) -> Result<()> {
-        validate_docker_image_ref(image)?;
+        validate_docker_image(image)?;
 
         // Check if image is in blocked list
         for blocked in &self.config.blocked_images {

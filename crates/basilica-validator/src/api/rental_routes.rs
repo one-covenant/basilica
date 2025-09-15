@@ -9,6 +9,7 @@ use axum::{
     response::{sse::Event, IntoResponse, Sse},
     Json,
 };
+use basilica_common::utils::validate_docker_image;
 use futures::stream::Stream;
 use serde::Deserialize;
 use tracing::{error, info};
@@ -210,46 +211,6 @@ fn is_valid_ssh_public_key(key: &str) -> bool {
     true
 }
 
-/// Validate container image
-fn is_valid_container_image(image: &str) -> bool {
-    if image.trim().is_empty() || image.trim().len() < 3 || image.trim().len() > 1024 {
-        return false;
-    }
-
-    if image.contains("..") || image.contains('\0') {
-        return false;
-    }
-
-    if image.contains('\'')
-        || image.contains('`')
-        || image.contains(';')
-        || image.contains('&')
-        || image.contains('|')
-    {
-        return false;
-    }
-
-    let parts: Vec<&str> = image.split('/').collect();
-    if parts.len() > 3 {
-        return false;
-    }
-
-    for ch in image.chars() {
-        if !ch.is_alphanumeric()
-            && ch != '.'
-            && ch != '-'
-            && ch != '_'
-            && ch != ':'
-            && ch != '/'
-            && ch != '@'
-        {
-            return false;
-        }
-    }
-
-    true
-}
-
 /// Start a new rental
 pub async fn start_rental(
     State(state): State<ApiState>,
@@ -290,8 +251,8 @@ pub async fn start_rental(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    if !is_valid_container_image(&request.container_image) {
-        error!("Invalid container image provided");
+    if let Err(e) = validate_docker_image(&request.container_image) {
+        error!("Invalid container image provided: {}", e);
         return Err(StatusCode::BAD_REQUEST);
     }
 

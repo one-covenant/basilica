@@ -92,6 +92,9 @@ sysinfo = "0.30"
 # Docker integration
 bollard = "0.15"
 
+# OCI client for Docker image validation
+oci-client = "0.13"
+
 # HTTP server (for validator API)
 axum = "0.7"
 tower = "0.4"

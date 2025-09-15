@@ -1,6 +1,6 @@
 use anyhow::Result;
 use basilica_common::ssh::SshConnectionDetails;
-use basilica_common::utils::validate_docker_image_ref;
+use basilica_common::utils::validate_docker_image;
 use std::sync::Arc;
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, warn};
@@ -64,7 +64,7 @@ impl DockerCollector {
         docker_image: String,
         pull_timeout_secs: u64,
     ) -> Self {
-        if let Err(e) = validate_docker_image_ref(&docker_image) {
+        if let Err(e) = validate_docker_image(&docker_image) {
             error!("Invalid Docker image in configuration: {}", e);
             panic!(
                 "Invalid Docker image reference in configuration: {}",
@@ -373,7 +373,7 @@ impl DockerCollector {
         ssh_details: &SshConnectionDetails,
         image: &str,
     ) -> Result<()> {
-        validate_docker_image_ref(image)?;
+        validate_docker_image(image)?;
 
         let command = format!("docker pull {}", image);
         let pull_timeout = Duration::from_secs(self.pull_timeout_secs);
@@ -406,7 +406,7 @@ impl DockerCollector {
         ssh_details: &SshConnectionDetails,
         image: &str,
     ) -> Result<()> {
-        validate_docker_image_ref(image)?;
+        validate_docker_image(image)?;
 
         let command = format!("docker images -q {}", image);
         let output = self
