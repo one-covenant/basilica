@@ -8,6 +8,7 @@ pub mod miner_client;
 pub mod scheduler;
 pub mod types;
 pub mod validation_binary;
+pub mod validation_docker;
 pub mod validation_hardware;
 pub mod validation_network;
 pub mod validation_speedtest;
