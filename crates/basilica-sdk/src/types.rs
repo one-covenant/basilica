@@ -233,9 +233,6 @@ pub struct ApiKeyResponse {
     /// Creation timestamp
     pub created_at: chrono::DateTime<chrono::Utc>,
 
-    /// Key prefix for identification
-    pub prefix: String,
-
     /// The full API key token (only returned once at creation)
     pub token: String,
 }
@@ -261,7 +258,4 @@ pub struct ApiKeyInfo {
 
     /// Last usage timestamp
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
-
-    /// Key prefix for identification
-    pub prefix: String,
 }

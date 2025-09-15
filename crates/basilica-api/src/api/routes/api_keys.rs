@@ -38,9 +38,6 @@ pub struct CreateKeyResponse {
     /// Creation timestamp
     pub created_at: chrono::DateTime<chrono::Utc>,
 
-    /// Key prefix for identification (first part of the token)
-    pub prefix: String,
-
     /// The full API key token (only returned once at creation)
     pub token: String,
 }
@@ -65,9 +62,6 @@ pub struct ListKeyItem {
 
     /// Last usage timestamp
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
-
-    /// Key prefix for identification
-    pub prefix: String,
 }
 
 /// Create a new API key
@@ -148,8 +142,6 @@ pub async fn create_key(
         message: format!("Failed to store API key: {}", e),
     })?;
 
-    let prefix = format!("basilica_{}_", generated.kid);
-
     debug!(
         "Successfully created API key {} for user {}",
         key.id, auth_context.user_id
@@ -159,7 +151,6 @@ pub async fn create_key(
         id: key.id,
         name: key.name,
         created_at: key.created_at,
-        prefix,
         token: generated.display_token,
     }))
 }
@@ -212,7 +203,6 @@ pub async fn list_keys(
             created_at: key.created_at,
             revoked_at: key.revoked_at,
             last_used_at: key.last_used_at,
-            prefix: format!("basilica_{}_", key.kid),
         })
         .collect();
 

@@ -8,10 +8,7 @@ use dialoguer::Confirm;
 /// Handle creating a new API key
 pub async fn handle_create_key(client: &BasilicaClient, name: String) -> Result<(), CliError> {
     // Check if key already exists
-    let existing_key = client
-        .get_api_key()
-        .await
-        .map_err(|e| CliError::Api(e))?;
+    let existing_key = client.get_api_key().await.map_err(|e| CliError::Api(e))?;
 
     if existing_key.is_some() {
         println!(
@@ -32,12 +29,21 @@ pub async fn handle_create_key(client: &BasilicaClient, name: String) -> Result<
     println!("{}", style("API Key created successfully!").green().bold());
     println!();
     println!("  {}: {}", style("Name").bold(), response.name);
-    println!("  {}: {}", style("Created").bold(), response.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
+    println!(
+        "  {}: {}",
+        style("Created").bold(),
+        response.created_at.format("%Y-%m-%d %H:%M:%S UTC")
+    );
     println!();
     println!("{}", style("Token:").bold());
     println!("{}", style(&response.token).cyan());
     println!();
-    println!("{}", style("⚠️  Save this token securely - it won't be shown again!").yellow().bold());
+    println!(
+        "{}",
+        style("⚠️  Save this token securely - it won't be shown again!")
+            .yellow()
+            .bold()
+    );
     println!();
     println!("To use this key:");
     println!("  export BASILICA_API_KEY=\"{}\"", response.token);
@@ -48,10 +54,7 @@ pub async fn handle_create_key(client: &BasilicaClient, name: String) -> Result<
 
 /// Handle showing current API key details
 pub async fn handle_show_key(client: &BasilicaClient) -> Result<(), CliError> {
-    let key = client
-        .get_api_key()
-        .await
-        .map_err(|e| CliError::Api(e))?;
+    let key = client.get_api_key().await.map_err(|e| CliError::Api(e))?;
 
     if let Some(key) = key {
         println!();
@@ -69,7 +72,6 @@ pub async fn handle_show_key(client: &BasilicaClient) -> Result<(), CliError> {
                 .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
                 .unwrap_or_else(|| "Never".to_string())
         );
-        println!("  {}: {}", style("Prefix").bold(), key.prefix);
         println!();
     } else {
         println!();
@@ -89,10 +91,7 @@ pub async fn handle_revoke_key(
     skip_confirm: bool,
 ) -> Result<(), CliError> {
     // Check if key exists first
-    let key = client
-        .get_api_key()
-        .await
-        .map_err(|e| CliError::Api(e))?;
+    let key = client.get_api_key().await.map_err(|e| CliError::Api(e))?;
 
     if key.is_none() {
         println!();
