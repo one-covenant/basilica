@@ -10,6 +10,7 @@ pub mod types;
 pub mod validation_binary;
 pub mod validation_docker;
 pub mod validation_hardware;
+pub mod validation_nat;
 pub mod validation_network;
 pub mod validation_speedtest;
 pub mod validation_strategy;
