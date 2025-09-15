@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0]
+
 ### Added
 - Country-based filtering with `--country` flag for both `ls` and `up` commands (e.g., `--country US`)
 - Hardware profile display with CPU model, cores, and RAM in executor details
