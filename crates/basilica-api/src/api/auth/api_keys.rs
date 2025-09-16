@@ -11,6 +11,8 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
+use std::fmt;
+use std::str::FromStr;
 use tracing::debug;
 
 /// API key database row
@@ -65,26 +67,108 @@ pub enum ApiKeyError {
     Hashing(String),
 }
 
+/// Structured API key token containing kid and secret components
+#[derive(Debug, Clone, PartialEq)]
+pub struct ApiKeyToken {
+    /// Key ID - 8 bytes (displayed as 16 hex chars in database)
+    pub kid_bytes: [u8; 8],
+    /// Secret - 32 bytes for cryptographic strength
+    pub secret_bytes: [u8; 32],
+}
+
+impl ApiKeyToken {
+    /// Create a new API key token with random values
+    pub fn generate() -> Self {
+        let kid_bytes: [u8; 8] = OsRng.gen();
+        let secret_bytes: [u8; 32] = OsRng.gen();
+        Self {
+            kid_bytes,
+            secret_bytes,
+        }
+    }
+
+    /// Get the kid as a hex string (for database storage)
+    pub fn kid_hex(&self) -> String {
+        hex::encode(self.kid_bytes)
+    }
+
+    /// Get the secret as bytes (for hashing)
+    pub fn secret(&self) -> &[u8] {
+        &self.secret_bytes
+    }
+}
+
+impl fmt::Display for ApiKeyToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Concatenate kid and secret bytes
+        let mut combined = Vec::with_capacity(40);
+        combined.extend_from_slice(&self.kid_bytes);
+        combined.extend_from_slice(&self.secret_bytes);
+
+        // Encode as base64url
+        let encoded = URL_SAFE_NO_PAD.encode(&combined);
+        write!(f, "basilica_{}", encoded)
+    }
+}
+
+impl FromStr for ApiKeyToken {
+    type Err = ApiKeyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Check prefix
+        if !s.starts_with("basilica_") {
+            return Err(ApiKeyError::InvalidFormat);
+        }
+
+        // Strip prefix and decode
+        let encoded = &s[9..]; // Skip "basilica_"
+        let decoded = URL_SAFE_NO_PAD
+            .decode(encoded)
+            .map_err(|_| ApiKeyError::InvalidFormat)?;
+
+        // Validate length (8 bytes kid + 32 bytes secret = 40 bytes)
+        if decoded.len() != 40 {
+            return Err(ApiKeyError::InvalidFormat);
+        }
+
+        // Split into kid and secret
+        let mut kid_bytes = [0u8; 8];
+        let mut secret_bytes = [0u8; 32];
+        kid_bytes.copy_from_slice(&decoded[0..8]);
+        secret_bytes.copy_from_slice(&decoded[8..40]);
+
+        Ok(Self {
+            kid_bytes,
+            secret_bytes,
+        })
+    }
+}
+
 /// Generate a new API key
 pub fn gen_api_key() -> Result<GeneratedApiKey, ApiKeyError> {
-    // Generate 16 hex char kid (64-bit random)
-    let kid_bytes: [u8; 8] = OsRng.gen();
-    let kid = hex::encode(kid_bytes);
+    // Generate a new token with random values
+    let token = ApiKeyToken::generate();
 
-    // Generate 32 byte secret
-    let secret_bytes: [u8; 32] = OsRng.gen();
-    let secret = URL_SAFE_NO_PAD.encode(secret_bytes);
+    // Get the kid as hex for database storage
+    let kid = token.kid_hex();
 
-    // Format display token
-    let display_token = format!("basilica_{}_{}", kid, secret);
+    // Get the secret bytes for hashing
+    let secret_bytes = token.secret();
 
     // Hash the secret with Argon2id
     let argon2 = Argon2::default();
     let salt = SaltString::generate(&mut OsRng);
     let hash = argon2
-        .hash_password(secret.as_bytes(), &salt)
+        .hash_password(secret_bytes, &salt)
         .map_err(|e| ApiKeyError::Hashing(e.to_string()))?
         .to_string();
+
+    // Convert token to display format
+    let display_token = token.to_string();
+
+    // For backward compatibility with GeneratedApiKey struct,
+    // we'll store the base64 of secret bytes (though it's not used anymore)
+    let secret = URL_SAFE_NO_PAD.encode(token.secret_bytes);
 
     Ok(GeneratedApiKey {
         kid,
@@ -96,19 +180,14 @@ pub fn gen_api_key() -> Result<GeneratedApiKey, ApiKeyError> {
 
 /// Parse a display token into its components
 pub fn parse_display_token(token: &str) -> Result<(String, String), ApiKeyError> {
-    let parts: Vec<&str> = token.split('_').collect();
+    // Parse using ApiKeyToken
+    let api_token = ApiKeyToken::from_str(token)?;
 
-    if parts.len() != 3 || parts[0] != "basilica" {
-        return Err(ApiKeyError::InvalidFormat);
-    }
+    // Get kid as hex string for database lookup
+    let kid = api_token.kid_hex();
 
-    let kid = parts[1].to_string();
-    let secret = parts[2].to_string();
-
-    // Validate kid is 16 hex chars
-    if kid.len() != 16 || !kid.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(ApiKeyError::InvalidFormat);
-    }
+    // Get secret as base64 string for compatibility
+    let secret = URL_SAFE_NO_PAD.encode(api_token.secret_bytes);
 
     Ok((kid, secret))
 }
@@ -210,8 +289,11 @@ pub async fn update_last_used(pool: &PgPool, kid: &str) -> Result<(), ApiKeyErro
 
 /// Verify an API key token
 pub async fn verify_api_key(pool: &PgPool, token: &str) -> Result<VerifiedApiKey, ApiKeyError> {
-    // Parse the token
-    let (kid, secret) = parse_display_token(token)?;
+    // Parse the token using ApiKeyToken
+    let api_token = ApiKeyToken::from_str(token)?;
+
+    // Get kid as hex for database lookup
+    let kid = api_token.kid_hex();
 
     // Fetch the key from database
     let key = get_api_key_by_kid(pool, &kid)
@@ -223,13 +305,13 @@ pub async fn verify_api_key(pool: &PgPool, token: &str) -> Result<VerifiedApiKey
         return Err(ApiKeyError::Revoked);
     }
 
-    // Verify the secret against the hash
+    // Verify the secret bytes against the hash
     let argon2 = Argon2::default();
     let parsed_hash =
         PasswordHash::new(&key.hash).map_err(|e| ApiKeyError::Hashing(e.to_string()))?;
 
     argon2
-        .verify_password(secret.as_bytes(), &parsed_hash)
+        .verify_password(api_token.secret(), &parsed_hash)
         .map_err(|_| ApiKeyError::InvalidSecret)?;
 
     // Update last_used_at asynchronously (don't wait for it)
@@ -252,6 +334,67 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_api_key_token_roundtrip() {
+        // Create a token
+        let token = ApiKeyToken::generate();
+
+        // Convert to string
+        let token_str = token.to_string();
+
+        // Parse it back
+        let parsed = ApiKeyToken::from_str(&token_str).unwrap();
+
+        // Should be equal
+        assert_eq!(token, parsed);
+        assert_eq!(token.kid_bytes, parsed.kid_bytes);
+        assert_eq!(token.secret_bytes, parsed.secret_bytes);
+    }
+
+    #[test]
+    fn test_api_key_token_format() {
+        let token = ApiKeyToken::generate();
+        let token_str = token.to_string();
+
+        // Check format
+        assert!(token_str.starts_with("basilica_"));
+
+        // Check length - should be around 54 chars (9 prefix + ~54 base64 for 40 bytes)
+        // Base64 encoding of 40 bytes = ceil(40 * 4/3) = 54 chars without padding
+        assert!(token_str.len() >= 50 && token_str.len() <= 65);
+
+        // The token body can contain underscores since we use base64url encoding
+        // which uses - and _ as special characters. The key point is that we parse
+        // by taking everything after "basilica_" as one block, not by splitting on _
+        let after_prefix = &token_str[9..];
+
+        // Should be valid base64url characters only
+        assert!(
+            after_prefix
+                .chars()
+                .all(|c| { c.is_ascii_alphanumeric() || c == '-' || c == '_' }),
+            "Token body should only contain base64url characters"
+        );
+    }
+
+    #[test]
+    fn test_api_key_token_from_str_errors() {
+        // Wrong prefix
+        assert!(ApiKeyToken::from_str("wrong_abc123").is_err());
+
+        // Too short
+        assert!(ApiKeyToken::from_str("basilica_short").is_err());
+
+        // Invalid base64
+        assert!(ApiKeyToken::from_str("basilica_!!!invalid!!!").is_err());
+
+        // Empty
+        assert!(ApiKeyToken::from_str("").is_err());
+
+        // Just prefix
+        assert!(ApiKeyToken::from_str("basilica_").is_err());
+    }
+
+    #[test]
     fn test_gen_api_key() {
         let result = gen_api_key().unwrap();
 
@@ -261,7 +404,10 @@ mod tests {
 
         // Check display token format
         assert!(result.display_token.starts_with("basilica_"));
-        assert!(result.display_token.contains(&result.kid));
+
+        // Token should be parseable
+        let parsed = ApiKeyToken::from_str(&result.display_token).unwrap();
+        assert_eq!(parsed.kid_hex(), result.kid);
 
         // Check hash is not empty
         assert!(!result.hash.is_empty());
@@ -269,46 +415,54 @@ mod tests {
 
     #[test]
     fn test_parse_display_token() {
-        // Valid token
-        let token = "basilica_a1b2c3d4e5f67890_xK9mP2nL5qR8tV3wY7zB4dF6hJ1kM0oS";
-        let (kid, secret) = parse_display_token(token).unwrap();
-        assert_eq!(kid, "a1b2c3d4e5f67890");
-        assert_eq!(secret, "xK9mP2nL5qR8tV3wY7zB4dF6hJ1kM0oS");
+        // Generate a real token
+        let api_token = ApiKeyToken::generate();
+        let token_str = api_token.to_string();
 
-        // Invalid prefix
-        let token = "invalid_a1b2c3d4e5f67890_secret";
-        assert!(parse_display_token(token).is_err());
+        // Parse it
+        let (kid, _secret) = parse_display_token(&token_str).unwrap();
 
-        // Wrong number of parts
-        let token = "basilica_a1b2c3d4e5f67890";
-        assert!(parse_display_token(token).is_err());
+        // Kid should match
+        assert_eq!(kid, api_token.kid_hex());
 
-        // Invalid kid (not hex)
-        let token = "basilica_xyz123xyz123xyz1_secret";
-        assert!(parse_display_token(token).is_err());
-
-        // Invalid kid (wrong length)
-        let token = "basilica_a1b2c3d4_secret";
-        assert!(parse_display_token(token).is_err());
+        // Invalid tokens should error
+        assert!(parse_display_token("invalid_token").is_err());
+        assert!(parse_display_token("basilica_tooshort").is_err());
     }
 
     #[test]
-    fn test_argon2_hash_verification() {
-        let secret = "test_secret_123";
+    fn test_api_key_no_delimiter_conflicts() {
+        // Generate many tokens to ensure no delimiter issues
+        for _ in 0..100 {
+            let token = ApiKeyToken::generate();
+            let token_str = token.to_string();
 
-        // Hash the secret
+            // Should parse successfully every time
+            let parsed = ApiKeyToken::from_str(&token_str).unwrap();
+            assert_eq!(token, parsed);
+
+            // parse_display_token should also work
+            let (kid, _) = parse_display_token(&token_str).unwrap();
+            assert_eq!(kid, token.kid_hex());
+        }
+    }
+
+    #[test]
+    fn test_argon2_hash_verification_with_bytes() {
+        let token = ApiKeyToken::generate();
+        let secret_bytes = token.secret();
+
+        // Hash the secret bytes
         let argon2 = Argon2::default();
         let salt = SaltString::generate(&mut OsRng);
         let hash = argon2
-            .hash_password(secret.as_bytes(), &salt)
+            .hash_password(secret_bytes, &salt)
             .unwrap()
             .to_string();
 
         // Verify correct secret
         let parsed_hash = PasswordHash::new(&hash).unwrap();
-        assert!(argon2
-            .verify_password(secret.as_bytes(), &parsed_hash)
-            .is_ok());
+        assert!(argon2.verify_password(secret_bytes, &parsed_hash).is_ok());
 
         // Verify incorrect secret
         assert!(argon2
