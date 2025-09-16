@@ -202,10 +202,15 @@ impl BasilicaClient {
         Ok(keys.into_iter().next())
     }
 
-    /// Delete the API key (requires JWT authentication)
-    /// Since only one key is allowed, this will delete the current key
-    pub async fn revoke_api_key(&self) -> Result<()> {
-        let response = self.delete_empty("/api-keys").await?;
+    /// List all API keys for the authenticated user (requires JWT authentication)
+    pub async fn list_api_keys(&self) -> Result<Vec<ApiKeyInfo>> {
+        self.get("/api-keys").await
+    }
+
+    /// Delete a specific API key by name (requires JWT authentication)
+    pub async fn revoke_api_key(&self, name: &str) -> Result<()> {
+        let encoded_name = urlencoding::encode(name);
+        let response = self.delete_empty(&format!("/api-keys/{}", encoded_name)).await?;
         if response.status().is_success() {
             Ok(())
         } else {

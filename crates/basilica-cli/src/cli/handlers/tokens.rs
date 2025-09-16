@@ -3,17 +3,45 @@
 use crate::error::CliError;
 use basilica_sdk::BasilicaClient;
 use console::style;
-use dialoguer::Confirm;
+use dialoguer::{Confirm, Input, Select};
 
 /// Handle creating a new token
-pub async fn handle_create_token(client: &BasilicaClient, name: String) -> Result<(), CliError> {
-    // Check if token already exists
-    let existing_key = client.get_api_key().await.map_err(CliError::Api)?;
+pub async fn handle_create_token(client: &BasilicaClient, name: Option<String>) -> Result<(), CliError> {
+    // Get name interactively if not provided
+    let name = match name {
+        Some(n) => n,
+        None => {
+            // Check existing keys to help user choose unique name
+            let existing_keys = client.list_api_keys().await.map_err(CliError::Api)?;
 
-    if existing_key.is_some() {
+            if !existing_keys.is_empty() {
+                println!();
+                println!("{}", style("Existing API keys:").bold());
+                for key in &existing_keys {
+                    println!("  • {}", key.name);
+                }
+                println!();
+            }
+
+            Input::new()
+                .with_prompt("Enter a name for this API key")
+                .interact_text()
+                .map_err(|e| CliError::Internal(e.into()))?
+        }
+    };
+
+    // Check if we're at the limit
+    let existing_keys = client.list_api_keys().await.map_err(CliError::Api)?;
+    if existing_keys.len() >= 10 {
         println!(
             "{}",
-            style("⚠️  Note: Creating a new token will revoke your existing token.").yellow()
+            style("⚠️  You have reached the maximum number of API keys (10). Please delete one first.").yellow()
+        );
+        return Ok(());
+    } else if existing_keys.len() >= 8 {
+        println!(
+            "{}",
+            style(format!("⚠️  You have {} API keys. Maximum allowed is 10.", existing_keys.len())).yellow()
         );
         println!();
     }
@@ -43,64 +71,99 @@ pub async fn handle_create_token(client: &BasilicaClient, name: String) -> Resul
     );
     println!();
     println!("To use this token:");
-    println!("  export BASILICA_API_KEY=\"{}\"", response.token);
+    println!("  export BASILICA_API_TOKEN=\"{}\"", response.token);
     println!();
 
     Ok(())
 }
 
-/// Handle showing current token details
-pub async fn handle_show_token(client: &BasilicaClient) -> Result<(), CliError> {
-    let key = client.get_api_key().await.map_err(CliError::Api)?;
+/// Handle listing all tokens
+pub async fn handle_list_tokens(client: &BasilicaClient) -> Result<(), CliError> {
+    let keys = client.list_api_keys().await.map_err(CliError::Api)?;
 
-    if let Some(key) = key {
+    if keys.is_empty() {
         println!();
-        println!("{}", style("Current Token:").bold());
-        println!("  {}: {}", style("Name").bold(), key.name);
-        println!(
-            "  {}: {}",
-            style("Created").bold(),
-            key.created_at.format("%Y-%m-%d %H:%M:%S UTC")
-        );
-        println!(
-            "  {}: {}",
-            style("Last used").bold(),
-            key.last_used_at
-                .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
-                .unwrap_or_else(|| "Never".to_string())
-        );
+        println!("No API keys exist.");
+        println!();
+        println!("Create one with:");
+        println!("  {} token create [name]", style("basilica").cyan());
         println!();
     } else {
         println!();
-        println!("No token exists.");
+        println!("{}", style("API Keys:").bold());
         println!();
-        println!("Create one with:");
-        println!("  {} token create <name>", style("basilica").cyan());
+
+        for (i, key) in keys.iter().enumerate() {
+            println!("  {}. {}", i + 1, style(&key.name).cyan().bold());
+            println!(
+                "     {}: {}",
+                style("Created").dim(),
+                key.created_at.format("%Y-%m-%d %H:%M:%S UTC")
+            );
+            println!(
+                "     {}: {}",
+                style("Last used").dim(),
+                key.last_used_at
+                    .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                    .unwrap_or_else(|| "Never".to_string())
+            );
+            if i < keys.len() - 1 {
+                println!();
+            }
+        }
         println!();
     }
 
     Ok(())
 }
 
-/// Handle revoking the token
+/// Handle revoking a token
 pub async fn handle_revoke_token(
     client: &BasilicaClient,
+    name: Option<String>,
     skip_confirm: bool,
 ) -> Result<(), CliError> {
-    // Check if token exists first
-    let key = client.get_api_key().await.map_err(CliError::Api)?;
+    // Get all keys
+    let keys = client.list_api_keys().await.map_err(CliError::Api)?;
 
-    if key.is_none() {
+    if keys.is_empty() {
         println!();
-        println!("No token exists to revoke.");
+        println!("No API keys exist to revoke.");
         println!();
         return Ok(());
     }
 
+    // Determine which key to delete
+    let key_name = match name {
+        Some(n) => n,
+        None => {
+            // Interactive selection
+            let options: Vec<String> = keys
+                .iter()
+                .map(|k| {
+                    let last_used = k
+                        .last_used_at
+                        .map(|d| format!("last used: {}", d.format("%Y-%m-%d")))
+                        .unwrap_or_else(|| "never used".to_string());
+                    format!("{} ({})", k.name, last_used)
+                })
+                .collect();
+
+            let selection = Select::new()
+                .with_prompt("Select an API key to revoke")
+                .items(&options)
+                .default(0)
+                .interact()
+                .map_err(|e| CliError::Internal(e.into()))?;
+
+            keys[selection].name.clone()
+        }
+    };
+
     // Confirm deletion if not skipped
     if !skip_confirm {
         let confirmed = Confirm::new()
-            .with_prompt("Are you sure you want to delete your token?")
+            .with_prompt(format!("Are you sure you want to delete '{}'?", key_name))
             .default(false)
             .interact()
             .map_err(|e| CliError::Internal(e.into()))?;
@@ -111,11 +174,11 @@ pub async fn handle_revoke_token(
         }
     }
 
-    // Delete the token
-    client.revoke_api_key().await.map_err(CliError::Api)?;
+    // Delete the specific token
+    client.revoke_api_key(&key_name).await.map_err(CliError::Api)?;
 
     println!();
-    println!("{}", style("Token deleted successfully.").green());
+    println!("{}", style(format!("API key '{}' deleted successfully.", key_name)).green());
     println!();
 
     Ok(())

@@ -91,16 +91,20 @@ pub async fn create_key(
 
     info!("Creating API key");
 
-    // Check if user already has a key (only one allowed per user)
+    // Optional: Check for maximum number of keys per user (e.g., 10)
+    const MAX_KEYS_PER_USER: usize = 10;
     let existing_keys = api_keys::list_user_api_keys(&state.db, &auth_context.user_id)
         .await
         .map_err(|e| ApiError::Internal {
             message: format!("Failed to check existing keys: {}", e),
         })?;
 
-    if !existing_keys.is_empty() {
+    if existing_keys.len() >= MAX_KEYS_PER_USER {
         return Err(ApiError::Conflict {
-            message: "User already has an API key. Please delete it first.".to_string(),
+            message: format!(
+                "Maximum number of API keys ({}) reached. Please delete an existing key first.",
+                MAX_KEYS_PER_USER
+            ),
         });
     }
 
@@ -192,12 +196,15 @@ pub async fn list_keys(
     Ok(Json(items))
 }
 
-/// Delete an API key
+/// Delete an API key by name
 ///
 /// This endpoint requires JWT authentication (human users only).
 #[utoipa::path(
     delete,
-    path = "/api-keys",
+    path = "/api-keys/{name}",
+    params(
+        ("name" = String, Path, description = "Name of the API key to delete")
+    ),
     responses(
         (status = 204, description = "API key deleted successfully"),
         (status = 401, description = "Unauthorized - JWT authentication required"),
@@ -209,10 +216,11 @@ pub async fn list_keys(
         ("bearer_auth" = ["keys:revoke"])
     )
 )]
-#[instrument(skip(state, auth_context), fields(user_id = %auth_context.user_id))]
+#[instrument(skip(state, auth_context), fields(user_id = %auth_context.user_id, key_name = %name))]
 pub async fn revoke_key(
     State(state): State<AppState>,
     axum::Extension(auth_context): axum::Extension<AuthContext>,
+    axum::extract::Path(name): axum::extract::Path<String>,
 ) -> Result<()> {
     // Require JWT authentication for key management
     if !auth_context.is_jwt() {
@@ -225,9 +233,9 @@ pub async fn revoke_key(
         });
     }
 
-    info!("Deleting API key");
+    info!("Deleting API key with name: {}", name);
 
-    let deleted = api_keys::delete_api_key_by_user_id(&state.db, &auth_context.user_id)
+    let deleted = api_keys::delete_api_key_by_name(&state.db, &auth_context.user_id, &name)
         .await
         .map_err(|e| ApiError::Internal {
             message: format!("Failed to delete API key: {}", e),
@@ -235,7 +243,7 @@ pub async fn revoke_key(
 
     if !deleted {
         return Err(ApiError::NotFound {
-            message: "API key not found".to_string(),
+            message: format!("API key with name '{}' not found", name),
         });
     }
 

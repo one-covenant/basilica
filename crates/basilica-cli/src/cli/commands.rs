@@ -139,17 +139,20 @@ pub enum Commands {
 /// Token management actions
 #[derive(Subcommand, Debug, Clone)]
 pub enum TokenAction {
-    /// Create a new token (replaces any existing token)
+    /// Create a new API key
     Create {
-        /// Name for the token
-        name: String,
+        /// Name for the API key (will prompt if not provided)
+        name: Option<String>,
     },
 
-    /// Show current token details
+    /// Show all API keys
     Show,
 
-    /// Revoke the token
+    /// Revoke an API key
     Revoke {
+        /// Name of the API key to revoke (will prompt if not provided)
+        name: Option<String>,
+
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]
         yes: bool,

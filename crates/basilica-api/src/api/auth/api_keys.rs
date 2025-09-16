@@ -245,15 +245,20 @@ pub async fn list_user_api_keys(pool: &PgPool, user_id: &str) -> Result<Vec<ApiK
     Ok(keys)
 }
 
-/// Delete an API key by user_id
-pub async fn delete_api_key_by_user_id(pool: &PgPool, user_id: &str) -> Result<bool, ApiKeyError> {
+/// Delete an API key by user_id and name
+pub async fn delete_api_key_by_name(
+    pool: &PgPool,
+    user_id: &str,
+    name: &str,
+) -> Result<bool, ApiKeyError> {
     let result = sqlx::query(
         r#"
         DELETE FROM api_keys
-        WHERE user_id = $1
+        WHERE user_id = $1 AND name = $2
         "#,
     )
     .bind(user_id)
+    .bind(name)
     .execute(pool)
     .await?;
 

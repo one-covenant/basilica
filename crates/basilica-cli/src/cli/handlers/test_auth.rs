@@ -356,7 +356,7 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
                 println!("Deleting existing key and creating a new one for testing...");
 
                 // Delete the existing key first
-                match client.revoke_api_key().await {
+                match client.revoke_api_key(&existing.name).await {
                     Ok(_) => println!("   ✅ Existing key deleted"),
                     Err(e) => {
                         println!("   ⚠️  Failed to delete existing key: {}", e);
