@@ -2354,7 +2354,8 @@ impl VerificationEngine {
             let mut gpu_map: std::collections::HashMap<String, u32> =
                 std::collections::HashMap::new();
             for (_, count, gpu_name) in gpu_counts {
-                let category = crate::gpu::categorization::GpuCategory::from_str(&gpu_name).unwrap();
+                let category =
+                    crate::gpu::categorization::GpuCategory::from_str(&gpu_name).unwrap();
                 let model = category.to_string();
                 *gpu_map.entry(model).or_insert(0) += count;
             }
