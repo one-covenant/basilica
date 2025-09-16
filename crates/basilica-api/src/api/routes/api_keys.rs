@@ -10,7 +10,7 @@ use crate::{
 };
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 use utoipa::ToSchema;
 
 /// Request to create a new API key
@@ -72,6 +72,7 @@ pub struct ListKeyItem {
         ("bearer_auth" = ["keys:create"])
     )
 )]
+#[instrument(skip(state, auth_context, request), fields(user_id = %auth_context.user_id, key_name = %request.name))]
 pub async fn create_key(
     State(state): State<AppState>,
     axum::Extension(auth_context): axum::Extension<AuthContext>,
@@ -88,10 +89,7 @@ pub async fn create_key(
         });
     }
 
-    info!(
-        "Creating API key '{}' for user {}",
-        request.name, auth_context.user_id
-    );
+    info!("Creating API key");
 
     // Check if user already has a key (only one allowed per user)
     let existing_keys = api_keys::list_user_api_keys(&state.db, &auth_context.user_id)
@@ -130,10 +128,7 @@ pub async fn create_key(
         message: format!("Failed to store API key: {}", e),
     })?;
 
-    debug!(
-        "Successfully created API key for user {}",
-        auth_context.user_id
-    );
+    debug!("Successfully created API key");
 
     Ok(Json(CreateKeyResponse {
         name: key.name,
@@ -158,6 +153,7 @@ pub async fn create_key(
         ("bearer_auth" = ["keys:list"])
     )
 )]
+#[instrument(skip(state, auth_context), fields(user_id = %auth_context.user_id))]
 pub async fn list_keys(
     State(state): State<AppState>,
     axum::Extension(auth_context): axum::Extension<AuthContext>,
@@ -173,7 +169,7 @@ pub async fn list_keys(
         });
     }
 
-    info!("Listing API keys for user {}", auth_context.user_id);
+    debug!("Listing API keys");
 
     let keys = api_keys::list_user_api_keys(&state.db, &auth_context.user_id)
         .await
@@ -191,11 +187,7 @@ pub async fn list_keys(
         })
         .collect();
 
-    debug!(
-        "Found {} API keys for user {}",
-        items.len(),
-        auth_context.user_id
-    );
+    debug!("Found {} API keys", items.len());
 
     Ok(Json(items))
 }
@@ -217,6 +209,7 @@ pub async fn list_keys(
         ("bearer_auth" = ["keys:revoke"])
     )
 )]
+#[instrument(skip(state, auth_context), fields(user_id = %auth_context.user_id))]
 pub async fn revoke_key(
     State(state): State<AppState>,
     axum::Extension(auth_context): axum::Extension<AuthContext>,
@@ -232,7 +225,7 @@ pub async fn revoke_key(
         });
     }
 
-    info!("Deleting API key for user {}", auth_context.user_id);
+    info!("Deleting API key");
 
     let deleted = api_keys::delete_api_key_by_user_id(&state.db, &auth_context.user_id)
         .await
@@ -246,10 +239,7 @@ pub async fn revoke_key(
         });
     }
 
-    debug!(
-        "Successfully deleted API key for user {}",
-        auth_context.user_id
-    );
+    debug!("Successfully deleted API key");
 
     Ok(())
 }
