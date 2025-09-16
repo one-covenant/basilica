@@ -353,14 +353,14 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
         let api_key_token = match client.get_api_key().await {
             Ok(Some(existing)) => {
                 println!("Found existing API key: '{}'", existing.name);
-                println!("Revoking existing key and creating a new one for testing...");
+                println!("Deleting existing key and creating a new one for testing...");
 
-                // Revoke the existing key first
+                // Delete the existing key first
                 match client.revoke_api_key().await {
-                    Ok(_) => println!("   ✅ Existing key revoked"),
+                    Ok(_) => println!("   ✅ Existing key deleted"),
                     Err(e) => {
-                        println!("   ⚠️  Failed to revoke existing key: {}", e);
-                        // Continue anyway, maybe it's already revoked
+                        println!("   ⚠️  Failed to delete existing key: {}", e);
+                        // Continue anyway, maybe it's already deleted
                     }
                 }
 

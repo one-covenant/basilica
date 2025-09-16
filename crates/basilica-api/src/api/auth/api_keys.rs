@@ -18,14 +18,12 @@ use tracing::debug;
 /// API key database row
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct ApiKey {
-    pub id: i64,
     pub user_id: String,
     pub kid: String,
     pub name: String,
     pub hash: String,
     pub scopes: Vec<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
-    pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -53,9 +51,6 @@ pub enum ApiKeyError {
 
     #[error("API key not found")]
     NotFound,
-
-    #[error("API key has been revoked")]
-    Revoked,
 
     #[error("Invalid API key secret")]
     InvalidSecret,
@@ -250,20 +245,14 @@ pub async fn list_user_api_keys(pool: &PgPool, user_id: &str) -> Result<Vec<ApiK
     Ok(keys)
 }
 
-/// Revoke an API key by ID
-pub async fn revoke_api_key_by_id(
-    pool: &PgPool,
-    id: i64,
-    user_id: &str,
-) -> Result<bool, ApiKeyError> {
+/// Delete an API key by user_id
+pub async fn delete_api_key_by_user_id(pool: &PgPool, user_id: &str) -> Result<bool, ApiKeyError> {
     let result = sqlx::query(
         r#"
-        UPDATE api_keys
-        SET revoked_at = now()
-        WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+        DELETE FROM api_keys
+        WHERE user_id = $1
         "#,
     )
-    .bind(id)
     .bind(user_id)
     .execute(pool)
     .await?;
@@ -299,11 +288,6 @@ pub async fn verify_api_key(pool: &PgPool, token: &str) -> Result<VerifiedApiKey
     let key = get_api_key_by_kid(pool, &kid)
         .await?
         .ok_or(ApiKeyError::NotFound)?;
-
-    // Check if revoked
-    if key.revoked_at.is_some() {
-        return Err(ApiKeyError::Revoked);
-    }
 
     // Verify the secret bytes against the hash
     let argon2 = Argon2::default();

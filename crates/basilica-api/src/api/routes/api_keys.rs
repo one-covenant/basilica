@@ -8,10 +8,7 @@ use crate::{
     error::{ApiError, Result},
     server::AppState,
 };
-use axum::{
-    extract::{Path, State},
-    Json,
-};
+use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 use utoipa::ToSchema;
@@ -29,9 +26,6 @@ pub struct CreateKeyRequest {
 /// Response after creating a new API key
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CreateKeyResponse {
-    /// ID of the created key
-    pub id: i64,
-
     /// Name of the key
     pub name: String,
 
@@ -45,9 +39,6 @@ pub struct CreateKeyResponse {
 /// List item for API keys
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ListKeyItem {
-    /// ID of the key
-    pub id: i64,
-
     /// Key identifier (kid)
     pub kid: String,
 
@@ -56,9 +47,6 @@ pub struct ListKeyItem {
 
     /// Creation timestamp
     pub created_at: chrono::DateTime<chrono::Utc>,
-
-    /// Revocation timestamp (if revoked)
-    pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
 
     /// Last usage timestamp
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -105,16 +93,16 @@ pub async fn create_key(
         request.name, auth_context.user_id
     );
 
-    // Check if user already has an active key
+    // Check if user already has a key (only one allowed per user)
     let existing_keys = api_keys::list_user_api_keys(&state.db, &auth_context.user_id)
         .await
         .map_err(|e| ApiError::Internal {
             message: format!("Failed to check existing keys: {}", e),
         })?;
 
-    if existing_keys.iter().any(|k| k.revoked_at.is_none()) {
+    if !existing_keys.is_empty() {
         return Err(ApiError::Conflict {
-            message: "User already has an active API key. Please revoke it first.".to_string(),
+            message: "User already has an API key. Please delete it first.".to_string(),
         });
     }
 
@@ -143,12 +131,11 @@ pub async fn create_key(
     })?;
 
     debug!(
-        "Successfully created API key {} for user {}",
-        key.id, auth_context.user_id
+        "Successfully created API key for user {}",
+        auth_context.user_id
     );
 
     Ok(Json(CreateKeyResponse {
-        id: key.id,
         name: key.name,
         created_at: key.created_at,
         token: generated.display_token,
@@ -197,11 +184,9 @@ pub async fn list_keys(
     let items: Vec<ListKeyItem> = keys
         .into_iter()
         .map(|key| ListKeyItem {
-            id: key.id,
             kid: key.kid.clone(),
             name: key.name,
             created_at: key.created_at,
-            revoked_at: key.revoked_at,
             last_used_at: key.last_used_at,
         })
         .collect();
@@ -215,17 +200,14 @@ pub async fn list_keys(
     Ok(Json(items))
 }
 
-/// Revoke an API key
+/// Delete an API key
 ///
 /// This endpoint requires JWT authentication (human users only).
 #[utoipa::path(
     delete,
-    path = "/api-keys/{id}",
-    params(
-        ("id" = i64, Path, description = "API key ID to revoke")
-    ),
+    path = "/api-keys",
     responses(
-        (status = 204, description = "API key revoked successfully"),
+        (status = 204, description = "API key deleted successfully"),
         (status = 401, description = "Unauthorized - JWT authentication required"),
         (status = 404, description = "API key not found"),
         (status = 500, description = "Internal server error")
@@ -238,12 +220,11 @@ pub async fn list_keys(
 pub async fn revoke_key(
     State(state): State<AppState>,
     axum::Extension(auth_context): axum::Extension<AuthContext>,
-    Path(id): Path<i64>,
 ) -> Result<()> {
     // Require JWT authentication for key management
     if !auth_context.is_jwt() {
         warn!(
-            "User {} attempted to revoke API key with non-JWT auth",
+            "User {} attempted to delete API key with non-JWT auth",
             auth_context.user_id
         );
         return Err(ApiError::Authentication {
@@ -251,23 +232,23 @@ pub async fn revoke_key(
         });
     }
 
-    info!("Revoking API key {} for user {}", id, auth_context.user_id);
+    info!("Deleting API key for user {}", auth_context.user_id);
 
-    let revoked = api_keys::revoke_api_key_by_id(&state.db, id, &auth_context.user_id)
+    let deleted = api_keys::delete_api_key_by_user_id(&state.db, &auth_context.user_id)
         .await
         .map_err(|e| ApiError::Internal {
-            message: format!("Failed to revoke API key: {}", e),
+            message: format!("Failed to delete API key: {}", e),
         })?;
 
-    if !revoked {
+    if !deleted {
         return Err(ApiError::NotFound {
-            message: "API key not found or already revoked".to_string(),
+            message: "API key not found".to_string(),
         });
     }
 
     debug!(
-        "Successfully revoked API key {} for user {}",
-        id, auth_context.user_id
+        "Successfully deleted API key for user {}",
+        auth_context.user_id
     );
 
     Ok(())

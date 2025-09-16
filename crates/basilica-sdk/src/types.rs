@@ -224,9 +224,6 @@ pub struct CreateApiKeyRequest {
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ApiKeyResponse {
-    /// ID of the created key
-    pub id: i64,
-
     /// Name of the key
     pub name: String,
 
@@ -241,9 +238,6 @@ pub struct ApiKeyResponse {
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ApiKeyInfo {
-    /// ID of the key
-    pub id: i64,
-
     /// Key identifier (kid)
     pub kid: String,
 
@@ -252,9 +246,6 @@ pub struct ApiKeyInfo {
 
     /// Creation timestamp
     pub created_at: chrono::DateTime<chrono::Utc>,
-
-    /// Revocation timestamp (if revoked)
-    pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
 
     /// Last usage timestamp
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,

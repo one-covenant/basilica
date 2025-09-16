@@ -97,25 +97,25 @@ pub async fn handle_revoke_token(
         return Ok(());
     }
 
-    // Confirm revocation if not skipped
+    // Confirm deletion if not skipped
     if !skip_confirm {
         let confirmed = Confirm::new()
-            .with_prompt("Are you sure you want to revoke your token?")
+            .with_prompt("Are you sure you want to delete your token?")
             .default(false)
             .interact()
             .map_err(|e| CliError::Internal(e.into()))?;
 
         if !confirmed {
-            println!("Revocation cancelled.");
+            println!("Deletion cancelled.");
             return Ok(());
         }
     }
 
-    // Revoke the token
+    // Delete the token
     client.revoke_api_key().await.map_err(CliError::Api)?;
 
     println!();
-    println!("{}", style("Token revoked successfully.").green());
+    println!("{}", style("Token deleted successfully.").green());
     println!();
 
     Ok(())

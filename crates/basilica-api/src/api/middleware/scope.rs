@@ -101,7 +101,7 @@ fn get_required_scope(req: &Request) -> Option<String> {
         // API Key management endpoints
         (&Method::POST, "/api-keys") => Some("keys:create".to_string()),
         (&Method::GET, "/api-keys") => Some("keys:list".to_string()),
-        (&Method::DELETE, p) if p.starts_with("/api-keys/") => Some("keys:revoke".to_string()),
+        (&Method::DELETE, "/api-keys") => Some("keys:revoke".to_string()),
 
         // Health check requires authentication but no specific scope
         // We use an empty string to indicate "authenticated but no specific scope required"

@@ -196,29 +196,20 @@ impl BasilicaClient {
     }
 
     /// Get current API key info (requires JWT authentication)
-    /// Returns the first active key if it exists
+    /// Returns the first (and only) key if it exists
     pub async fn get_api_key(&self) -> Result<Option<ApiKeyInfo>> {
         let keys: Vec<ApiKeyInfo> = self.get("/api-keys").await?;
-        Ok(keys.into_iter().find(|k| k.revoked_at.is_none()))
+        Ok(keys.into_iter().next())
     }
 
-    /// Revoke the API key (requires JWT authentication)
-    /// Since only one active key is allowed, this will revoke the current key
+    /// Delete the API key (requires JWT authentication)
+    /// Since only one key is allowed, this will delete the current key
     pub async fn revoke_api_key(&self) -> Result<()> {
-        // First get the current key
-        let key = self.get_api_key().await?;
-        if let Some(key) = key {
-            let path = format!("/api-keys/{}", key.id);
-            let response = self.delete_empty(&path).await?;
-            if response.status().is_success() {
-                Ok(())
-            } else {
-                self.handle_error_response(response).await
-            }
+        let response = self.delete_empty("/api-keys").await?;
+        if response.status().is_success() {
+            Ok(())
         } else {
-            Err(ApiError::NotFound {
-                resource: "No active API key found".into(),
-            })
+            self.handle_error_response(response).await
         }
     }
 

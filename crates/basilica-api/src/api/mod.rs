@@ -34,9 +34,10 @@ pub fn routes(state: AppState) -> Router<AppState> {
         // API key management endpoints (JWT auth only)
         .route(
             "/api-keys",
-            post(routes::api_keys::create_key).get(routes::api_keys::list_keys),
+            post(routes::api_keys::create_key)
+                .get(routes::api_keys::list_keys)
+                .delete(routes::api_keys::revoke_key),
         )
-        .route("/api-keys/:id", delete(routes::api_keys::revoke_key))
         // Apply scope validation AFTER auth middleware
         .layer(axum::middleware::from_fn(
             middleware::scope_validation_middleware,
