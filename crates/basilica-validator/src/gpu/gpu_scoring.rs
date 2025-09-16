@@ -5,11 +5,11 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use super::categorization::{ExecutorValidationResult, GpuCategory, MinerGpuProfile};
-use std::str::FromStr;
 use crate::config::emission::EmissionConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
 use basilica_common::identity::MinerUid;
+use std::str::FromStr;
 
 pub struct GpuScoringEngine {
     gpu_profile_repo: Arc<GpuProfileRepository>,
@@ -764,8 +764,8 @@ mod tests {
         let mut a100_counts_2 = HashMap::new();
         a100_counts_2.insert("A100".to_string(), 1);
 
-        let mut h200_counts = HashMap::new();
-        h200_counts.insert("H200".to_string(), 1);
+        let mut h100_counts = HashMap::new();
+        h100_counts.insert("H100".to_string(), 1);
 
         let now = Utc::now();
         let profiles = vec![
@@ -787,7 +787,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
-                gpu_counts: h200_counts,
+                gpu_counts: h100_counts,
                 total_score: 0.9,
                 verification_count: 1,
                 last_updated: now,
@@ -812,12 +812,12 @@ mod tests {
         assert_eq!(a100_stats.min_score, 0.6);
         assert_eq!(a100_stats.max_score, 0.8);
 
-        let h200_stats = stats.get("H200").unwrap();
-        assert_eq!(h200_stats.miner_count, 1);
-        assert_eq!(h200_stats.average_score, 0.9);
-        assert_eq!(h200_stats.total_score, 0.9);
-        assert_eq!(h200_stats.min_score, 0.9);
-        assert_eq!(h200_stats.max_score, 0.9);
+        let h100_stats = stats.get("H100").unwrap();
+        assert_eq!(h100_stats.miner_count, 1);
+        assert_eq!(h100_stats.average_score, 0.9);
+        assert_eq!(h100_stats.total_score, 0.9);
+        assert_eq!(h100_stats.min_score, 0.9);
+        assert_eq!(h100_stats.max_score, 0.9);
     }
 
     #[tokio::test]
@@ -961,9 +961,9 @@ mod tests {
         assert!(engine.is_gpu_model_rewardable("NVIDIA B200"));
         assert!(engine.is_gpu_model_rewardable("Tesla B200"));
 
-        // Test that A100 and H200 are still rewardable
+        // Test that A100 and H100 are still rewardable
         assert!(engine.is_gpu_model_rewardable("A100"));
-        assert!(engine.is_gpu_model_rewardable("H200"));
+        assert!(engine.is_gpu_model_rewardable("H100"));
 
         // Test that unconfigured GPUs are not rewardable
         assert!(!engine.is_gpu_model_rewardable("V100"));
@@ -1004,7 +1004,7 @@ mod tests {
     async fn test_emission_config_filtering() {
         let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
 
-        // Create custom emission config with only A100 and B200 (exclude H200)
+        // Create custom emission config with only A100 and B200 (exclude H100)
         let mut custom_gpu_allocations = HashMap::new();
         custom_gpu_allocations.insert(
             "A100".to_string(),
@@ -1029,14 +1029,14 @@ mod tests {
         // Test filtering matches custom config
         assert!(engine.is_gpu_model_rewardable("A100"));
         assert!(engine.is_gpu_model_rewardable("B200"));
-        assert!(!engine.is_gpu_model_rewardable("H200"));
+        assert!(!engine.is_gpu_model_rewardable("H100"));
 
         // Create profiles with all GPU types
         let mut a100_counts = HashMap::new();
         a100_counts.insert("A100".to_string(), 2);
 
-        let mut h200_counts = HashMap::new();
-        h200_counts.insert("H200".to_string(), 1);
+        let mut h100_counts = HashMap::new();
+        h100_counts.insert("H100".to_string(), 1);
 
         let mut b200_counts = HashMap::new();
         b200_counts.insert("B200".to_string(), 3);
@@ -1053,7 +1053,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
-                gpu_counts: h200_counts,
+                gpu_counts: h100_counts,
                 total_score: 0.9,
                 verification_count: 1,
                 last_updated: now,
@@ -1078,13 +1078,13 @@ mod tests {
         // Test category statistics only include configured GPUs
         let stats = engine.get_category_statistics().await.unwrap();
 
-        // Should have A100 and B200 but NOT H200
+        // Should have A100 and B200 but NOT H100
         assert_eq!(stats.len(), 2, "Should only have 2 categories (A100, B200)");
         assert!(stats.contains_key("A100"), "Should include A100");
         assert!(stats.contains_key("B200"), "Should include B200");
         assert!(
-            !stats.contains_key("H200"),
-            "Should NOT include H200 (not in emission config)"
+            !stats.contains_key("H100"),
+            "Should NOT include H100 (not in emission config)"
         );
 
         // Verify correct stats
@@ -1166,7 +1166,7 @@ mod tests {
             ("B200", true),
             ("NVIDIA B200", true),
             ("b200", true),
-            ("H200", false), // Not in our custom config
+            ("H100", false), // Not in our custom config
             ("V100", false),
             ("A100", true),
             ("GTX1080", false),
@@ -1199,7 +1199,7 @@ mod tests {
             crate::config::emission::GpuAllocation::with_min_count(25.0, 4),
         );
         gpu_allocations.insert(
-            "H200".to_string(),
+            "H100".to_string(),
             crate::config::emission::GpuAllocation::with_min_count(25.0, 2),
         );
         gpu_allocations.insert(
@@ -1247,12 +1247,12 @@ mod tests {
                 last_updated: now,
                 last_successful_validation: Some(now - chrono::Duration::hours(1)),
             },
-            // Miner 3: Has 1x H200 (below min of 2) - should be excluded
+            // Miner 3: Has 1x H100 (below min of 2) - should be excluded
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
                 gpu_counts: {
                     let mut counts = HashMap::new();
-                    counts.insert("H200".to_string(), 1);
+                    counts.insert("H100".to_string(), 1);
                     counts
                 },
                 total_score: 0.7,
@@ -1260,12 +1260,12 @@ mod tests {
                 last_updated: now,
                 last_successful_validation: Some(now - chrono::Duration::hours(1)),
             },
-            // Miner 4: Has 2x H200 (meets min of 2) - should be included
+            // Miner 4: Has 2x H100 (meets min of 2) - should be included
             MinerGpuProfile {
                 miner_uid: MinerUid::new(4),
                 gpu_counts: {
                     let mut counts = HashMap::new();
-                    counts.insert("H200".to_string(), 2);
+                    counts.insert("H100".to_string(), 2);
                     counts
                 },
                 total_score: 0.8,
@@ -1318,13 +1318,13 @@ mod tests {
         );
         assert_eq!(stats.get("A100").unwrap().total_score, 0.8);
 
-        // Check H200 category - should only have miner 4
+        // Check H100 category - should only have miner 4
         assert_eq!(
-            stats.get("H200").unwrap().miner_count,
+            stats.get("H100").unwrap().miner_count,
             1,
-            "H200 should have 1 miner (miner 4)"
+            "H100 should have 1 miner (miner 4)"
         );
-        assert_eq!(stats.get("H200").unwrap().total_score, 0.8);
+        assert_eq!(stats.get("H100").unwrap().total_score, 0.8);
 
         // Check B200 category - should only have miner 6
         assert_eq!(

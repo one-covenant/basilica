@@ -189,7 +189,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
-                gpu_counts: std::collections::HashMap::from([("H200".to_string(), 1)]),
+                gpu_counts: std::collections::HashMap::from([("H100".to_string(), 1)]),
                 total_score: 0.6,
                 verification_count: 2,
                 last_updated: now,

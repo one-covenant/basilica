@@ -67,7 +67,7 @@ impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Hash, Eq)]
 pub enum GpuCategory {
     A100,
-    H200,
+    H100,
     B200,
     Other(String),
 }
@@ -77,17 +77,17 @@ impl GpuCategory {
     pub fn description(&self) -> &'static str {
         match self {
             GpuCategory::A100 => "High-end training & inference",
-            GpuCategory::H200 => "Flagship AI training & inference",
+            GpuCategory::H100 => "Flagship AI training & inference",
             GpuCategory::B200 => "Next-gen AI acceleration",
             GpuCategory::Other(_) => "General GPU compute",
         }
     }
 
-    /// Get the display string for this GPU category (e.g., "A100", "H200", "OTHER")
+    /// Get the display string for this GPU category (e.g., "A100", "H100", "OTHER")
     pub fn as_str(&self) -> String {
         match self {
             GpuCategory::A100 => "A100".to_string(),
-            GpuCategory::H200 => "H200".to_string(),
+            GpuCategory::H100 => "H100".to_string(),
             GpuCategory::B200 => "B200".to_string(),
             GpuCategory::Other(_) => "OTHER".to_string(),
         }
@@ -117,8 +117,8 @@ impl FromStr for GpuCategory {
         // Check for known GPU models
         if cleaned.contains("A100") {
             Ok(GpuCategory::A100)
-        } else if cleaned.contains("H200") {
-            Ok(GpuCategory::H200)
+        } else if cleaned.contains("H100") {
+            Ok(GpuCategory::H100)
         } else if cleaned.contains("B200") {
             Ok(GpuCategory::B200)
         } else {
@@ -130,7 +130,6 @@ impl FromStr for GpuCategory {
 pub struct GpuCategorizer;
 
 impl GpuCategorizer {
-
     /// Convert model string to category enum
     pub fn model_to_category(model: &str) -> GpuCategory {
         // Use the FromStr implementation for consistency

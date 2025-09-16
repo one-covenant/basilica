@@ -10,9 +10,9 @@ use std::collections::HashMap;
 use tracing::{debug, info};
 
 use crate::gpu::{categorization::GpuCategory, MinerGpuProfile};
-use std::str::FromStr;
 use crate::persistence::SimplePersistence;
 use basilica_common::identity::MinerUid;
+use std::str::FromStr;
 
 /// Repository for GPU profile operations
 pub struct GpuProfileRepository {
@@ -1044,7 +1044,7 @@ mod tests {
         let mut profiles = Vec::new();
         for i in 0..3 {
             let mut gpu_counts = HashMap::new();
-            let model = if i < 2 { "A100" } else { "H200" };
+            let model = if i < 2 { "A100" } else { "H100" };
             gpu_counts.insert(model.to_string(), 1);
 
             let profile = MinerGpuProfile {
@@ -1069,9 +1069,9 @@ mod tests {
         let a100_profiles = repo.get_profiles_by_gpu_model("A100").await.unwrap();
         assert_eq!(a100_profiles.len(), 2);
 
-        // Query H200 profiles
-        let h200_profiles = repo.get_profiles_by_gpu_model("H200").await.unwrap();
-        assert_eq!(h200_profiles.len(), 1);
+        // Query H100 profiles
+        let h100_profiles = repo.get_profiles_by_gpu_model("H100").await.unwrap();
+        assert_eq!(h100_profiles.len(), 1);
     }
 
     #[tokio::test]
@@ -1091,9 +1091,9 @@ mod tests {
             },
         );
         distributions.insert(
-            "H200".to_string(),
+            "H100".to_string(),
             CategoryDistribution {
-                category: "H200".to_string(),
+                category: "H100".to_string(),
                 miner_count: 5,
                 total_weight: 6000,
                 average_score: 0.8,

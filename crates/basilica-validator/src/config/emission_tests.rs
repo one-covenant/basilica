@@ -54,14 +54,14 @@ mod tests {
         // Test valid allocation sums
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::new(30.0));
-        allocations.insert("H200".to_string(), GpuAllocation::new(70.0));
+        allocations.insert("H100".to_string(), GpuAllocation::new(70.0));
         config.gpu_allocations = allocations;
         assert!(config.validate().is_ok());
 
         // Test three-way split
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::new(33.33));
-        allocations.insert("H200".to_string(), GpuAllocation::new(33.33));
+        allocations.insert("H100".to_string(), GpuAllocation::new(33.33));
         allocations.insert("B200".to_string(), GpuAllocation::new(33.34));
         config.gpu_allocations = allocations;
         assert!(config.validate().is_ok());
@@ -69,13 +69,13 @@ mod tests {
         // Test invalid allocation sums
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::new(40.0));
-        allocations.insert("H200".to_string(), GpuAllocation::new(40.0));
+        allocations.insert("H100".to_string(), GpuAllocation::new(40.0));
         config.gpu_allocations = allocations;
         assert!(config.validate().is_err()); // Sum = 80
 
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::new(60.0));
-        allocations.insert("H200".to_string(), GpuAllocation::new(60.0));
+        allocations.insert("H100".to_string(), GpuAllocation::new(60.0));
         config.gpu_allocations = allocations;
         assert!(config.validate().is_err()); // Sum = 120
 
@@ -86,21 +86,21 @@ mod tests {
         // Test negative allocations
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::new(-10.0));
-        allocations.insert("H200".to_string(), GpuAllocation::new(110.0));
+        allocations.insert("H100".to_string(), GpuAllocation::new(110.0));
         config.gpu_allocations = allocations;
         assert!(config.validate().is_err());
 
         // Test min_gpu_count validation
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::with_min_count(50.0, 0));
-        allocations.insert("H200".to_string(), GpuAllocation::with_min_count(50.0, 1));
+        allocations.insert("H100".to_string(), GpuAllocation::with_min_count(50.0, 1));
         config.gpu_allocations = allocations;
         assert!(config.validate().is_err()); // min_gpu_count can't be 0
 
         // Test valid min_gpu_count
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::with_min_count(25.0, 4));
-        allocations.insert("H200".to_string(), GpuAllocation::with_min_count(25.0, 2));
+        allocations.insert("H100".to_string(), GpuAllocation::with_min_count(25.0, 2));
         allocations.insert("B200".to_string(), GpuAllocation::with_min_count(50.0, 8));
         config.gpu_allocations = allocations;
         assert!(config.validate().is_ok());
@@ -155,7 +155,7 @@ weight_version_key = 0
 
 [gpu_allocations]
 A100 = 25.0
-H200 = 50.0
+H100 = 50.0
 B200 = 25.0
 "#;
 
@@ -172,7 +172,7 @@ B200 = 25.0
         assert_eq!(config.weight_set_interval_blocks, 720);
         assert_eq!(config.gpu_allocations.len(), 3);
         assert_eq!(config.get_gpu_allocation_weight("A100"), Some(25.0));
-        assert_eq!(config.get_gpu_allocation_weight("H200"), Some(50.0));
+        assert_eq!(config.get_gpu_allocation_weight("H100"), Some(50.0));
         assert_eq!(config.get_gpu_allocation_weight("B200"), Some(25.0));
 
         // Test loading from invalid TOML file (allocations don't sum to 100)
@@ -183,7 +183,7 @@ weight_set_interval_blocks = 360
 
 [gpu_allocations]
 A100 = 30.0
-H200 = 30.0
+H100 = 30.0
 "#;
 
         let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
@@ -237,7 +237,7 @@ H200 = 30.0
         // Test unicode in GPU model names
         let mut allocations = HashMap::new();
         allocations.insert("A100-新".to_string(), GpuAllocation::new(50.0));
-        allocations.insert("H200-α".to_string(), GpuAllocation::new(50.0));
+        allocations.insert("H100-α".to_string(), GpuAllocation::new(50.0));
         config.gpu_allocations = allocations;
         assert!(config.validate().is_ok());
 
@@ -251,7 +251,7 @@ H200 = 30.0
         // Test very small positive allocations
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::new(0.001));
-        allocations.insert("H200".to_string(), GpuAllocation::new(99.999));
+        allocations.insert("H100".to_string(), GpuAllocation::new(99.999));
         config.gpu_allocations = allocations;
         assert!(config.validate().is_ok());
     }
@@ -262,13 +262,13 @@ H200 = 30.0
 
         // Test has_gpu_model
         assert!(config.has_gpu_model("A100"));
-        assert!(config.has_gpu_model("H200"));
+        assert!(config.has_gpu_model("H100"));
         assert!(config.has_gpu_model("B200"));
         assert!(!config.has_gpu_model("RTX4090"));
 
         // Test get_gpu_allocation
         assert_eq!(config.get_gpu_allocation_weight("A100"), Some(8.0));
-        assert_eq!(config.get_gpu_allocation_weight("H200"), Some(12.0));
+        assert_eq!(config.get_gpu_allocation_weight("H100"), Some(12.0));
         assert_eq!(config.get_gpu_allocation_weight("B200"), Some(80.0));
         assert_eq!(config.get_gpu_allocation_weight("RTX4090"), None);
 
@@ -279,7 +279,7 @@ H200 = 30.0
             .set_gpu_allocation("A100".to_string(), 30.0, 1)
             .unwrap();
         config
-            .set_gpu_allocation("H200".to_string(), 50.0, 1)
+            .set_gpu_allocation("H100".to_string(), 50.0, 1)
             .unwrap();
         assert!(config
             .set_gpu_allocation("B200".to_string(), 20.0, 1)
@@ -290,7 +290,7 @@ H200 = 30.0
 
         assert_eq!(config.get_gpu_allocation_weight("B200"), Some(20.0));
         assert_eq!(config.get_gpu_allocation_weight("A100"), Some(30.0));
-        assert_eq!(config.get_gpu_allocation_weight("H200"), Some(50.0));
+        assert_eq!(config.get_gpu_allocation_weight("H100"), Some(50.0));
 
         // Test set_gpu_allocation with invalid values (negative)
         assert!(config
@@ -325,7 +325,7 @@ H200 = 30.0
         // Test gpu_models_by_allocation (should be sorted by percentage desc)
         let models = config.gpu_models_by_allocation();
         assert_eq!(models.len(), 2);
-        assert_eq!(models[0].0, "H200".to_string());
+        assert_eq!(models[0].0, "H100".to_string());
         assert_eq!(models[0].1.weight, 50.0);
         assert_eq!(models[1].0, "B200".to_string());
         assert_eq!(models[1].1.weight, 20.0);
@@ -353,7 +353,7 @@ H200 = 30.0
         // Test that small floating point differences are handled correctly
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::new(33.333333));
-        allocations.insert("H200".to_string(), GpuAllocation::new(33.333333));
+        allocations.insert("H100".to_string(), GpuAllocation::new(33.333333));
         allocations.insert("B200".to_string(), GpuAllocation::new(33.333334));
 
         let config = EmissionConfig {
@@ -371,7 +371,7 @@ H200 = 30.0
         // Test that larger differences are caught
         let mut allocations = HashMap::new();
         allocations.insert("A100".to_string(), GpuAllocation::new(33.0));
-        allocations.insert("H200".to_string(), GpuAllocation::new(33.0));
+        allocations.insert("H100".to_string(), GpuAllocation::new(33.0));
         allocations.insert("B200".to_string(), GpuAllocation::new(33.0));
 
         let config = EmissionConfig {
@@ -399,7 +399,7 @@ min_miners_per_category = 2
 
 [gpu_allocations]
 A100 = 25.0
-H200 = 50.0
+H100 = 50.0
 B200 = 25.0
 "#;
 
@@ -430,7 +430,7 @@ weight_version_key = 0
 
 [gpu_allocations]
 A100 = { weight = 8.0, min_gpu_count = 4 }
-H200 = { weight = 12.0, min_gpu_count = 2 }
+H100 = { weight = 12.0, min_gpu_count = 2 }
 B200 = { weight = 80.0, min_gpu_count = 8 }
 "#;
 
@@ -446,9 +446,9 @@ B200 = { weight = 80.0, min_gpu_count = 8 }
         assert_eq!(a100.weight, 8.0);
         assert_eq!(a100.min_gpu_count, 4);
 
-        let h200 = config.get_gpu_allocation("H200").unwrap();
-        assert_eq!(h200.weight, 12.0);
-        assert_eq!(h200.min_gpu_count, 2);
+        let h100 = config.get_gpu_allocation("H100").unwrap();
+        assert_eq!(h100.weight, 12.0);
+        assert_eq!(h100.min_gpu_count, 2);
 
         let b200 = config.get_gpu_allocation("B200").unwrap();
         assert_eq!(b200.weight, 80.0);

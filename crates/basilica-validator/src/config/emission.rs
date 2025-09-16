@@ -182,7 +182,7 @@ impl EmissionConfig {
     pub fn for_testing() -> Self {
         let mut gpu_allocations = HashMap::new();
         gpu_allocations.insert("A100".to_string(), GpuAllocation::new(8.0));
-        gpu_allocations.insert("H200".to_string(), GpuAllocation::new(12.0));
+        gpu_allocations.insert("H100".to_string(), GpuAllocation::new(12.0));
         gpu_allocations.insert("B200".to_string(), GpuAllocation::new(80.0));
 
         Self {

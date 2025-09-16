@@ -1282,8 +1282,8 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_validation_result_with_h200() {
-        // Create a verification log with H200 GPU
+    fn test_extract_validation_result_with_h100() {
+        // Create a verification log with H100 GPU
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
             executor_id: "exec456".to_string(),
@@ -1294,7 +1294,7 @@ mod tests {
             success: true,
             details: json!({
                 "gpu": [{
-                    "model": "NVIDIA H200",
+                    "model": "NVIDIA H100",
                     "vram_mb": 141312  // 138GB
                 }],
                 "cpu": {"cores": 64},
@@ -1314,7 +1314,7 @@ mod tests {
             .and_then(|gpu| gpu["model"].as_str())
             .unwrap_or("UNKNOWN");
 
-        assert_eq!(gpu_model, "NVIDIA H200");
+        assert_eq!(gpu_model, "NVIDIA H100");
     }
 
     #[test]
@@ -1392,7 +1392,7 @@ mod tests {
         assert_eq!(old_gpu_model, "H0"); // This is wrong!
 
         // For A100 with 80GB, dividing by 1024 gives 0.078, formatted as "H0"
-        // For H200 with 138GB, dividing by 1024 gives 0.134, formatted as "H0"
+        // For H100 with 138GB, dividing by 1024 gives 0.134, formatted as "H0"
         // Both would be categorized as "OTHER" and excluded from rewards!
     }
 
@@ -1485,7 +1485,7 @@ mod tests {
 
     #[test]
     fn test_gpu_categorization_with_corrected_extraction() {
-        // Test that A100 and H200 GPUs are now properly identified
+        // Test that A100 and H100 GPUs are now properly identified
         let a100_log = VerificationLog {
             id: uuid::Uuid::new_v4(),
             executor_id: "executor_a100".to_string(),
@@ -1507,9 +1507,9 @@ mod tests {
             updated_at: chrono::Utc::now(),
         };
 
-        let h200_log = VerificationLog {
+        let h100_log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "executor_h200".to_string(),
+            executor_id: "executor_h100".to_string(),
             validator_hotkey: "validator_hotkey".to_string(),
             verification_type: "binary_validation".to_string(),
             timestamp: chrono::Utc::now(),
@@ -1517,7 +1517,7 @@ mod tests {
             success: true,
             details: json!({
                 "executor_result": {
-                    "gpu_name": "NVIDIA H200",
+                    "gpu_name": "NVIDIA H100",
                     "memory_bandwidth_gbps": 4.8
                 },
                 "gpu_count": 4
@@ -1532,19 +1532,19 @@ mod tests {
         let a100_model = a100_log.details["executor_result"]["gpu_name"]
             .as_str()
             .unwrap_or("UNKNOWN");
-        let h200_model = h200_log.details["executor_result"]["gpu_name"]
+        let h100_model = h100_log.details["executor_result"]["gpu_name"]
             .as_str()
             .unwrap_or("UNKNOWN");
 
-        // Verify A100 and H200 are correctly identified
+        // Verify A100 and H100 are correctly identified
         assert!(a100_model.contains("A100"));
-        assert!(h200_model.contains("H200"));
+        assert!(h100_model.contains("H100"));
         assert_ne!(a100_model, "UNKNOWN");
-        assert_ne!(h200_model, "UNKNOWN");
+        assert_ne!(h100_model, "UNKNOWN");
 
         // Test GPU counts are preserved
         assert_eq!(a100_log.details["gpu_count"].as_u64().unwrap(), 8);
-        assert_eq!(h200_log.details["gpu_count"].as_u64().unwrap(), 4);
+        assert_eq!(h100_log.details["gpu_count"].as_u64().unwrap(), 4);
     }
 
     #[tokio::test]

@@ -164,7 +164,7 @@ mod tests {
             // Miner 5: Different GPU type with recent validation
             MinerGpuProfile {
                 miner_uid: MinerUid::new(5),
-                gpu_counts: HashMap::from([("H200".to_string(), 2)]),
+                gpu_counts: HashMap::from([("H100".to_string(), 2)]),
                 total_score: 0.95,
                 verification_count: 12,
                 last_updated: now,
@@ -249,13 +249,13 @@ mod tests {
             .iter()
             .filter(|p| p.has_gpu_model("A100"))
             .count();
-        let h200_count = all_profiles
+        let h100_count = all_profiles
             .iter()
-            .filter(|p| p.has_gpu_model("H200"))
+            .filter(|p| p.has_gpu_model("H100"))
             .count();
 
         assert_eq!(a100_count, 4, "Should have 4 A100 miners");
-        assert_eq!(h200_count, 1, "Should have 1 H200 miner");
+        assert_eq!(h100_count, 1, "Should have 1 H100 miner");
 
         // Clean up
         std::fs::remove_file(&db_path).ok();
@@ -296,7 +296,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(12),
-                gpu_counts: HashMap::from([("H200".to_string(), 1)]),
+                gpu_counts: HashMap::from([("H100".to_string(), 1)]),
                 total_score: 0.85,
                 verification_count: 18,
                 last_updated: now,
@@ -310,16 +310,16 @@ mod tests {
         // Test category statistics
         let stats = scoring_engine.get_category_statistics().await?;
 
-        assert_eq!(stats.len(), 2, "Should have A100 and H200 categories");
+        assert_eq!(stats.len(), 2, "Should have A100 and H100 categories");
         assert!(stats.contains_key("A100"));
-        assert!(stats.contains_key("H200"));
+        assert!(stats.contains_key("H100"));
 
         let a100_stats = stats.get("A100").unwrap();
         assert_eq!(a100_stats.miner_count, 2);
         assert!(a100_stats.average_score > 0.0);
 
-        let h200_stats = stats.get("H200").unwrap();
-        assert_eq!(h200_stats.miner_count, 1);
+        let h100_stats = stats.get("H100").unwrap();
+        assert_eq!(h100_stats.miner_count, 1);
 
         // Clean up
         std::fs::remove_file(&db_path).ok();
@@ -341,7 +341,7 @@ mod tests {
         // Create a miner with multiple GPU types
         let multi_gpu_profile = MinerGpuProfile {
             miner_uid: MinerUid::new(100),
-            gpu_counts: HashMap::from([("A100".to_string(), 4), ("H200".to_string(), 2)]),
+            gpu_counts: HashMap::from([("A100".to_string(), 4), ("H100".to_string(), 2)]),
             total_score: 0.92,
             verification_count: 50,
             last_updated: now,
@@ -361,7 +361,7 @@ mod tests {
 
         assert_eq!(retrieved.gpu_counts.len(), 2, "Should have 2 GPU types");
         assert_eq!(retrieved.gpu_counts.get("A100"), Some(&4));
-        assert_eq!(retrieved.gpu_counts.get("H200"), Some(&2));
+        assert_eq!(retrieved.gpu_counts.get("H100"), Some(&2));
         assert_eq!(retrieved.last_successful_validation, Some(recent));
 
         // Clean up

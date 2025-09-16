@@ -39,7 +39,7 @@ mod tests {
         config
             .emission
             .gpu_allocations
-            .insert("H200".to_string(), GpuAllocation::new(50.0));
+            .insert("H100".to_string(), GpuAllocation::new(50.0));
         assert!(config.validate().is_ok());
     }
 
@@ -56,7 +56,7 @@ mod tests {
         config
             .emission
             .gpu_allocations
-            .insert("H200".to_string(), GpuAllocation::new(12.0));
+            .insert("H100".to_string(), GpuAllocation::new(12.0));
         config
             .emission
             .gpu_allocations
