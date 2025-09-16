@@ -251,11 +251,12 @@ pub async fn revoke_key(
 
     info!("Deleting API key with name: {}", name);
 
-    let deleted = api_keys::delete_api_key_by_name(&state.db, &auth_context.user_id, api_key_name.as_str())
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: format!("Failed to delete API key: {}", e),
-        })?;
+    let deleted =
+        api_keys::delete_api_key_by_name(&state.db, &auth_context.user_id, api_key_name.as_str())
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: format!("Failed to delete API key: {}", e),
+            })?;
 
     if !deleted {
         return Err(ApiError::NotFound {

@@ -44,7 +44,10 @@ impl ApiKeyName {
         }
 
         // Check each character is alphanumeric, hyphen, or underscore
-        if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        if !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
             return Err(ApiKeyNameError::InvalidCharacters);
         }
 

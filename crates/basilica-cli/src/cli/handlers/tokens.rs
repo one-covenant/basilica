@@ -7,7 +7,10 @@ use console::style;
 use dialoguer::{Confirm, Input, Select};
 
 /// Handle creating a new token
-pub async fn handle_create_token(client: &BasilicaClient, name: Option<String>) -> Result<(), CliError> {
+pub async fn handle_create_token(
+    client: &BasilicaClient,
+    name: Option<String>,
+) -> Result<(), CliError> {
     // Get name interactively if not provided
     let name = match name {
         Some(n) => {
@@ -18,7 +21,8 @@ pub async fn handle_create_token(client: &BasilicaClient, name: Option<String>) 
                     match e {
                         ApiKeyNameError::Empty => "Name cannot be empty",
                         ApiKeyNameError::TooLong => "Name too long (max 100 characters)",
-                        ApiKeyNameError::InvalidCharacters => "Only alphanumeric characters, hyphens, and underscores are allowed",
+                        ApiKeyNameError::InvalidCharacters =>
+                            "Only alphanumeric characters, hyphens, and underscores are allowed",
                     }
                 ))
             })?;
@@ -49,7 +53,8 @@ pub async fn handle_create_token(client: &BasilicaClient, name: Option<String>) 
                     match e {
                         ApiKeyNameError::Empty => "Name cannot be empty",
                         ApiKeyNameError::TooLong => "Name too long (max 100 characters)",
-                        ApiKeyNameError::InvalidCharacters => "Only alphanumeric characters, hyphens, and underscores are allowed",
+                        ApiKeyNameError::InvalidCharacters =>
+                            "Only alphanumeric characters, hyphens, and underscores are allowed",
                     }
                 ))
             })?;
@@ -69,7 +74,11 @@ pub async fn handle_create_token(client: &BasilicaClient, name: Option<String>) 
     } else if existing_keys.len() >= 8 {
         println!(
             "{}",
-            style(format!("⚠️  You have {} API keys. Maximum allowed is 10.", existing_keys.len())).yellow()
+            style(format!(
+                "⚠️  You have {} API keys. Maximum allowed is 10.",
+                existing_keys.len()
+            ))
+            .yellow()
         );
         println!();
     }
@@ -203,10 +212,16 @@ pub async fn handle_revoke_token(
     }
 
     // Delete the specific token
-    client.revoke_api_key(&key_name).await.map_err(CliError::Api)?;
+    client
+        .revoke_api_key(&key_name)
+        .await
+        .map_err(CliError::Api)?;
 
     println!();
-    println!("{}", style(format!("API key '{}' deleted successfully.", key_name)).green());
+    println!(
+        "{}",
+        style(format!("API key '{}' deleted successfully.", key_name)).green()
+    );
     println!();
 
     Ok(())

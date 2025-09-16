@@ -145,8 +145,8 @@ pub enum TokenAction {
         name: Option<String>,
     },
 
-    /// Show all API keys
-    Show,
+    /// List all API keys
+    List,
 
     /// Revoke an API key
     Revoke {

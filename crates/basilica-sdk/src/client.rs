@@ -216,7 +216,9 @@ impl BasilicaClient {
     /// Delete a specific API key by name (requires JWT authentication)
     pub async fn revoke_api_key(&self, name: &str) -> Result<()> {
         let encoded_name = urlencoding::encode(name);
-        let response = self.delete_empty(&format!("/api-keys/{}", encoded_name)).await?;
+        let response = self
+            .delete_empty(&format!("/api-keys/{}", encoded_name))
+            .await?;
         if response.status().is_success() {
             Ok(())
         } else {

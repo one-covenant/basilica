@@ -192,7 +192,7 @@ impl Args {
                     TokenAction::Create { name } => {
                         handlers::tokens::handle_create_token(&client, name.clone()).await?;
                     }
-                    TokenAction::Show => {
+                    TokenAction::List => {
                         handlers::tokens::handle_list_tokens(&client).await?;
                     }
                     TokenAction::Revoke { name, yes } => {
