@@ -991,8 +991,17 @@ impl WeightSetter {
                     }
                 };
 
-                // GPU memory is not available in the stored data, default to 0
-                let gpu_memory = 0u64;
+                // Extract GPU memory from specs if available
+                let gpu_memory = if let Some(gpus) = specs.get("gpu").and_then(|g| g.as_array()) {
+                    // Get maximum VRAM across all GPUs (in case of multi-GPU setup)
+                    gpus.iter()
+                        .filter_map(|gpu| gpu.get("vram_mb").and_then(|v| v.as_u64()))
+                        .max()
+                        .map(|vram_mb| vram_mb / 1024) // Convert MB to GB
+                        .unwrap_or(0)
+                } else {
+                    0u64
+                };
 
                 // Extract memory bandwidth from executor_result.memory_bandwidth_gbps
                 let bandwidth = specs["executor_result"]["memory_bandwidth_gbps"]

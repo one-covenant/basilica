@@ -131,6 +131,7 @@ pub struct GpuInfo {
     pub index: u32,
     pub gpu_name: String,
     pub gpu_uuid: String,
+    pub gpu_memory_gb: f64,
     pub computation_time_ns: u64,
     pub memory_bandwidth_gbps: f64,
     pub sm_utilization: SmUtilizationStats,

@@ -541,7 +541,13 @@ impl ValidationExecutor {
         if ssh_connection_successful && binary_config.enabled {
             match self
                 .binary_validator
-                .execute_binary_validation(ssh_details, session_info, binary_config)
+                .execute_binary_validation(
+                    &executor_info.id.to_string(),
+                    miner_uid,
+                    ssh_details,
+                    session_info,
+                    binary_config,
+                )
                 .await
             {
                 Ok(binary_result) => {

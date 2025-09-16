@@ -14,6 +14,9 @@ pub struct GpuAllocation {
     /// Minimum number of GPUs required for incentives (default: 1)
     #[serde(default = "default_min_gpu_count")]
     pub min_gpu_count: u32,
+    /// Minimum GPU VRAM in GB required for incentives (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_gpu_vram: Option<u64>,
 }
 
 fn default_min_gpu_count() -> u32 {
@@ -30,6 +33,7 @@ impl GpuAllocation {
         Self {
             weight,
             min_gpu_count: default_min_gpu_count(),
+            min_gpu_vram: None,
         }
     }
 
@@ -38,6 +42,16 @@ impl GpuAllocation {
         Self {
             weight,
             min_gpu_count,
+            min_gpu_vram: None,
+        }
+    }
+
+    /// Create a new GPU allocation with min_gpu_count and min_gpu_vram
+    pub fn with_requirements(weight: f64, min_gpu_count: u32, min_gpu_vram: Option<u64>) -> Self {
+        Self {
+            weight,
+            min_gpu_count,
+            min_gpu_vram,
         }
     }
 }
@@ -144,6 +158,15 @@ impl EmissionConfig {
                     allocation.min_gpu_count
                 ));
             }
+            if let Some(vram) = allocation.min_gpu_vram {
+                if vram == 0 {
+                    return Err(anyhow!(
+                        "GPU min_gpu_vram for {} must be greater than 0 if specified, got: {}",
+                        gpu_model,
+                        vram
+                    ));
+                }
+            }
         }
 
         Ok(())
@@ -222,6 +245,17 @@ impl EmissionConfig {
         weight: f64,
         min_gpu_count: u32,
     ) -> Result<()> {
+        self.set_gpu_allocation_with_vram(model, weight, min_gpu_count, None)
+    }
+
+    /// Add or update a GPU allocation with VRAM requirement
+    pub fn set_gpu_allocation_with_vram(
+        &mut self,
+        model: String,
+        weight: f64,
+        min_gpu_count: u32,
+        min_gpu_vram: Option<u64>,
+    ) -> Result<()> {
         if weight < 0.0 {
             return Err(anyhow!(
                 "GPU allocation weight cannot be negative: {}",
@@ -231,9 +265,16 @@ impl EmissionConfig {
         if min_gpu_count == 0 {
             return Err(anyhow!("GPU min_gpu_count must be at least 1"));
         }
+        if let Some(vram) = min_gpu_vram {
+            if vram == 0 {
+                return Err(anyhow!("GPU min_gpu_vram must be greater than 0 if specified"));
+            }
+        }
 
-        self.gpu_allocations
-            .insert(model, GpuAllocation::with_min_count(weight, min_gpu_count));
+        self.gpu_allocations.insert(
+            model,
+            GpuAllocation::with_requirements(weight, min_gpu_count, min_gpu_vram),
+        );
         Ok(())
     }
 

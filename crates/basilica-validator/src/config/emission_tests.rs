@@ -454,4 +454,91 @@ B200 = { weight = 80.0, min_gpu_count = 8 }
         assert_eq!(b200.weight, 80.0);
         assert_eq!(b200.min_gpu_count, 8);
     }
+
+    #[test]
+    fn test_min_gpu_vram_configuration() {
+        // Test loading TOML with min_gpu_vram
+        let toml_content = r#"
+burn_percentage = 10.0
+burn_uid = 204
+weight_set_interval_blocks = 360
+weight_version_key = 0
+
+[gpu_allocations]
+A100 = { weight = 8.0, min_gpu_count = 1, min_gpu_vram = 80 }
+H100 = { weight = 12.0, min_gpu_count = 1, min_gpu_vram = 80 }
+B200 = { weight = 80.0, min_gpu_count = 8, min_gpu_vram = 192 }
+"#;
+
+        let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        temp_file
+            .write_all(toml_content.as_bytes())
+            .expect("Failed to write temp file");
+
+        let config = EmissionConfig::from_toml_file(temp_file.path())
+            .expect("Failed to load from TOML file");
+
+        // Verify min_gpu_vram is loaded correctly
+        let a100 = config.get_gpu_allocation("A100").unwrap();
+        assert_eq!(a100.weight, 8.0);
+        assert_eq!(a100.min_gpu_count, 1);
+        assert_eq!(a100.min_gpu_vram, Some(80));
+
+        let h100 = config.get_gpu_allocation("H100").unwrap();
+        assert_eq!(h100.weight, 12.0);
+        assert_eq!(h100.min_gpu_count, 1);
+        assert_eq!(h100.min_gpu_vram, Some(80));
+
+        let b200 = config.get_gpu_allocation("B200").unwrap();
+        assert_eq!(b200.weight, 80.0);
+        assert_eq!(b200.min_gpu_count, 8);
+        assert_eq!(b200.min_gpu_vram, Some(192));
+    }
+
+    #[test]
+    fn test_min_gpu_vram_validation() {
+        let mut config = EmissionConfig::for_testing();
+
+        // Test valid min_gpu_vram
+        config.gpu_allocations.clear();
+        config.set_gpu_allocation_with_vram("A100".to_string(), 50.0, 1, Some(80)).unwrap();
+        config.set_gpu_allocation_with_vram("H100".to_string(), 50.0, 1, Some(80)).unwrap();
+        assert!(config.validate().is_ok());
+
+        // Test invalid min_gpu_vram (0)
+        assert!(config.set_gpu_allocation_with_vram("B200".to_string(), 50.0, 1, Some(0)).is_err());
+
+        // Test mix of with and without min_gpu_vram
+        config.gpu_allocations.clear();
+        config.set_gpu_allocation_with_vram("A100".to_string(), 25.0, 1, Some(80)).unwrap();
+        config.set_gpu_allocation_with_vram("H100".to_string(), 25.0, 1, None).unwrap();
+        config.set_gpu_allocation_with_vram("B200".to_string(), 50.0, 1, Some(192)).unwrap();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_gpu_allocation_with_requirements() {
+        // Test creating allocations with full requirements
+        let alloc = GpuAllocation::with_requirements(50.0, 4, Some(80));
+        assert_eq!(alloc.weight, 50.0);
+        assert_eq!(alloc.min_gpu_count, 4);
+        assert_eq!(alloc.min_gpu_vram, Some(80));
+
+        // Test creating allocations without VRAM requirement
+        let alloc = GpuAllocation::with_requirements(30.0, 2, None);
+        assert_eq!(alloc.weight, 30.0);
+        assert_eq!(alloc.min_gpu_count, 2);
+        assert_eq!(alloc.min_gpu_vram, None);
+
+        // Test backward compatibility constructors
+        let alloc = GpuAllocation::new(20.0);
+        assert_eq!(alloc.weight, 20.0);
+        assert_eq!(alloc.min_gpu_count, 1);
+        assert_eq!(alloc.min_gpu_vram, None);
+
+        let alloc = GpuAllocation::with_min_count(40.0, 8);
+        assert_eq!(alloc.weight, 40.0);
+        assert_eq!(alloc.min_gpu_count, 8);
+        assert_eq!(alloc.min_gpu_vram, None);
+    }
 }
