@@ -929,7 +929,7 @@ mod tests {
 
         // Create a test profile
         let mut gpu_counts = HashMap::new();
-        gpu_counts.insert("H100".to_string(), 2);
+        gpu_counts.insert("A100".to_string(), 2);
 
         let profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
@@ -959,7 +959,7 @@ mod tests {
             profile.verification_count
         );
         // Check GPU counts are properly normalized and retrieved
-        assert_eq!(retrieved_profile.gpu_counts.get("H100"), Some(&2));
+        assert_eq!(retrieved_profile.gpu_counts.get("A100"), Some(&2));
     }
 
     #[tokio::test]
@@ -970,7 +970,7 @@ mod tests {
 
         let miner_uid = MinerUid::new(1);
         let mut gpu_counts = HashMap::new();
-        gpu_counts.insert("H100".to_string(), 1);
+        gpu_counts.insert("A100".to_string(), 1);
 
         // Initial profile
         let profile1 = MinerGpuProfile {
@@ -1000,18 +1000,18 @@ mod tests {
             "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified)
              VALUES (?, ?, ?, ?, ?, ?)"
         )
-        .bind(format!("gpu-{}-H100-1", miner_uid.as_u16()))
+        .bind(format!("gpu-{}-A100-1", miner_uid.as_u16()))
         .bind(1i32)
         .bind(&executor_id)
         .bind(&miner_id)
-        .bind("H100")
+        .bind("A100")
         .bind(Utc::now().to_rfc3339())
         .execute(&pool)
         .await
         .unwrap();
 
         // Update profile with new score
-        gpu_counts.insert("H100".to_string(), 2);
+        gpu_counts.insert("A100".to_string(), 2);
         let profile2 = MinerGpuProfile {
             miner_uid,
             gpu_counts,
@@ -1030,7 +1030,7 @@ mod tests {
         assert_eq!(retrieved.total_score, 0.8);
         assert_eq!(retrieved.verification_count, 2);
         // GPU count should reflect actual assignments (2)
-        assert_eq!(retrieved.gpu_counts.get("H100"), Some(&2));
+        assert_eq!(retrieved.gpu_counts.get("A100"), Some(&2));
     }
 
     #[tokio::test]
@@ -1042,7 +1042,7 @@ mod tests {
         let mut profiles = Vec::new();
         for i in 0..3 {
             let mut gpu_counts = HashMap::new();
-            let model = if i < 2 { "H100" } else { "H200" };
+            let model = if i < 2 { "A100" } else { "H200" };
             gpu_counts.insert(model.to_string(), 1);
 
             let profile = MinerGpuProfile {
@@ -1063,9 +1063,9 @@ mod tests {
             .await
             .unwrap();
 
-        // Query H100 profiles
-        let h100_profiles = repo.get_profiles_by_gpu_model("H100").await.unwrap();
-        assert_eq!(h100_profiles.len(), 2);
+        // Query A100 profiles
+        let a100_profiles = repo.get_profiles_by_gpu_model("A100").await.unwrap();
+        assert_eq!(a100_profiles.len(), 2);
 
         // Query H200 profiles
         let h200_profiles = repo.get_profiles_by_gpu_model("H200").await.unwrap();
@@ -1080,9 +1080,9 @@ mod tests {
         // Create test metrics
         let mut distributions = HashMap::new();
         distributions.insert(
-            "H100".to_string(),
+            "A100".to_string(),
             CategoryDistribution {
-                category: "H100".to_string(),
+                category: "A100".to_string(),
                 miner_count: 10,
                 total_weight: 4000,
                 average_score: 0.7,
@@ -1113,7 +1113,7 @@ mod tests {
         assert!(metrics_id > 0);
 
         // Store some allocations
-        repo.store_weight_allocation(metrics_id, MinerUid::new(1), "H100", 400, 0.7, 7.0, 12345)
+        repo.store_weight_allocation(metrics_id, MinerUid::new(1), "A100", 400, 0.7, 7.0, 12345)
             .await
             .unwrap();
 
@@ -1134,7 +1134,7 @@ mod tests {
 
         // Create an old profile
         let mut gpu_counts = HashMap::new();
-        gpu_counts.insert("H100".to_string(), 1);
+        gpu_counts.insert("A100".to_string(), 1);
 
         let old_profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
@@ -1208,9 +1208,9 @@ mod tests {
         for block in [100, 200, 300, 400, 500] {
             let mut distributions = HashMap::new();
             distributions.insert(
-                "H100".to_string(),
+                "A100".to_string(),
                 CategoryDistribution {
-                    category: "H100".to_string(),
+                    category: "A100".to_string(),
                     miner_count: 10,
                     total_weight: 4000,
                     average_score: 0.7,
@@ -1253,9 +1253,9 @@ mod tests {
         // Add a metric
         let mut distributions = HashMap::new();
         distributions.insert(
-            "H100".to_string(),
+            "A100".to_string(),
             CategoryDistribution {
-                category: "H100".to_string(),
+                category: "A100".to_string(),
                 miner_count: 5,
                 total_weight: 2000,
                 average_score: 0.8,

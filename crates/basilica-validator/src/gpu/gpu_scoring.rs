@@ -350,7 +350,6 @@ impl GpuScoringEngine {
                 continue;
             }
 
-            // Calculate total rewardable GPUs (only H100 and H200)
             let total_rewardable_gpus: u32 = rewardable_gpu_counts.values().sum();
 
             // Add stats for each rewardable category the miner has GPUs in
@@ -541,7 +540,7 @@ mod tests {
             ExecutorValidationResult {
                 executor_id: "exec1".to_string(),
                 is_valid: true,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 2,
                 gpu_memory_gb: 80,
                 attestation_valid: true,
@@ -550,7 +549,7 @@ mod tests {
             ExecutorValidationResult {
                 executor_id: "exec2".to_string(),
                 is_valid: true,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 1,
                 gpu_memory_gb: 80,
                 attestation_valid: true,
@@ -568,7 +567,7 @@ mod tests {
         let invalid_validations = vec![ExecutorValidationResult {
             executor_id: "exec1".to_string(),
             is_valid: false,
-            gpu_model: "H100".to_string(),
+            gpu_model: "A100".to_string(),
             gpu_count: 2,
             gpu_memory_gb: 80,
             attestation_valid: false,
@@ -583,7 +582,7 @@ mod tests {
             ExecutorValidationResult {
                 executor_id: "exec1".to_string(),
                 is_valid: true,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 2,
                 gpu_memory_gb: 80,
                 attestation_valid: true,
@@ -592,7 +591,7 @@ mod tests {
             ExecutorValidationResult {
                 executor_id: "exec2".to_string(),
                 is_valid: false,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 1,
                 gpu_memory_gb: 80,
                 attestation_valid: false,
@@ -615,7 +614,7 @@ mod tests {
         let high_memory_validations = vec![ExecutorValidationResult {
             executor_id: "exec1".to_string(),
             is_valid: true,
-            gpu_model: "H100".to_string(),
+            gpu_model: "A100".to_string(),
             gpu_count: 1,
             gpu_memory_gb: 80,
             attestation_valid: true,
@@ -625,7 +624,7 @@ mod tests {
         let low_memory_validations = vec![ExecutorValidationResult {
             executor_id: "exec1".to_string(),
             is_valid: true,
-            gpu_model: "H100".to_string(),
+            gpu_model: "A100".to_string(),
             gpu_count: 1,
             gpu_memory_gb: 16,
             attestation_valid: true,
@@ -649,7 +648,7 @@ mod tests {
             let validations = vec![ExecutorValidationResult {
                 executor_id: format!("exec_{gpu_count}"),
                 is_valid: true,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count,
                 gpu_memory_gb: 80,
                 attestation_valid: true,
@@ -668,7 +667,7 @@ mod tests {
         let many_gpu_validations = vec![ExecutorValidationResult {
             executor_id: "exec_many".to_string(),
             is_valid: true,
-            gpu_model: "H100".to_string(),
+            gpu_model: "A100".to_string(),
             gpu_count: 128,
             gpu_memory_gb: 80,
             attestation_valid: true,
@@ -688,7 +687,7 @@ mod tests {
         let validations = vec![ExecutorValidationResult {
             executor_id: "exec1".to_string(),
             is_valid: true,
-            gpu_model: "H100".to_string(),
+            gpu_model: "A100".to_string(),
             gpu_count: 2,
             gpu_memory_gb: 80,
             attestation_valid: true,
@@ -707,7 +706,7 @@ mod tests {
         let new_validations = vec![ExecutorValidationResult {
             executor_id: "exec2".to_string(),
             is_valid: true,
-            gpu_model: "H100".to_string(),
+            gpu_model: "A100".to_string(),
             gpu_count: 1,
             gpu_memory_gb: 40, // Different memory than first validation (80GB)
             attestation_valid: true,
@@ -728,11 +727,11 @@ mod tests {
         let engine = GpuScoringEngine::new(repo.clone(), EmissionConfig::for_testing());
 
         // Create test profiles
-        let mut h100_counts_1 = HashMap::new();
-        h100_counts_1.insert("H100".to_string(), 2);
+        let mut a100_counts_1 = HashMap::new();
+        a100_counts_1.insert("A100".to_string(), 2);
 
-        let mut h100_counts_2 = HashMap::new();
-        h100_counts_2.insert("H100".to_string(), 1);
+        let mut a100_counts_2 = HashMap::new();
+        a100_counts_2.insert("A100".to_string(), 1);
 
         let mut h200_counts = HashMap::new();
         h200_counts.insert("H200".to_string(), 1);
@@ -741,7 +740,7 @@ mod tests {
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
-                gpu_counts: h100_counts_1,
+                gpu_counts: a100_counts_1,
                 total_score: 0.8,
                 verification_count: 1,
                 last_updated: now,
@@ -749,7 +748,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
-                gpu_counts: h100_counts_2,
+                gpu_counts: a100_counts_2,
                 total_score: 0.6,
                 verification_count: 1,
                 last_updated: now,
@@ -775,12 +774,12 @@ mod tests {
 
         assert_eq!(stats.len(), 2);
 
-        let h100_stats = stats.get("H100").unwrap();
-        assert_eq!(h100_stats.miner_count, 2);
-        assert_eq!(h100_stats.average_score, 0.7);
-        assert_eq!(h100_stats.total_score, 1.4);
-        assert_eq!(h100_stats.min_score, 0.6);
-        assert_eq!(h100_stats.max_score, 0.8);
+        let a100_stats = stats.get("A100").unwrap();
+        assert_eq!(a100_stats.miner_count, 2);
+        assert_eq!(a100_stats.average_score, 0.7);
+        assert_eq!(a100_stats.total_score, 1.4);
+        assert_eq!(a100_stats.min_score, 0.6);
+        assert_eq!(a100_stats.max_score, 0.8);
 
         let h200_stats = stats.get("H200").unwrap();
         assert_eq!(h200_stats.miner_count, 1);
@@ -800,7 +799,7 @@ mod tests {
             ExecutorValidationResult {
                 executor_id: "exec1".to_string(),
                 is_valid: false,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 1,
                 gpu_memory_gb: 80,
                 attestation_valid: false,
@@ -809,7 +808,7 @@ mod tests {
             ExecutorValidationResult {
                 executor_id: "exec2".to_string(),
                 is_valid: true,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 1,
                 gpu_memory_gb: 80,
                 attestation_valid: false, // Attestation invalid
@@ -825,7 +824,7 @@ mod tests {
             ExecutorValidationResult {
                 executor_id: "exec1".to_string(),
                 is_valid: true,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 1,
                 gpu_memory_gb: 80,
                 attestation_valid: true,
@@ -834,7 +833,7 @@ mod tests {
             ExecutorValidationResult {
                 executor_id: "exec2".to_string(),
                 is_valid: false,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 1,
                 gpu_memory_gb: 80,
                 attestation_valid: false,
@@ -843,7 +842,7 @@ mod tests {
             ExecutorValidationResult {
                 executor_id: "exec3".to_string(),
                 is_valid: true,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 1,
                 gpu_memory_gb: 40,
                 attestation_valid: true,
@@ -868,7 +867,7 @@ mod tests {
             miner_uid,
             gpu_counts: {
                 let mut counts = HashMap::new();
-                counts.insert("H100".to_string(), 1);
+                counts.insert("A100".to_string(), 1);
                 counts
             },
             total_score: 0.2,
@@ -882,7 +881,7 @@ mod tests {
         let validations = vec![ExecutorValidationResult {
             executor_id: "exec1".to_string(),
             is_valid: true,
-            gpu_model: "H100".to_string(),
+            gpu_model: "A100".to_string(),
             gpu_count: 1,
             gpu_memory_gb: 80,
             attestation_valid: true,
@@ -909,7 +908,7 @@ mod tests {
             let validations = vec![ExecutorValidationResult {
                 executor_id: format!("exec_{memory}"),
                 is_valid: true,
-                gpu_model: "H100".to_string(),
+                gpu_model: "A100".to_string(),
                 gpu_count: 1,
                 gpu_memory_gb: memory,
                 attestation_valid: true,
@@ -931,13 +930,12 @@ mod tests {
         assert!(engine.is_gpu_model_rewardable("NVIDIA B200"));
         assert!(engine.is_gpu_model_rewardable("Tesla B200"));
 
-        // Test that H100 and H200 are still rewardable
-        assert!(engine.is_gpu_model_rewardable("H100"));
+        // Test that A100 and H200 are still rewardable
+        assert!(engine.is_gpu_model_rewardable("A100"));
         assert!(engine.is_gpu_model_rewardable("H200"));
 
         // Test that unconfigured GPUs are not rewardable
         assert!(!engine.is_gpu_model_rewardable("V100"));
-        assert!(!engine.is_gpu_model_rewardable("A100"));
 
         // Create B200 profile
         let mut b200_counts = HashMap::new();
@@ -975,9 +973,9 @@ mod tests {
     async fn test_emission_config_filtering() {
         let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
 
-        // Create custom emission config with only H100 and B200 (exclude H200)
+        // Create custom emission config with only A100 and B200 (exclude H200)
         let mut custom_gpu_allocations = HashMap::new();
-        custom_gpu_allocations.insert("H100".to_string(), 20.0);
+        custom_gpu_allocations.insert("A100".to_string(), 20.0);
         custom_gpu_allocations.insert("B200".to_string(), 80.0);
         // Note: H200 is excluded
 
@@ -992,13 +990,13 @@ mod tests {
         let engine = GpuScoringEngine::new(repo.clone(), custom_emission_config);
 
         // Test filtering matches custom config
-        assert!(engine.is_gpu_model_rewardable("H100"));
+        assert!(engine.is_gpu_model_rewardable("A100"));
         assert!(engine.is_gpu_model_rewardable("B200"));
         assert!(!engine.is_gpu_model_rewardable("H200")); // Should be excluded
 
         // Create profiles with all GPU types
-        let mut h100_counts = HashMap::new();
-        h100_counts.insert("H100".to_string(), 2);
+        let mut a100_counts = HashMap::new();
+        a100_counts.insert("A100".to_string(), 2);
 
         let mut h200_counts = HashMap::new();
         h200_counts.insert("H200".to_string(), 1);
@@ -1010,7 +1008,7 @@ mod tests {
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
-                gpu_counts: h100_counts,
+                gpu_counts: a100_counts,
                 total_score: 0.8,
                 verification_count: 1,
                 last_updated: now,
@@ -1043,9 +1041,9 @@ mod tests {
         // Test category statistics only include configured GPUs
         let stats = engine.get_category_statistics().await.unwrap();
 
-        // Should have H100 and B200 but NOT H200
-        assert_eq!(stats.len(), 2, "Should only have 2 categories (H100, B200)");
-        assert!(stats.contains_key("H100"), "Should include H100");
+        // Should have A100 and B200 but NOT H200
+        assert_eq!(stats.len(), 2, "Should only have 2 categories (A100, B200)");
+        assert!(stats.contains_key("A100"), "Should include A100");
         assert!(stats.contains_key("B200"), "Should include B200");
         assert!(
             !stats.contains_key("H200"),
@@ -1053,7 +1051,7 @@ mod tests {
         );
 
         // Verify correct stats
-        assert_eq!(stats.get("H100").unwrap().miner_count, 1);
+        assert_eq!(stats.get("A100").unwrap().miner_count, 1);
         assert_eq!(stats.get("B200").unwrap().miner_count, 1);
     }
 
@@ -1064,7 +1062,7 @@ mod tests {
 
         // Create a miner with multiple GPU types including B200
         let mut multi_gpu_counts = HashMap::new();
-        multi_gpu_counts.insert("H100".to_string(), 1);
+        multi_gpu_counts.insert("A100".to_string(), 1);
         multi_gpu_counts.insert("B200".to_string(), 2);
 
         let now = Utc::now();
@@ -1086,12 +1084,12 @@ mod tests {
         // Test category statistics account for both GPU types
         let stats = engine.get_category_statistics().await.unwrap();
 
-        // Should have both H100 and B200 categories
-        assert!(stats.contains_key("H100"));
+        // Should have both A100 and B200 categories
+        assert!(stats.contains_key("A100"));
         assert!(stats.contains_key("B200"));
 
         // Both should show the same miner (miner can be in multiple categories)
-        assert_eq!(stats.get("H100").unwrap().miner_count, 1);
+        assert_eq!(stats.get("A100").unwrap().miner_count, 1);
         assert_eq!(stats.get("B200").unwrap().miner_count, 1);
     }
 
@@ -1099,7 +1097,7 @@ mod tests {
     fn test_is_gpu_model_rewardable_normalization() {
         // Create test emission config
         let mut gpu_allocations = HashMap::new();
-        gpu_allocations.insert("H100".to_string(), 20.0);
+        gpu_allocations.insert("A100".to_string(), 20.0);
         gpu_allocations.insert("B200".to_string(), 80.0);
 
         let emission_config = EmissionConfig {
@@ -1118,16 +1116,16 @@ mod tests {
 
         // Test that various GPU model strings are normalized correctly
         let test_cases = vec![
-            ("H100", true),
-            ("NVIDIA H100", true),
-            ("Tesla H100", true),
-            ("h100", true),
+            ("A100", true),
+            ("NVIDIA A100", true),
+            ("Tesla A100", true),
+            ("a100", true),
             ("B200", true),
             ("NVIDIA B200", true),
             ("b200", true),
             ("H200", false), // Not in our custom config
             ("V100", false),
-            ("A100", false),
+            ("A100", true),
             ("GTX1080", false),
         ];
 

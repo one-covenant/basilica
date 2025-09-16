@@ -386,7 +386,7 @@ mod tests {
 
     fn create_test_config() -> EmissionConfig {
         let mut gpu_allocations = HashMap::new();
-        gpu_allocations.insert("H100".to_string(), 8.0);
+        gpu_allocations.insert("A100".to_string(), 8.0);
         gpu_allocations.insert("H200".to_string(), 12.0);
         gpu_allocations.insert("B200".to_string(), 80.0);
 
@@ -403,7 +403,7 @@ mod tests {
         let mut miners = HashMap::new();
 
         miners.insert(
-            "H100".to_string(),
+            "A100".to_string(),
             vec![
                 (MinerUid::new(1), 0.8),
                 (MinerUid::new(2), 0.6),
@@ -491,7 +491,7 @@ mod tests {
 
         // Should have category allocations
         assert_eq!(distribution.category_allocations.len(), 3);
-        assert!(distribution.category_allocations.contains_key("H100"));
+        assert!(distribution.category_allocations.contains_key("A100"));
         assert!(distribution.category_allocations.contains_key("H200"));
         assert!(distribution.category_allocations.contains_key("B200"));
 
@@ -513,7 +513,6 @@ mod tests {
         let distribution = engine.calculate_weight_distribution(miners).unwrap();
 
         // With threshold removed, all miners should be included
-        // H100: 3 miners, H200: 2 miners, B200: 2 miners
         assert_eq!(distribution.miners_served, 7);
     }
 
@@ -560,21 +559,19 @@ mod tests {
         assert_eq!(distribution.miners_served, 0);
         assert_eq!(distribution.weights.len(), 1); // Only burn allocation
 
-        // Test with no miners in H200 category - should burn H200 allocation
         let mut single_category_miners = HashMap::new();
         single_category_miners.insert(
-            "H100".to_string(),
+            "A100".to_string(),
             vec![(MinerUid::new(1), 0.8), (MinerUid::new(2), 0.6)],
         );
 
         let distribution = engine
             .calculate_weight_distribution(single_category_miners)
             .unwrap();
-        assert_eq!(distribution.miners_served, 2); // Only H100 miners
+        assert_eq!(distribution.miners_served, 2);
 
-        // Check that burn allocation includes H200's 40% allocation
         let burn_alloc = distribution.burn_allocation.unwrap();
-        assert!(burn_alloc.percentage > 40.0); // Should be base burn + H200's 40%
+        assert!(burn_alloc.percentage > 40.0);
     }
 
     #[test]
@@ -590,10 +587,10 @@ mod tests {
         assert!(total_weight <= u16::MAX as u64);
 
         // Test category allocation percentages
-        let h100_allocation = distribution.category_allocations.get("H100").unwrap();
+        let a100_allocation = distribution.category_allocations.get("A100").unwrap();
         let h200_allocation = distribution.category_allocations.get("H200").unwrap();
 
-        assert!((h100_allocation.allocation_percentage - 8.0).abs() < 0.1);
+        assert!((a100_allocation.allocation_percentage - 8.0).abs() < 0.1);
         assert!((h200_allocation.allocation_percentage - 12.0).abs() < 0.1);
     }
 
@@ -607,12 +604,12 @@ mod tests {
 
         // Should have pools for all configured categories
         assert_eq!(pools.len(), 3);
-        assert!(pools.contains_key("H100"));
+        assert!(pools.contains_key("A100"));
         assert!(pools.contains_key("H200"));
         assert!(pools.contains_key("B200"));
 
-        // H100 should get 8% of total
-        assert_eq!(pools.get("H100"), Some(&800));
+        // A100 should get 8% of total
+        assert_eq!(pools.get("A100"), Some(&800));
         // H200 should get 12% of total
         assert_eq!(pools.get("H200"), Some(&1200));
         // B200 should get 80% of total
@@ -646,27 +643,27 @@ mod tests {
         let mut config = create_test_config();
         // Set up 3 categories for testing
         config.gpu_allocations.clear();
-        config.gpu_allocations.insert("H100".to_string(), 40.0);
+        config.gpu_allocations.insert("A100".to_string(), 40.0);
         config.gpu_allocations.insert("H200".to_string(), 30.0);
-        config.gpu_allocations.insert("A100".to_string(), 30.0);
+        config.gpu_allocations.insert("B200".to_string(), 30.0);
 
         let engine = WeightAllocationEngine::new(config, 0.0);
 
-        // Only H100 has miners
+        // Only A100 has miners
         let mut miners = HashMap::new();
-        miners.insert("H100".to_string(), vec![(MinerUid::new(1), 1.0)]);
+        miners.insert("A100".to_string(), vec![(MinerUid::new(1), 1.0)]);
 
         let distribution = engine.calculate_weight_distribution(miners).unwrap();
 
-        // Should burn H200 and A100 allocations (30% + 30% = 60%) plus base burn (10%)
+        // Should burn H200 and B200 allocations (30% + 30% = 60%) plus base burn (10%)
         let burn = distribution.burn_allocation.unwrap();
         // The exact percentage depends on weight calculations and rounding
         // We expect around 64% (not 70% due to how weights are calculated)
         assert!(burn.percentage > 60.0 && burn.percentage < 65.0);
 
-        // Only H100 should have allocation
+        // Only A100 should have allocation
         assert_eq!(distribution.category_allocations.len(), 1);
-        assert!(distribution.category_allocations.contains_key("H100"));
+        assert!(distribution.category_allocations.contains_key("A100"));
     }
 
     #[test]
@@ -676,13 +673,13 @@ mod tests {
 
         // Create category with 0 miners (empty list)
         let mut miners = HashMap::new();
-        miners.insert("H100".to_string(), vec![]);
+        miners.insert("A100".to_string(), vec![]);
         miners.insert("H200".to_string(), vec![(MinerUid::new(1), 0.5)]);
 
         let filtered = engine.filter_miners_by_score(miners).unwrap();
 
-        // H100 should be excluded (0 < 1 minimum)
-        assert!(!filtered.contains_key("H100"));
+        // A100 should be excluded (0 < 1 minimum)
+        assert!(!filtered.contains_key("A100"));
         // H200 should be included (1 >= 1 minimum)
         assert!(filtered.contains_key("H200"));
     }
@@ -692,13 +689,13 @@ mod tests {
         let config = create_test_config();
         let engine = WeightAllocationEngine::new(config, 0.0);
 
-        // Create a miner that appears in both H100 and H200 categories
+        // Create a miner that appears in both A100 and H200 categories
         let mut miners = HashMap::new();
         miners.insert(
-            "H100".to_string(),
+            "A100".to_string(),
             vec![
-                (MinerUid::new(1), 0.8), // Miner 1 in H100
-                (MinerUid::new(2), 0.6), // Miner 2 only in H100
+                (MinerUid::new(1), 0.8), // Miner 1 in A100
+                (MinerUid::new(2), 0.6), // Miner 2 only in A100
             ],
         );
         miners.insert(
@@ -751,8 +748,8 @@ mod tests {
         // Create scenario where weight aggregation could overflow u16
         let mut miners = HashMap::new();
         miners.insert(
-            "H100".to_string(),
-            vec![(MinerUid::new(1), 1.0)], // Miner gets all H100 allocation
+            "A100".to_string(),
+            vec![(MinerUid::new(1), 1.0)], // Miner gets all A100 allocation
         );
         miners.insert(
             "H200".to_string(),
@@ -782,7 +779,7 @@ mod tests {
             // Scenario 1: Same miner in all categories
             {
                 let mut miners = HashMap::new();
-                miners.insert("H100".to_string(), vec![(MinerUid::new(42), 0.8)]);
+                miners.insert("A100".to_string(), vec![(MinerUid::new(42), 0.8)]);
                 miners.insert("H200".to_string(), vec![(MinerUid::new(42), 0.9)]);
                 miners
             },
@@ -790,7 +787,7 @@ mod tests {
             {
                 let mut miners = HashMap::new();
                 miners.insert(
-                    "H100".to_string(),
+                    "A100".to_string(),
                     vec![
                         (MinerUid::new(1), 0.8),
                         (MinerUid::new(2), 0.6),
@@ -800,8 +797,8 @@ mod tests {
                 miners.insert(
                     "H200".to_string(),
                     vec![
-                        (MinerUid::new(2), 0.9), // Overlaps with H100
-                        (MinerUid::new(3), 0.7), // Overlaps with H100
+                        (MinerUid::new(2), 0.9), // Overlaps with A100
+                        (MinerUid::new(3), 0.7), // Overlaps with A100
                         (MinerUid::new(4), 0.5), // Unique to H200
                     ],
                 );
@@ -835,13 +832,13 @@ mod tests {
         // Create miners with significant overlap
         let mut miners = HashMap::new();
         miners.insert(
-            "H100".to_string(),
+            "A100".to_string(),
             vec![(MinerUid::new(1), 0.5), (MinerUid::new(2), 0.5)],
         );
         miners.insert(
             "H200".to_string(),
             vec![
-                (MinerUid::new(1), 0.3), // Overlaps with H100
+                (MinerUid::new(1), 0.3), // Overlaps with A100
                 (MinerUid::new(3), 0.7),
             ],
         );

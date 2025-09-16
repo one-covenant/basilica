@@ -123,7 +123,7 @@ mod tests {
 
         let profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
-            gpu_counts: HashMap::from([("H100".to_string(), 2)]),
+            gpu_counts: HashMap::from([("A100".to_string(), 2)]),
             total_score: 0.8,
             verification_count: 5,
             last_updated: now,
@@ -173,7 +173,7 @@ mod tests {
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
-                gpu_counts: std::collections::HashMap::from([("H100".to_string(), 2)]),
+                gpu_counts: std::collections::HashMap::from([("A100".to_string(), 2)]),
                 total_score: 0.8,
                 verification_count: 5,
                 last_updated: now,
@@ -181,7 +181,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
-                gpu_counts: std::collections::HashMap::from([("H100".to_string(), 1)]),
+                gpu_counts: std::collections::HashMap::from([("A100".to_string(), 1)]),
                 total_score: 0.7,
                 verification_count: 3,
                 last_updated: now,

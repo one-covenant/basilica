@@ -32,7 +32,7 @@ mod tests {
         config
             .emission
             .gpu_allocations
-            .insert("H100".to_string(), 50.0);
+            .insert("A100".to_string(), 50.0);
         config
             .emission
             .gpu_allocations
@@ -49,7 +49,7 @@ mod tests {
         config
             .emission
             .gpu_allocations
-            .insert("H100".to_string(), 8.0);
+            .insert("A100".to_string(), 8.0);
         config
             .emission
             .gpu_allocations

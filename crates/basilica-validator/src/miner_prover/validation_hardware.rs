@@ -404,8 +404,8 @@ mod tests {
         // Define test cases for different hardware configurations
         let test_cases = vec![
             TestCase {
-                name: "H100 SXM5 with 30 vCPUs",
-                file_name: "h100_sxm5_30vcpu.json",
+                name: "A100 SXM5 with 30 vCPUs",
+                file_name: "a100_sxm5_30vcpu.json",
                 expected_cpu_model: Some("Intel(R) Xeon(R) Platinum 8462Y+"),
                 expected_cpu_cores: Some(30),
                 expected_ram_gb: Some(120),

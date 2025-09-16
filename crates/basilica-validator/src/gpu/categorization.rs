@@ -66,7 +66,7 @@ impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Hash, Eq)]
 pub enum GpuCategory {
-    H100,
+    A100,
     H200,
     B200,
     Other(String),
@@ -76,17 +76,17 @@ impl GpuCategory {
     /// Get the use case description for this GPU category
     pub fn description(&self) -> &'static str {
         match self {
-            GpuCategory::H100 => "High-end training & inference",
+            GpuCategory::A100 => "High-end training & inference",
             GpuCategory::H200 => "Flagship AI training & inference",
             GpuCategory::B200 => "Next-gen AI acceleration",
             GpuCategory::Other(_) => "General GPU compute",
         }
     }
 
-    /// Get the display string for this GPU category (e.g., "H100", "H200", "OTHER")
+    /// Get the display string for this GPU category (e.g., "A100", "H200", "OTHER")
     pub fn as_str(&self) -> String {
         match self {
-            GpuCategory::H100 => "H100".to_string(),
+            GpuCategory::A100 => "A100".to_string(),
             GpuCategory::H200 => "H200".to_string(),
             GpuCategory::B200 => "B200".to_string(),
             GpuCategory::Other(o) => o.clone(),
@@ -115,8 +115,8 @@ impl FromStr for GpuCategory {
             .to_string();
 
         // Check for known GPU models
-        if cleaned.contains("H100") {
-            Ok(GpuCategory::H100)
+        if cleaned.contains("A100") {
+            Ok(GpuCategory::A100)
         } else if cleaned.contains("H200") {
             Ok(GpuCategory::H200)
         } else if cleaned.contains("B200") {
@@ -144,9 +144,9 @@ impl GpuCategorizer {
             .trim()
             .to_string();
 
-        // Match against known patterns - H100, H200, and B200
-        if cleaned.contains("H100") {
-            "H100".to_string()
+        // Match against known patterns - A100, H200, and B200
+        if cleaned.contains("A100") {
+            "A100".to_string()
         } else if cleaned.contains("H200") {
             "H200".to_string()
         } else if cleaned.contains("B200") {

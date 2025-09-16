@@ -1045,8 +1045,7 @@ impl WeightSetter {
                     // Bonus for high-end GPUs
                     let model = gpu["model"].as_str().unwrap_or("");
                     let model_bonus = match model {
-                        s if s.contains("H100") => 1.0,
-                        s if s.contains("A100") => 0.9,
+                        s if s.contains("A100") => 1.0,
                         s if s.contains("4090") => 0.8,
                         s if s.contains("3090") => 0.7,
                         _ => 0.5,
@@ -1246,8 +1245,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_extract_validation_result_with_h100() {
-        // Create a verification log with H100 GPU
+    fn test_extract_validation_result_with_a100() {
+        // Create a verification log with A100 GPU
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
             executor_id: "exec123".to_string(),
@@ -1258,7 +1257,7 @@ mod tests {
             success: true,
             details: json!({
                 "gpu": [{
-                    "model": "NVIDIA H100 80GB PCIe",
+                    "model": "NVIDIA A100 80GB PCIe",
                     "vram_mb": 81920
                 }],
                 "cpu": {"cores": 32},
@@ -1279,7 +1278,7 @@ mod tests {
             .and_then(|gpu| gpu["model"].as_str())
             .unwrap_or("UNKNOWN");
 
-        assert_eq!(gpu_model, "NVIDIA H100 80GB PCIe");
+        assert_eq!(gpu_model, "NVIDIA A100 80GB PCIe");
     }
 
     #[test]
@@ -1331,7 +1330,7 @@ mod tests {
             success: false,
             details: json!({
                 "gpu": [{
-                    "model": "NVIDIA H100 80GB PCIe",
+                    "model": "NVIDIA A100 80GB PCIe",
                     "vram_mb": 81920
                 }],
                 "cpu": {"cores": 32},
@@ -1352,7 +1351,7 @@ mod tests {
             .and_then(|gpu| gpu["model"].as_str())
             .unwrap_or("UNKNOWN");
 
-        assert_eq!(gpu_model, "NVIDIA H100 80GB PCIe");
+        assert_eq!(gpu_model, "NVIDIA A100 80GB PCIe");
     }
 
     #[test]
@@ -1392,7 +1391,7 @@ mod tests {
         let old_gpu_model = format!("H{}", gpu_memory_gb / 1024);
         assert_eq!(old_gpu_model, "H0"); // This is wrong!
 
-        // For H100 with 80GB, dividing by 1024 gives 0.078, formatted as "H0"
+        // For A100 with 80GB, dividing by 1024 gives 0.078, formatted as "H0"
         // For H200 with 138GB, dividing by 1024 gives 0.134, formatted as "H0"
         // Both would be categorized as "OTHER" and excluded from rewards!
     }
@@ -1411,7 +1410,7 @@ mod tests {
             success: true,
             details: json!({
                 "executor_result": {
-                    "gpu_name": "NVIDIA H100 80GB HBM3",
+                    "gpu_name": "NVIDIA A100 80GB HBM3",
                     "gpu_uuid": "GPU-12345678-1234-1234-1234-123456789012",
                     "memory_bandwidth_gbps": 3.35,
                     "anti_debug_passed": true
@@ -1438,7 +1437,7 @@ mod tests {
         let gpu_count = details["gpu_count"].as_u64().unwrap_or(0) as usize;
 
         // Verify the GPU model is correctly extracted from the new path
-        assert_eq!(gpu_model, "NVIDIA H100 80GB HBM3");
+        assert_eq!(gpu_model, "NVIDIA A100 80GB HBM3");
         assert_eq!(gpu_count, 8);
 
         // Test that the old path would fail (this proves our fix is needed)
@@ -1486,10 +1485,10 @@ mod tests {
 
     #[test]
     fn test_gpu_categorization_with_corrected_extraction() {
-        // Test that H100 and H200 GPUs are now properly identified
-        let h100_log = VerificationLog {
+        // Test that A100 and H200 GPUs are now properly identified
+        let a100_log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "executor_h100".to_string(),
+            executor_id: "executor_a100".to_string(),
             validator_hotkey: "validator_hotkey".to_string(),
             verification_type: "binary_validation".to_string(),
             timestamp: chrono::Utc::now(),
@@ -1497,7 +1496,7 @@ mod tests {
             success: true,
             details: json!({
                 "executor_result": {
-                    "gpu_name": "NVIDIA H100 80GB HBM3",
+                    "gpu_name": "NVIDIA A100 80GB HBM3",
                     "memory_bandwidth_gbps": 3.35
                 },
                 "gpu_count": 8
@@ -1530,21 +1529,21 @@ mod tests {
         };
 
         // Extract GPU models using the corrected path
-        let h100_model = h100_log.details["executor_result"]["gpu_name"]
+        let a100_model = a100_log.details["executor_result"]["gpu_name"]
             .as_str()
             .unwrap_or("UNKNOWN");
         let h200_model = h200_log.details["executor_result"]["gpu_name"]
             .as_str()
             .unwrap_or("UNKNOWN");
 
-        // Verify H100 and H200 are correctly identified
-        assert!(h100_model.contains("H100"));
+        // Verify A100 and H200 are correctly identified
+        assert!(a100_model.contains("A100"));
         assert!(h200_model.contains("H200"));
-        assert_ne!(h100_model, "UNKNOWN");
+        assert_ne!(a100_model, "UNKNOWN");
         assert_ne!(h200_model, "UNKNOWN");
 
         // Test GPU counts are preserved
-        assert_eq!(h100_log.details["gpu_count"].as_u64().unwrap(), 8);
+        assert_eq!(a100_log.details["gpu_count"].as_u64().unwrap(), 8);
         assert_eq!(h200_log.details["gpu_count"].as_u64().unwrap(), 4);
     }
 
@@ -1561,7 +1560,7 @@ mod tests {
                 _network_bandwidth_mbps: 1000.0,
                 attestation_valid: true,
                 validation_timestamp: chrono::Utc::now(),
-                gpu_model: "NVIDIA H100".to_string(),
+                gpu_model: "NVIDIA A100".to_string(),
             },
             ExecutorValidationResult {
                 executor_id: ExecutorId::new(),
@@ -1572,7 +1571,7 @@ mod tests {
                 _network_bandwidth_mbps: 10000.0,
                 attestation_valid: true,
                 validation_timestamp: chrono::Utc::now(),
-                gpu_model: "NVIDIA H100".to_string(),
+                gpu_model: "NVIDIA A100".to_string(),
             },
         ];
 
@@ -1586,7 +1585,7 @@ mod tests {
 
         // Test GPU model is properly set
         for validation in &validations {
-            assert!(validation.gpu_model.contains("H100"));
+            assert!(validation.gpu_model.contains("A100"));
         }
     }
 }
