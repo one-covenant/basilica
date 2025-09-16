@@ -70,15 +70,13 @@ impl FromStr for TargetType {
             GpuCategory::from_str(s).expect("GpuCategory::from_str returns Infallible");
 
         match gpu_category {
-            GpuCategory::H100 | GpuCategory::H200 | GpuCategory::B200 => {
-                Ok(TargetType::GpuCategory(gpu_category))
-            }
             GpuCategory::Other(_) => {
                 // Not a valid UUID and not a known GPU type
                 Err(TargetTypeParseError {
                     value: s.to_string(),
                 })
             }
+            _ => Ok(TargetType::GpuCategory(gpu_category)),
         }
     }
 }
