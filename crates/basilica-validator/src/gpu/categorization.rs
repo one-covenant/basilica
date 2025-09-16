@@ -89,7 +89,7 @@ impl GpuCategory {
             GpuCategory::A100 => "A100".to_string(),
             GpuCategory::H200 => "H200".to_string(),
             GpuCategory::B200 => "B200".to_string(),
-            GpuCategory::Other(o) => o.clone(),
+            GpuCategory::Other(_) => "OTHER".to_string(),
         }
     }
 }
@@ -130,31 +130,6 @@ impl FromStr for GpuCategory {
 pub struct GpuCategorizer;
 
 impl GpuCategorizer {
-    /// Normalize GPU model string to standard category
-    /// TODO: Consider deprecating this in favor of using GpuCategory::from_str directly
-    ///       which returns the enum and avoids string parsing roundtrips
-    pub fn normalize_gpu_model(gpu_model: &str) -> String {
-        let model = gpu_model.to_uppercase();
-
-        // Remove common prefixes and clean up
-        let cleaned = model
-            .replace("NVIDIA", "")
-            .replace("GEFORCE", "")
-            .replace("TESLA", "")
-            .trim()
-            .to_string();
-
-        // Match against known patterns - A100, H200, and B200
-        if cleaned.contains("A100") {
-            "A100".to_string()
-        } else if cleaned.contains("H200") {
-            "H200".to_string()
-        } else if cleaned.contains("B200") {
-            "B200".to_string()
-        } else {
-            "OTHER".to_string()
-        }
-    }
 
     /// Convert model string to category enum
     pub fn model_to_category(model: &str) -> GpuCategory {
@@ -177,7 +152,8 @@ impl GpuCategorizer {
         {
             // Only count each executor once
             if seen_executors.insert(&validation.executor_id) {
-                let normalized = Self::normalize_gpu_model(&validation.gpu_model);
+                let category = GpuCategory::from_str(&validation.gpu_model).unwrap();
+                let normalized = category.to_string();
                 *gpu_counts.entry(normalized).or_insert(0) += validation.gpu_count as u32;
             }
         }

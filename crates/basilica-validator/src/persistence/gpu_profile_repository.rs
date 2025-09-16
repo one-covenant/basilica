@@ -9,7 +9,8 @@ use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
-use crate::gpu::{GpuCategorizer, MinerGpuProfile};
+use crate::gpu::{categorization::GpuCategory, MinerGpuProfile};
+use std::str::FromStr;
 use crate::persistence::SimplePersistence;
 use basilica_common::identity::MinerUid;
 
@@ -52,7 +53,8 @@ impl GpuProfileRepository {
             let gpu_name: String = row.get("gpu_name");
             let count: i64 = row.get("count");
 
-            let normalized_name = GpuCategorizer::normalize_gpu_model(&gpu_name);
+            let category = GpuCategory::from_str(&gpu_name).unwrap();
+            let normalized_name = category.to_string();
 
             *gpu_counts.entry(normalized_name).or_insert(0) += count as u32;
         }

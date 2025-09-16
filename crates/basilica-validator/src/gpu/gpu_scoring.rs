@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use super::categorization::{ExecutorValidationResult, GpuCategorizer, MinerGpuProfile};
+use super::categorization::{ExecutorValidationResult, GpuCategory, MinerGpuProfile};
+use std::str::FromStr;
 use crate::config::emission::EmissionConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
@@ -129,7 +130,8 @@ impl GpuScoringEngine {
 
     /// Check if a GPU model is configured for rewards based on emission config
     fn is_gpu_model_rewardable(&self, gpu_model: &str) -> bool {
-        let normalized_model = GpuCategorizer::normalize_gpu_model(gpu_model);
+        let category = GpuCategory::from_str(gpu_model).unwrap();
+        let normalized_model = category.to_string();
         self.emission_config
             .gpu_allocations
             .contains_key(&normalized_model)
@@ -272,7 +274,8 @@ impl GpuScoringEngine {
                 .iter()
                 .filter_map(|(gpu_model, &gpu_count)| {
                     if gpu_count > 0 {
-                        let normalized_model = GpuCategorizer::normalize_gpu_model(gpu_model);
+                        let category = GpuCategory::from_str(gpu_model).unwrap();
+                        let normalized_model = category.to_string();
                         // Only include GPUs configured in emission config for rewards
                         if self.is_gpu_model_rewardable(gpu_model) {
                             // Check if miner meets minimum GPU count requirement
@@ -348,7 +351,8 @@ impl GpuScoringEngine {
                 .iter()
                 .filter_map(|(gpu_model, &gpu_count)| {
                     if gpu_count > 0 {
-                        let normalized_model = GpuCategorizer::normalize_gpu_model(gpu_model);
+                        let category = GpuCategory::from_str(gpu_model).unwrap();
+                        let normalized_model = category.to_string();
                         // Only include GPUs configured in emission config for rewards
                         if self.is_gpu_model_rewardable(gpu_model) {
                             // Check if miner meets minimum GPU count requirement
@@ -1168,12 +1172,13 @@ mod tests {
             ("GTX1080", false),
         ];
 
-        // Since we can't easily test the method directly without async setup,
-        // we'll test the underlying logic through the normalization function
-        use crate::gpu::categorization::GpuCategorizer;
+        // Test the underlying logic through GpuCategory::from_str
+        use crate::gpu::categorization::GpuCategory;
+        use std::str::FromStr;
 
         for (model, should_be_rewardable) in test_cases {
-            let normalized = GpuCategorizer::normalize_gpu_model(model);
+            let category = GpuCategory::from_str(model).unwrap();
+            let normalized = category.to_string();
             let is_rewardable = emission_config.gpu_allocations.contains_key(&normalized);
             assert_eq!(
                 is_rewardable, should_be_rewardable,

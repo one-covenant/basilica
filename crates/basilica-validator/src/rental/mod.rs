@@ -66,12 +66,16 @@ pub(crate) fn extract_miner_uid(miner_id: &str) -> Option<u16> {
 
 /// Get normalized GPU type from executor details
 pub(crate) fn get_gpu_type(executor_details: &crate::api::types::ExecutorDetails) -> String {
-    use crate::gpu::categorization::GpuCategorizer;
+    use crate::gpu::categorization::GpuCategory;
+    use std::str::FromStr;
 
     executor_details
         .gpu_specs
         .first()
-        .map(|gpu| GpuCategorizer::normalize_gpu_model(&gpu.name))
+        .map(|gpu| {
+            let category = GpuCategory::from_str(&gpu.name).unwrap();
+            category.to_string()
+        })
         .unwrap_or_else(|| "unknown".to_string())
 }
 

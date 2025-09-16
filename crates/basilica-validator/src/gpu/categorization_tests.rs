@@ -6,61 +6,63 @@ mod tests {
 
     #[test]
     fn test_gpu_model_normalization() {
+        use std::str::FromStr;
+
         // Test A100 variants
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA A100 PCIe"),
+            GpuCategory::from_str("NVIDIA A100 PCIe").unwrap().to_string(),
             "A100"
         );
-        assert_eq!(GpuCategorizer::normalize_gpu_model("A100 SXM5"), "A100");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("a100"), "A100");
+        assert_eq!(GpuCategory::from_str("A100 SXM5").unwrap().to_string(), "A100");
+        assert_eq!(GpuCategory::from_str("a100").unwrap().to_string(), "A100");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA A100-80GB"),
+            GpuCategory::from_str("NVIDIA A100-80GB").unwrap().to_string(),
             "A100"
         );
 
         // Test H200 variants
-        assert_eq!(GpuCategorizer::normalize_gpu_model("NVIDIA H200"), "H200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("H200 SXM"), "H200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("h200"), "H200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Tesla H200"), "H200");
+        assert_eq!(GpuCategory::from_str("NVIDIA H200").unwrap().to_string(), "H200");
+        assert_eq!(GpuCategory::from_str("H200 SXM").unwrap().to_string(), "H200");
+        assert_eq!(GpuCategory::from_str("h200").unwrap().to_string(), "H200");
+        assert_eq!(GpuCategory::from_str("Tesla H200").unwrap().to_string(), "H200");
 
         // Test B200 variants
-        assert_eq!(GpuCategorizer::normalize_gpu_model("HGX B200"), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("B200 HGX "), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("DGX B200"), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("B200 DGX"), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("NVIDIA B200"), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("b200"), "B200");
+        assert_eq!(GpuCategory::from_str("HGX B200").unwrap().to_string(), "B200");
+        assert_eq!(GpuCategory::from_str("B200 HGX ").unwrap().to_string(), "B200");
+        assert_eq!(GpuCategory::from_str("DGX B200").unwrap().to_string(), "B200");
+        assert_eq!(GpuCategory::from_str("B200 DGX").unwrap().to_string(), "B200");
+        assert_eq!(GpuCategory::from_str("NVIDIA B200").unwrap().to_string(), "B200");
+        assert_eq!(GpuCategory::from_str("b200").unwrap().to_string(), "B200");
 
         // Test other GPU variants (should all return OTHER)
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("GeForce RTX 4090"),
+            GpuCategory::from_str("GeForce RTX 4090").unwrap().to_string(),
             "OTHER"
         );
-        assert_eq!(GpuCategorizer::normalize_gpu_model("RTX 4090"), "OTHER");
+        assert_eq!(GpuCategory::from_str("RTX 4090").unwrap().to_string(), "OTHER");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA GeForce RTX 4090"),
+            GpuCategory::from_str("NVIDIA GeForce RTX 4090").unwrap().to_string(),
             "OTHER"
         );
-        assert_eq!(GpuCategorizer::normalize_gpu_model("rtx4090"), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("RTX 3090 Ti"), "OTHER");
+        assert_eq!(GpuCategory::from_str("rtx4090").unwrap().to_string(), "OTHER");
+        assert_eq!(GpuCategory::from_str("RTX 3090 Ti").unwrap().to_string(), "OTHER");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("GeForce RTX 3090"),
+            GpuCategory::from_str("GeForce RTX 3090").unwrap().to_string(),
             "OTHER"
         );
-        assert_eq!(GpuCategorizer::normalize_gpu_model("RTX 3080"), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("RTX 4080"), "OTHER");
+        assert_eq!(GpuCategory::from_str("RTX 3080").unwrap().to_string(), "OTHER");
+        assert_eq!(GpuCategory::from_str("RTX 4080").unwrap().to_string(), "OTHER");
 
         // Test unknown models
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Unknown GPU"), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model(""), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("V100"), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("GTX 1080"), "OTHER");
+        assert_eq!(GpuCategory::from_str("Unknown GPU").unwrap().to_string(), "OTHER");
+        assert_eq!(GpuCategory::from_str("").unwrap().to_string(), "OTHER");
+        assert_eq!(GpuCategory::from_str("V100").unwrap().to_string(), "OTHER");
+        assert_eq!(GpuCategory::from_str("GTX 1080").unwrap().to_string(), "OTHER");
 
         // Test edge cases
-        assert_eq!(GpuCategorizer::normalize_gpu_model("   A100   "), "A100");
+        assert_eq!(GpuCategory::from_str("   A100   ").unwrap().to_string(), "A100");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA NVIDIA A100"),
+            GpuCategory::from_str("NVIDIA NVIDIA A100").unwrap().to_string(),
             "A100"
         );
     }
@@ -399,27 +401,29 @@ mod tests {
 
     #[test]
     fn test_complex_gpu_normalization_scenarios() {
+        use std::str::FromStr;
+
         // Test multiple NVIDIA prefixes
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA NVIDIA GeForce RTX 4090"),
+            GpuCategory::from_str("NVIDIA NVIDIA GeForce RTX 4090").unwrap().to_string(),
             "OTHER"
         );
 
         // Test mixed case with numbers
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("nvidia a100-80gb-pcie"),
+            GpuCategory::from_str("nvidia a100-80gb-pcie").unwrap().to_string(),
             "A100"
         );
 
         // Test Tesla prefix variations
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Tesla V100"), "OTHER");
+        assert_eq!(GpuCategory::from_str("Tesla V100").unwrap().to_string(), "OTHER");
 
         // Test partial matches
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Some A100 GPU"), "A100");
+        assert_eq!(GpuCategory::from_str("Some A100 GPU").unwrap().to_string(), "A100");
 
         // Test RTX variants with spaces
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("RTX   4090   Ti"),
+            GpuCategory::from_str("RTX   4090   Ti").unwrap().to_string(),
             "OTHER"
         );
     }

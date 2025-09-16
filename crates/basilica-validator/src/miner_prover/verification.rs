@@ -11,7 +11,7 @@ use super::validation_strategy::{
 };
 use super::validation_worker::{ValidationWorkerQueue, WorkerQueueConfig};
 use crate::config::VerificationConfig;
-use crate::gpu::{categorization::GpuCategorizer, MinerGpuProfile};
+use crate::gpu::{categorization::GpuCategory, MinerGpuProfile};
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::{
     entities::VerificationLog, gpu_profile_repository::GpuProfileRepository, SimplePersistence,
@@ -792,7 +792,8 @@ impl VerificationEngine {
                     .await?;
                 let mut gpu_map: HashMap<String, u32> = HashMap::new();
                 for (_, count, gpu_name) in gpu_counts {
-                    let model = GpuCategorizer::normalize_gpu_model(&gpu_name);
+                    let category = GpuCategory::from_str(&gpu_name).unwrap();
+                    let model = category.to_string();
                     *gpu_map.entry(model).or_insert(0) += count;
                 }
 
@@ -2353,8 +2354,8 @@ impl VerificationEngine {
             let mut gpu_map: std::collections::HashMap<String, u32> =
                 std::collections::HashMap::new();
             for (_, count, gpu_name) in gpu_counts {
-                let model =
-                    crate::gpu::categorization::GpuCategorizer::normalize_gpu_model(&gpu_name);
+                let category = crate::gpu::categorization::GpuCategory::from_str(&gpu_name).unwrap();
+                let model = category.to_string();
                 *gpu_map.entry(model).or_insert(0) += count;
             }
 
