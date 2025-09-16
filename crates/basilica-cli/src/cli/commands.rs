@@ -129,8 +129,8 @@ pub enum Commands {
         api: bool,
     },
 
-    /// Token management commands
-    Token {
+    /// Tokens management commands
+    Tokens {
         #[command(subcommand)]
         action: TokenAction,
     },
@@ -173,7 +173,7 @@ impl Commands {
             | Commands::Exec { .. }
             | Commands::Ssh { .. }
             | Commands::Cp { .. }
-            | Commands::Token { .. } => true,
+            | Commands::Tokens { .. } => true,
 
             // Authentication and delegation commands don't require auth
             Commands::Login { .. }

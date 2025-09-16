@@ -181,7 +181,7 @@ impl Args {
             Commands::Executor { args } => handlers::external::handle_executor(args.clone())?,
 
             // Token management
-            Commands::Token { action } => {
+            Commands::Tokens { action } => {
                 use crate::cli::commands::TokenAction;
                 use crate::client::create_client;
 
