@@ -53,21 +53,23 @@ impl BasilicaClient {
         let runtime = Runtime::new()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
 
+        // Check for API key - either provided directly or from BASILICA_API_TOKEN env var
+        let api_key = api_key.or_else(|| std::env::var("BASILICA_API_TOKEN").ok());
+
+        let api_key = api_key.ok_or_else(|| {
+            PyRuntimeError::new_err(
+                "No API key provided. Please provide an API key directly or set BASILICA_API_TOKEN environment variable. \
+                Create a key using: basilica token create"
+            )
+        })?;
+
         let client = runtime
             .block_on(async {
-                let mut builder = ClientBuilder::default()
+                ClientBuilder::default()
                     .base_url(base_url)
-                    .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
-
-                // Use API key if provided, otherwise use file-based auth
-                if let Some(api_key) = api_key {
-                    builder = builder.with_api_key(&api_key);
-                } else {
-                    // Try file-based auth (will check BASILICA_API_KEY env var)
-                    builder = builder.with_file_auth();
-                }
-
-                builder.build()
+                    .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+                    .with_api_key(&api_key)
+                    .build()
             })
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create client: {}", e)))?;
 
@@ -77,9 +79,9 @@ impl BasilicaClient {
         })
     }
 
-    // Python SDK uses authentication tokens
-    // Users should create tokens via CLI: `basilica token create`
-    // Then use the Python SDK with the token directly or via environment variable
+    // Python SDK uses API key authentication
+    // Users should create API keys via CLI: `basilica token create`
+    // Then use the Python SDK with the key directly or via BASILICA_API_TOKEN environment variable
 
     /// Check the health of the API
     fn health_check(&self, py: Python) -> PyResult<HealthCheckResponse> {
@@ -211,7 +213,7 @@ impl BasilicaClient {
                 PyKeyError::new_err(format!("Not found: {}", resource))
             }
             ApiError::Authentication { message } | ApiError::MissingAuthentication { message } => {
-                PyPermissionError::new_err(format!("Authentication error: {}. Please provide a valid API key or set BASILICA_API_KEY environment variable.", message))
+                PyPermissionError::new_err(format!("Authentication error: {}. Please provide a valid API key or set BASILICA_API_TOKEN environment variable.", message))
             }
             ApiError::Authorization { message } => PyPermissionError::new_err(message),
             ApiError::HttpClient(e) => PyConnectionError::new_err(e.to_string()),

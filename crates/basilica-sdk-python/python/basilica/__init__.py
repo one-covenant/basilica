@@ -95,19 +95,15 @@ class BasilicaClient:
 
         Args:
             base_url: The base URL of the Basilica API (default: from BASILICA_API_URL env or DEFAULT_API_URL)
-            api_key: Optional authentication token (default: from BASILICA_API_KEY env)
+            api_key: Optional authentication token (default: from BASILICA_API_TOKEN env)
                 Create token using: basilica token create
         """
         # Auto-detect base_url if not provided
         if base_url is None:
             base_url = os.environ.get("BASILICA_API_URL", DEFAULT_API_URL)
 
-        # Auto-detect API key if not provided
-        if api_key is None:
-            api_key = os.environ.get("BASILICA_API_KEY")
-
-        # Call the Rust binding with the correct parameters
-        # The Rust binding expects: base_url, api_key
+        # Pass api_key directly to Rust binding
+        # The Rust binding will check BASILICA_API_TOKEN env var if api_key is None
         self._client = _BasilicaClient(base_url, api_key)
     
     def health_check(self) -> HealthCheckResponse:

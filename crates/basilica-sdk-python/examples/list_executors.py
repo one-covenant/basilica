@@ -7,7 +7,7 @@ from basilica import BasilicaClient
 import os
 
 def main():
-    # Create client (uses BASILICA_API_KEY from environment)
+    # Create client (uses BASILICA_API_TOKEN from environment)
     # Create a token using: basilica token create
     client = BasilicaClient()
     

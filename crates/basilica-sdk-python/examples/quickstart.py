@@ -8,7 +8,7 @@ from ssh_utils import format_ssh_command
 
 print("Starting Basilica rental with default configuration...")
 
-# That's it! The client auto-configures from BASILICA_API_KEY environment variable
+# That's it! The client auto-configures from BASILICA_API_TOKEN environment variable
 # Create a token using: basilica token create
 client = BasilicaClient()
 

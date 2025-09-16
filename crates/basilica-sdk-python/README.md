@@ -38,7 +38,7 @@ For complete working examples, see the `examples/` directory:
 ### 🚀 Auto-Configuration
 - Automatically detects environment variables:
   - `BASILICA_API_URL` - API endpoint URL (default: `https://api.basilica.ai`)
-  - `BASILICA_API_KEY` - Your API key for authentication
+  - `BASILICA_API_TOKEN` - Your API token for authentication
 - SSH keys auto-detected from `~/.ssh/basilica_ed25519.pub` by default
 - Sensible defaults for all parameters
 
@@ -89,7 +89,7 @@ pytest tests/
 The SDK automatically detects these environment variables:
 
 - `BASILICA_API_URL`: API endpoint (default: `https://api.basilica.ai`)
-- `BASILICA_API_KEY`: Your API key for authentication
+- `BASILICA_API_TOKEN`: Your API token for authentication
 
 ### Authentication
 
@@ -100,7 +100,7 @@ To use the SDK, you need to create an API token via the Basilica CLI:
 basilica token create
 
 # The command will output the token - set it as an environment variable
-export BASILICA_API_KEY="basilica_..."
+export BASILICA_API_TOKEN="basilica_..."
 
 # Or pass it directly to the client
 client = BasilicaClient(api_key="basilica_...")
