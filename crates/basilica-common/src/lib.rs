@@ -41,7 +41,7 @@ pub use config::*;
 pub use crypto::*;
 pub use error::*;
 pub use identity::*;
-pub use types::LocationProfile;
+pub use types::{ApiKeyName, ApiKeyNameError, LocationProfile};
 
 // Re-export from specific modules to avoid ambiguity
 pub use metrics::labels;

@@ -51,6 +51,7 @@ pub const DEFAULT_API_URL: &str = "https://api.basilica.ai";
 
 /// Default timeout in seconds for API requests
 pub const DEFAULT_TIMEOUT_SECS: u64 = 1200;
+use basilica_common::ApiKeyName;
 use basilica_validator::api::types::ListAvailableExecutorsResponse;
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -188,6 +189,11 @@ impl BasilicaClient {
     /// Create a new API key (requires JWT authentication)
     /// The API key will inherit scopes from the current JWT token
     pub async fn create_api_key(&self, name: &str) -> Result<ApiKeyResponse> {
+        // Validate the name early to provide better error messages
+        ApiKeyName::new(name).map_err(|e| ApiError::InvalidRequest {
+            message: format!("Invalid API key name: {}", e),
+        })?;
+
         let request = CreateApiKeyRequest {
             name: name.to_string(),
             scopes: None, // Will inherit from JWT

@@ -1,6 +1,7 @@
 //! Token management handlers for the Basilica CLI
 
 use crate::error::CliError;
+use basilica_common::{ApiKeyName, ApiKeyNameError};
 use basilica_sdk::BasilicaClient;
 use console::style;
 use dialoguer::{Confirm, Input, Select};
@@ -9,7 +10,20 @@ use dialoguer::{Confirm, Input, Select};
 pub async fn handle_create_token(client: &BasilicaClient, name: Option<String>) -> Result<(), CliError> {
     // Get name interactively if not provided
     let name = match name {
-        Some(n) => n,
+        Some(n) => {
+            // Validate provided name
+            ApiKeyName::new(n.clone()).map_err(|e| {
+                CliError::Internal(color_eyre::eyre::eyre!(
+                    "Invalid API key name: {}",
+                    match e {
+                        ApiKeyNameError::Empty => "Name cannot be empty",
+                        ApiKeyNameError::TooLong => "Name too long (max 100 characters)",
+                        ApiKeyNameError::InvalidCharacters => "Only alphanumeric characters, hyphens, and underscores are allowed",
+                    }
+                ))
+            })?;
+            n
+        }
         None => {
             // Check existing keys to help user choose unique name
             let existing_keys = client.list_api_keys().await.map_err(CliError::Api)?;
@@ -23,10 +37,24 @@ pub async fn handle_create_token(client: &BasilicaClient, name: Option<String>) 
                 println!();
             }
 
-            Input::new()
-                .with_prompt("Enter a name for this API key")
+            let input: String = Input::new()
+                .with_prompt("Enter a name for this API key (letters, numbers, -, _ only)")
                 .interact_text()
-                .map_err(|e| CliError::Internal(e.into()))?
+                .map_err(|e| CliError::Internal(e.into()))?;
+
+            // Validate the input
+            ApiKeyName::new(input.clone()).map_err(|e| {
+                CliError::Internal(color_eyre::eyre::eyre!(
+                    "Invalid API key name: {}",
+                    match e {
+                        ApiKeyNameError::Empty => "Name cannot be empty",
+                        ApiKeyNameError::TooLong => "Name too long (max 100 characters)",
+                        ApiKeyNameError::InvalidCharacters => "Only alphanumeric characters, hyphens, and underscores are allowed",
+                    }
+                ))
+            })?;
+
+            input
         }
     };
 

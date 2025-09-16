@@ -9,6 +9,7 @@ use crate::{
     server::AppState,
 };
 use axum::{extract::State, Json};
+use basilica_common::{ApiKeyName, ApiKeyNameError};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, warn};
 use utoipa::ToSchema;
@@ -17,7 +18,7 @@ use utoipa::ToSchema;
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateKeyRequest {
     /// Name for the API key
-    pub name: String,
+    pub name: ApiKeyName,
 
     /// Optional scopes for the API key
     pub scopes: Option<Vec<String>>,
@@ -89,6 +90,8 @@ pub async fn create_key(
         });
     }
 
+    // ApiKeyName is already validated by its type
+
     info!("Creating API key");
 
     // Optional: Check for maximum number of keys per user (e.g., 10)
@@ -122,7 +125,7 @@ pub async fn create_key(
     let key = api_keys::insert_api_key(
         &state.db,
         &auth_context.user_id,
-        &request.name,
+        request.name.as_str(),
         &generated.kid,
         &generated.hash,
         &scopes,
@@ -233,9 +236,22 @@ pub async fn revoke_key(
         });
     }
 
+    // Validate API key name
+    let api_key_name = ApiKeyName::new(name.clone()).map_err(|e| match e {
+        ApiKeyNameError::Empty => ApiError::BadRequest {
+            message: "API key name cannot be empty".to_string(),
+        },
+        ApiKeyNameError::TooLong => ApiError::BadRequest {
+            message: "API key name too long (max 100 characters)".to_string(),
+        },
+        ApiKeyNameError::InvalidCharacters => ApiError::BadRequest {
+            message: "Invalid API key name. Only alphanumeric characters, hyphens, and underscores are allowed".to_string(),
+        },
+    })?;
+
     info!("Deleting API key with name: {}", name);
 
-    let deleted = api_keys::delete_api_key_by_name(&state.db, &auth_context.user_id, &name)
+    let deleted = api_keys::delete_api_key_by_name(&state.db, &auth_context.user_id, api_key_name.as_str())
         .await
         .map_err(|e| ApiError::Internal {
             message: format!("Failed to delete API key: {}", e),
