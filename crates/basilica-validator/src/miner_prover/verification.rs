@@ -2475,7 +2475,13 @@ impl VerificationEngine {
             ));
         }
 
-        // Step 2: Acquire session lock
+        // Step 2: Establish miner connection first
+        let client = self.create_authenticated_client()?;
+        let mut connection = client
+            .connect_and_authenticate(miner_endpoint, miner_hotkey)
+            .await?;
+
+        // Step 3: Acquire session lock
         self.ssh_session_manager
             .acquire_session(&executor_info.id.to_string())
             .await
@@ -2487,22 +2493,26 @@ impl VerificationEngine {
                 )
             })?;
 
-        // Step 3: Establish connection and SSH session
-        let client = self.create_authenticated_client()?;
-        let mut connection = client
-            .connect_and_authenticate(miner_endpoint, miner_hotkey)
-            .await?;
-
         let (ssh_details, session_info) = if let Some(ref key_manager) = self.ssh_key_manager {
             let key_provider = crate::ssh::session::ValidatorSshKeyProvider::new(key_manager);
-            crate::ssh::session::SshSessionHelper::establish_ssh_session(
+            let ssh_session = crate::ssh::session::SshSessionHelper::establish_ssh_session(
                 &mut connection,
                 &executor_info.id.to_string(),
                 &self.validator_hotkey,
                 &key_provider,
                 None,
             )
-            .await?
+            .await;
+            match ssh_session {
+                Ok(v) => v,
+                Err(e) => {
+                    // Release the session lock on failure to prevent deadlocks for this executor
+                    self.ssh_session_manager
+                        .release_session(&executor_info.id.to_string())
+                        .await;
+                    return Err(e);
+                }
+            }
         } else {
             self.ssh_session_manager
                 .release_session(&executor_info.id.to_string())

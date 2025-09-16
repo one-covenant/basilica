@@ -273,10 +273,9 @@ impl ValidationServerManager {
         // Configure for process group isolation
         ProcessGroup::configure_command(&mut command);
 
-        // Capture output for debugging
         command
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit());
 
         command
             .spawn()
@@ -586,6 +585,17 @@ impl BinaryValidator {
         &mut self,
         binary_config: &crate::config::BinaryValidationConfig,
     ) -> Result<()> {
+        if self.server_manager.is_some() && self.server_client.is_some() {
+            info!("Validation server already initialized");
+            return Ok(());
+        }
+
+        if let Some(manager) = &self.server_manager {
+            let _ = manager.stop().await;
+            self.server_manager = None;
+        }
+        self.server_client = None;
+
         info!("Initializing validation server");
 
         // Create server manager

@@ -279,6 +279,11 @@ async fn spawn_validation_pipeline(
         miners.len()
     );
 
+    let concurrency = config
+        .max_concurrent_verifications
+        .max(50)
+        .min(miners.len());
+
     let results: Vec<_> = stream::iter(miners)
         .map(|miner| {
             let shared_state = shared_state.clone();
@@ -304,7 +309,7 @@ async fn spawn_validation_pipeline(
                 (miner_uid, intended_strategy, result)
             }
         })
-        .buffer_unordered(config.max_concurrent_verifications)
+        .buffer_unordered(concurrency)
         .collect()
         .await;
 
