@@ -46,17 +46,10 @@ impl BasilicaClient {
     ///
     /// Args:
     ///     base_url: The base URL of the Basilica API
-    ///     access_token: Optional access token for authentication (requires refresh_token if provided)
-    ///     refresh_token: Optional refresh token for automatic token refresh (requires access_token if provided)
-    ///     auto_auth: Use file-based authentication from CLI (default: True if no tokens provided)
+    ///     api_key: Optional authentication token from 'basilica token create'
     #[new]
-    #[pyo3(signature = (base_url, access_token=None, refresh_token=None, auto_auth=None))]
-    fn new(
-        base_url: String,
-        access_token: Option<String>,
-        refresh_token: Option<String>,
-        auto_auth: Option<bool>,
-    ) -> PyResult<Self> {
+    #[pyo3(signature = (base_url, api_key=None))]
+    fn new(base_url: String, api_key: Option<String>) -> PyResult<Self> {
         let runtime = Runtime::new()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
 
@@ -66,19 +59,15 @@ impl BasilicaClient {
                     .base_url(base_url)
                     .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
 
-                // Determine auth method based on provided parameters
-                if let (Some(access_token), Some(refresh_token)) = (access_token, refresh_token) {
-                    // Use direct token authentication (both tokens required)
-                    builder = builder.with_tokens(access_token, refresh_token);
-                    builder.build()
-                } else if auto_auth.unwrap_or(true) {
-                    // Try automatic authentication (will use file-based or resolved tokens)
-                    builder.build_auto().await
+                // Use API key if provided, otherwise use file-based auth
+                if let Some(api_key) = api_key {
+                    builder = builder.with_api_key(&api_key);
                 } else {
-                    // Use file-based authentication explicitly
+                    // Try file-based auth (will check BASILICA_API_KEY env var)
                     builder = builder.with_file_auth();
-                    builder.build()
                 }
+
+                builder.build()
             })
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create client: {}", e)))?;
 
@@ -88,9 +77,9 @@ impl BasilicaClient {
         })
     }
 
-    // Interactive authentication methods removed - Python SDK should use tokens
-    // Users should authenticate via CLI first: `basilica login`
-    // Then use the Python SDK with auto-detected tokens or provide token directly
+    // Python SDK uses authentication tokens
+    // Users should create tokens via CLI: `basilica token create`
+    // Then use the Python SDK with the token directly or via environment variable
 
     /// Check the health of the API
     fn health_check(&self, py: Python) -> PyResult<HealthCheckResponse> {
@@ -222,7 +211,7 @@ impl BasilicaClient {
                 PyKeyError::new_err(format!("Not found: {}", resource))
             }
             ApiError::Authentication { message } | ApiError::MissingAuthentication { message } => {
-                PyPermissionError::new_err(message)
+                PyPermissionError::new_err(format!("Authentication error: {}. Please provide a valid API key or set BASILICA_API_KEY environment variable.", message))
             }
             ApiError::Authorization { message } => PyPermissionError::new_err(message),
             ApiError::HttpClient(e) => PyConnectionError::new_err(e.to_string()),

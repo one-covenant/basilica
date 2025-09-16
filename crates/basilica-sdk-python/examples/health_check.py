@@ -8,13 +8,13 @@ from basilica import BasilicaClient
 
 def main():
     # Initialize client using environment variables
-    # BASILICA_API_URL and BASILICA_API_TOKEN
+    # BASILICA_API_URL and BASILICA_API_KEY
     client = BasilicaClient()
-    
+
     # Or initialize with explicit configuration
     # client = BasilicaClient(
     #     base_url="https://api.basilica.ai",
-    #     token="your-api-token"  # Optional
+    #     api_key="basilica_..."  # Your token from 'basilica token create'
     # )
     
     # Perform health check
