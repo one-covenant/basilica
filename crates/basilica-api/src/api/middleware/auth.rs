@@ -22,11 +22,15 @@ use crate::{
     server::AppState,
 };
 
-/// Authentication method used for the request
+/// Authentication-specific details
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AuthMethod {
-    /// JWT authentication via Auth0
-    Jwt,
+pub enum AuthDetails {
+    /// JWT authentication via Auth0 with full user info
+    Jwt {
+        email: String,
+        email_verified: bool,
+        name: String,
+    },
     /// API Key authentication
     ApiKey,
 }
@@ -37,20 +41,11 @@ pub struct AuthContext {
     /// User ID (subject from JWT or user_id from API key)
     pub user_id: String,
 
-    /// Authentication method used
-    pub method: AuthMethod,
-
     /// Scopes/permissions
     pub scopes: Vec<String>,
 
-    /// Email (only available for JWT auth)
-    pub email: Option<String>,
-
-    /// Email verification status (only available for JWT auth)
-    pub email_verified: Option<bool>,
-
-    /// User's name (only available for JWT auth)
-    pub name: Option<String>,
+    /// Authentication-specific details
+    pub details: AuthDetails,
 }
 
 impl AuthContext {
@@ -70,6 +65,16 @@ impl AuthContext {
                 false
             }
         })
+    }
+
+    /// Check if authenticated via JWT
+    pub fn is_jwt(&self) -> bool {
+        matches!(self.details, AuthDetails::Jwt { .. })
+    }
+
+    /// Check if authenticated via API key
+    pub fn is_api_key(&self) -> bool {
+        matches!(self.details, AuthDetails::ApiKey)
     }
 }
 
@@ -108,11 +113,8 @@ pub async fn auth_middleware(
                 );
                 AuthContext {
                     user_id: verified.user_id,
-                    method: AuthMethod::ApiKey,
                     scopes: verified.scopes,
-                    email: None,
-                    email_verified: None,
-                    name: None,
+                    details: AuthDetails::ApiKey,
                 }
             }
             Err(e) => {
@@ -191,24 +193,35 @@ pub async fn auth_middleware(
             .map(|s| s.split_whitespace().map(String::from).collect())
             .unwrap_or_default();
 
+        // Extract user info from JWT claims
+        let email = claims
+            .custom
+            .get("email")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| format!("{}@auth0.user", claims.sub));
+
+        let email_verified = claims
+            .custom
+            .get("email_verified")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let name = claims
+            .custom
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| claims.sub.clone());
+
         AuthContext {
             user_id: claims.sub.clone(),
-            method: AuthMethod::Jwt,
             scopes,
-            email: claims
-                .custom
-                .get("email")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            email_verified: claims
-                .custom
-                .get("email_verified")
-                .and_then(|v| v.as_bool()),
-            name: claims
-                .custom
-                .get("name")
-                .and_then(|v| v.as_str())
-                .map(String::from),
+            details: AuthDetails::Jwt {
+                email,
+                email_verified,
+                name,
+            },
         }
     };
 
@@ -234,15 +247,16 @@ mod tests {
     fn test_auth_context_has_scope() {
         let context = AuthContext {
             user_id: "user123".to_string(),
-            method: AuthMethod::Jwt,
             scopes: vec![
                 "rentals:view".to_string(),
                 "rentals:create".to_string(),
                 "admin:*".to_string(),
             ],
-            email: None,
-            email_verified: None,
-            name: None,
+            details: AuthDetails::Jwt {
+                email: "user@example.com".to_string(),
+                email_verified: true,
+                name: "Test User".to_string(),
+            },
         };
 
         // Test exact matches
@@ -258,9 +272,40 @@ mod tests {
     }
 
     #[test]
-    fn test_auth_method_equality() {
-        assert_eq!(AuthMethod::Jwt, AuthMethod::Jwt);
-        assert_eq!(AuthMethod::ApiKey, AuthMethod::ApiKey);
-        assert_ne!(AuthMethod::Jwt, AuthMethod::ApiKey);
+    fn test_auth_details_helpers() {
+        let jwt_context = AuthContext {
+            user_id: "user123".to_string(),
+            scopes: vec![],
+            details: AuthDetails::Jwt {
+                email: "user@example.com".to_string(),
+                email_verified: true,
+                name: "Test User".to_string(),
+            },
+        };
+
+        assert!(jwt_context.is_jwt());
+        assert!(!jwt_context.is_api_key());
+
+        let api_key_context = AuthContext {
+            user_id: "user456".to_string(),
+            scopes: vec![],
+            details: AuthDetails::ApiKey,
+        };
+
+        assert!(!api_key_context.is_jwt());
+        assert!(api_key_context.is_api_key());
+    }
+
+    #[test]
+    fn test_auth_details_equality() {
+        assert_eq!(AuthDetails::ApiKey, AuthDetails::ApiKey);
+        assert_ne!(
+            AuthDetails::ApiKey,
+            AuthDetails::Jwt {
+                email: "test@example.com".to_string(),
+                email_verified: true,
+                name: "Test".to_string(),
+            }
+        );
     }
 }

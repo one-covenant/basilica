@@ -3,7 +3,7 @@
 use crate::{
     api::{
         auth::api_keys::{self},
-        middleware::{AuthContext, AuthMethod},
+        middleware::AuthContext,
     },
     error::{ApiError, Result},
     server::AppState,
@@ -90,7 +90,7 @@ pub async fn create_key(
     Json(request): Json<CreateKeyRequest>,
 ) -> Result<Json<CreateKeyResponse>> {
     // Require JWT authentication for key management
-    if auth_context.method != AuthMethod::Jwt {
+    if !auth_context.is_jwt() {
         warn!(
             "User {} attempted to create API key with non-JWT auth",
             auth_context.user_id
@@ -176,7 +176,7 @@ pub async fn list_keys(
     axum::Extension(auth_context): axum::Extension<AuthContext>,
 ) -> Result<Json<Vec<ListKeyItem>>> {
     // Require JWT authentication for key management
-    if auth_context.method != AuthMethod::Jwt {
+    if !auth_context.is_jwt() {
         warn!(
             "User {} attempted to list API keys with non-JWT auth",
             auth_context.user_id
@@ -241,7 +241,7 @@ pub async fn revoke_key(
     Path(id): Path<i64>,
 ) -> Result<()> {
     // Require JWT authentication for key management
-    if auth_context.method != AuthMethod::Jwt {
+    if !auth_context.is_jwt() {
         warn!(
             "User {} attempted to revoke API key with non-JWT auth",
             auth_context.user_id
