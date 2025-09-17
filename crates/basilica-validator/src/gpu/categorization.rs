@@ -229,7 +229,7 @@ pub struct ExecutorValidationResult {
     pub is_valid: bool,
     pub gpu_model: String,
     pub gpu_count: usize,
-    pub gpu_memory_gb: u64,
+    pub gpu_memory_gb: f64,
     pub attestation_valid: bool,
     pub validation_timestamp: DateTime<Utc>,
 }
@@ -248,7 +248,7 @@ impl ExecutorValidationResult {
             is_valid,
             gpu_model,
             gpu_count,
-            gpu_memory_gb: 80, // Default 80GB
+            gpu_memory_gb: 80.0, // Default 80GB
             attestation_valid,
             validation_timestamp: Utc::now(),
         }
