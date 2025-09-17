@@ -8,6 +8,8 @@ use tracing::{error, info, warn};
 use crate::persistence::SimplePersistence;
 use crate::ssh::ValidatorSshClient;
 
+const DEFAULT_TIMEOUT_SECS: u64 = 15;
+
 /// Docker validation profile
 #[derive(Debug, Clone)]
 pub struct DockerProfile {
@@ -28,7 +30,6 @@ impl DockerProfile {
         dind_supported: bool,
         validation_error: Option<String>,
     ) -> Self {
-        // Create JSON representation of the profile
         let json_obj = serde_json::json!({
             "service_active": service_active,
             "docker_version": docker_version,
@@ -54,6 +55,7 @@ pub struct DockerCollector {
     persistence: Arc<SimplePersistence>,
     docker_image: String,
     pull_timeout_secs: u64,
+    service_check_timeout_secs: u64,
 }
 
 impl DockerCollector {
@@ -63,6 +65,23 @@ impl DockerCollector {
         persistence: Arc<SimplePersistence>,
         docker_image: String,
         pull_timeout_secs: u64,
+    ) -> Self {
+        Self::new_with_timeouts(
+            ssh_client,
+            persistence,
+            docker_image,
+            pull_timeout_secs,
+            DEFAULT_TIMEOUT_SECS,
+        )
+    }
+
+    /// Create a new Docker collector with timeouts
+    pub fn new_with_timeouts(
+        ssh_client: Arc<ValidatorSshClient>,
+        persistence: Arc<SimplePersistence>,
+        docker_image: String,
+        pull_timeout_secs: u64,
+        service_check_timeout_secs: u64,
     ) -> Self {
         if let Err(e) = validate_docker_image(&docker_image) {
             error!("Invalid Docker image in configuration: {}", e);
@@ -77,6 +96,7 @@ impl DockerCollector {
             persistence,
             docker_image,
             pull_timeout_secs,
+            service_check_timeout_secs,
         }
     }
 
@@ -266,15 +286,47 @@ impl DockerCollector {
 
     /// Check if Docker service is active
     async fn check_docker_service(&self, ssh_details: &SshConnectionDetails) -> Result<bool> {
-        let check_timeout = Duration::from_secs(5);
+        let check_timeout = Duration::from_secs(self.service_check_timeout_secs);
+
+        let socket_future = timeout(check_timeout, async {
+            match self
+                .ssh_client
+                .execute_command(
+                    ssh_details,
+                    "test -S /var/run/docker.sock && echo SOCKET_EXISTS || echo SOCKET_MISSING",
+                    false,
+                )
+                .await
+            {
+                Ok(output) => {
+                    if output.contains("SOCKET_EXISTS") {
+                        Ok(("socket", true))
+                    } else {
+                        Err(())
+                    }
+                }
+                _ => Err(()),
+            }
+        });
 
         let systemctl_future = timeout(check_timeout, async {
             match self
                 .ssh_client
-                .execute_command(ssh_details, "systemctl is-active docker", false)
+                .execute_command(
+                    ssh_details,
+                    "systemctl is-active docker 2>/dev/null; echo EXIT_CODE=$?",
+                    false,
+                )
                 .await
             {
-                Ok(output) if output.trim() == "active" => Ok(("systemctl", true)),
+                Ok(output) => {
+                    let output_lower = output.trim().to_lowercase();
+                    if output_lower.contains("active") && output.contains("EXIT_CODE=0") {
+                        Ok(("systemctl", true))
+                    } else {
+                        Err(())
+                    }
+                }
                 _ => Err(()),
             }
         });
@@ -300,10 +352,24 @@ impl DockerCollector {
         let version_future = timeout(check_timeout, async {
             match self
                 .ssh_client
-                .execute_command(ssh_details, "docker -v", false)
+                .execute_command(
+                    ssh_details,
+                    "docker -v 2>/dev/null; echo EXIT_CODE=$?",
+                    false,
+                )
                 .await
             {
-                Ok(output) if output.contains("Docker version") => Ok(("version", true)),
+                Ok(output) => {
+                    let output_lower = output.to_lowercase();
+                    if (output_lower.contains("docker version")
+                        || output_lower.contains("docker build"))
+                        && output.contains("EXIT_CODE=0")
+                    {
+                        Ok(("version", true))
+                    } else {
+                        Err(())
+                    }
+                }
                 _ => Err(()),
             }
         });
@@ -313,18 +379,37 @@ impl DockerCollector {
                 .ssh_client
                 .execute_command(
                     ssh_details,
-                    "docker info >/dev/null 2>&1 && echo 'success'",
+                    "docker info >/dev/null 2>&1; echo EXIT_CODE=$?",
                     false,
                 )
                 .await
             {
-                Ok(output) if output.trim() == "success" => Ok(("info", true)),
+                Ok(output) if output.contains("EXIT_CODE=0") => Ok(("info", true)),
+                _ => Err(()),
+            }
+        });
+
+        let ps_future = timeout(check_timeout, async {
+            match self
+                .ssh_client
+                .execute_command(
+                    ssh_details,
+                    "docker ps >/dev/null 2>&1; echo EXIT_CODE=$?",
+                    false,
+                )
+                .await
+            {
+                Ok(output) if output.contains("EXIT_CODE=0") => Ok(("ps", true)),
                 _ => Err(()),
             }
         });
 
         // Race all futures - return true as soon as any succeeds
         tokio::select! {
+            Ok(Ok((method, true))) = socket_future => {
+                info!("[DOCKER_PROFILE] Docker service detected via {}", method);
+                Ok(true)
+            }
             Ok(Ok((method, true))) = systemctl_future => {
                 info!("[DOCKER_PROFILE] Docker service detected via {}", method);
                 Ok(true)
@@ -341,6 +426,10 @@ impl DockerCollector {
                 info!("[DOCKER_PROFILE] Docker service detected via {}", method);
                 Ok(true)
             }
+            Ok(Ok((method, true))) = ps_future => {
+                info!("[DOCKER_PROFILE] Docker service detected via {}", method);
+                Ok(true)
+            }
             else => {
                 warn!("[DOCKER_PROFILE] Docker service not detected through any method");
                 Ok(false)
@@ -350,16 +439,40 @@ impl DockerCollector {
 
     /// Get Docker version
     async fn get_docker_version(&self, ssh_details: &SshConnectionDetails) -> Result<String> {
+        // Try formatted version first - for later Docker versions
+        match self
+            .ssh_client
+            .execute_command(
+                ssh_details,
+                "docker version --format '{{.Server.Version}}' 2>/dev/null",
+                false,
+            )
+            .await
+        {
+            Ok(output) if !output.trim().is_empty() => {
+                return Ok(output.trim().to_string());
+            }
+            _ => {}
+        }
+
+        // Fallback to parsing full version output - for older Docker versions
         let output = self
             .ssh_client
             .execute_command(
                 ssh_details,
-                "docker version --format '{{.Server.Version}}'",
+                "docker version 2>/dev/null | grep -i 'server' -A 5 | grep -i version | head -1",
                 false,
             )
             .await?;
 
-        let version = output.trim().to_string();
+        // Parse version from output like "Version: 24.0.7" or "Server Version: 24.0.7"
+        let version = output
+            .lines()
+            .find(|line| line.to_lowercase().contains("version"))
+            .and_then(|line| line.split(':').nth(1))
+            .map(|v| v.trim().to_string())
+            .ok_or_else(|| anyhow::anyhow!("Could not parse Docker version from output"))?;
+
         if version.is_empty() {
             return Err(anyhow::anyhow!("Docker version output is empty"));
         }
@@ -375,7 +488,7 @@ impl DockerCollector {
     ) -> Result<()> {
         validate_docker_image(image)?;
 
-        let command = format!("docker pull {}", image);
+        let command = format!("docker pull {} 2>&1; echo EXIT_CODE=$?", image);
         let pull_timeout = Duration::from_secs(self.pull_timeout_secs);
 
         let output = timeout(pull_timeout, async {
@@ -391,8 +504,18 @@ impl DockerCollector {
             )
         })??;
 
-        if output.contains("Status: Downloaded newer image")
-            || output.contains("Status: Image is up to date")
+        // Check exit code first
+        if output.contains("EXIT_CODE=0") {
+            info!("[DOCKER_PROFILE] Docker pull succeeded based on exit code");
+            return Ok(());
+        }
+
+        // Check for success patterns in output
+        let output_lower = output.to_lowercase();
+        if output_lower.contains("status: downloaded newer image")
+            || output_lower.contains("status: image is up to date")
+            || output_lower.contains("pull complete")
+            || output_lower.contains("already exists")
         {
             return Ok(());
         }
