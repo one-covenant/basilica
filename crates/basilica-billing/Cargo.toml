@@ -3,7 +3,7 @@ name = "basilica-billing"
 version = "0.1.0"
 edition = "2021"
 description = "Billing service for Basilica compute subnet"
-repository = "https://github.com/tplr-ai/basilica"
+repository = "https://github.com/one-covenant/basilica"
 
 [dependencies]
 basilica-common = { path = "../basilica-common", features = ["postgres"] }

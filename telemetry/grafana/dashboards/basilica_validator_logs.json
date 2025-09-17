@@ -54,7 +54,7 @@
       "title": "github",
       "tooltip": "github",
       "type": "link",
-      "url": "https://github.com/tplr-ai/basilica/"
+      "url": "https://github.com/one-covenant/basilica/"
     }
   ],
   "liveNow": true,
@@ -74,7 +74,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "# <img width=50 class=\"logo\" alt=\"BASILICA logo\" src=\"https://www.synapz.org/assets/basilica/basilica_logo200x200.png\"> Basilica - Sacred Compute\n\n<p align=\"center\">\n  <a href=\"https://github.com/tplr-ai/basilica/tree/main/docs\">Docs</a> • \n  <a href=\"https://github.com/tplr-ai/basilica/blob/main/docs/quickstart.md\">Quick Start</a> • \n  <a href=\"https://github.com/tplr-ai/basilica/blob/main/docs/architecture.md\">Architecture</a>\n</p>\n\n---\n\n```bash\n$ curl -sSL https://basilica.ai/install.sh | bash\n```\n",
+        "content": "# <img width=50 class=\"logo\" alt=\"BASILICA logo\" src=\"https://www.synapz.org/assets/basilica/basilica_logo200x200.png\"> Basilica - Sacred Compute\n\n<p align=\"center\">\n  <a href=\"https://github.com/one-covenant/basilica/tree/main/docs\">Docs</a> • \n  <a href=\"https://github.com/one-covenant/basilica/blob/main/docs/quickstart.md\">Quick Start</a> • \n  <a href=\"https://github.com/one-covenant/basilica/blob/main/docs/architecture.md\">Architecture</a>\n</p>\n\n---\n\n```bash\n$ curl -sSL https://basilica.ai/install.sh | bash\n```\n",
         "mode": "markdown"
       },
       "pluginVersion": "10.2.0",
