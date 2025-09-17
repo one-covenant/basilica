@@ -45,9 +45,6 @@ tabled = { workspace = true }
 # Shell completions
 clap_complete = { workspace = true }
 
-# SSH functionality (using external ssh command for now)
-shell-escape = { workspace = true }
-
 # File operations
 shellexpand = { workspace = true }
 etcetera = { workspace = true }

@@ -41,7 +41,6 @@ prost-types = { workspace = true }
 # Internal dependencies
 basilica-common = { path = "../basilica-common", features = ["sqlite"] }
 basilica-protocol = { path = "../basilica-protocol" }
-bittensor = { path = "../bittensor" }
 
 # Additional required dependencies
 clap = { workspace = true }
@@ -54,8 +53,6 @@ hex = { workspace = true }
 # Executor-specific dependencies
 # GPU monitoring
 nvml-wrapper = { workspace = true }
-# File system utilities
-fs_extra = { workspace = true }
 # System information
 num_cpus = { workspace = true }
 # TOML configuration
@@ -69,8 +66,6 @@ http = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-serial_test = { workspace = true }
-mockall = { workspace = true }
 
 [features]
 default = []

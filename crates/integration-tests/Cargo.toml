@@ -36,7 +36,6 @@ tonic = { workspace = true, features = ["tls", "tls-roots"] }
 sqlx = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
 
 [[test]]
 name = "miner_executor_flow"

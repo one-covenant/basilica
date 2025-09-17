@@ -55,18 +55,9 @@ bittensor = { path = "../bittensor" }
 # HTTP client for external communications
 reqwest = { workspace = true }
 
-# Task scheduling and job management
-cron = { workspace = true }
-
 # Configuration
 toml = { workspace = true }
 url = { workspace = true }
-
-# Connection pooling
-deadpool = { workspace = true }
-
-# Rate limiting
-governor = { workspace = true }
 
 # JSON Web Tokens for authentication
 jsonwebtoken = { workspace = true }
@@ -82,8 +73,6 @@ rand = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-serial_test = { workspace = true }
-mockall = { workspace = true }
 futures = { workspace = true }
 
 [features]

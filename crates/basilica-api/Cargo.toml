@@ -61,11 +61,9 @@ nonzero_ext = { workspace = true }
 
 # OpenAPI documentation
 utoipa = { workspace = true }
-utoipa-swagger-ui = { workspace = true }
 
 # Caching
 moka = { workspace = true }
-redis = { workspace = true, optional = true }
 
 
 # Concurrent collections
@@ -89,21 +87,17 @@ bs58 = { workspace = true }
 regex = { workspace = true }
 
 # Load balancing algorithms
-weighted-rs = { workspace = true }
 rand = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
-mockall = { workspace = true }
 wiremock = { workspace = true }
 
 [features]
-default = ["server", "redis-cache", "utoipa"]
+default = ["server", "utoipa"]
 server = []
 client = []
-redis-cache = ["redis"]
 utoipa = []
-full = ["server", "client", "redis-cache", "utoipa"]
+full = ["server", "client", "utoipa"]
 
 [[bin]]
 name = "basilica-api"

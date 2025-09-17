@@ -49,5 +49,4 @@ name = "generate-metadata"
 path = "src/bin/generate-metadata.rs"
 required-features = ["generate-metadata"]
 
-[dev-dependencies]
-tokio-test = { workspace = true } 
+[dev-dependencies] 
