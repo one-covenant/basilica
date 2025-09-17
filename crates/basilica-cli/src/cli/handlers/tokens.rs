@@ -1,10 +1,11 @@
 //! Token management handlers for the Basilica CLI
 
 use crate::error::CliError;
+use crate::output::{print_success, table_output};
 use basilica_common::{ApiKeyName, ApiKeyNameError};
 use basilica_sdk::BasilicaClient;
 use console::style;
-use dialoguer::{Confirm, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 
 /// Handle creating a new token
 pub async fn handle_create_token(
@@ -29,19 +30,8 @@ pub async fn handle_create_token(
             n
         }
         None => {
-            // Check existing keys to help user choose unique name
-            let existing_keys = client.list_api_keys().await.map_err(CliError::Api)?;
-
-            if !existing_keys.is_empty() {
-                println!();
-                println!("{}", style("Existing API keys:").bold());
-                for key in &existing_keys {
-                    println!("  • {}", key.name);
-                }
-                println!();
-            }
-
-            let input: String = Input::new()
+            let theme = ColorfulTheme::default();
+            let input: String = Input::with_theme(&theme)
                 .with_prompt("Enter a name for this API key (letters, numbers, -, _ only)")
                 .interact_text()
                 .map_err(|e| CliError::Internal(e.into()))?;
@@ -80,36 +70,25 @@ pub async fn handle_create_token(
             ))
             .yellow()
         );
-        println!();
     }
 
     // Create the new token
     let response = client.create_api_key(&name).await.map_err(CliError::Api)?;
 
     // Display the key with clear formatting
+    print_success("Token created successfully!");
     println!();
-    println!("{}", style("Token created successfully!").green().bold());
-    println!();
-    println!("  {}: {}", style("Name").bold(), response.name);
-    println!(
-        "  {}: {}",
-        style("Created").bold(),
-        response.created_at.format("%Y-%m-%d %H:%M:%S UTC")
-    );
-    println!();
-    println!("{}", style("Token:").bold());
-    println!("{}", style(&response.token).cyan());
+    println!("Token: {}", style(&response.token).cyan());
     println!();
     println!(
         "{}",
-        style("⚠️  Save this token securely - it won't be shown again!")
+        style("⚠️  Save this token - it won't be shown again!")
             .yellow()
             .bold()
     );
     println!();
     println!("To use this token:");
-    println!("  export BASILICA_API_TOKEN=\"{}\"", response.token);
-    println!();
+    println!("export BASILICA_API_TOKEN=\"{}\"", response.token);
 
     Ok(())
 }
@@ -119,36 +98,15 @@ pub async fn handle_list_tokens(client: &BasilicaClient) -> Result<(), CliError>
     let keys = client.list_api_keys().await.map_err(CliError::Api)?;
 
     if keys.is_empty() {
-        println!();
         println!("No API keys exist.");
-        println!();
-        println!("Create one with:");
-        println!("  {} token create [name]", style("basilica").cyan());
-        println!();
+        println!(
+            "Create one with: {} tokens create [name]",
+            style("basilica").cyan()
+        );
     } else {
-        println!();
-        println!("{}", style("API Keys:").bold());
-        println!();
-
-        for (i, key) in keys.iter().enumerate() {
-            println!("  {}. {}", i + 1, style(&key.name).cyan().bold());
-            println!(
-                "     {}: {}",
-                style("Created").dim(),
-                key.created_at.format("%Y-%m-%d %H:%M:%S UTC")
-            );
-            println!(
-                "     {}: {}",
-                style("Last used").dim(),
-                key.last_used_at
-                    .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
-                    .unwrap_or_else(|| "Never".to_string())
-            );
-            if i < keys.len() - 1 {
-                println!();
-            }
-        }
-        println!();
+        table_output::display_api_keys(&keys).map_err(|e| {
+            CliError::Internal(color_eyre::eyre::eyre!("Failed to display API keys: {}", e))
+        })?;
     }
 
     Ok(())
@@ -164,9 +122,7 @@ pub async fn handle_revoke_token(
     let keys = client.list_api_keys().await.map_err(CliError::Api)?;
 
     if keys.is_empty() {
-        println!();
         println!("No API keys exist to revoke.");
-        println!();
         return Ok(());
     }
 
@@ -186,7 +142,8 @@ pub async fn handle_revoke_token(
                 })
                 .collect();
 
-            let selection = Select::new()
+            let theme = ColorfulTheme::default();
+            let selection = Select::with_theme(&theme)
                 .with_prompt("Select an API key to revoke")
                 .items(&options)
                 .default(0)
@@ -199,7 +156,8 @@ pub async fn handle_revoke_token(
 
     // Confirm deletion if not skipped
     if !skip_confirm {
-        let confirmed = Confirm::new()
+        let theme = ColorfulTheme::default();
+        let confirmed = Confirm::with_theme(&theme)
             .with_prompt(format!("Are you sure you want to delete '{}'?", key_name))
             .default(false)
             .interact()
@@ -217,12 +175,10 @@ pub async fn handle_revoke_token(
         .await
         .map_err(CliError::Api)?;
 
-    println!();
     println!(
         "{}",
-        style(format!("API key '{}' deleted successfully.", key_name)).green()
+        style(format!("✅ API key '{}' deleted successfully.", key_name)).green()
     );
-    println!();
 
     Ok(())
 }

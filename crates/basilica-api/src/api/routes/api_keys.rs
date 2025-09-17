@@ -224,7 +224,7 @@ pub async fn revoke_key(
         },
     })?;
 
-    info!("Deleting API key with name: {}", name);
+    info!("Deleting API key");
 
     let deleted =
         api_keys::delete_api_key_by_name(&state.db, &auth_context.user_id, api_key_name.as_str())

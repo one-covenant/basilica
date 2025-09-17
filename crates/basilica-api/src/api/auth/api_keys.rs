@@ -55,7 +55,7 @@ pub enum ApiKeyError {
 
 /// Complete API key data generated when creating a new key.
 /// Contains all components including the salt needed for hashing.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct GeneratedApiKey {
     /// Key ID - 16 bytes (displayed as 32 hex chars in database)
     pub kid_bytes: [u8; 16],
@@ -119,15 +119,38 @@ impl GeneratedApiKey {
     }
 }
 
+impl fmt::Debug for GeneratedApiKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Show truncated kid for correlation, redact all sensitive data
+        let kid_hex = hex::encode(&self.kid_bytes[..4]);
+        f.debug_struct("GeneratedApiKey")
+            .field("kid_bytes", &format!("{}...", kid_hex))
+            .field("secret_bytes", &"<redacted>")
+            .field("salt", &"<redacted>")
+            .finish()
+    }
+}
+
 /// API key token representation without salt.
 /// This is what users work with - contains only the kid and secret.
 /// The salt is stored in the database as part of the hash.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct ApiKeyToken {
     /// Key ID - 16 bytes (displayed as 32 hex chars in database)
     pub kid_bytes: [u8; 16],
     /// Secret - 32 bytes for cryptographic strength
     pub secret_bytes: [u8; 32],
+}
+
+impl fmt::Debug for ApiKeyToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Show truncated kid for correlation, redact secret
+        let kid_hex = hex::encode(&self.kid_bytes[..4]);
+        f.debug_struct("ApiKeyToken")
+            .field("kid_bytes", &format!("{}...", kid_hex))
+            .field("secret_bytes", &"<redacted>")
+            .finish()
+    }
 }
 
 impl ApiKeyToken {
@@ -488,6 +511,31 @@ mod tests {
         assert!(argon2
             .verify_password(b"wrong_secret", &parsed_hash)
             .is_err());
+    }
+
+    #[test]
+    fn test_debug_impl_redacts_secrets() {
+        // Test that Debug implementations don't expose sensitive data
+        let generated = GeneratedApiKey::generate();
+        let debug_str = format!("{:?}", generated);
+
+        // Should NOT contain the actual secret bytes
+        assert!(!debug_str.contains(&format!("{:?}", generated.secret_bytes)));
+        // Should contain redacted marker
+        assert!(debug_str.contains("<redacted>"));
+        // Should have truncated kid
+        assert!(debug_str.contains("..."));
+
+        // Test ApiKeyToken Debug too
+        let token = generated.into_token();
+        let token_debug = format!("{:?}", token);
+
+        // Should NOT contain the actual secret bytes
+        assert!(!token_debug.contains(&format!("{:?}", token.secret_bytes)));
+        // Should contain redacted marker
+        assert!(token_debug.contains("<redacted>"));
+        // Should have truncated kid
+        assert!(token_debug.contains("..."));
     }
 
     #[test]
