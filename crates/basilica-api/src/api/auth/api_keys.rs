@@ -27,14 +27,6 @@ pub struct ApiKey {
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-/// Result type for API key generation
-#[derive(Debug)]
-pub struct GeneratedApiKey {
-    pub kid: String,
-    pub display_token: String,
-    pub hash: String,
-}
-
 /// API key verification result
 #[derive(Debug)]
 pub struct VerifiedApiKey {
@@ -61,26 +53,34 @@ pub enum ApiKeyError {
     Hashing(String),
 }
 
-/// Structured API key token containing kid and secret components
+/// Complete API key data generated when creating a new key.
+/// Contains all components including the salt needed for hashing.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ApiKeyToken {
+pub struct GeneratedApiKey {
     /// Key ID - 16 bytes (displayed as 32 hex chars in database)
     pub kid_bytes: [u8; 16],
     /// Secret - 32 bytes for cryptographic strength
     pub secret_bytes: [u8; 32],
+    /// Salt for Argon2 hashing - 16 bytes
+    pub salt: [u8; 16],
 }
 
-impl ApiKeyToken {
-    /// Create a new API key token with random values
+impl GeneratedApiKey {
+    /// Generate a new API key with random values
     pub fn generate() -> Self {
         let mut rng = StdRng::from_entropy();
         let mut kid_bytes = [0u8; 16];
         let mut secret_bytes = [0u8; 32];
+        let mut salt = [0u8; 16];
+
         rng.fill_bytes(&mut kid_bytes);
         rng.fill_bytes(&mut secret_bytes);
+        rng.fill_bytes(&mut salt);
+
         Self {
             kid_bytes,
             secret_bytes,
+            salt,
         }
     }
 
@@ -90,6 +90,53 @@ impl ApiKeyToken {
     }
 
     /// Get the secret as bytes (for hashing)
+    pub fn secret(&self) -> &[u8] {
+        &self.secret_bytes
+    }
+
+    /// Generate the hash in PHC string format for database storage.
+    /// This computes the Argon2 hash using the stored salt
+    pub fn hash_string(&self) -> Result<String, ApiKeyError> {
+        let argon2 = Argon2::default();
+        let salt_string =
+            SaltString::encode_b64(&self.salt).map_err(|e| ApiKeyError::Hashing(e.to_string()))?;
+
+        // Hash the secret with the stored salt
+        let password_hash = argon2
+            .hash_password(&self.secret_bytes, &salt_string)
+            .map_err(|e| ApiKeyError::Hashing(e.to_string()))?;
+
+        // Return the PHC string format
+        Ok(password_hash.to_string())
+    }
+
+    /// Convert to an ApiKeyToken (drops the salt)
+    pub fn into_token(self) -> ApiKeyToken {
+        ApiKeyToken {
+            kid_bytes: self.kid_bytes,
+            secret_bytes: self.secret_bytes,
+        }
+    }
+}
+
+/// API key token representation without salt.
+/// This is what users work with - contains only the kid and secret.
+/// The salt is stored in the database as part of the hash.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ApiKeyToken {
+    /// Key ID - 16 bytes (displayed as 32 hex chars in database)
+    pub kid_bytes: [u8; 16],
+    /// Secret - 32 bytes for cryptographic strength
+    pub secret_bytes: [u8; 32],
+}
+
+impl ApiKeyToken {
+    /// Get the kid as a hex string (for database storage)
+    pub fn kid_hex(&self) -> String {
+        hex::encode(self.kid_bytes)
+    }
+
+    /// Get the secret as bytes (for hashing/verification)
     pub fn secret(&self) -> &[u8] {
         &self.secret_bytes
     }
@@ -134,55 +181,13 @@ impl FromStr for ApiKeyToken {
         kid_bytes.copy_from_slice(&decoded[0..16]);
         secret_bytes.copy_from_slice(&decoded[16..48]);
 
+        // Note: When parsing from string, we don't have the salt.
+        // The salt is stored in the database as part of the hash.
         Ok(Self {
             kid_bytes,
             secret_bytes,
         })
     }
-}
-
-/// Generate a new API key
-pub fn gen_api_key() -> Result<GeneratedApiKey, ApiKeyError> {
-    // Generate a new token with random values
-    let token = ApiKeyToken::generate();
-
-    // Get the kid as hex for database storage
-    let kid = token.kid_hex();
-
-    // Get the secret bytes for hashing
-    let secret_bytes = token.secret();
-
-    // Hash the secret with Argon2id
-    let argon2 = Argon2::default();
-    let mut rng = StdRng::from_entropy();
-    let salt = SaltString::generate(&mut rng);
-    let hash = argon2
-        .hash_password(secret_bytes, &salt)
-        .map_err(|e| ApiKeyError::Hashing(e.to_string()))?
-        .to_string();
-
-    // Convert token to display format
-    let display_token = token.to_string();
-
-    Ok(GeneratedApiKey {
-        kid,
-        display_token,
-        hash,
-    })
-}
-
-/// Parse a display token into its components
-pub fn parse_display_token(token: &str) -> Result<(String, String), ApiKeyError> {
-    // Parse using ApiKeyToken
-    let api_token = ApiKeyToken::from_str(token)?;
-
-    // Get kid as hex string for database lookup
-    let kid = api_token.kid_hex();
-
-    // Get secret as base64 string for compatibility
-    let secret = URL_SAFE_NO_PAD.encode(api_token.secret_bytes);
-
-    Ok((kid, secret))
 }
 
 /// Insert a new API key into the database
@@ -320,10 +325,27 @@ pub async fn verify_api_key(pool: &PgPool, token: &str) -> Result<VerifiedApiKey
 mod tests {
     use super::*;
 
+    /// Parse a display token into its components
+    fn parse_display_token(token: &str) -> Result<(String, String), ApiKeyError> {
+        // Parse using ApiKeyToken
+        let api_token = ApiKeyToken::from_str(token)?;
+
+        // Get kid as hex string for database lookup
+        let kid = api_token.kid_hex();
+
+        // Get secret as base64url encoded string
+        let secret = URL_SAFE_NO_PAD.encode(api_token.secret_bytes);
+
+        Ok((kid, secret))
+    }
+
     #[test]
     fn test_api_key_token_roundtrip() {
-        // Create a token
-        let token = ApiKeyToken::generate();
+        // Generate a new key
+        let generated = GeneratedApiKey::generate();
+
+        // Convert to token
+        let token = generated.into_token();
 
         // Convert to string
         let token_str = token.to_string();
@@ -331,15 +353,15 @@ mod tests {
         // Parse it back
         let parsed = ApiKeyToken::from_str(&token_str).unwrap();
 
-        // Should be equal
-        assert_eq!(token, parsed);
+        // Kid and secret should match
         assert_eq!(token.kid_bytes, parsed.kid_bytes);
         assert_eq!(token.secret_bytes, parsed.secret_bytes);
     }
 
     #[test]
     fn test_api_key_token_format() {
-        let token = ApiKeyToken::generate();
+        let generated = GeneratedApiKey::generate();
+        let token = generated.into_token();
         let token_str = token.to_string();
 
         // Check format
@@ -382,28 +404,34 @@ mod tests {
     }
 
     #[test]
-    fn test_gen_api_key() {
-        let result = gen_api_key().unwrap();
+    fn test_generated_api_key() {
+        let generated = GeneratedApiKey::generate();
+        let kid = generated.kid_hex();
+        let hash = generated.hash_string().unwrap();
+        let token = generated.into_token();
+        let display_token = token.to_string();
 
         // Check kid is 32 hex chars (16 bytes)
-        assert_eq!(result.kid.len(), 32);
-        assert!(result.kid.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(kid.len(), 32);
+        assert!(kid.chars().all(|c| c.is_ascii_hexdigit()));
 
         // Check display token format
-        assert!(result.display_token.starts_with("basilica_"));
+        assert!(display_token.starts_with("basilica_"));
 
         // Token should be parseable
-        let parsed = ApiKeyToken::from_str(&result.display_token).unwrap();
-        assert_eq!(parsed.kid_hex(), result.kid);
+        let parsed = ApiKeyToken::from_str(&display_token).unwrap();
+        assert_eq!(parsed.kid_hex(), kid);
 
-        // Check hash is not empty
-        assert!(!result.hash.is_empty());
+        // Check hash is not empty and is valid PHC format
+        assert!(!hash.is_empty());
+        assert!(hash.starts_with("$argon2"));
     }
 
     #[test]
     fn test_parse_display_token() {
         // Generate a real token
-        let api_token = ApiKeyToken::generate();
+        let generated = GeneratedApiKey::generate();
+        let api_token = generated.into_token();
         let token_str = api_token.to_string();
 
         // Parse it
@@ -421,12 +449,15 @@ mod tests {
     fn test_api_key_no_delimiter_conflicts() {
         // Generate many tokens to ensure no delimiter issues
         for _ in 0..100 {
-            let token = ApiKeyToken::generate();
+            let generated = GeneratedApiKey::generate();
+            let token = generated.into_token();
             let token_str = token.to_string();
 
             // Should parse successfully every time
             let parsed = ApiKeyToken::from_str(&token_str).unwrap();
-            assert_eq!(token, parsed);
+            // Kid and secret should match
+            assert_eq!(token.kid_bytes, parsed.kid_bytes);
+            assert_eq!(token.secret_bytes, parsed.secret_bytes);
 
             // parse_display_token should also work
             let (kid, _) = parse_display_token(&token_str).unwrap();
@@ -436,7 +467,8 @@ mod tests {
 
     #[test]
     fn test_argon2_hash_verification_with_bytes() {
-        let token = ApiKeyToken::generate();
+        let generated = GeneratedApiKey::generate();
+        let token = generated.into_token();
         let secret_bytes = token.secret();
 
         // Hash the secret bytes
@@ -456,5 +488,21 @@ mod tests {
         assert!(argon2
             .verify_password(b"wrong_secret", &parsed_hash)
             .is_err());
+    }
+
+    #[test]
+    fn test_generated_api_key_hash_deterministic() {
+        let generated = GeneratedApiKey::generate();
+        let secret_bytes = generated.secret_bytes;
+
+        // Generate hash multiple times - should be the same
+        let hash1 = generated.hash_string().unwrap();
+        let hash2 = generated.hash_string().unwrap();
+        assert_eq!(hash1, hash2);
+
+        // Hash can verify the secret
+        let argon2 = Argon2::default();
+        let parsed_hash = PasswordHash::new(&hash1).unwrap();
+        assert!(argon2.verify_password(&secret_bytes, &parsed_hash).is_ok());
     }
 }

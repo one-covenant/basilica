@@ -96,9 +96,15 @@ pub async fn create_key(
     }
 
     // Generate new API key
-    let generated = api_keys::gen_api_key().map_err(|e| ApiError::Internal {
-        message: format!("Failed to generate API key: {}", e),
-    })?;
+    let generated_key = api_keys::GeneratedApiKey::generate();
+    let kid = generated_key.kid_hex();
+    let hash = generated_key
+        .hash_string()
+        .map_err(|e| ApiError::Internal {
+            message: format!("Failed to generate API key hash: {}", e),
+        })?;
+    let token = generated_key.into_token();
+    let display_token = token.to_string();
 
     // Use provided scopes or default to user's current scopes
     let scopes = request
@@ -110,8 +116,8 @@ pub async fn create_key(
         &state.db,
         &auth_context.user_id,
         request.name.as_str(),
-        &generated.kid,
-        &generated.hash,
+        &kid,
+        &hash,
         &scopes,
     )
     .await
@@ -139,7 +145,7 @@ pub async fn create_key(
     Ok(Json(CreateKeyResponse {
         name: key.name,
         created_at: key.created_at,
-        token: generated.display_token,
+        token: display_token,
     }))
 }
 
