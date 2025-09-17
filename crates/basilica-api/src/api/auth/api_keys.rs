@@ -31,7 +31,6 @@ pub struct ApiKey {
 #[derive(Debug)]
 pub struct GeneratedApiKey {
     pub kid: String,
-    pub secret: String,
     pub display_token: String,
     pub hash: String,
 }
@@ -65,8 +64,8 @@ pub enum ApiKeyError {
 /// Structured API key token containing kid and secret components
 #[derive(Debug, Clone, PartialEq)]
 pub struct ApiKeyToken {
-    /// Key ID - 8 bytes (displayed as 16 hex chars in database)
-    pub kid_bytes: [u8; 8],
+    /// Key ID - 16 bytes (displayed as 32 hex chars in database)
+    pub kid_bytes: [u8; 16],
     /// Secret - 32 bytes for cryptographic strength
     pub secret_bytes: [u8; 32],
 }
@@ -75,7 +74,7 @@ impl ApiKeyToken {
     /// Create a new API key token with random values
     pub fn generate() -> Self {
         let mut rng = StdRng::from_entropy();
-        let mut kid_bytes = [0u8; 8];
+        let mut kid_bytes = [0u8; 16];
         let mut secret_bytes = [0u8; 32];
         rng.fill_bytes(&mut kid_bytes);
         rng.fill_bytes(&mut secret_bytes);
@@ -99,7 +98,7 @@ impl ApiKeyToken {
 impl fmt::Display for ApiKeyToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Concatenate kid and secret bytes
-        let mut combined = Vec::with_capacity(40);
+        let mut combined = Vec::with_capacity(48);
         combined.extend_from_slice(&self.kid_bytes);
         combined.extend_from_slice(&self.secret_bytes);
 
@@ -124,16 +123,16 @@ impl FromStr for ApiKeyToken {
             .decode(encoded)
             .map_err(|_| ApiKeyError::InvalidFormat)?;
 
-        // Validate length (8 bytes kid + 32 bytes secret = 40 bytes)
-        if decoded.len() != 40 {
+        // Validate length (16 bytes kid + 32 bytes secret = 48 bytes)
+        if decoded.len() != 48 {
             return Err(ApiKeyError::InvalidFormat);
         }
 
         // Split into kid and secret
-        let mut kid_bytes = [0u8; 8];
+        let mut kid_bytes = [0u8; 16];
         let mut secret_bytes = [0u8; 32];
-        kid_bytes.copy_from_slice(&decoded[0..8]);
-        secret_bytes.copy_from_slice(&decoded[8..40]);
+        kid_bytes.copy_from_slice(&decoded[0..16]);
+        secret_bytes.copy_from_slice(&decoded[16..48]);
 
         Ok(Self {
             kid_bytes,
@@ -165,13 +164,8 @@ pub fn gen_api_key() -> Result<GeneratedApiKey, ApiKeyError> {
     // Convert token to display format
     let display_token = token.to_string();
 
-    // For backward compatibility with GeneratedApiKey struct,
-    // we'll store the base64 of secret bytes (though it's not used anymore)
-    let secret = URL_SAFE_NO_PAD.encode(token.secret_bytes);
-
     Ok(GeneratedApiKey {
         kid,
-        secret,
         display_token,
         hash,
     })
@@ -351,9 +345,9 @@ mod tests {
         // Check format
         assert!(token_str.starts_with("basilica_"));
 
-        // Check length - should be around 54 chars (9 prefix + ~54 base64 for 40 bytes)
-        // Base64 encoding of 40 bytes = ceil(40 * 4/3) = 54 chars without padding
-        assert!(token_str.len() >= 50 && token_str.len() <= 65);
+        // Check length - should be around 64 chars (9 prefix + ~64 base64 for 48 bytes)
+        // Base64 encoding of 48 bytes = ceil(48 * 4/3) = 64 chars without padding
+        assert!(token_str.len() >= 60 && token_str.len() <= 75);
 
         // The token body can contain underscores since we use base64url encoding
         // which uses - and _ as special characters. The key point is that we parse
@@ -391,8 +385,8 @@ mod tests {
     fn test_gen_api_key() {
         let result = gen_api_key().unwrap();
 
-        // Check kid is 16 hex chars
-        assert_eq!(result.kid.len(), 16);
+        // Check kid is 32 hex chars (16 bytes)
+        assert_eq!(result.kid.len(), 32);
         assert!(result.kid.chars().all(|c| c.is_ascii_hexdigit()));
 
         // Check display token format
