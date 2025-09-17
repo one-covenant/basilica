@@ -788,10 +788,10 @@ impl VerificationEngine {
                 let miner_id = format!("miner_{}", miner_uid);
                 let gpu_counts = self
                     .persistence
-                    .get_miner_gpu_counts_from_assignments(&miner_id)
+                    .get_miner_gpu_uuid_assignments(&miner_id)
                     .await?;
                 let mut gpu_map: HashMap<String, u32> = HashMap::new();
-                for (_, count, gpu_name) in gpu_counts {
+                for (_, count, gpu_name, _) in gpu_counts {
                     let category = GpuCategory::from_str(&gpu_name).unwrap();
                     let model = category.to_string();
                     *gpu_map.entry(model).or_insert(0) += count;
@@ -1156,6 +1156,7 @@ impl VerificationEngine {
                             previous_executor_id = %existing_executor_id,
                             new_miner_id = %miner_id,
                             new_executor_id = %executor_id,
+                            gpu_memory_gb = %gpu_info.gpu_memory_gb,
                             action = "gpu_assignment_reassigned",
                             reassignment_reason = "previous_executor_inactive",
                             "GPU {} reassigned from {}/{} to {}/{} (previous executor inactive)",
@@ -1169,13 +1170,14 @@ impl VerificationEngine {
                         sqlx::query(
                             "UPDATE gpu_uuid_assignments
                              SET miner_id = ?, executor_id = ?, gpu_index = ?, gpu_name = ?,
-                                 last_verified = ?, updated_at = ?
+                                 gpu_memory_gb = ?, last_verified = ?, updated_at = ?
                              WHERE gpu_uuid = ?",
                         )
                         .bind(&miner_id)
                         .bind(executor_id)
                         .bind(gpu_info.index as i32)
                         .bind(&gpu_info.gpu_name)
+                        .bind(gpu_info.gpu_memory_gb)
                         .bind(&now)
                         .bind(&now)
                         .bind(&gpu_info.gpu_uuid)
@@ -1206,9 +1208,10 @@ impl VerificationEngine {
                     // Same owner - just update last_verified
                     sqlx::query(
                         "UPDATE gpu_uuid_assignments
-                         SET last_verified = ?, updated_at = ?
+                         SET gpu_memory_gb = ?, last_verified = ?, updated_at = ?
                          WHERE gpu_uuid = ?",
                     )
+                    .bind(gpu_info.gpu_memory_gb)
                     .bind(&now)
                     .bind(&now)
                     .bind(&gpu_info.gpu_uuid)
@@ -1219,7 +1222,7 @@ impl VerificationEngine {
                 // New GPU UUID - insert
                 sqlx::query(
                     "INSERT INTO gpu_uuid_assignments
-                     (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified, created_at, updated_at)
+                     (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(&gpu_info.gpu_uuid)
@@ -1227,6 +1230,7 @@ impl VerificationEngine {
                 .bind(executor_id)
                 .bind(&miner_id)
                 .bind(&gpu_info.gpu_name)
+                .bind(gpu_info.gpu_memory_gb)
                 .bind(&now)
                 .bind(&now)
                 .bind(&now)
@@ -1240,6 +1244,7 @@ impl VerificationEngine {
                     executor_id = %executor_id,
                     miner_id = %miner_id,
                     gpu_name = %gpu_info.gpu_name,
+                    gpu_memory_gb = %gpu_info.gpu_memory_gb,
                     action = "gpu_assignment_created",
                     "Registered new GPU {} (index {}) for {}/{}",
                     gpu_info.gpu_uuid, gpu_info.index, miner_id, executor_id
@@ -2348,12 +2353,12 @@ impl VerificationEngine {
 
             let gpu_counts = self
                 .persistence
-                .get_miner_gpu_counts_from_assignments(&miner_id)
+                .get_miner_gpu_uuid_assignments(&miner_id)
                 .await?;
 
             let mut gpu_map: std::collections::HashMap<String, u32> =
                 std::collections::HashMap::new();
-            for (_, count, gpu_name) in gpu_counts {
+            for (_, count, gpu_name, _) in gpu_counts {
                 let category =
                     crate::gpu::categorization::GpuCategory::from_str(&gpu_name).unwrap();
                 let model = category.to_string();
