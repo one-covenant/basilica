@@ -426,6 +426,7 @@ impl SimplePersistence {
                 executor_id TEXT NOT NULL,
                 miner_id TEXT NOT NULL,
                 gpu_name TEXT,
+                gpu_memory_gb INTEGER,
                 last_verified TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -434,6 +435,32 @@ impl SimplePersistence {
         )
         .execute(&self.pool)
         .await?;
+
+        // Check if gpu_memory_gb column exists in gpu_uuid_assignments
+        let gpu_memory_gb_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('gpu_uuid_assignments')
+            WHERE name = 'gpu_memory_gb'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !gpu_memory_gb_exists {
+            // Migration to add gpu_memory_gb column to gpu_uuid_assignments
+            sqlx::query(
+                r#"
+                ALTER TABLE gpu_uuid_assignments
+                ADD COLUMN gpu_memory_gb INTEGER DEFAULT NULL;
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+
+            info!("Added gpu_memory_gb column to gpu_uuid_assignments table");
+        }
 
         // Create indexes
         sqlx::query(
@@ -1524,10 +1551,10 @@ impl SimplePersistence {
         miner_id: &str,
     ) -> Result<Vec<ExecutorData>, anyhow::Error> {
         let rows = sqlx::query(
-            "SELECT 
-                me.executor_id, 
-                me.gpu_specs, 
-                me.cpu_specs, 
+            "SELECT
+                me.executor_id,
+                me.gpu_specs,
+                me.cpu_specs,
                 me.location,
                 ehp.cpu_model,
                 ehp.cpu_cores,
@@ -1750,13 +1777,75 @@ impl SimplePersistence {
         Ok(count as u32)
     }
 
-    /// Get the actual gpu_count for all ONLINE executors of a miner from gpu_uuid_assignments
-    pub async fn get_miner_gpu_counts_from_assignments(
+    /// Get the actual gpu_memory_gb for a specific GPU index of an executor from gpu_uuid_assignments
+    pub async fn get_executor_gpu_memory_gb_by_index(
         &self,
         miner_id: &str,
-    ) -> Result<Vec<(String, u32, String)>, anyhow::Error> {
+        executor_id: &str,
+        index: u32,
+    ) -> Result<f64, anyhow::Error> {
+        let memory: i64 = sqlx::query_scalar(
+            "SELECT gpu_memory_gb FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ? AND gpu_index = ?",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .bind(index)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(memory as f64)
+    }
+
+    /// Get the actual gpu_memory_gb for a specific GPU index of an executor from gpu_uuid_assignments
+    pub async fn get_executor_gpu_memory_gb_by_gpu_uuid(
+        &self,
+        miner_id: &str,
+        executor_id: &str,
+        gpu_uuid: &str,
+    ) -> Result<f64, anyhow::Error> {
+        let memory: i64 = sqlx::query_scalar(
+            "SELECT gpu_memory_gb FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ? AND gpu_uuid = ?",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .bind(gpu_uuid)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(memory as f64)
+    }
+
+    /// Get the actual gpu_memory_gb for the first GPU (index 0) of an executor from gpu_uuid_assignments
+    pub async fn get_executor_first_gpu_memory_gb(
+        &self,
+        miner_id: &str,
+        executor_id: &str,
+    ) -> Result<f64, anyhow::Error> {
+        let memory: i64 = sqlx::query_scalar(
+            "SELECT gpu_memory_gb FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ? AND gpu_index = 0",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(memory as f64)
+    }
+
+    /// Get the actual gpu_count for all ONLINE executors of a miner from gpu_uuid_assignments
+    pub async fn get_miner_gpu_uuid_assignments(
+        &self,
+        miner_id: &str,
+    ) -> Result<Vec<(String, u32, String, f64)>, anyhow::Error> {
         let rows = sqlx::query(
-            "SELECT ga.executor_id, COUNT(DISTINCT ga.gpu_uuid) as gpu_count, ga.gpu_name
+            "SELECT
+                ga.executor_id,
+                COUNT(DISTINCT ga.gpu_uuid) as gpu_count,
+                ga.gpu_name,
+                MAX(ga.gpu_memory_gb) as gpu_memory_gb
              FROM gpu_uuid_assignments ga
              JOIN miner_executors me ON ga.executor_id = me.executor_id AND ga.miner_id = me.miner_id
              WHERE ga.miner_id = ?
@@ -1773,7 +1862,9 @@ impl SimplePersistence {
             let executor_id: String = row.get("executor_id");
             let gpu_count: i64 = row.get("gpu_count");
             let gpu_name: String = row.get("gpu_name");
-            results.push((executor_id, gpu_count as u32, gpu_name));
+            let gpu_memory_gb: f64 = row.get("gpu_memory_gb");
+
+            results.push((executor_id, gpu_count as u32, gpu_name, gpu_memory_gb));
         }
 
         Ok(results)
@@ -2191,7 +2282,7 @@ impl SimplePersistence {
         sqlx::query(
             r#"
             INSERT INTO executor_network_profile
-            (miner_uid, executor_id, ip_address, hostname, city, region, country, location, 
+            (miner_uid, executor_id, ip_address, hostname, city, region, country, location,
              organization, postal_code, timezone, test_timestamp, full_result_json, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
@@ -2324,7 +2415,7 @@ impl SimplePersistence {
         sqlx::query(
             r#"
             INSERT INTO executor_docker_profile
-            (miner_uid, executor_id, service_active, docker_version, images_pulled, 
+            (miner_uid, executor_id, service_active, docker_version, images_pulled,
              dind_supported, validation_error, full_json, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
