@@ -454,7 +454,7 @@ mod tests {
         assert_eq!(result.gpu_count, 4);
         assert!(result.is_valid);
         assert!(result.attestation_valid);
-        assert_eq!(result.gpu_memory_gb, 80);
+        assert_eq!(result.gpu_memory_gb, 80.0);
 
         // Test validation timestamp is recent
         let now = Utc::now();

@@ -460,7 +460,7 @@ impl ValidatorPrometheusMetrics {
 
             let executor_gpu_counts = self
                 .persistence
-                .get_miner_gpu_counts_from_assignments(&miner.miner_id)
+                .get_miner_gpu_uuid_assignments(&miner.miner_id)
                 .await
                 .unwrap();
 
@@ -472,12 +472,12 @@ impl ValidatorPrometheusMetrics {
             );
 
             // Only set metrics for executors that have GPU assignments
-            for (executor_id, gpu_count, gpu_model) in &executor_gpu_counts {
+            for (executor_id, gpu_count, gpu_model, gpu_memory_gb) in &executor_gpu_counts {
                 let executor_uuid = executor_id.as_str();
 
                 debug!(
-                    "Setting executor GPU count: miner_uid={}, executor_id={}, gpu_model={}, gpu_count={}",
-                    miner_uid, executor_uuid, gpu_model, gpu_count
+                    "Setting executor GPU count: miner_uid={}, executor_id={}, gpu_model={}, gpu_count={}, gpu_memory_gb={}",
+                    miner_uid, executor_uuid, gpu_model, gpu_count, gpu_memory_gb
                 );
 
                 gauge!("basilica_validator_executor_gpu_count",

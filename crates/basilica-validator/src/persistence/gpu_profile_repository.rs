@@ -62,6 +62,22 @@ impl GpuProfileRepository {
         Ok(gpu_counts)
     }
 
+    pub async fn get_miner_gpu_assignments(
+        &self,
+        miner_uid: MinerUid,
+    ) -> Result<HashMap<String, (u32, String, f64)>, anyhow::Error> {
+        let simple_persistence = SimplePersistence::with_pool(self.pool.clone());
+        let assignments_rows = simple_persistence
+            .get_miner_gpu_uuid_assignments(&format!("miner_{}", miner_uid.as_u16()))
+            .await?;
+        let mut assignments = HashMap::new();
+        for (executor_id, count, name, memory_gb) in assignments_rows {
+            assignments.insert(executor_id, (count, name, memory_gb));
+        }
+
+        Ok(assignments)
+    }
+
     /// Store or update a miner's GPU profile
     pub async fn upsert_gpu_profile(&self, profile: &MinerGpuProfile) -> Result<()> {
         let actual_gpu_counts = self
@@ -188,7 +204,7 @@ impl GpuProfileRepository {
 
             let simple_persistence = SimplePersistence::with_pool(self.pool.clone());
             let gpu_counts_raw = simple_persistence
-                .get_miner_gpu_counts_from_assignments(&miner_id_str)
+                .get_miner_gpu_uuid_assignments(&miner_id_str)
                 .await?;
 
             if gpu_counts_raw.is_empty() {
@@ -196,7 +212,7 @@ impl GpuProfileRepository {
             }
 
             let mut gpu_counts: HashMap<String, u32> = HashMap::new();
-            for (_, count, name) in gpu_counts_raw {
+            for (_, count, name, _) in gpu_counts_raw {
                 *gpu_counts.entry(name).or_insert(0) += count;
             }
 
@@ -313,12 +329,12 @@ impl GpuProfileRepository {
 
             let simple_persistence = SimplePersistence::with_pool(self.pool.clone());
             let gpu_counts = simple_persistence
-                .get_miner_gpu_counts_from_assignments(&miner_id_str)
+                .get_miner_gpu_uuid_assignments(&miner_id_str)
                 .await?;
             let gpu_counts: HashMap<String, u32> = gpu_counts
                 .iter()
-                .filter(|(_, _, name)| name.contains(gpu_model))
-                .map(|(_, count, name)| (name.clone(), *count))
+                .filter(|(_, _, name, _)| name.contains(gpu_model))
+                .map(|(_, count, name, _)| (name.clone(), *count))
                 .collect();
 
             if gpu_counts.is_empty() {
@@ -648,7 +664,6 @@ impl GpuProfileRepository {
     }
 
     /// Get emission metrics history
-    // TODO: Add pagination support with limit/offset parameters
     pub async fn get_emission_metrics_history(&self) -> Result<Vec<EmissionMetrics>> {
         let query = r#"
             SELECT id, timestamp, burn_amount, burn_percentage,

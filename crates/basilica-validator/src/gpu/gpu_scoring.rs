@@ -268,28 +268,57 @@ impl GpuScoringEngine {
                 continue;
             }
 
-            // Only consider GPUs listed in emission config for rewards
-            let rewardable_gpu_counts: HashMap<String, u32> = profile
-                .gpu_counts
-                .iter()
-                .filter_map(|(gpu_model, &gpu_count)| {
-                    if gpu_count > 0 {
-                        let category = GpuCategory::from_str(gpu_model).unwrap();
+            let rewardable_gpus: Vec<(GpuCategory, u32)> = self
+                .gpu_profile_repo
+                .get_miner_gpu_assignments(profile.miner_uid)
+                .await?.iter().filter_map(|(executor_id, (gpu_count, gpu_name, gpu_memory_gb))| {
+                    if *gpu_count > 0 {
+                        let category = GpuCategory::from_str(gpu_name).unwrap();
                         let normalized_model = category.to_string();
                         // Only include GPUs configured in emission config for rewards
-                        if self.is_gpu_model_rewardable(gpu_model) {
-                            // Check if miner meets minimum GPU count requirement
+                        if self.is_gpu_model_rewardable(gpu_name) {
+                            // Check if miner meets minimum GPU count and VRAM requirements
                             if let Some(allocation) = self.emission_config.get_gpu_allocation(&normalized_model) {
-                                if gpu_count >= allocation.min_gpu_count {
-                                    Some((normalized_model, gpu_count))
+                                let meets_gpu_count = *gpu_count >= allocation.min_gpu_count;
+                                let meets_vram = if let Some(min_vram) = allocation.min_gpu_vram {
+                                    // Check if the miner's GPU has enough VRAM
+                                    *gpu_memory_gb >= min_vram as f64
                                 } else {
-                                    debug!(
+                                    // No VRAM requirement
+                                    true
+                                };
+
+                                if meets_gpu_count && meets_vram {
+                                    info!(
                                         miner_uid = profile.miner_uid.as_u16(),
-                                        gpu_model = %gpu_model,
-                                        gpu_count = gpu_count,
+                                        executor_id = %executor_id,
+                                        gpu_model = %gpu_name,
+                                        gpu_count = *gpu_count,
                                         min_required = allocation.min_gpu_count,
-                                        "Skipping miner: Does not meet minimum GPU count requirement"
+                                        "Miner meets all emission requirements"
                                     );
+                                    Some((category, *gpu_count))
+                                } else {
+                                    if !meets_gpu_count {
+                                        info!(
+                                            miner_uid = profile.miner_uid.as_u16(),
+                                            executor_id = %executor_id,
+                                            gpu_model = %gpu_name,
+                                            gpu_count = *gpu_count,
+                                            min_required = allocation.min_gpu_count,
+                                            "Skipping miner: Does not meet minimum GPU count requirement"
+                                        );
+                                    }
+                                    if !meets_vram {
+                                        info!(
+                                            miner_uid = profile.miner_uid.as_u16(),
+                                            executor_id = %executor_id,
+                                            gpu_model = %gpu_name,
+                                            gpu_vram = *gpu_memory_gb,
+                                            min_required = allocation.min_gpu_vram,
+                                            "Skipping miner: Does not meet minimum GPU VRAM requirement"
+                                        );
+                                    }
                                     None
                                 }
                             } else {
@@ -303,6 +332,15 @@ impl GpuScoringEngine {
                     }
                 })
                 .collect();
+
+            let rewardable_gpu_counts: HashMap<String, u32> =
+                rewardable_gpus
+                    .into_iter()
+                    .fold(HashMap::new(), |mut acc, (category, count)| {
+                        let normalized_model = category.to_string();
+                        *acc.entry(normalized_model).or_insert(0) += count;
+                        acc
+                    });
 
             // Skip miners with no rewardable GPUs
             if rewardable_gpu_counts.is_empty() {
@@ -449,6 +487,23 @@ mod tests {
     use std::sync::Arc;
     use tempfile::NamedTempFile;
 
+    /// Helper function to create a test MinerGpuProfile without specific memory requirements
+    fn create_test_profile(
+        miner_uid: u16,
+        gpu_counts: HashMap<String, u32>,
+        total_score: f64,
+        now: DateTime<Utc>,
+    ) -> MinerGpuProfile {
+        MinerGpuProfile {
+            miner_uid: MinerUid::new(miner_uid),
+            gpu_counts,
+            total_score,
+            verification_count: 1,
+            last_updated: now,
+            last_successful_validation: Some(now - chrono::Duration::hours(1)),
+        }
+    }
+
     /// Helper function to seed all required data for GPU profile tests
     async fn seed_test_data(
         persistence: &SimplePersistence,
@@ -573,7 +628,7 @@ mod tests {
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 2,
-                gpu_memory_gb: 80,
+                gpu_memory_gb: 80.0,
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             },
@@ -582,7 +637,7 @@ mod tests {
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
-                gpu_memory_gb: 80,
+                gpu_memory_gb: 80.0,
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             },
@@ -600,7 +655,7 @@ mod tests {
             is_valid: false,
             gpu_model: "A100".to_string(),
             gpu_count: 2,
-            gpu_memory_gb: 80,
+            gpu_memory_gb: 80.0,
             attestation_valid: false,
             validation_timestamp: Utc::now(),
         }];
@@ -615,7 +670,7 @@ mod tests {
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 2,
-                gpu_memory_gb: 80,
+                gpu_memory_gb: 80.0,
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             },
@@ -624,7 +679,7 @@ mod tests {
                 is_valid: false,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
-                gpu_memory_gb: 80,
+                gpu_memory_gb: 80.0,
                 attestation_valid: false,
                 validation_timestamp: Utc::now(),
             },
@@ -647,7 +702,7 @@ mod tests {
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 1,
-            gpu_memory_gb: 80,
+            gpu_memory_gb: 80.0,
             attestation_valid: true,
             validation_timestamp: Utc::now(),
         }];
@@ -657,7 +712,7 @@ mod tests {
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 1,
-            gpu_memory_gb: 16,
+            gpu_memory_gb: 16.0,
             attestation_valid: true,
             validation_timestamp: Utc::now(),
         }];
@@ -681,7 +736,7 @@ mod tests {
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count,
-                gpu_memory_gb: 80,
+                gpu_memory_gb: 80.0,
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             }];
@@ -700,7 +755,7 @@ mod tests {
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 128,
-            gpu_memory_gb: 80,
+            gpu_memory_gb: 80.0,
             attestation_valid: true,
             validation_timestamp: Utc::now(),
         }];
@@ -720,7 +775,7 @@ mod tests {
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 2,
-            gpu_memory_gb: 80,
+            gpu_memory_gb: 80.0,
             attestation_valid: true,
             validation_timestamp: Utc::now(),
         }];
@@ -739,7 +794,7 @@ mod tests {
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 1,
-            gpu_memory_gb: 40, // Different memory than first validation (80GB)
+            gpu_memory_gb: 40.0, // Different memory than first validation (80GB)
             attestation_valid: true,
             validation_timestamp: Utc::now(),
         }];
@@ -769,30 +824,9 @@ mod tests {
 
         let now = Utc::now();
         let profiles = vec![
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(1),
-                gpu_counts: a100_counts_1,
-                total_score: 0.8,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(2),
-                gpu_counts: a100_counts_2,
-                total_score: 0.6,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(3),
-                gpu_counts: h100_counts,
-                total_score: 0.9,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
+            create_test_profile(1, a100_counts_1, 0.8, now),
+            create_test_profile(2, a100_counts_2, 0.6, now),
+            create_test_profile(3, h100_counts, 0.9, now),
         ];
 
         // Seed all required data
@@ -832,7 +866,7 @@ mod tests {
                 is_valid: false,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
-                gpu_memory_gb: 80,
+                gpu_memory_gb: 80.0,
                 attestation_valid: false,
                 validation_timestamp: Utc::now(),
             },
@@ -841,7 +875,7 @@ mod tests {
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
-                gpu_memory_gb: 80,
+                gpu_memory_gb: 80.0,
                 attestation_valid: false, // Attestation invalid
                 validation_timestamp: Utc::now(),
             },
@@ -857,7 +891,7 @@ mod tests {
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
-                gpu_memory_gb: 80,
+                gpu_memory_gb: 80.0,
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             },
@@ -866,7 +900,7 @@ mod tests {
                 is_valid: false,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
-                gpu_memory_gb: 80,
+                gpu_memory_gb: 80.0,
                 attestation_valid: false,
                 validation_timestamp: Utc::now(),
             },
@@ -875,7 +909,7 @@ mod tests {
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
-                gpu_memory_gb: 40,
+                gpu_memory_gb: 40.0,
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             },
@@ -894,18 +928,10 @@ mod tests {
         let miner_uid = MinerUid::new(100);
 
         // Create initial profile with score 0.2
-        let initial_profile = MinerGpuProfile {
-            miner_uid,
-            gpu_counts: {
-                let mut counts = HashMap::new();
-                counts.insert("A100".to_string(), 1);
-                counts
-            },
-            total_score: 0.2,
-            verification_count: 1,
-            last_updated: Utc::now(),
-            last_successful_validation: None,
-        };
+        let mut gpu_counts = HashMap::new();
+        gpu_counts.insert("A100".to_string(), 1);
+        let mut initial_profile = create_test_profile(100, gpu_counts, 0.2, Utc::now());
+        initial_profile.last_successful_validation = None;
         repo.upsert_gpu_profile(&initial_profile).await.unwrap();
 
         // Update with new validations that would give score 1.0
@@ -914,7 +940,7 @@ mod tests {
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 1,
-            gpu_memory_gb: 80,
+            gpu_memory_gb: 80.0,
             attestation_valid: true,
             validation_timestamp: Utc::now(),
         }];
@@ -941,7 +967,7 @@ mod tests {
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
-                gpu_memory_gb: memory,
+                gpu_memory_gb: memory as f64,
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             }];
@@ -973,14 +999,7 @@ mod tests {
         b200_counts.insert("B200".to_string(), 4);
 
         let now = Utc::now();
-        let b200_profile = MinerGpuProfile {
-            miner_uid: MinerUid::new(100),
-            gpu_counts: b200_counts,
-            total_score: 1.0,
-            verification_count: 1,
-            last_updated: now,
-            last_successful_validation: Some(now - chrono::Duration::hours(1)),
-        };
+        let b200_profile = create_test_profile(100, b200_counts, 1.0, now);
 
         // Seed B200 data
         let persistence = crate::persistence::SimplePersistence::with_pool(repo.pool().clone());
@@ -1043,30 +1062,9 @@ mod tests {
 
         let now = Utc::now();
         let profiles = vec![
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(1),
-                gpu_counts: a100_counts,
-                total_score: 0.8,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(2),
-                gpu_counts: h100_counts,
-                total_score: 0.9,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(3),
-                gpu_counts: b200_counts,
-                total_score: 1.0,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
+            create_test_profile(1, a100_counts, 0.8, now),
+            create_test_profile(2, h100_counts, 0.9, now),
+            create_test_profile(3, b200_counts, 1.0, now),
         ];
 
         // Seed all data
@@ -1103,14 +1101,7 @@ mod tests {
         multi_gpu_counts.insert("B200".to_string(), 2);
 
         let now = Utc::now();
-        let multi_gpu_profile = MinerGpuProfile {
-            miner_uid: MinerUid::new(42),
-            gpu_counts: multi_gpu_counts,
-            total_score: 0.9,
-            verification_count: 1,
-            last_updated: now,
-            last_successful_validation: Some(now - chrono::Duration::hours(1)),
-        };
+        let multi_gpu_profile = create_test_profile(42, multi_gpu_counts, 0.9, now);
 
         // Seed data
         let persistence = crate::persistence::SimplePersistence::with_pool(repo.pool().clone());
@@ -1220,85 +1211,27 @@ mod tests {
 
         // Create profiles with different GPU counts
         let now = Utc::now();
+
+        // Helper to create single GPU type profile
+        let create_single_gpu_profile = |uid: u16, gpu_model: &str, count: u32, score: f64| {
+            let mut gpu_counts = HashMap::new();
+            gpu_counts.insert(gpu_model.to_string(), count);
+            create_test_profile(uid, gpu_counts, score, now)
+        };
+
         let profiles = vec![
             // Miner 1: Has 3x A100 (below min of 4) - should be excluded
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(1),
-                gpu_counts: {
-                    let mut counts = HashMap::new();
-                    counts.insert("A100".to_string(), 3);
-                    counts
-                },
-                total_score: 0.9,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
+            create_single_gpu_profile(1, "A100", 3, 0.9),
             // Miner 2: Has 4x A100 (meets min of 4) - should be included
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(2),
-                gpu_counts: {
-                    let mut counts = HashMap::new();
-                    counts.insert("A100".to_string(), 4);
-                    counts
-                },
-                total_score: 0.8,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
+            create_single_gpu_profile(2, "A100", 4, 0.8),
             // Miner 3: Has 1x H100 (below min of 2) - should be excluded
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(3),
-                gpu_counts: {
-                    let mut counts = HashMap::new();
-                    counts.insert("H100".to_string(), 1);
-                    counts
-                },
-                total_score: 0.7,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
+            create_single_gpu_profile(3, "H100", 1, 0.7),
             // Miner 4: Has 2x H100 (meets min of 2) - should be included
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(4),
-                gpu_counts: {
-                    let mut counts = HashMap::new();
-                    counts.insert("H100".to_string(), 2);
-                    counts
-                },
-                total_score: 0.8,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
+            create_single_gpu_profile(4, "H100", 2, 0.8),
             // Miner 5: Has 7x B200 (below min of 8) - should be excluded
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(5),
-                gpu_counts: {
-                    let mut counts = HashMap::new();
-                    counts.insert("B200".to_string(), 7);
-                    counts
-                },
-                total_score: 1.0,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
+            create_single_gpu_profile(5, "B200", 7, 1.0),
             // Miner 6: Has 8x B200 (meets min of 8) - should be included
-            MinerGpuProfile {
-                miner_uid: MinerUid::new(6),
-                gpu_counts: {
-                    let mut counts = HashMap::new();
-                    counts.insert("B200".to_string(), 8);
-                    counts
-                },
-                total_score: 1.0,
-                verification_count: 1,
-                last_updated: now,
-                last_successful_validation: Some(now - chrono::Duration::hours(1)),
-            },
+            create_single_gpu_profile(6, "B200", 8, 1.0),
         ];
 
         // Seed all required data
