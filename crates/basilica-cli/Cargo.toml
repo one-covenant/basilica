@@ -59,10 +59,6 @@ url = { workspace = true }
 basilica-api = { path = "../basilica-api" }
 basilica-common = { path = "../basilica-common" }
 basilica-sdk = { path = "../basilica-sdk" }
-basilica-validator = { path = "../basilica-validator", features = [
-    "client",
-    "openapi",
-    "cli",
-] }
+basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }
 
 [dev-dependencies]

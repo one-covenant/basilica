@@ -24,8 +24,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
 
-# OpenAPI support (optional)
-utoipa = { workspace = true, optional = true }
 
 # Auth dependencies (moved from CLI)
 oauth2 = { workspace = true }
@@ -34,7 +32,7 @@ etcetera = { workspace = true }
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
-basilica-validator = { path = "../basilica-validator", features = ["client", "openapi"] }
+basilica-validator = { path = "../basilica-validator", features = ["client"] }
 urlencoding = { workspace = true }
 
 [dev-dependencies]
@@ -43,5 +41,4 @@ tokio = { workspace = true, features = ["full", "test-util"] }
 
 [features]
 default = []
-openapi = ["utoipa"]
 client = []

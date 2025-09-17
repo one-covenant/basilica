@@ -75,9 +75,6 @@ libc = { workspace = true }
 # SSH key management
 ssh-key = { workspace = true }
 
-# OpenAPI documentation support (optional)
-utoipa = { workspace = true, optional = true }
-
 [dev-dependencies]
 tempfile = { workspace = true }
 
@@ -87,7 +84,5 @@ default = ["client"]
 client = ["futures-util"]
 # Enable test utilities
 test-utils = []
-# Enable OpenAPI schema generation support
-openapi = ["utoipa"]
 # Enable CLI support with clap derives
 cli = []
