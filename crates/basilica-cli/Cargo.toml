@@ -30,41 +30,41 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 
 # HTTP client for API communication
-reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
-futures = "0.3"
-futures-util = "0.3"
-bytes = "1.5"
-eventsource-stream = "0.2"
+reqwest = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+bytes = { workspace = true }
+eventsource-stream = { workspace = true }
 
 # Terminal UI and interaction
-dialoguer = "0.11"
-indicatif = "0.17"
-console = "0.15"
-tabled = "0.15"
+dialoguer = { workspace = true }
+indicatif = { workspace = true }
+console = { workspace = true }
+tabled = { workspace = true }
 
 # Shell completions
-clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
+clap_complete = { workspace = true }
 
 # SSH functionality (using external ssh command for now)
-shell-escape = "0.1"
+shell-escape = { workspace = true }
 
 # File operations
-shellexpand = "3.1"
-etcetera = "0.8"
+shellexpand = { workspace = true }
+etcetera = { workspace = true }
 
 # Error handling
-color-eyre = "0.6"
+color-eyre = { workspace = true }
 
 # OAuth dependencies
-oauth2 = "4.4"
+oauth2 = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 tower-http = { workspace = true, features = ["cors"] }
 rand = { workspace = true }
-base64 = "0.21"
-sha2 = "0.10"
-webbrowser = "0.8"
-url = "2.4"
+base64 = { workspace = true }
+sha2 = { workspace = true }
+webbrowser = { workspace = true }
+url = { workspace = true }
 
 
 # Internal crate dependencies
@@ -78,4 +78,4 @@ basilica-validator = { path = "../basilica-validator", features = [
 ] }
 
 [dev-dependencies]
-tempfile = "3.8"
+tempfile = { workspace = true }

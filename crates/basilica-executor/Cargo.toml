@@ -44,33 +44,33 @@ basilica-protocol = { path = "../basilica-protocol" }
 bittensor = { path = "../bittensor" }
 
 # Additional required dependencies
-clap = { version = "4.4", features = ["derive"] }
+clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
-futures-util = "0.3"
-async-trait = "0.1"
-tokio-stream = "0.1"
-hex = "0.4"
+futures-util = { workspace = true }
+async-trait = { workspace = true }
+tokio-stream = { workspace = true }
+hex = { workspace = true }
 
 # Executor-specific dependencies
 # GPU monitoring
-nvml-wrapper = "0.9"
+nvml-wrapper = { workspace = true }
 # File system utilities
-fs_extra = "1.3"
+fs_extra = { workspace = true }
 # System information
-num_cpus = "1.16"
+num_cpus = { workspace = true }
 # TOML configuration
-toml = "0.8"
+toml = { workspace = true }
 # Billing telemetry dependencies
-flume = { version = "0.11", features = ["async"] }
-regex = "1.10"
-once_cell = "1.19"
-http = "0.2"
+flume = { workspace = true }
+regex = { workspace = true }
+once_cell = { workspace = true }
+http = { workspace = true }
 
 
 [dev-dependencies]
-tempfile = "3.8"
-serial_test = "3.0"
-mockall = "0.11"
+tempfile = { workspace = true }
+serial_test = { workspace = true }
+mockall = { workspace = true }
 
 [features]
 default = []
