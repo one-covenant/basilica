@@ -126,7 +126,7 @@ impl Default for ResourceRequirementsRequest {
             cpu_cores: 0.0,
             memory_mb: 0,
             storage_mb: 0,
-            gpu_count: 1,
+            gpu_count: 0,
             gpu_types: Vec::new(),
         }
     }
