@@ -40,18 +40,18 @@ tower = { workspace = true }
 tower-http = { workspace = true, features = ["limit"] }
 
 # Additional dependencies for validator
-futures = "0.3"
-futures-util = { version = "0.3", optional = true }
-bytes = "1.5"
-async-trait = "0.1"
-toml = "0.8"
-url = "2.5"
+futures = { workspace = true }
+futures-util = { workspace = true, optional = true }
+bytes = { workspace = true }
+async-trait = { workspace = true }
+toml = { workspace = true }
+url = { workspace = true }
 prost-types = { workspace = true }
-async-stream = "0.3"
-num_cpus = "1.16"
-lru = "0.12"
-eventsource-stream = "0.2"
-regex = "1.10"
+async-stream = { workspace = true }
+num_cpus = { workspace = true }
+lru = { workspace = true }
+eventsource-stream = { workspace = true }
+regex = { workspace = true }
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
@@ -64,38 +64,38 @@ collateral-contract = { path = "../collateral-contract" }
 # bittensor-rs = "0.1"
 
 # HTTP client for external communications
-reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
+reqwest = { workspace = true }
 
 # Temporary file handling
-tempfile = "3.8"
+tempfile = { workspace = true }
 
 # Challenge implementation dependencies
-nalgebra = { version = "0.32", features = ["serde-serialize"] }
-rand = "0.8"
-rand_chacha = "0.3"
-sha2 = "0.10"
-hex = "0.4"
-fastrand = "2.0"
-base64 = "0.21"
+nalgebra = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+fastrand = { workspace = true }
+base64 = { workspace = true }
 
 # P256 ECDSA signature verification for attestation
-p256 = { version = "0.13", features = ["ecdsa"] }
-signature = "2.2"
+p256 = { workspace = true }
+signature = { workspace = true }
 
 # System information and process management
-sysinfo = "0.30"
-libc = "0.2"
+sysinfo = { workspace = true }
+libc = { workspace = true }
 
 # SSH key management
-ssh-key = { version = "0.6", features = ["ed25519", "std"] }
+ssh-key = { workspace = true }
 
 # OpenAPI documentation support (optional)
-utoipa = { version = "4.1", features = ["chrono", "uuid"], optional = true }
+utoipa = { workspace = true, optional = true }
 
 [dev-dependencies]
-tempfile = "3.8"
-serial_test = "3.0"
-mockall = "0.11"
+tempfile = { workspace = true }
+serial_test = { workspace = true }
+mockall = { workspace = true }
 
 [features]
 default = ["client"]
