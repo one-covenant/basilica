@@ -79,7 +79,7 @@ class BasilicaClient:
     Client for interacting with the Basilica API.
 
     Example:
-        >>> # Create token: basilica token create
+        >>> # Create token: basilica tokens create
         >>> client = BasilicaClient("https://api.basilica.ai", api_key="basilica_...")
         >>> health = client.health_check()
         >>> print(health["status"])
@@ -96,7 +96,7 @@ class BasilicaClient:
         Args:
             base_url: The base URL of the Basilica API (default: from BASILICA_API_URL env or DEFAULT_API_URL)
             api_key: Optional authentication token (default: from BASILICA_API_TOKEN env)
-                Create token using: basilica token create
+                Create token using: basilica tokens create
         """
         # Auto-detect base_url if not provided
         if base_url is None:

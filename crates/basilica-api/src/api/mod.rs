@@ -10,8 +10,6 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 /// Create all API routes
 pub fn routes(state: AppState) -> Router<AppState> {
@@ -56,70 +54,3 @@ pub fn routes(state: AppState) -> Router<AppState> {
     // Apply general middleware
     middleware::apply_middleware(router, state)
 }
-
-/// Create OpenAPI documentation routes
-pub fn docs_routes() -> Router<AppState> {
-    Router::new()
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-}
-
-/// OpenAPI documentation
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        // Health and monitoring
-        routes::health::health_check,
-        // API key management
-        routes::api_keys::create_key,
-        routes::api_keys::list_keys,
-        routes::api_keys::revoke_key,
-    ),
-    components(schemas(
-        // Rental types
-        basilica_sdk::types::RentalStatusResponse,
-        basilica_sdk::types::LogStreamQuery,
-        basilica_sdk::types::PortMappingRequest,
-        basilica_sdk::types::ResourceRequirementsRequest,
-        basilica_sdk::types::VolumeMountRequest,
-
-        // Common types
-        basilica_sdk::types::GpuSpec,
-        basilica_sdk::types::CpuSpec,
-        basilica_sdk::types::SshAccess,
-        basilica_sdk::types::RentalStatus,
-        basilica_sdk::types::ExecutorDetails,
-
-        // Health types
-        basilica_sdk::types::HealthCheckResponse,
-
-        // API key types
-        routes::api_keys::CreateKeyRequest,
-        routes::api_keys::CreateKeyResponse,
-        routes::api_keys::ListKeyItem,
-
-        // Error response
-        crate::error::ErrorResponse,
-    )),
-    tags(
-        (name = "rentals", description = "GPU rental management"),
-        (name = "health", description = "Health and monitoring"),
-        (name = "api-keys", description = "API key management"),
-    ),
-    info(
-        title = "Basilica API",
-        version = "1.0.0",
-        description = "API service for the Basilica GPU network",
-        contact(
-            name = "Basilica Team",
-            email = "support@tplr.ai",
-        ),
-        license(
-            name = "MIT",
-        ),
-    ),
-    servers(
-        (url = "http://localhost:8080", description = "Local development"),
-        (url = "https://api.basilica.ai", description = "Production"),
-    ),
-)]
-struct ApiDoc;

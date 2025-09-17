@@ -97,7 +97,7 @@ To use the SDK, you need to create an API token via the Basilica CLI:
 
 ```bash
 # Create a new API token
-basilica token create
+basilica tokens create
 
 # The command will output the token - set it as an environment variable
 export BASILICA_API_TOKEN="basilica_..."

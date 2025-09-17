@@ -59,6 +59,10 @@ hex = "0.4"
 governor = "0.6"
 nonzero_ext = "0.3"
 
+# OpenAPI documentation
+utoipa = { version = "4.1", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+
 # Caching
 moka = { version = "0.12", features = ["future"] }
 redis = { version = "0.24", features = [
@@ -66,9 +70,6 @@ redis = { version = "0.24", features = [
   "connection-manager",
 ], optional = true }
 
-# OpenAPI documentation
-utoipa = { version = "4.1", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
 
 # Concurrent collections
 dashmap = "5.5"

@@ -14,7 +14,7 @@ def main():
     print("Initializing client...")
 
     # Initialize client (uses BASILICA_API_URL and BASILICA_API_TOKEN from environment)
-    # Create a token using: basilica token create
+    # Create a token using: basilica tokens create
     client = BasilicaClient()
     
     print("\nConfiguration:")

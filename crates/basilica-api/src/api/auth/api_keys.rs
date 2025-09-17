@@ -4,11 +4,11 @@
 //! API keys for the Basilica API.
 
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rand::Rng;
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use std::fmt;
@@ -74,8 +74,11 @@ pub struct ApiKeyToken {
 impl ApiKeyToken {
     /// Create a new API key token with random values
     pub fn generate() -> Self {
-        let kid_bytes: [u8; 8] = OsRng.gen();
-        let secret_bytes: [u8; 32] = OsRng.gen();
+        let mut rng = StdRng::from_entropy();
+        let mut kid_bytes = [0u8; 8];
+        let mut secret_bytes = [0u8; 32];
+        rng.fill_bytes(&mut kid_bytes);
+        rng.fill_bytes(&mut secret_bytes);
         Self {
             kid_bytes,
             secret_bytes,
@@ -152,7 +155,8 @@ pub fn gen_api_key() -> Result<GeneratedApiKey, ApiKeyError> {
 
     // Hash the secret with Argon2id
     let argon2 = Argon2::default();
-    let salt = SaltString::generate(&mut OsRng);
+    let mut rng = StdRng::from_entropy();
+    let salt = SaltString::generate(&mut rng);
     let hash = argon2
         .hash_password(secret_bytes, &salt)
         .map_err(|e| ApiKeyError::Hashing(e.to_string()))?
@@ -443,7 +447,8 @@ mod tests {
 
         // Hash the secret bytes
         let argon2 = Argon2::default();
-        let salt = SaltString::generate(&mut OsRng);
+        let mut rng = StdRng::from_entropy();
+        let salt = SaltString::generate(&mut rng);
         let hash = argon2
             .hash_password(secret_bytes, &salt)
             .unwrap()

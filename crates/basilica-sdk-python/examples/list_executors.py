@@ -8,7 +8,7 @@ import os
 
 def main():
     # Create client (uses BASILICA_API_TOKEN from environment)
-    # Create a token using: basilica token create
+    # Create a token using: basilica tokens create
     client = BasilicaClient()
     
     # Check API health - returns typed HealthCheckResponse

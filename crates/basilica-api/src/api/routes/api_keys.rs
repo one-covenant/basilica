@@ -57,22 +57,6 @@ pub struct ListKeyItem {
 ///
 /// This endpoint requires JWT authentication (human users only).
 /// Only one active key per user is allowed.
-#[utoipa::path(
-    post,
-    path = "/api-keys",
-    request_body = CreateKeyRequest,
-    responses(
-        (status = 200, description = "API key created successfully", body = CreateKeyResponse),
-        (status = 400, description = "Bad request"),
-        (status = 401, description = "Unauthorized - JWT authentication required"),
-        (status = 409, description = "Conflict - active key already exists"),
-        (status = 500, description = "Internal server error")
-    ),
-    tag = "api-keys",
-    security(
-        ("bearer_auth" = ["keys:create"])
-    )
-)]
 #[instrument(skip(state, auth_context, request), fields(user_id = %auth_context.user_id, key_name = %request.name))]
 pub async fn create_key(
     State(state): State<AppState>,
@@ -131,8 +115,23 @@ pub async fn create_key(
         &scopes,
     )
     .await
-    .map_err(|e| ApiError::Internal {
-        message: format!("Failed to store API key: {}", e),
+    .map_err(|e| match e {
+        api_keys::ApiKeyError::Database(ref sqlx_err) => {
+            // Check if it's a unique constraint violation (PostgreSQL error code 23505)
+            if let sqlx::Error::Database(ref db_err) = sqlx_err {
+                if db_err.code().as_deref() == Some("23505") {
+                    return ApiError::Conflict {
+                        message: format!("API key with name '{}' already exists", request.name),
+                    };
+                }
+            }
+            ApiError::Internal {
+                message: format!("Failed to store API key: {}", e),
+            }
+        }
+        _ => ApiError::Internal {
+            message: format!("Failed to store API key: {}", e),
+        },
     })?;
 
     debug!("Successfully created API key");
@@ -147,19 +146,6 @@ pub async fn create_key(
 /// List all API keys for the authenticated user
 ///
 /// This endpoint requires JWT authentication (human users only).
-#[utoipa::path(
-    get,
-    path = "/api-keys",
-    responses(
-        (status = 200, description = "List of API keys", body = Vec<ListKeyItem>),
-        (status = 401, description = "Unauthorized - JWT authentication required"),
-        (status = 500, description = "Internal server error")
-    ),
-    tag = "api-keys",
-    security(
-        ("bearer_auth" = ["keys:list"])
-    )
-)]
 #[instrument(skip(state, auth_context), fields(user_id = %auth_context.user_id))]
 pub async fn list_keys(
     State(state): State<AppState>,
@@ -202,23 +188,6 @@ pub async fn list_keys(
 /// Delete an API key by name
 ///
 /// This endpoint requires JWT authentication (human users only).
-#[utoipa::path(
-    delete,
-    path = "/api-keys/{name}",
-    params(
-        ("name" = String, Path, description = "Name of the API key to delete")
-    ),
-    responses(
-        (status = 204, description = "API key deleted successfully"),
-        (status = 401, description = "Unauthorized - JWT authentication required"),
-        (status = 404, description = "API key not found"),
-        (status = 500, description = "Internal server error")
-    ),
-    tag = "api-keys",
-    security(
-        ("bearer_auth" = ["keys:revoke"])
-    )
-)]
 #[instrument(skip(state, auth_context), fields(user_id = %auth_context.user_id, key_name = %name))]
 pub async fn revoke_key(
     State(state): State<AppState>,

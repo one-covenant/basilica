@@ -46,7 +46,7 @@ impl BasilicaClient {
     ///
     /// Args:
     ///     base_url: The base URL of the Basilica API
-    ///     api_key: Optional authentication token from 'basilica token create'
+    ///     api_key: Optional authentication token from 'basilica tokens create'
     #[new]
     #[pyo3(signature = (base_url, api_key=None))]
     fn new(base_url: String, api_key: Option<String>) -> PyResult<Self> {
@@ -59,7 +59,7 @@ impl BasilicaClient {
         let api_key = api_key.ok_or_else(|| {
             PyRuntimeError::new_err(
                 "No API key provided. Please provide an API key directly or set BASILICA_API_TOKEN environment variable. \
-                Create a key using: basilica token create"
+                Create a key using: basilica tokens create"
             )
         })?;
 
@@ -80,7 +80,7 @@ impl BasilicaClient {
     }
 
     // Python SDK uses API key authentication
-    // Users should create API keys via CLI: `basilica token create`
+    // Users should create API keys via CLI: `basilica tokens create`
     // Then use the Python SDK with the key directly or via BASILICA_API_TOKEN environment variable
 
     /// Check the health of the API

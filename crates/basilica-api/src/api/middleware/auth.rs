@@ -122,7 +122,7 @@ pub async fn auth_middleware(
                 return Err((
                     StatusCode::UNAUTHORIZED,
                     ApiError::Authentication {
-                        message: format!("Invalid API key: {}", e),
+                        message: "Invalid API key".to_string(),
                     },
                 )
                     .into_response());
@@ -151,7 +151,7 @@ pub async fn auth_middleware(
             (
                 StatusCode::UNAUTHORIZED,
                 ApiError::Authentication {
-                    message: format!("Invalid token: {}", e),
+                    message: "Invalid token".to_string(),
                 },
             )
                 .into_response()

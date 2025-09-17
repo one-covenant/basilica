@@ -14,7 +14,7 @@ def main():
     # Or initialize with explicit configuration
     # client = BasilicaClient(
     #     base_url="https://api.basilica.ai",
-    #     api_key="basilica_..."  # Your token from 'basilica token create'
+    #     api_key="basilica_..."  # Your token from 'basilica tokens create'
     # )
     
     # Perform health check

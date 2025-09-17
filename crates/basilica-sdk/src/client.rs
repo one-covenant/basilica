@@ -309,6 +309,9 @@ impl BasilicaClient {
                 StatusCode::BAD_REQUEST => Err(ApiError::BadRequest {
                     message: error_response.error.message,
                 }),
+                StatusCode::CONFLICT => Err(ApiError::Conflict {
+                    message: error_response.error.message,
+                }),
                 _ => Err(ApiError::Internal {
                     message: error_response.error.message,
                 }),
@@ -327,6 +330,9 @@ impl BasilicaClient {
                     resource: "Resource not found".into(),
                 }),
                 StatusCode::BAD_REQUEST => Err(ApiError::BadRequest {
+                    message: error_text,
+                }),
+                StatusCode::CONFLICT => Err(ApiError::Conflict {
                     message: error_text,
                 }),
                 _ => Err(ApiError::Internal {
