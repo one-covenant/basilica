@@ -62,6 +62,7 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx sl
 --private-key "$PRIVATE_KEY" \
 --hotkey "$HOTKEY" \
 --executor-id "$EXECUTOR_ID" \
+--slash-amount 10 \
 --url https://www.tplr.ai/ \
 --url-content-md5-checksum 269ff519d1140a175941ea4b00ccbe0d
 

@@ -5,7 +5,7 @@ use collateral_contract::config::CONTRACT_DEPLOYED_BLOCK_NUMBER;
 use collateral_contract::{Deposit, Reclaimed, Slashed};
 use hex::ToHex;
 use sqlx::Row;
-use tracing::warn;
+use tracing::{error, warn};
 
 impl SimplePersistence {
     pub async fn create_collateral_scanned_blocks_table(&self) -> Result<(), anyhow::Error> {
@@ -175,16 +175,17 @@ impl SimplePersistence {
         {
             Some((id, collateral)) => {
                 let now = Utc::now().to_rfc3339();
-                let query = "UPDATE collateral_status SET collateral = ?, miner = ? , url = ? , url_content_md5_checksum = ?, updated_at = ? WHERE id = ?";
-                if slashed.amount != collateral {
-                    warn!(
-                        "Slashed amount {} does not match collateral {} in database",
-                        slashed.amount, collateral
+                let query = "UPDATE collateral_status SET collateral = collateral - ?, miner = ? , url = ? , url_content_md5_checksum = ?, updated_at = ? WHERE id = ?";
+                if slashed.slashAmount > collateral {
+                    error!(
+                        "Slashed amount {} is greater than collateral {} in database",
+                        slashed.slashAmount, collateral
                     );
+                    return Err(anyhow::anyhow!("Slashed amount is greater than collateral"));
                 }
 
                 sqlx::query(query)
-                    .bind("0".to_string())
+                    .bind(slashed.slashAmount.to_string())
                     .bind(format!(
                         "0x{}",
                         Address::ZERO.as_slice().encode_hex::<String>()
@@ -236,7 +237,7 @@ mod tests {
             hotkey: FixedBytes::from_slice(&hk),
             executorId: FixedBytes::from_slice(&ex),
             miner: Address::from_slice(&[0u8; 20]),
-            amount: U256::from(amount),
+            slashAmount: U256::from(amount),
             url: String::new(),
             urlContentMd5Checksum: FixedBytes::from_slice(&[0u8; 16]),
         }
@@ -355,7 +356,7 @@ mod tests {
         .fetch_one(persistence.pool())
         .await
         .unwrap();
-        assert_eq!(coll_after_slash, "0");
+        assert_eq!(coll_after_slash, "100");
     }
 
     #[tokio::test]

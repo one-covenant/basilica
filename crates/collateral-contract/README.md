@@ -195,6 +195,7 @@ collateral-cli tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --executor-id 123 \
+  --slash-amount 1000000000000000000 \
   --url "https://evidence.example.com/slash-proof" \
   --url-content-md5-checksum aab03e786183b16c8a0b15f6b40ff607
 
@@ -203,6 +204,7 @@ collateral-cli --network testnet tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
   --executor-id 999 \
+  --slash-amount 1000000000000000000 \
   --url "https://audit.testnet.com/violations/999" \
   --url-content-md5-checksum 098f6bcd4621d373cade4e832627b4f6
 ```
