@@ -37,7 +37,7 @@ pub struct ExecutorValidationResult {
     pub is_valid: bool,
     pub _hardware_score: f64,
     pub gpu_count: usize,
-    pub gpu_memory_gb: u64,
+    pub gpu_memory_gb: f64,
     pub _network_bandwidth_mbps: f64,
     pub attestation_valid: bool,
     pub validation_timestamp: chrono::DateTime<chrono::Utc>,
@@ -991,8 +991,20 @@ impl WeightSetter {
                     }
                 };
 
-                // GPU memory is not available in the stored data, default to 0
-                let gpu_memory = 0u64;
+                let gpu_memory_gb = match self
+                    .persistence
+                    .get_executor_first_gpu_memory_gb(miner_id, &executor_id.to_string())
+                    .await
+                {
+                    Ok(mem) => mem,
+                    Err(e) => {
+                        warn!(
+                            "Failed to get GPU memory from assignments for executor {}: {}, using 0",
+                            executor_id, e
+                        );
+                        0.0
+                    }
+                };
 
                 // Extract memory bandwidth from executor_result.memory_bandwidth_gbps
                 let bandwidth = specs["executor_result"]["memory_bandwidth_gbps"]
@@ -1006,13 +1018,13 @@ impl WeightSetter {
                     executor_id, gpu_model, gpu_count, log.success
                 );
 
-                (score, gpu_count, gpu_memory, bandwidth, gpu_model)
+                (score, gpu_count, gpu_memory_gb, bandwidth, gpu_model)
             } else {
                 debug!(
                     "Executor {}: No hardware specs available, validation_success: {}",
                     executor_id, log.success
                 );
-                (0.0, 0, 0, 0.0, "UNKNOWN".to_string())
+                (0.0, 0, 0.0, 0.0, "UNKNOWN".to_string())
             };
 
         Ok(ExecutorValidationResult {
@@ -1031,53 +1043,8 @@ impl WeightSetter {
     }
 
     /// Calculate hardware score from specs
-    fn calculate_hardware_score(&self, specs: &serde_json::Value) -> f64 {
-        let mut score = 0.0;
-
-        // GPU scoring (40% weight)
-        if let Some(gpus) = specs["gpu"].as_array() {
-            let gpu_score: f64 = gpus
-                .iter()
-                .map(|gpu| {
-                    let vram_mb = gpu["vram_mb"].as_u64().unwrap_or(0) as f64;
-                    let vram_score = (vram_mb / 24576.0).min(1.0); // 24GB = max score
-
-                    // Bonus for high-end GPUs
-                    let model = gpu["model"].as_str().unwrap_or("");
-                    let model_bonus = match model {
-                        s if s.contains("A100") => 1.0,
-                        s if s.contains("4090") => 0.8,
-                        s if s.contains("3090") => 0.7,
-                        _ => 0.5,
-                    };
-
-                    vram_score * model_bonus
-                })
-                .sum::<f64>()
-                / gpus.len().max(1) as f64;
-
-            score += gpu_score * 0.4;
-        }
-
-        // CPU scoring (20% weight)
-        if let Some(cpu_cores) = specs["cpu"]["cores"].as_u64() {
-            let cpu_score = (cpu_cores as f64 / 64.0).min(1.0); // 64 cores = max score
-            score += cpu_score * 0.2;
-        }
-
-        // Memory scoring (20% weight)
-        if let Some(memory_mb) = specs["memory"]["total_mb"].as_u64() {
-            let memory_score = (memory_mb as f64 / 262144.0).min(1.0); // 256GB = max score
-            score += memory_score * 0.2;
-        }
-
-        // Network scoring (20% weight)
-        if let Some(bandwidth) = specs["network"]["bandwidth_mbps"].as_f64() {
-            let network_score = (bandwidth / 10000.0).min(1.0); // 10Gbps = max score
-            score += network_score * 0.2;
-        }
-
-        score
+    fn calculate_hardware_score(&self, _specs: &serde_json::Value) -> f64 {
+        1.0
     }
 
     /// Get recent validation results for a miner
@@ -1162,8 +1129,8 @@ impl WeightSetter {
             {
                 Ok(validation) => {
                     debug!(
-                        "Successfully extracted validation for executor {}: gpu_model={}, gpu_count={}, success={}",
-                        executor_id, validation.gpu_model, validation.gpu_count, validation.is_valid
+                        "Successfully extracted validation for executor {}: gpu_model={}, gpu_count={}, success={} gpu_memory_gb={}",
+                        executor_id, validation.gpu_model, validation.gpu_count, validation.is_valid, validation.gpu_memory_gb
                     );
                     validations.push(validation);
                 }
@@ -1556,7 +1523,7 @@ mod tests {
                 is_valid: true,
                 _hardware_score: 0.8,
                 gpu_count: 2,
-                gpu_memory_gb: 48,
+                gpu_memory_gb: 48.0,
                 _network_bandwidth_mbps: 1000.0,
                 attestation_valid: true,
                 validation_timestamp: chrono::Utc::now(),
@@ -1567,7 +1534,7 @@ mod tests {
                 is_valid: true,
                 _hardware_score: 0.9,
                 gpu_count: 4,
-                gpu_memory_gb: 96,
+                gpu_memory_gb: 96.0,
                 _network_bandwidth_mbps: 10000.0,
                 attestation_valid: true,
                 validation_timestamp: chrono::Utc::now(),
