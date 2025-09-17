@@ -23,26 +23,20 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
-figment = { workspace = true }
 sqlx = { workspace = true }
 tonic = { workspace = true }
-prost = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-blake3 = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 axum = { workspace = true, features = ["macros"] }
-tower = { workspace = true }
 tower-http = { workspace = true, features = ["limit"] }
 
 # Additional dependencies for validator
 futures = { workspace = true }
 futures-util = { workspace = true, optional = true }
-bytes = { workspace = true }
 async-trait = { workspace = true }
 toml = { workspace = true }
 url = { workspace = true }
@@ -71,15 +65,8 @@ tempfile = { workspace = true }
 
 # Challenge implementation dependencies
 rand = { workspace = true }
-rand_chacha = { workspace = true }
-sha2 = { workspace = true }
 hex = { workspace = true }
 fastrand = { workspace = true }
-base64 = { workspace = true }
-
-# P256 ECDSA signature verification for attestation
-p256 = { workspace = true }
-signature = { workspace = true }
 
 # System information and process management
 sysinfo = { workspace = true }
@@ -100,8 +87,6 @@ default = ["client"]
 client = ["futures-util"]
 # Enable test utilities
 test-utils = []
-# Enable development mode with additional debugging
-dev-mode = ["tracing-subscriber/env-filter"]
 # Enable OpenAPI schema generation support
 openapi = ["utoipa"]
 # Enable CLI support with clap derives

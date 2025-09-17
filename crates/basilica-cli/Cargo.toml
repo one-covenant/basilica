@@ -14,16 +14,11 @@ path = "src/main.rs"
 [dependencies]
 # Workspace dependencies
 tokio = { workspace = true }
-tokio-util = { workspace = true }
-async-trait = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-figment = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 uuid = { workspace = true }
@@ -32,8 +27,6 @@ chrono = { workspace = true }
 # HTTP client for API communication
 reqwest = { workspace = true }
 futures = { workspace = true }
-futures-util = { workspace = true }
-bytes = { workspace = true }
 eventsource-stream = { workspace = true }
 
 # Terminal UI and interaction
@@ -55,8 +48,6 @@ color-eyre = { workspace = true }
 # OAuth dependencies
 oauth2 = { workspace = true }
 axum = { workspace = true }
-tower = { workspace = true, features = ["util"] }
-tower-http = { workspace = true, features = ["cors"] }
 rand = { workspace = true }
 base64 = { workspace = true }
 sha2 = { workspace = true }
@@ -75,4 +66,3 @@ basilica-validator = { path = "../basilica-validator", features = [
 ] }
 
 [dev-dependencies]
-tempfile = { workspace = true }

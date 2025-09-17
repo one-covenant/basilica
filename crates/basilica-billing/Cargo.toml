@@ -23,23 +23,17 @@ sqlx = { workspace = true, features = [
   "rust_decimal",
   "migrate",
 ] }
-deadpool-postgres = { workspace = true }
-tokio-postgres = { workspace = true }
-postgres-types = { workspace = true }
 
 aws-config = { workspace = true }
 aws-sdk-secretsmanager = { workspace = true }
-aws-sdk-rds = { workspace = true }
 
 tonic = { workspace = true }
 tonic-health = { workspace = true }
-prost = { workspace = true }
 prost-types = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
 rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
 
 figment = { workspace = true, features = ["toml", "env", "json"] }
 
@@ -49,10 +43,7 @@ uuid = { workspace = true }
 
 urlencoding = { workspace = true }
 
-async-stream = { workspace = true }
-
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 thiserror = { workspace = true }
 anyhow = { workspace = true }
@@ -61,27 +52,13 @@ axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 
-prometheus = { workspace = true }
-opentelemetry = { workspace = true }
-opentelemetry-otlp = { workspace = true }
-
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 
 futures = { workspace = true }
 async-trait = { workspace = true }
-once_cell = { workspace = true }
 
 [dev-dependencies]
-mockall = { workspace = true }
-proptest = { workspace = true }
-tokio-test = { workspace = true }
-test-log = { workspace = true }
-pretty_assertions = { workspace = true }
-tempfile = { workspace = true }
-wiremock = { workspace = true }
-portpicker = { workspace = true }
-futures-util = { workspace = true }
 
 [[bin]]
 name = "basilica-billing"

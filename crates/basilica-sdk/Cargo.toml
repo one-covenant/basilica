@@ -12,13 +12,6 @@ reqwest = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
-tokio-util = { workspace = true }
-tokio-stream = { workspace = true }
-async-trait = { workspace = true }
-async-stream = { workspace = true }
-futures = { workspace = true }
-futures-util = { workspace = true }
-bytes = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -26,15 +19,10 @@ serde_json = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
-
-# Utilities
-uuid = { workspace = true }
 chrono = { workspace = true }
-url = { workspace = true }
 
 # OpenAPI support (optional)
 utoipa = { workspace = true, optional = true }
@@ -42,12 +30,7 @@ utoipa = { workspace = true, optional = true }
 # Auth dependencies (moved from CLI)
 oauth2 = { workspace = true }
 base64 = { workspace = true }
-sha2 = { workspace = true }
-rand = { workspace = true }
 etcetera = { workspace = true }
-axum = { workspace = true }
-tower = { workspace = true }
-tower-http = { workspace = true, features = ["cors"] }
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
