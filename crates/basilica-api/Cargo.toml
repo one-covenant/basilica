@@ -10,25 +10,17 @@ license = "MIT OR Apache-2.0"
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
 bittensor = { path = "../bittensor" }
-basilica-protocol = { path = "../basilica-protocol" }
-basilica-validator = { path = "../basilica-validator", features = [
-  "client",
-  "openapi",
-] }
-basilica-sdk = { path = "../basilica-sdk", features = ["openapi"] }
+basilica-validator = { path = "../basilica-validator", features = ["client"] }
+basilica-sdk = { path = "../basilica-sdk" }
 
 # Async runtime
 tokio = { workspace = true }
-tokio-util = { workspace = true }
-tokio-stream = { workspace = true }
-async-trait = { workspace = true }
 async-stream = { workspace = true }
 
 # Web framework
 axum = { workspace = true, features = ["ws"] }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["cors", "timeout", "trace"] }
-hyper = { workspace = true }
 
 # HTTP client
 reqwest = { workspace = true }
@@ -44,7 +36,6 @@ anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 # Configuration
 figment = { workspace = true }
@@ -57,53 +48,35 @@ hex = { workspace = true }
 
 # Rate limiting
 governor = { workspace = true }
-nonzero_ext = { workspace = true }
 
-# OpenAPI documentation
-utoipa = { workspace = true }
-utoipa-swagger-ui = { workspace = true }
 
 # Caching
 moka = { workspace = true }
-redis = { workspace = true, optional = true }
 
 
 # Concurrent collections
 dashmap = { workspace = true }
-parking_lot = { workspace = true }
 
 # Database
 sqlx = { workspace = true }
-
-# Utilities
-uuid = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 futures = { workspace = true }
-pin-project = { workspace = true }
 once_cell = { workspace = true }
-url = { workspace = true }
-sha2 = { workspace = true }
-bs58 = { workspace = true }
-regex = { workspace = true }
 
 # Load balancing algorithms
-weighted-rs = { workspace = true }
 rand = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
-mockall = { workspace = true }
 wiremock = { workspace = true }
 
 [features]
-default = ["server", "redis-cache", "utoipa"]
+default = ["server", "utoipa"]
 server = []
 client = []
-redis-cache = ["redis"]
 utoipa = []
-full = ["server", "client", "redis-cache", "utoipa"]
+full = ["server", "client", "utoipa"]
 
 [[bin]]
 name = "basilica-api"

@@ -16,16 +16,12 @@ path = "src/main.rs"
 [dependencies]
 # Workspace dependencies
 tokio = { workspace = true }
-tokio-util = { workspace = true }
-thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
-figment = { workspace = true }
 sqlx = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
@@ -34,7 +30,6 @@ tonic-health = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 blake3 = { workspace = true }
-base64 = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 alloy = { workspace = true }
@@ -43,8 +38,6 @@ alloy-provider = { workspace = true }
 alloy-sol-types = { workspace = true }
 collateral-contract = { path = "../collateral-contract" }
 hex = { workspace = true }
-# Storage functionality (if needed in future)
-# memmap2 = { workspace = true }
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common", features = ["sqlite"] }
@@ -55,18 +48,9 @@ bittensor = { path = "../bittensor" }
 # HTTP client for external communications
 reqwest = { workspace = true }
 
-# Task scheduling and job management
-cron = { workspace = true }
-
 # Configuration
 toml = { workspace = true }
 url = { workspace = true }
-
-# Connection pooling
-deadpool = { workspace = true }
-
-# Rate limiting
-governor = { workspace = true }
 
 # JSON Web Tokens for authentication
 jsonwebtoken = { workspace = true }
@@ -74,21 +58,14 @@ jsonwebtoken = { workspace = true }
 # Background job processing
 async-trait = { workspace = true }
 
-# System and network utilities
-socket2 = { workspace = true }
-
 # Random number generation
 rand = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-serial_test = { workspace = true }
-mockall = { workspace = true }
 futures = { workspace = true }
 
 [features]
 default = []
 # Enable test utilities for executor communication
 test-utils = []
-# Enable development mode with additional debugging
-dev-mode = ["tracing-subscriber/env-filter"]

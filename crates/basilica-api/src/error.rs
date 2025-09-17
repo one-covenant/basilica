@@ -194,14 +194,14 @@ impl IntoResponse for ApiError {
 }
 
 /// Error response structure for API documentation
-#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ErrorResponse {
     /// Error details
     pub error: ErrorDetails,
 }
 
 /// Error details structure
-#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ErrorDetails {
     /// Error code
     pub code: String,

@@ -12,10 +12,9 @@ use axum::{extract::State, Json};
 use basilica_common::{ApiKeyName, ApiKeyNameError};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, warn};
-use utoipa::ToSchema;
 
 /// Request to create a new API key
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
 pub struct CreateKeyRequest {
     /// Name for the API key
     pub name: ApiKeyName,
@@ -25,7 +24,7 @@ pub struct CreateKeyRequest {
 }
 
 /// Response after creating a new API key
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
 pub struct CreateKeyResponse {
     /// Name of the key
     pub name: String,
@@ -38,7 +37,7 @@ pub struct CreateKeyResponse {
 }
 
 /// List item for API keys
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
 pub struct ListKeyItem {
     /// Key identifier (kid)
     pub kid: String,

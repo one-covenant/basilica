@@ -66,7 +66,6 @@ impl Default for StartRentalRequest {
 
 /// Port mapping request
 #[derive(Debug, Deserialize, serde::Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PortMappingRequest {
     pub container_port: u32,
     pub host_port: u32,
@@ -110,7 +109,6 @@ impl From<PortMappingRequest> for crate::rental::PortMapping {
 
 /// Resource requirements request
 #[derive(Debug, Deserialize, serde::Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResourceRequirementsRequest {
     pub cpu_cores: f64,
     pub memory_mb: i64,
@@ -146,7 +144,6 @@ impl From<ResourceRequirementsRequest> for crate::rental::ResourceRequirements {
 
 /// Volume mount request
 #[derive(Debug, Deserialize, serde::Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct VolumeMountRequest {
     pub host_path: String,
     pub container_path: String,
