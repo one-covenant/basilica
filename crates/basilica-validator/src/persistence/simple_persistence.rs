@@ -279,6 +279,36 @@ impl SimplePersistence {
                 PRIMARY KEY (miner_uid, executor_id)
             );
 
+            CREATE TABLE IF NOT EXISTS executor_docker_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                service_active BOOLEAN NOT NULL,
+                docker_version TEXT,
+                images_pulled TEXT,
+                dind_supported BOOLEAN DEFAULT 0,
+                validation_error TEXT,
+                full_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS executor_nat_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                is_accessible BOOLEAN NOT NULL,
+                test_port INTEGER NOT NULL,
+                test_path TEXT NOT NULL,
+                container_id TEXT,
+                response_content TEXT,
+                test_timestamp TEXT NOT NULL,
+                full_json TEXT NOT NULL,
+                error_message TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
             CREATE TABLE IF NOT EXISTS weight_allocation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 miner_uid INTEGER NOT NULL,
@@ -318,6 +348,8 @@ impl SimplePersistence {
             CREATE INDEX IF NOT EXISTS idx_executor_network_miner ON executor_network_profile(miner_uid);
             CREATE INDEX IF NOT EXISTS idx_executor_network_timestamp ON executor_network_profile(test_timestamp);
             CREATE INDEX IF NOT EXISTS idx_executor_network_country ON executor_network_profile(country);
+            CREATE INDEX IF NOT EXISTS idx_executor_docker_miner ON executor_docker_profile(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_executor_docker_updated ON executor_docker_profile(updated_at);
             "#,
         )
         .execute(&self.pool)
@@ -698,11 +730,12 @@ impl SimplePersistence {
             FROM miner_executors me
             JOIN miners m ON me.miner_id = m.id
             LEFT JOIN rentals r ON me.executor_id = r.executor_id
+                AND r.miner_id = me.miner_id
                 AND r.state IN ('Active', 'Provisioning', 'active', 'provisioning')
-            LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
-            LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id
-            LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id
-            LEFT JOIN executor_speedtest_profile esp ON me.executor_id = esp.executor_id
+            LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id AND gua.miner_id = me.miner_id
+            LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id AND me.miner_id = 'miner_' || ehp.miner_uid
+            LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id AND me.miner_id = 'miner_' || enp.miner_uid
+            LEFT JOIN executor_speedtest_profile esp ON me.executor_id = esp.executor_id AND me.miner_id = 'miner_' || esp.miner_uid
             WHERE r.id IS NULL
                 AND (me.status IS NULL OR me.status != 'offline')",
         );
@@ -1519,8 +1552,8 @@ impl SimplePersistence {
                 enp.region,
                 enp.country
              FROM miner_executors me
-             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id
-             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id
+             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id AND me.miner_id = 'miner_' || ehp.miner_uid
+             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id AND me.miner_id = 'miner_' || enp.miner_uid
              WHERE me.miner_id = ?",
         )
         .bind(miner_id)
@@ -1611,10 +1644,10 @@ impl SimplePersistence {
                 esp.upload_mbps,
                 esp.test_timestamp
              FROM miner_executors me
-             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
-             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id
-             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id
-             LEFT JOIN executor_speedtest_profile esp ON me.executor_id = esp.executor_id
+             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id AND gua.miner_id = me.miner_id
+             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id AND me.miner_id = 'miner_' || ehp.miner_uid
+             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id AND me.miner_id = 'miner_' || enp.miner_uid
+             LEFT JOIN executor_speedtest_profile esp ON me.executor_id = esp.executor_id AND me.miner_id = 'miner_' || esp.miner_uid
              WHERE me.executor_id = ? AND me.miner_id = ?
              GROUP BY me.executor_id, me.location,
                       ehp.cpu_model, ehp.cpu_cores, ehp.ram_gb,
@@ -2284,6 +2317,189 @@ impl SimplePersistence {
                 timezone,
                 test_timestamp,
             )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Store executor Docker validation profile information
+    #[allow(clippy::too_many_arguments)]
+    pub async fn store_executor_docker_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        service_active: bool,
+        docker_version: Option<String>,
+        images_pulled: Vec<String>,
+        dind_supported: bool,
+        validation_error: Option<String>,
+        full_json: &str,
+    ) -> Result<(), anyhow::Error> {
+        let images_json = serde_json::to_string(&images_pulled)?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO executor_docker_profile
+            (miner_uid, executor_id, service_active, docker_version, images_pulled, 
+             dind_supported, validation_error, full_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                service_active = excluded.service_active,
+                docker_version = excluded.docker_version,
+                images_pulled = excluded.images_pulled,
+                dind_supported = excluded.dind_supported,
+                validation_error = excluded.validation_error,
+                full_json = excluded.full_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(service_active)
+        .bind(docker_version)
+        .bind(&images_json)
+        .bind(dind_supported)
+        .bind(validation_error)
+        .bind(full_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get executor Docker validation profile
+    pub async fn get_executor_docker_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<
+        Option<(
+            String,
+            bool,
+            Option<String>,
+            Vec<String>,
+            bool,
+            Option<String>,
+        )>,
+        anyhow::Error,
+    > {
+        let row = sqlx::query(
+            r#"
+            SELECT service_active, docker_version, images_pulled, dind_supported, validation_error, full_json
+            FROM executor_docker_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let full_json: String = row.get("full_json");
+            let service_active: bool = row.get("service_active");
+            let docker_version: Option<String> = row.get("docker_version");
+            let images_pulled_json: String = row.get("images_pulled");
+            let images_pulled: Vec<String> = serde_json::from_str(&images_pulled_json)?;
+            let dind_supported: bool = row.get("dind_supported");
+            let validation_error: Option<String> = row.get("validation_error");
+
+            Ok(Some((
+                full_json,
+                service_active,
+                docker_version,
+                images_pulled,
+                dind_supported,
+                validation_error,
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Store executor NAT validation profile information
+    pub async fn store_executor_nat_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        profile: &crate::miner_prover::validation_nat::NatProfile,
+    ) -> Result<(), anyhow::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO executor_nat_profile
+            (miner_uid, executor_id, is_accessible, test_port, test_path, container_id,
+             response_content, test_timestamp, full_json, error_message, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                is_accessible = excluded.is_accessible,
+                test_port = excluded.test_port,
+                test_path = excluded.test_path,
+                container_id = excluded.container_id,
+                response_content = excluded.response_content,
+                test_timestamp = excluded.test_timestamp,
+                full_json = excluded.full_json,
+                error_message = excluded.error_message,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(profile.is_accessible)
+        .bind(profile.test_port as i32)
+        .bind(&profile.test_path)
+        .bind(&profile.container_id)
+        .bind(&profile.response_content)
+        .bind(profile.test_timestamp.to_rfc3339())
+        .bind(&profile.full_json)
+        .bind(&profile.error_message)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get executor NAT validation profile
+    pub async fn get_executor_nat_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<Option<crate::miner_prover::validation_nat::NatProfile>, anyhow::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT is_accessible, test_port, test_path, container_id, response_content,
+                   test_timestamp, full_json, error_message
+            FROM executor_nat_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let is_accessible: bool = row.get("is_accessible");
+            let test_port: i32 = row.get("test_port");
+            let test_path: String = row.get("test_path");
+            let container_id: Option<String> = row.get("container_id");
+            let response_content: Option<String> = row.get("response_content");
+            let test_timestamp_str: String = row.get("test_timestamp");
+            let full_json: String = row.get("full_json");
+            let error_message: Option<String> = row.get("error_message");
+
+            let test_timestamp = chrono::DateTime::parse_from_rfc3339(&test_timestamp_str)?
+                .with_timezone(&chrono::Utc);
+
+            Ok(Some(crate::miner_prover::validation_nat::NatProfile {
+                is_accessible,
+                test_port: test_port as u16,
+                test_path,
+                container_id,
+                response_content,
+                test_timestamp,
+                full_json,
+                error_message,
+            }))
         } else {
             Ok(None)
         }

@@ -507,7 +507,7 @@ impl VerificationEngine {
                     details.len()
                 );
                 for (i, detail) in details.iter().enumerate() {
-                    debug!(
+                    info!(
                         "[EVAL_FLOW] Executor {}: id={}, grpc_endpoint={}",
                         i, detail.executor_id, detail.grpc_endpoint
                     );
@@ -532,8 +532,6 @@ impl VerificationEngine {
                     id: ExecutorId::from_str(&details.executor_id).map_err(|e| {
                         anyhow::anyhow!("Invalid executor ID '{}': {}", details.executor_id, e)
                     })?,
-                    host: "unknown".to_string(), // Will be filled from SSH credentials
-                    port: 22,
                     status: "available".to_string(),
                     capabilities: vec!["gpu".to_string()],
                     grpc_endpoint: details.grpc_endpoint,
@@ -1938,10 +1936,11 @@ impl VerificationEngine {
             ssh_key_manager,
             ssh_session_manager: Arc::new(SshSessionManager::new()),
             validation_strategy_selector: Arc::new(ValidationStrategySelector::new(
-                config,
+                config.clone(),
                 persistence.clone(),
             )),
             validation_executor: Arc::new(tokio::sync::RwLock::new(ValidationExecutor::new(
+                config.clone(),
                 ssh_client.clone(),
                 metrics,
                 persistence.clone(),
@@ -2580,8 +2579,6 @@ impl VerificationEngine {
 
             executors.push(ExecutorInfoDetailed {
                 id: executor_id_parsed,
-                host: "from_database".to_string(),
-                port: 22,
                 status,
                 capabilities: if gpu_count > 0 {
                     vec!["gpu".to_string()]

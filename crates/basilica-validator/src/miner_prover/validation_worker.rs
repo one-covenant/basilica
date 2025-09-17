@@ -1214,8 +1214,6 @@ mod tests {
         use uuid::Uuid;
         ExecutorInfoDetailed {
             id: ExecutorId::from_uuid(Uuid::new_v4()),
-            host: "test-host".to_string(),
-            port: 22,
             status: "online".to_string(),
             capabilities: vec!["gpu".to_string()],
             grpc_endpoint: format!("http://executor-{}.test:8080", id),

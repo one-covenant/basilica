@@ -9,7 +9,9 @@ use super::types::{
     ValidationType,
 };
 use super::validation_binary::BinaryValidator;
+use super::validation_docker::DockerCollector;
 use super::validation_hardware::HardwareCollector;
+use super::validation_nat::NatCollector;
 use super::validation_network::NetworkProfileCollector;
 use super::validation_speedtest::NetworkSpeedCollector;
 use crate::config::VerificationConfig;
@@ -52,6 +54,8 @@ pub struct ValidationExecutor {
     hardware_collector: HardwareCollector,
     network_collector: NetworkProfileCollector,
     speedtest_collector: NetworkSpeedCollector,
+    docker_collector: DockerCollector,
+    nat_collector: NatCollector,
     metrics: Option<Arc<ValidatorMetrics>>,
 }
 
@@ -286,6 +290,7 @@ impl ValidationStrategySelector {
 impl ValidationExecutor {
     /// Create a new validation executor
     pub fn new(
+        config: VerificationConfig,
         ssh_client: Arc<ValidatorSshClient>,
         metrics: Option<Arc<ValidatorMetrics>>,
         persistence: Arc<SimplePersistence>,
@@ -294,13 +299,24 @@ impl ValidationExecutor {
         let hardware_collector = HardwareCollector::new(ssh_client.clone(), persistence.clone());
         let network_collector =
             NetworkProfileCollector::new(ssh_client.clone(), persistence.clone());
-        let speedtest_collector = NetworkSpeedCollector::new(ssh_client.clone(), persistence);
+        let speedtest_collector =
+            NetworkSpeedCollector::new(ssh_client.clone(), persistence.clone());
+        let docker_collector = DockerCollector::new(
+            ssh_client.clone(),
+            persistence.clone(),
+            config.docker_validation.docker_image.clone(),
+            config.docker_validation.pull_timeout_secs,
+        );
+        let nat_collector = NatCollector::new(ssh_client.clone(), persistence);
+
         Self {
             ssh_client,
             binary_validator,
             hardware_collector,
             network_collector,
             speedtest_collector,
+            docker_collector,
+            nat_collector,
             metrics,
         }
     }
@@ -508,8 +524,20 @@ impl ValidationExecutor {
                 miner_uid,
                 ssh_details,
             );
+            let docker_future =
+                self.docker_collector
+                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+            let nat_future =
+                self.nat_collector
+                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
 
-            tokio::join!(hardware_future, network_future, speedtest_future);
+            tokio::join!(
+                hardware_future,
+                network_future,
+                speedtest_future,
+                docker_future,
+                nat_future
+            );
         }
 
         // Phase 2: Binary Validation
