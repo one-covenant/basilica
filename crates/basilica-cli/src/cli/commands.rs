@@ -121,23 +121,41 @@ pub enum Commands {
     /// Log out of Basilica
     Logout,
 
-    /// Export authentication token for automation
-    ExportToken {
-        /// Name for the token (for documentation)
-        #[arg(long)]
-        name: Option<String>,
-
-        /// Output format (env, json, or shell)
-        #[arg(long, default_value = "env")]
-        format: String,
-    },
-
     /// Test authentication token
     #[cfg(debug_assertions)]
     TestAuth {
         /// Test against Basilica API instead of Auth0
         #[arg(long)]
         api: bool,
+    },
+
+    /// Tokens management commands
+    Tokens {
+        #[command(subcommand)]
+        action: TokenAction,
+    },
+}
+
+/// Token management actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum TokenAction {
+    /// Create a new API key
+    Create {
+        /// Name for the API key (will prompt if not provided)
+        name: Option<String>,
+    },
+
+    /// List all API keys
+    List,
+
+    /// Revoke an API key
+    Revoke {
+        /// Name of the API key to revoke (will prompt if not provided)
+        name: Option<String>,
+
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
     },
 }
 
@@ -155,7 +173,7 @@ impl Commands {
             | Commands::Exec { .. }
             | Commands::Ssh { .. }
             | Commands::Cp { .. }
-            | Commands::ExportToken { .. } => true,
+            | Commands::Tokens { .. } => true,
 
             // Authentication and delegation commands don't require auth
             Commands::Login { .. }

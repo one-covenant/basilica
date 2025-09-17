@@ -207,7 +207,6 @@ impl Server {
 
         let app = Router::new()
             .merge(api::routes(state.clone()))
-            .merge(api::docs_routes())
             .layer(middleware)
             .with_state(state);
 

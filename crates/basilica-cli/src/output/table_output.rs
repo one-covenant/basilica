@@ -4,7 +4,7 @@ use crate::error::Result;
 use basilica_api::country_mapping::get_country_name_from_code;
 use basilica_common::LocationProfile;
 use basilica_sdk::{
-    types::{ApiRentalListItem, ExecutorDetails, GpuSpec, RentalStatusResponse},
+    types::{ApiKeyInfo, ApiRentalListItem, ExecutorDetails, GpuSpec, RentalStatusResponse},
     AvailableExecutor,
 };
 use basilica_validator::gpu::GpuCategory;
@@ -372,6 +372,37 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
 
     let total_count = executors.len();
     println!("Total available executors: {}", total_count);
+
+    Ok(())
+}
+
+/// Display API keys in table format
+pub fn display_api_keys(keys: &[ApiKeyInfo]) -> Result<()> {
+    #[derive(Tabled)]
+    struct ApiKeyRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Created")]
+        created: String,
+        #[tabled(rename = "Last Used")]
+        last_used: String,
+    }
+
+    let rows: Vec<ApiKeyRow> = keys
+        .iter()
+        .map(|key| ApiKeyRow {
+            name: key.name.clone(),
+            created: format_timestamp(&key.created_at.to_rfc3339()),
+            last_used: key
+                .last_used_at
+                .map(|dt| format_timestamp(&dt.to_rfc3339()))
+                .unwrap_or_else(|| "Never".to_string()),
+        })
+        .collect();
+
+    let mut table = Table::new(rows);
+    table.with(Style::modern());
+    println!("{table}");
 
     Ok(())
 }
