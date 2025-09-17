@@ -100,7 +100,7 @@ pub async fn handle_ls(
         available: Some(true), // Filter for available executors only
         min_gpu_memory: filters.memory_min,
         gpu_type,
-        min_gpu_count: Some(filters.gpu_min.unwrap_or(1)),
+        min_gpu_count: Some(filters.gpu_min.unwrap_or(0)),
         location: filters.country.map(|country| LocationProfile {
             city: None,
             region: None,
@@ -166,7 +166,7 @@ pub async fn handle_up(
                     gpu_requirements: GpuRequirements {
                         min_memory_gb: 0, // Default, no minimum memory requirement
                         gpu_type: Some(gpu_category.as_str()),
-                        gpu_count: options.gpu_min.unwrap_or(1),
+                        gpu_count: options.gpu_min.unwrap_or(0),
                     },
                 }
             }
@@ -246,10 +246,10 @@ pub async fn handle_up(
         environment: env_vars,
         ports: port_mappings,
         resources: ResourceRequirementsRequest {
-            cpu_cores: options.cpu_cores.unwrap_or(1.0),
-            memory_mb: options.memory_mb.unwrap_or(1024),
-            storage_mb: 102400,
-            gpu_count: options.gpu_min.unwrap_or(1),
+            cpu_cores: options.cpu_cores.unwrap_or(0.0),
+            memory_mb: options.memory_mb.unwrap_or(0),
+            storage_mb: options.storage_mb.unwrap_or(0),
+            gpu_count: options.gpu_min.unwrap_or(0),
             gpu_types: vec![],
         },
         command,

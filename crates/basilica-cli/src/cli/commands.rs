@@ -252,6 +252,10 @@ pub struct UpOptions {
     #[arg(long)]
     pub memory_mb: Option<i64>,
 
+    /// Storage in MB
+    #[arg(long)]
+    pub storage_mb: Option<i64>,
+
     /// Command to run
     #[arg(long)]
     pub command: Vec<String>,
