@@ -293,6 +293,22 @@ impl SimplePersistence {
                 PRIMARY KEY (miner_uid, executor_id)
             );
 
+            CREATE TABLE IF NOT EXISTS executor_nat_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                is_accessible BOOLEAN NOT NULL,
+                test_port INTEGER NOT NULL,
+                test_path TEXT NOT NULL,
+                container_id TEXT,
+                response_content TEXT,
+                test_timestamp TEXT NOT NULL,
+                full_json TEXT NOT NULL,
+                error_message TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
             CREATE TABLE IF NOT EXISTS weight_allocation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 miner_uid INTEGER NOT NULL,
@@ -2487,6 +2503,94 @@ impl SimplePersistence {
                 dind_supported,
                 validation_error,
             )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Store executor NAT validation profile information
+    pub async fn store_executor_nat_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        profile: &crate::miner_prover::validation_nat::NatProfile,
+    ) -> Result<(), anyhow::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO executor_nat_profile
+            (miner_uid, executor_id, is_accessible, test_port, test_path, container_id,
+             response_content, test_timestamp, full_json, error_message, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                is_accessible = excluded.is_accessible,
+                test_port = excluded.test_port,
+                test_path = excluded.test_path,
+                container_id = excluded.container_id,
+                response_content = excluded.response_content,
+                test_timestamp = excluded.test_timestamp,
+                full_json = excluded.full_json,
+                error_message = excluded.error_message,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(profile.is_accessible)
+        .bind(profile.test_port as i32)
+        .bind(&profile.test_path)
+        .bind(&profile.container_id)
+        .bind(&profile.response_content)
+        .bind(profile.test_timestamp.to_rfc3339())
+        .bind(&profile.full_json)
+        .bind(&profile.error_message)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get executor NAT validation profile
+    pub async fn get_executor_nat_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<Option<crate::miner_prover::validation_nat::NatProfile>, anyhow::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT is_accessible, test_port, test_path, container_id, response_content,
+                   test_timestamp, full_json, error_message
+            FROM executor_nat_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let is_accessible: bool = row.get("is_accessible");
+            let test_port: i32 = row.get("test_port");
+            let test_path: String = row.get("test_path");
+            let container_id: Option<String> = row.get("container_id");
+            let response_content: Option<String> = row.get("response_content");
+            let test_timestamp_str: String = row.get("test_timestamp");
+            let full_json: String = row.get("full_json");
+            let error_message: Option<String> = row.get("error_message");
+
+            let test_timestamp = chrono::DateTime::parse_from_rfc3339(&test_timestamp_str)?
+                .with_timezone(&chrono::Utc);
+
+            Ok(Some(crate::miner_prover::validation_nat::NatProfile {
+                is_accessible,
+                test_port: test_port as u16,
+                test_path,
+                container_id,
+                response_content,
+                test_timestamp,
+                full_json,
+                error_message,
+            }))
         } else {
             Ok(None)
         }

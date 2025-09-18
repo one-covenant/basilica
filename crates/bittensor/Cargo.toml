@@ -17,19 +17,14 @@ tracing = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
-tokio-stream = "0.1"
-
-# Bittensor integration
-crabtensor = { workspace = true }
 
 # Additional dependencies for subxt and crypto
 subxt = { workspace = true }
-hex = "0.4"
-sp-core = "34.0.0"
-rand = "0.8"
-chrono = "0.4"
-home = "0.5"
-serde_json = "1.0"
+hex = { workspace = true }
+rand = { workspace = true }
+chrono = { workspace = true }
+home = { workspace = true }
+serde_json = { workspace = true }
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
@@ -38,16 +33,15 @@ basilica-common = { path = "../basilica-common" }
 subxt-codegen = { workspace = true, optional = true }
 subxt-metadata = { workspace = true, optional = true }
 subxt-utils-fetchmetadata = { workspace = true, features = ["url"] , optional = true}
-parity-scale-codec = { version = "3.6", optional = true }
+parity-scale-codec = { workspace = true, optional = true }
 
 [build-dependencies]
 tokio = { workspace = true }
-parity-scale-codec = "3.6"
+parity-scale-codec = { workspace = true }
 
 [[bin]]
 name = "generate-metadata"
 path = "src/bin/generate-metadata.rs"
 required-features = ["generate-metadata"]
 
-[dev-dependencies]
-tokio-test = "0.4" 
+[dev-dependencies] 

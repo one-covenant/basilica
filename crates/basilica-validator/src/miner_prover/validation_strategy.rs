@@ -11,6 +11,7 @@ use super::types::{
 use super::validation_binary::BinaryValidator;
 use super::validation_docker::DockerCollector;
 use super::validation_hardware::HardwareCollector;
+use super::validation_nat::NatCollector;
 use super::validation_network::NetworkProfileCollector;
 use super::validation_speedtest::NetworkSpeedCollector;
 use crate::config::VerificationConfig;
@@ -54,6 +55,7 @@ pub struct ValidationExecutor {
     network_collector: NetworkProfileCollector,
     speedtest_collector: NetworkSpeedCollector,
     docker_collector: DockerCollector,
+    nat_collector: NatCollector,
     metrics: Option<Arc<ValidatorMetrics>>,
 }
 
@@ -301,10 +303,11 @@ impl ValidationExecutor {
             NetworkSpeedCollector::new(ssh_client.clone(), persistence.clone());
         let docker_collector = DockerCollector::new(
             ssh_client.clone(),
-            persistence,
+            persistence.clone(),
             config.docker_validation.docker_image.clone(),
             config.docker_validation.pull_timeout_secs,
         );
+        let nat_collector = NatCollector::new(ssh_client.clone(), persistence);
 
         Self {
             ssh_client,
@@ -313,6 +316,7 @@ impl ValidationExecutor {
             network_collector,
             speedtest_collector,
             docker_collector,
+            nat_collector,
             metrics,
         }
     }
@@ -523,12 +527,16 @@ impl ValidationExecutor {
             let docker_future =
                 self.docker_collector
                     .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+            let nat_future =
+                self.nat_collector
+                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
 
             tokio::join!(
                 hardware_future,
                 network_future,
                 speedtest_future,
-                docker_future
+                docker_future,
+                nat_future
             );
         }
 

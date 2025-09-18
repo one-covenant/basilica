@@ -7,12 +7,8 @@ use basilica_common::LocationProfile;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[cfg(feature = "openapi")]
-use utoipa::ToSchema;
-
 /// Request to rent GPU capacity
 #[derive(Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentCapacityRequest {
     pub gpu_requirements: GpuRequirements,
     pub ssh_public_key: String,
@@ -22,7 +18,6 @@ pub struct RentCapacityRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct GpuRequirements {
     pub min_memory_gb: u32,
     pub gpu_type: Option<String>,
@@ -41,7 +36,6 @@ impl Default for GpuRequirements {
 
 /// Response for capacity rental request
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentCapacityResponse {
     pub rental_id: String,
     pub executor: ExecutorDetails,
@@ -49,7 +43,6 @@ pub struct RentCapacityResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct NetworkSpeedInfo {
     pub download_mbps: Option<f64>,
     pub upload_mbps: Option<f64>,
@@ -57,7 +50,6 @@ pub struct NetworkSpeedInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ExecutorDetails {
     pub id: String,
     pub gpu_specs: Vec<GpuSpec>,
@@ -68,7 +60,6 @@ pub struct ExecutorDetails {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct GpuSpec {
     pub name: String,
     pub memory_gb: u32,
@@ -76,7 +67,6 @@ pub struct GpuSpec {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CpuSpec {
     pub cores: u32,
     pub model: String,
@@ -84,7 +74,6 @@ pub struct CpuSpec {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SshAccess {
     pub host: String,
     pub port: u16,
@@ -93,14 +82,12 @@ pub struct SshAccess {
 
 /// Request to terminate a rental
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct TerminateRentalRequest {
     pub reason: Option<String>,
 }
 
 /// Rental status information
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentalStatusResponse {
     pub rental_id: String,
     pub status: RentalStatus,
@@ -110,7 +97,6 @@ pub struct RentalStatusResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum RentalStatus {
     Pending,
@@ -121,21 +107,18 @@ pub enum RentalStatus {
 
 /// Available executors listing
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ListAvailableExecutorsResponse {
     pub available_executors: Vec<AvailableExecutor>,
     pub total_count: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct AvailableExecutor {
     pub executor: ExecutorDetails,
     pub availability: AvailabilityInfo,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct AvailabilityInfo {
     pub available_until: Option<chrono::DateTime<chrono::Utc>>,
     pub verification_score: f64,
@@ -144,7 +127,6 @@ pub struct AvailabilityInfo {
 
 /// Query parameters for listing available executors
 #[derive(Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ListAvailableExecutorsQuery {
     /// Filter for available executors only (default: true for /executors endpoint)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -162,7 +144,6 @@ pub struct ListAvailableExecutorsQuery {
 
 /// Log streaming query parameters
 #[derive(Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct LogQuery {
     pub follow: Option<bool>,
     pub tail: Option<u32>,
@@ -342,7 +323,6 @@ pub struct RentalListItem {
 
 /// Response for listing rentals
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ListRentalsResponse {
     pub rentals: Vec<RentalListItem>,
     pub total_count: usize,

@@ -6,7 +6,7 @@ use crate::{
             archive_rental_ownership, get_user_rentals_with_ssh, store_rental_ownership,
             OwnedRental,
         },
-        middleware::Auth0Claims,
+        middleware::AuthContext,
     },
     country_mapping::normalize_country_code,
     error::Result,
@@ -58,11 +58,11 @@ pub async fn get_rental_status(
 /// Start a new rental (validator-compatible endpoint)
 pub async fn start_rental(
     State(state): State<AppState>,
-    axum::Extension(claims): axum::Extension<Auth0Claims>,
+    axum::Extension(auth_context): axum::Extension<AuthContext>,
     Json(request): Json<StartRentalApiRequest>,
 ) -> Result<Json<RentalResponse>> {
-    // Get user ID from auth claims (already extracted via Extension)
-    let user_id = &claims.sub;
+    // Get user ID from auth context (already extracted via Extension)
+    let user_id = &auth_context.user_id;
 
     // Validate SSH public key
     if !is_valid_ssh_public_key(&request.ssh_public_key) {
@@ -112,7 +112,7 @@ pub async fn start_rental(
             if executors_response.available_executors.is_empty() {
                 error!("No executors match the specified GPU requirements");
                 return Err(crate::error::ApiError::NotFound {
-                    resource: "executor matching GPU requirements".into(),
+                    message: "executor matching GPU requirements".into(),
                 });
             }
 
@@ -304,13 +304,13 @@ pub async fn stream_rental_logs(
 /// Only returns rentals owned by the authenticated user
 pub async fn list_rentals_validator(
     State(state): State<AppState>,
-    axum::Extension(claims): axum::Extension<Auth0Claims>,
+    axum::Extension(auth_context): axum::Extension<AuthContext>,
     Query(query): Query<ListRentalsQuery>,
 ) -> Result<Json<ApiListRentalsResponse>> {
     info!("Listing rentals with state filter: {:?}", query.status);
 
-    // Get user ID from auth claims (already extracted via Extension)
-    let user_id = &claims.sub;
+    // Get user ID from auth context (already extracted via Extension)
+    let user_id = &auth_context.user_id;
 
     // Get user's rental IDs with SSH status from database
     let user_rentals_with_ssh = get_user_rentals_with_ssh(&state.db, user_id)

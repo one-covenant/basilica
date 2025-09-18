@@ -56,10 +56,10 @@ impl Default for DeploymentConfig {
             ],
             blocked_images: vec!["alpine/socat".to_string(), "nicolaka/netshoot".to_string()],
             default_resource_limits: DefaultResourceLimits {
-                max_cpu_cores: 8.0,
-                max_memory_mb: 32768,
-                max_storage_mb: 100 * 1024,
-                max_gpu_count: 4,
+                max_cpu_cores: 0.0,
+                max_memory_mb: 0,
+                max_storage_mb: 0,
+                max_gpu_count: 0,
             },
             network_policies: NetworkPolicies {
                 allowed_network_modes: vec!["bridge".to_string(), "none".to_string()],
@@ -253,7 +253,10 @@ impl DeploymentManager {
     fn validate_resources(&self, spec: &ContainerSpec) -> Result<()> {
         let limits = &self.config.default_resource_limits;
 
-        if spec.resources.cpu_cores > limits.max_cpu_cores {
+        if limits.max_cpu_cores > 0.0
+            && spec.resources.cpu_cores > 0.0
+            && spec.resources.cpu_cores > limits.max_cpu_cores
+        {
             return Err(anyhow::anyhow!(
                 "CPU cores {} exceeds limit {}",
                 spec.resources.cpu_cores,
@@ -261,7 +264,10 @@ impl DeploymentManager {
             ));
         }
 
-        if spec.resources.memory_mb > limits.max_memory_mb {
+        if limits.max_memory_mb > 0
+            && spec.resources.memory_mb > 0
+            && spec.resources.memory_mb > limits.max_memory_mb
+        {
             return Err(anyhow::anyhow!(
                 "Memory {} MB exceeds limit {} MB",
                 spec.resources.memory_mb,
@@ -269,7 +275,10 @@ impl DeploymentManager {
             ));
         }
 
-        if spec.resources.storage_mb > limits.max_storage_mb {
+        if limits.max_storage_mb > 0
+            && spec.resources.storage_mb > 0
+            && spec.resources.storage_mb > limits.max_storage_mb
+        {
             return Err(anyhow::anyhow!(
                 "Storage {} MB exceeds limit {} MB",
                 spec.resources.storage_mb,
@@ -277,7 +286,10 @@ impl DeploymentManager {
             ));
         }
 
-        if spec.resources.gpu_count > limits.max_gpu_count {
+        if limits.max_gpu_count > 0
+            && spec.resources.gpu_count > 0
+            && spec.resources.gpu_count > limits.max_gpu_count
+        {
             return Err(anyhow::anyhow!(
                 "GPU count {} exceeds limit {}",
                 spec.resources.gpu_count,
@@ -404,14 +416,6 @@ impl DeploymentManager {
         secured_spec
             .capabilities
             .retain(|cap| !dangerous_caps.contains(&cap.as_str()));
-
-        // Apply default resource limits if not specified
-        if secured_spec.resources.cpu_cores == 0.0 {
-            secured_spec.resources.cpu_cores = 1.0;
-        }
-        if secured_spec.resources.memory_mb == 0 {
-            secured_spec.resources.memory_mb = 1024;
-        }
 
         debug!("Applied security policies to container specification");
 

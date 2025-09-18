@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- New `--all` flag for `down` command to stop all active rentals at once
+
+## [0.3.2]
+
+### Changed
+- Fixed some default values, this shouldn't have any affect on users
+
+## [0.3.1]
+
+### Added
+- New `tokens` command for API token management:
+  - `tokens create` - Create a new API token with optional name and scopes
+  - `tokens list` - List all API tokens
+  - `tokens revoke` - Revoke the current API token
+  - Basilica API now supports authentication via API tokens generated via this in addition to JWT
+
+### Removed
+- Deprecated `export-token` command (replaced by the new `tokens` subcommands)
+
 ## [0.3.0]
 
 ### Added
