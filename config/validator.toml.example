@@ -130,6 +130,6 @@ weight_version_key = 0
 # are distributed across GPU categories
 # Must sum to exactly 100.0
 [emission.gpu_allocations]
-A100 = { weight = 8.0, min_gpu_count = 1, min_gpu_vram = 0 }
-H100 = { weight = 12.0, min_gpu_count = 1, min_gpu_vram = 0 }
-B200 = { weight = 80.0, min_gpu_count = 8, min_gpu_vram = 0 }
+A100 = { weight = 8.0, min_gpu_count = 1, min_gpu_vram = 1 }
+H100 = { weight = 12.0, min_gpu_count = 1, min_gpu_vram = 1 }
+B200 = { weight = 80.0, min_gpu_count = 8, min_gpu_vram = 1 }
