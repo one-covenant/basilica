@@ -337,7 +337,7 @@ impl DockerCollector {
                 .execute_command(
                     ssh_details,
                     "test -S /var/run/docker.sock && echo SOCKET_EXISTS || echo SOCKET_MISSING",
-                    false,
+                    true,
                 )
                 .await
             {
@@ -358,7 +358,7 @@ impl DockerCollector {
                 .execute_command(
                     ssh_details,
                     "systemctl is-active docker 2>/dev/null; echo EXIT_CODE=$?",
-                    false,
+                    true,
                 )
                 .await
             {
@@ -377,7 +377,7 @@ impl DockerCollector {
         let service_future = timeout(check_timeout, async {
             match self
                 .ssh_client
-                .execute_command(ssh_details, "service docker status", false)
+                .execute_command(ssh_details, "service docker status", true)
                 .await
             {
                 Ok(output) => {
@@ -398,7 +398,7 @@ impl DockerCollector {
                 .execute_command(
                     ssh_details,
                     "docker -v 2>/dev/null; echo EXIT_CODE=$?",
-                    false,
+                    true,
                 )
                 .await
             {
@@ -423,7 +423,7 @@ impl DockerCollector {
                 .execute_command(
                     ssh_details,
                     "docker info >/dev/null 2>&1; echo EXIT_CODE=$?",
-                    false,
+                    true,
                 )
                 .await
             {
@@ -438,7 +438,7 @@ impl DockerCollector {
                 .execute_command(
                     ssh_details,
                     "docker ps >/dev/null 2>&1; echo EXIT_CODE=$?",
-                    false,
+                    true,
                 )
                 .await
             {
@@ -488,7 +488,7 @@ impl DockerCollector {
             .execute_command(
                 ssh_details,
                 "docker version --format '{{.Server.Version}}' 2>/dev/null",
-                false,
+                true,
             )
             .await
         {
@@ -504,7 +504,7 @@ impl DockerCollector {
             .execute_command(
                 ssh_details,
                 "docker version 2>/dev/null | grep -i 'server' -A 5 | grep -i version | head -1",
-                false,
+                true,
             )
             .await?;
 
@@ -536,7 +536,7 @@ impl DockerCollector {
 
         let output = timeout(pull_timeout, async {
             self.ssh_client
-                .execute_command(ssh_details, &command, false)
+                .execute_command(ssh_details, &command, true)
                 .await
         })
         .await
@@ -577,7 +577,7 @@ impl DockerCollector {
         let command = format!("docker images -q {}", image);
         let output = self
             .ssh_client
-            .execute_command(ssh_details, &command, false)
+            .execute_command(ssh_details, &command, true)
             .await?;
 
         if !output.trim().is_empty() {
@@ -600,7 +600,7 @@ impl DockerCollector {
         let result = timeout(check_timeout, async {
             matches!(
                 self.ssh_client
-                    .execute_command(ssh_details, dind_command, false)
+                    .execute_command(ssh_details, dind_command, true)
                     .await,
                 Ok(output) if output.trim().contains("supported")
             )
@@ -640,7 +640,7 @@ impl DockerCollector {
 
         let result = timeout(check_timeout, async {
             self.ssh_client
-                .execute_command(ssh_details, &gpu_command, false)
+                .execute_command(ssh_details, &gpu_command, true)
                 .await
         })
         .await;
@@ -648,7 +648,7 @@ impl DockerCollector {
         let cleanup_command = format!("docker rm -f {} 2>/dev/null || true", container_name);
         let _ = self
             .ssh_client
-            .execute_command(ssh_details, &cleanup_command, false)
+            .execute_command(ssh_details, &cleanup_command, true)
             .await;
 
         match result {
