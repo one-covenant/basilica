@@ -1848,7 +1848,26 @@ impl SimplePersistence {
         .fetch_one(&self.pool)
         .await?;
 
-        Ok(memory as f64)
+        Ok(memory)
+    }
+
+    /// Get the GPU name/model for an executor from gpu_uuid_assignments
+    pub async fn get_executor_gpu_name_from_assignments(
+        &self,
+        miner_id: &str,
+        executor_id: &str,
+    ) -> Result<Option<String>, anyhow::Error> {
+        let gpu_name: Option<String> = sqlx::query_scalar(
+            "SELECT gpu_name FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ?
+             LIMIT 1",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(gpu_name)
     }
 
     /// Get the actual gpu_count for all ONLINE executors of a miner from gpu_uuid_assignments
