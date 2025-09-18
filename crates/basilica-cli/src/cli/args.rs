@@ -159,8 +159,8 @@ impl Args {
             Commands::Logs { target, options } => {
                 handlers::gpu_rental::handle_logs(target.clone(), options.clone(), config).await?;
             }
-            Commands::Down { target } => {
-                handlers::gpu_rental::handle_down(target.clone(), config).await?;
+            Commands::Down { target, all } => {
+                handlers::gpu_rental::handle_down(target.clone(), *all, config).await?;
             }
             Commands::Exec { command, target } => {
                 handlers::gpu_rental::handle_exec(target.clone(), command.clone(), config).await?;
