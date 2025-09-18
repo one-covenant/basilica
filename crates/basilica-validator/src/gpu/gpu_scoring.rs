@@ -282,7 +282,7 @@ impl GpuScoringEngine {
                                 let meets_gpu_count = *gpu_count >= allocation.min_gpu_count;
                                 let meets_vram = if let Some(min_vram) = allocation.min_gpu_vram {
                                     // Check if the miner's GPU has enough VRAM
-                                    *gpu_memory_gb >= min_vram as f64
+                                    min_vram == 1 || min_vram == 0 || *gpu_memory_gb >= min_vram as f64
                                 } else {
                                     // No VRAM requirement
                                     true

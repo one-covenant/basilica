@@ -1800,8 +1800,8 @@ impl SimplePersistence {
         executor_id: &str,
         index: u32,
     ) -> Result<f64, anyhow::Error> {
-        let memory: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(gpu_memory_gb, 0) FROM gpu_uuid_assignments
+        let memory: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(gpu_memory_gb, 0.0) FROM gpu_uuid_assignments
              WHERE miner_id = ? AND executor_id = ? AND gpu_index = ?",
         )
         .bind(miner_id)
@@ -1810,7 +1810,7 @@ impl SimplePersistence {
         .fetch_one(&self.pool)
         .await?;
 
-        Ok(memory as f64)
+        Ok(memory)
     }
 
     /// Get the actual gpu_memory_gb for a specific GPU index of an executor from gpu_uuid_assignments
@@ -1820,8 +1820,8 @@ impl SimplePersistence {
         executor_id: &str,
         gpu_uuid: &str,
     ) -> Result<f64, anyhow::Error> {
-        let memory: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(gpu_memory_gb, 0) FROM gpu_uuid_assignments
+        let memory: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(gpu_memory_gb, 0.0) FROM gpu_uuid_assignments
              WHERE miner_id = ? AND executor_id = ? AND gpu_uuid = ?",
         )
         .bind(miner_id)
@@ -1830,7 +1830,7 @@ impl SimplePersistence {
         .fetch_one(&self.pool)
         .await?;
 
-        Ok(memory as f64)
+        Ok(memory)
     }
 
     /// Get the actual gpu_memory_gb for the first GPU (index 0) of an executor from gpu_uuid_assignments
@@ -1839,8 +1839,8 @@ impl SimplePersistence {
         miner_id: &str,
         executor_id: &str,
     ) -> Result<f64, anyhow::Error> {
-        let memory: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(gpu_memory_gb, 0) FROM gpu_uuid_assignments
+        let memory: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(gpu_memory_gb, 0.0) FROM gpu_uuid_assignments
              WHERE miner_id = ? AND executor_id = ? AND gpu_index = 0",
         )
         .bind(miner_id)
@@ -1848,7 +1848,26 @@ impl SimplePersistence {
         .fetch_one(&self.pool)
         .await?;
 
-        Ok(memory as f64)
+        Ok(memory)
+    }
+
+    /// Get the GPU name/model for an executor from gpu_uuid_assignments
+    pub async fn get_executor_gpu_name_from_assignments(
+        &self,
+        miner_id: &str,
+        executor_id: &str,
+    ) -> Result<Option<String>, anyhow::Error> {
+        let gpu_name: Option<String> = sqlx::query_scalar(
+            "SELECT gpu_name FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ?
+             LIMIT 1",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(gpu_name)
     }
 
     /// Get the actual gpu_count for all ONLINE executors of a miner from gpu_uuid_assignments
