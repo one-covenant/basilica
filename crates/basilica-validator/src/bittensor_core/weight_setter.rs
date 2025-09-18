@@ -971,10 +971,47 @@ impl WeightSetter {
         let (hardware_score, gpu_count, gpu_memory_gb, network_bandwidth_mbps, gpu_model) =
             if let Some(specs) = hardware_specs {
                 // Extract GPU model from executor_result.gpu_name
-                let gpu_model = specs["executor_result"]["gpu_name"]
+                let mut gpu_model = specs["executor_result"]["gpu_name"]
                     .as_str()
-                    .unwrap_or("UNKNOWN")
-                    .to_string();
+                    .map(|s| s.to_string());
+
+                if gpu_model.is_none() || gpu_model.as_ref() == Some(&"UNKNOWN".to_string()) {
+                    debug!(
+                        executor_id = %executor_id,
+                        "GPU name not found in executor_result for executor {}, checking gpu_uuid_assignments",
+                        executor_id
+                    );
+
+                    match self
+                        .persistence
+                        .get_executor_gpu_name_from_assignments(miner_id, &executor_id.to_string())
+                        .await
+                    {
+                        Ok(Some(name)) => {
+                            debug!(
+                                executor_id = %executor_id,
+                                "Retrieved GPU model from assignments for executor {}: {}",
+                                executor_id, name
+                            );
+                            gpu_model = Some(name);
+                        }
+                        Ok(None) => {
+                            warn!(
+                                executor_id = %executor_id,
+                                "No GPU assignments found for executor {}",
+                                executor_id
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to get GPU model from assignments for executor {}: {}",
+                                executor_id, e
+                            );
+                        }
+                    }
+                }
+
+                let gpu_model = gpu_model.unwrap_or_else(|| "UNKNOWN".to_string());
 
                 let gpu_count = match self
                     .persistence
@@ -1014,17 +1051,53 @@ impl WeightSetter {
                 let score = self.calculate_hardware_score(&specs);
 
                 debug!(
-                    "Executor {}: Extracted GPU info - model: {}, count: {}, validation_success: {}",
-                    executor_id, gpu_model, gpu_count, log.success
+                    "Executor {}: Extracted GPU info - model: {}, count: {}, memory: {}GB, validation_success: {}",
+                    executor_id, gpu_model, gpu_count, gpu_memory_gb, log.success
                 );
 
                 (score, gpu_count, gpu_memory_gb, bandwidth, gpu_model)
             } else {
                 debug!(
-                    "Executor {}: No hardware specs available, validation_success: {}",
-                    executor_id, log.success
+                    "Executor {}: No hardware specs in verification log, checking gpu_uuid_assignments",
+                    executor_id
                 );
-                (0.0, 0, 0.0, 0.0, "UNKNOWN".to_string())
+
+                let gpu_model = match self
+                    .persistence
+                    .get_executor_gpu_name_from_assignments(miner_id, &executor_id.to_string())
+                    .await
+                {
+                    Ok(Some(name)) => {
+                        debug!(
+                            "Retrieved GPU model from assignments for executor {} (no specs): {}",
+                            executor_id, name
+                        );
+                        name
+                    }
+                    _ => "UNKNOWN".to_string(),
+                };
+
+                let gpu_count = match self
+                    .persistence
+                    .get_executor_gpu_count_from_assignments(miner_id, &executor_id.to_string())
+                    .await
+                {
+                    Ok(count) => count as usize,
+                    Err(_) => 0,
+                };
+
+                let gpu_memory_gb = (self
+                    .persistence
+                    .get_executor_first_gpu_memory_gb(miner_id, &executor_id.to_string())
+                    .await)
+                    .unwrap_or(0.0);
+
+                debug!(
+                    "Executor {}: From assignments only - model: {}, count: {}, memory: {}GB, validation_success: {}",
+                    executor_id, gpu_model, gpu_count, gpu_memory_gb, log.success
+                );
+
+                (0.0, gpu_count, gpu_memory_gb, 0.0, gpu_model)
             };
 
         Ok(ExecutorValidationResult {
