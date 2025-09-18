@@ -81,7 +81,7 @@ impl BlockchainEventHandler for PaymentsEventHandler {
     }
 
     async fn on_block_end(&self, block_number: u32) -> Result<()> {
-        if block_number % 128 == 0 {
+        if block_number.is_multiple_of(128) {
             self.refresh_known_accounts().await?;
         }
         Ok(())
