@@ -6,8 +6,8 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
-use std::collections::HashMap;
-use tracing::{debug, info};
+use std::collections::{hash_map::Entry as HashMapEntry, HashMap};
+use tracing::{debug, info, warn};
 
 use crate::gpu::{categorization::GpuCategory, MinerGpuProfile};
 use crate::persistence::SimplePersistence;
@@ -72,7 +72,25 @@ impl GpuProfileRepository {
             .await?;
         let mut assignments = HashMap::new();
         for (executor_id, count, name, memory_gb) in assignments_rows {
-            assignments.insert(executor_id, (count, name, memory_gb));
+            match assignments.entry(executor_id.clone()) {
+                HashMapEntry::Occupied(mut entry) => {
+                    // impossible case, but log a warning if it happens
+                    let (existing_count, existing_name, existing_memory) = entry.get();
+                    let total_count = existing_count + count;
+                    warn!(
+                        "Data inconsistency: executor {} has multiple GPU models ({} and {}). Aggregating counts.",
+                        executor_id, existing_name, name
+                    );
+                    if count > *existing_count {
+                        entry.insert((total_count, name, memory_gb));
+                    } else {
+                        entry.insert((total_count, existing_name.clone(), *existing_memory));
+                    }
+                }
+                HashMapEntry::Vacant(entry) => {
+                    entry.insert((count, name, memory_gb));
+                }
+            }
         }
 
         Ok(assignments)
