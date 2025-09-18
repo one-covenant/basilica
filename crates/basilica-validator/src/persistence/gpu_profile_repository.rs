@@ -866,14 +866,15 @@ mod tests {
                     let gpu_uuid =
                         format!("gpu-{}-{}-{}", profile.miner_uid.as_u16(), gpu_model, i);
                     sqlx::query(
-                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified)
-                         VALUES (?, ?, ?, ?, ?, ?)"
+                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)"
                     )
                     .bind(&gpu_uuid)
                     .bind(i as i32)
                     .bind(&executor_id)
                     .bind(&miner_id)
                     .bind(gpu_model)
+                    .bind(80i64) // Default 80GB for test data
                     .bind(now.to_rfc3339())
                     .execute(persistence.pool())
                     .await?;

@@ -1223,7 +1223,7 @@ impl VerificationEngine {
                 sqlx::query(
                     "INSERT INTO gpu_uuid_assignments
                      (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(&gpu_info.gpu_uuid)
                 .bind(gpu_info.index as i32)
