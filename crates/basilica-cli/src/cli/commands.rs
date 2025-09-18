@@ -54,6 +54,10 @@ pub enum Commands {
     Down {
         /// Rental UID/HUID to terminate (optional)
         target: Option<String>,
+
+        /// Stop all active rentals
+        #[arg(long, conflicts_with = "target")]
+        all: bool,
     },
 
     /// Execute commands on instances
