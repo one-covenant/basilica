@@ -225,7 +225,7 @@ impl SimplePersistence {
                 executor_id TEXT NOT NULL,
                 gpu_model TEXT NOT NULL,
                 gpu_count INTEGER NOT NULL,
-                gpu_memory_gb INTEGER NOT NULL,
+                gpu_memory_gb REAL NOT NULL,
                 attestation_valid INTEGER NOT NULL,
                 verification_timestamp TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -426,7 +426,7 @@ impl SimplePersistence {
                 executor_id TEXT NOT NULL,
                 miner_id TEXT NOT NULL,
                 gpu_name TEXT,
-                gpu_memory_gb INTEGER,
+                gpu_memory_gb REAL,
                 last_verified TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -453,7 +453,7 @@ impl SimplePersistence {
             sqlx::query(
                 r#"
                 ALTER TABLE gpu_uuid_assignments
-                ADD COLUMN gpu_memory_gb INTEGER DEFAULT NULL;
+                ADD COLUMN gpu_memory_gb REAL DEFAULT NULL;
                 "#,
             )
             .execute(&self.pool)
