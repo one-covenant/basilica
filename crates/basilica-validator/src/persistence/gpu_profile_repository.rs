@@ -1109,6 +1109,108 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_gpu_assignments_with_data_inconsistency() {
+        let (pool, _temp_file) = create_test_pool().await.unwrap();
+        let repo = GpuProfileRepository::new(pool.clone());
+        let _persistence = SimplePersistence::with_pool(pool.clone());
+
+        let miner_uid = MinerUid::new(1);
+        let miner_id = format!("miner_{}", miner_uid.as_u16());
+        let executor_id = "exec_1";
+
+        // Manually insert inconsistent data - same executor with different GPU models
+        // This shouldn't happen in reality but we handle it defensively
+        sqlx::query(
+            "INSERT INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, executor_info)
+             VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&miner_id)
+        .bind("hotkey_1")
+        .bind("127.0.0.1:8080")
+        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().to_rfc3339())
+        .bind("{}")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert executor
+        sqlx::query(
+            "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(format!("{}_{}", miner_id, executor_id))
+        .bind(&miner_id)
+        .bind(executor_id)
+        .bind("127.0.0.1:8080")
+        .bind(5i64) // Total GPUs
+        .bind("{}")
+        .bind("{}")
+        .bind("online")
+        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().to_rfc3339())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert inconsistent GPU assignments - same executor, different models
+        // 3 A100s
+        for i in 0..3 {
+            sqlx::query(
+                "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            .bind(format!("gpu-a100-{}", i))
+            .bind(i)
+            .bind(executor_id)
+            .bind(&miner_id)
+            .bind("A100")
+            .bind(80.0)
+            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().to_rfc3339())
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        // 2 H100s (incorrect data - executor can't have mixed models)
+        for i in 0..2 {
+            sqlx::query(
+                "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            .bind(format!("gpu-h100-{}", i))
+            .bind(i + 3)
+            .bind(executor_id)
+            .bind(&miner_id)
+            .bind("H100")
+            .bind(80.0)
+            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().to_rfc3339())
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        // Get assignments - should aggregate and keep the model with higher count
+        let assignments = repo.get_miner_gpu_assignments(miner_uid).await.unwrap();
+
+        // Should have only one entry per executor
+        assert_eq!(assignments.len(), 1);
+        assert!(assignments.contains_key(executor_id));
+
+        let (count, gpu_model, memory) = assignments.get(executor_id).unwrap();
+        // Should aggregate counts: 3 + 2 = 5
+        assert_eq!(*count, 5);
+        // Should keep A100 (had higher count: 3 > 2)
+        assert_eq!(gpu_model, "A100");
+        assert_eq!(*memory, 80.0);
+    }
+
+    #[tokio::test]
     async fn test_emission_metrics_storage() {
         let (pool, _temp_file) = create_test_pool().await.unwrap();
         let repo = GpuProfileRepository::new(pool);
