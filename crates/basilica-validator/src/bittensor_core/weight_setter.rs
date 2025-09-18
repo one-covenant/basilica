@@ -999,7 +999,7 @@ impl WeightSetter {
                     Ok(mem) => mem,
                     Err(e) => {
                         warn!(
-                            "Failed to get GPU memory from assignments for executor {}: {}, using 0",
+                            "Failed to get GPU memory from assignments for executor {}: {}, using 0.0",
                             executor_id, e
                         );
                         0.0
