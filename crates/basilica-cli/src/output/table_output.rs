@@ -112,8 +112,6 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Re
         struct DetailedRentalRow {
             #[tabled(rename = "GPU")]
             gpu: String,
-            #[tabled(rename = "Rental ID")]
-            rental_id: String,
             #[tabled(rename = "State")]
             state: String,
             #[tabled(rename = "SSH")]
@@ -163,7 +161,6 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], detailed: bool) -> Re
 
                 DetailedRentalRow {
                     gpu,
-                    rental_id: rental.rental_id.clone(),
                     state: rental.state.to_string(),
                     ssh: ssh.to_string(),
                     image: rental.container_image.clone(),
@@ -421,8 +418,6 @@ pub fn display_available_executors_detailed(
     struct DetailedExecutorRow {
         #[tabled(rename = "GPU")]
         gpu_info: String,
-        #[tabled(rename = "Executor ID")]
-        id: String,
         #[tabled(rename = "CPU")]
         cpu: String,
         #[tabled(rename = "RAM")]
@@ -484,12 +479,6 @@ pub fn display_available_executors_detailed(
                 }
             };
 
-            // Remove miner prefix from executor ID if present
-            let executor_id = match executor.executor.id.split_once("__") {
-                Some((_, second)) => second.to_string(),
-                None => executor.executor.id.clone(),
-            };
-
             // Parse and format location using LocationProfile's Display trait
             let location = executor
                 .executor
@@ -505,7 +494,6 @@ pub fn display_available_executors_detailed(
 
             DetailedExecutorRow {
                 gpu_info,
-                id: executor_id,
                 cpu: format!(
                     "{} ({} cores)",
                     executor.executor.cpu_specs.model, executor.executor.cpu_specs.cores
