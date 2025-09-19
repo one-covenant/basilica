@@ -33,6 +33,8 @@ axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 chrono = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
 
 [dependencies.basilica-protocol]
 path = "../basilica-protocol"
