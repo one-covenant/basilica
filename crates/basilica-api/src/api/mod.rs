@@ -35,6 +35,8 @@ pub fn routes(state: AppState) -> Router<AppState> {
             post(routes::api_keys::create_key).get(routes::api_keys::list_keys),
         )
         .route("/api-keys/:name", delete(routes::api_keys::revoke_key))
+        // Payment service endpoints
+        .nest("/payments", routes::payments::routes())
         // Apply scope validation AFTER auth middleware
         .layer(axum::middleware::from_fn(
             middleware::scope_validation_middleware,
