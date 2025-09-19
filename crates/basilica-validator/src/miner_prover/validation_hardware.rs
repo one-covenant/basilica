@@ -166,6 +166,7 @@ fn find_nodes_by_class<'a>(
 }
 
 /// Hardware collector for gathering hardware profiles from executors
+#[derive(Clone)]
 pub struct HardwareCollector {
     ssh_client: Arc<ValidatorSshClient>,
     persistence: Arc<SimplePersistence>,

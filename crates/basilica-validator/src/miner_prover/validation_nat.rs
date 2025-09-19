@@ -22,6 +22,7 @@ pub struct NatProfile {
     pub error_message: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct NatCollector {
     ssh_client: Arc<ValidatorSshClient>,
     persistence: Arc<SimplePersistence>,

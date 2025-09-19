@@ -553,24 +553,22 @@ impl ValidationExecutor {
         let mut quality_validations_successful = false;
         if ssh_connection_successful {
             let executor_id = executor_info.id.to_string();
+            let hardware_collector = self.hardware_collector.clone();
+            let network_collector = self.network_collector.clone();
+            let speedtest_collector = self.speedtest_collector.clone();
+            let docker_collector = self.docker_collector.clone();
+            let nat_collector = self.nat_collector.clone();
 
             let hardware_future =
-                self.hardware_collector
-                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                hardware_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
             let network_future =
-                self.network_collector
-                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
-            let speedtest_future = self.speedtest_collector.collect_with_fallback(
-                &executor_id,
-                miner_uid,
-                ssh_details,
-            );
+                network_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
+            let speedtest_future =
+                speedtest_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
             let docker_future =
-                self.docker_collector
-                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                docker_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
             let nat_future =
-                self.nat_collector
-                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                nat_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
 
             let (_hardware, _network, _speedtest, docker_result, nat_result) = tokio::join!(
                 hardware_future,

@@ -97,6 +97,7 @@ impl NetworkProfile {
 }
 
 /// Network profile collector
+#[derive(Clone)]
 pub struct NetworkProfileCollector {
     ssh_client: Arc<ValidatorSshClient>,
     persistence: Arc<SimplePersistence>,

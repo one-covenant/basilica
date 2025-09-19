@@ -3,13 +3,13 @@ use basilica_common::ssh::SshConnectionDetails;
 use basilica_common::utils::validate_docker_image;
 use std::sync::Arc;
 use tokio::time::{timeout, Duration};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::persistence::SimplePersistence;
 use crate::ssh::ValidatorSshClient;
 
-const DEFAULT_TIMEOUT_SECS: u64 = 15;
+const DEFAULT_TIMEOUT_SECS: u64 = 60;
 
 /// Docker validation profile
 #[derive(Debug, Clone)]
@@ -55,6 +55,7 @@ impl DockerProfile {
 }
 
 /// Docker validation collector
+#[derive(Clone)]
 pub struct DockerCollector {
     ssh_client: Arc<ValidatorSshClient>,
     persistence: Arc<SimplePersistence>,
@@ -270,8 +271,35 @@ impl DockerCollector {
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Option<DockerProfile> {
-        match self.collect(executor_id, ssh_details).await {
+        info!(
+            executor_id = executor_id,
+            miner_uid = miner_uid,
+            "[DOCKER_PROFILE] collect_with_fallback called - starting Docker validation"
+        );
+
+        let collect_result = match tokio::time::timeout(
+            Duration::from_secs(2400), // 40 minutes timeout
+            self.collect(executor_id, ssh_details),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                error!(
+                    executor_id = executor_id,
+                    miner_uid = miner_uid,
+                    "[DOCKER_PROFILE] Docker validation timed out after 30 minutes"
+                );
+                return None;
+            }
+        };
+
+        match collect_result {
             Ok(profile) => {
+                debug!(
+                    executor_id = executor_id,
+                    "[DOCKER_PROFILE] Docker validation succeeded, attempting to store profile"
+                );
                 // Try to store but don't fail if storage fails
                 if let Err(e) = self.store(miner_uid, executor_id, &profile).await {
                     warn!(
@@ -286,6 +314,7 @@ impl DockerCollector {
             Err(e) => {
                 error!(
                     executor_id = executor_id,
+                    miner_uid = miner_uid,
                     error = %e,
                     "[DOCKER_PROFILE] Docker validation failed: {}",
                     e
