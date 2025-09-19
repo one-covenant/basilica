@@ -262,24 +262,14 @@ impl NatCollector {
                 error!(
                     executor_id = executor_id,
                     error = %e,
-                    "[NAT] NAT validation failed"
+                    "[NAT] NAT validation failed: {}",
+                    e
                 );
 
-                Ok(NatProfile {
-                    is_accessible: false,
-                    test_port,
-                    test_path: format!("/{}", test_path),
-                    container_id,
-                    response_content: None,
-                    test_timestamp: Utc::now(),
-                    full_json: serde_json::json!({
-                        "error": e.to_string(),
-                        "test_port": test_port,
-                        "test_path": test_path,
-                    })
-                    .to_string(),
-                    error_message: Some(e.to_string()),
-                })
+                Err(anyhow::anyhow!(
+                    "NAT validation failed: executor not accessible from internet - {}",
+                    e
+                ))
             }
         }
     }
@@ -334,10 +324,11 @@ impl NatCollector {
                 Some(profile)
             }
             Err(e) => {
-                warn!(
+                error!(
                     executor_id = executor_id,
                     error = %e,
-                    "[NAT] NAT validation failed (non-critical)"
+                    "[NAT] NAT validation failed: {}",
+                    e
                 );
                 None
             }
