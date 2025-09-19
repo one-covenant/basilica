@@ -81,4 +81,20 @@ impl OutboxRepo for PgRepos {
         .await?;
         Ok(())
     }
+
+    async fn get_pending_count(&self) -> Result<usize> {
+        let row = sqlx::query(
+            r#"
+            SELECT COUNT(*) as count
+            FROM billing_outbox
+            WHERE dispatched_at IS NULL
+              AND next_attempt_at <= now()
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let count: i64 = row.get("count");
+        Ok(count as usize)
+    }
 }
