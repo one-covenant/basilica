@@ -93,6 +93,7 @@ impl NetworkSpeedProfile {
 }
 
 /// Network speed test collector for gathering network performance from executors
+#[derive(Clone)]
 pub struct NetworkSpeedCollector {
     ssh_client: Arc<ValidatorSshClient>,
     persistence: Arc<SimplePersistence>,

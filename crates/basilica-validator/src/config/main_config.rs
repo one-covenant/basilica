@@ -288,7 +288,7 @@ fn default_docker_image() -> String {
 }
 
 fn default_docker_pull_timeout() -> u64 {
-    900 // 15 minutes
+    1800 // 30 minutes
 }
 
 fn default_server_bind_address() -> String {

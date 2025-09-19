@@ -82,28 +82,46 @@ impl ValidationStrategySelector {
             "[EVAL_FLOW] Determining validation strategy"
         );
 
-        let needs_binary_validation = self
-            .is_binary_validation_needed(executor_id, &miner_id, miner_uid)
+        // Check if executor has an active rental
+        let has_active_rental = self
+            .persistence
+            .has_active_rental(executor_id, &miner_id)
             .await
             .unwrap_or_else(|e| {
-                error!(
+                warn!(
                     executor_id = executor_id,
                     miner_uid = miner_uid,
                     error = %e,
-                    "[EVAL_FLOW] Failed to determine if binary validation needed, defaulting to full"
+                    "[EVAL_FLOW] Failed to check for active rental, assuming no rental"
                 );
-                true
+                false
             });
 
-        if needs_binary_validation {
-            info!(
-                security = true,
-                executor_id = executor_id,
-                miner_uid = miner_uid,
-                validation_strategy = "Full",
-                "[EVAL_FLOW] Strategy: Full validation required"
-            );
-            return Ok(ValidationStrategy::Full);
+        // If there's an active rental, skip binary validation check and go straight to lightweight
+        if !has_active_rental {
+            let needs_binary_validation = self
+                .is_binary_validation_needed(executor_id, &miner_id, miner_uid)
+                .await
+                .unwrap_or_else(|e| {
+                    error!(
+                        executor_id = executor_id,
+                        miner_uid = miner_uid,
+                        error = %e,
+                        "[EVAL_FLOW] Failed to determine if binary validation needed, defaulting to full"
+                    );
+                    true
+                });
+
+            if needs_binary_validation {
+                info!(
+                    security = true,
+                    executor_id = executor_id,
+                    miner_uid = miner_uid,
+                    validation_strategy = "Full",
+                    "[EVAL_FLOW] Strategy: Full validation required"
+                );
+                return Ok(ValidationStrategy::Full);
+            }
         }
 
         let (previous_score, executor_result, gpu_count, binary_validation_successful) = match self
@@ -115,21 +133,42 @@ impl ValidationStrategySelector {
                 (score, exec_result, gpu_cnt, binary_success)
             }
             Ok(None) => {
+                // If no previous validation data and no active rental, require full validation
+                if !has_active_rental {
+                    debug!(
+                        executor_id = executor_id,
+                        miner_uid = miner_uid,
+                        "[EVAL_FLOW] No previous validation data found - requiring full validation"
+                    );
+                    return Ok(ValidationStrategy::Full);
+                }
+                // For active rentals without previous data, use default values
                 debug!(
                     executor_id = executor_id,
                     miner_uid = miner_uid,
-                    "[EVAL_FLOW] No previous validation data found - requiring full validation"
+                    "[EVAL_FLOW] Active rental with no previous validation data - using defaults"
                 );
-                return Ok(ValidationStrategy::Full);
+                (0.8, None, 0, false)
             }
             Err(e) => {
-                error!(
+                // If we can't get previous data and no active rental, require full validation
+                if !has_active_rental {
+                    error!(
+                        executor_id = executor_id,
+                        miner_uid = miner_uid,
+                        error = %e,
+                        "[EVAL_FLOW] Failed to get previous validation data - requiring full validation"
+                    );
+                    return Ok(ValidationStrategy::Full);
+                }
+                // For active rentals, use defaults even if we can't get previous data
+                warn!(
                     executor_id = executor_id,
                     miner_uid = miner_uid,
                     error = %e,
-                    "[EVAL_FLOW] Failed to get previous validation data - requiring full validation"
+                    "[EVAL_FLOW] Active rental, failed to get previous data - using defaults"
                 );
-                return Ok(ValidationStrategy::Full);
+                (0.8, None, 0, false)
             }
         };
 
@@ -138,10 +177,11 @@ impl ValidationStrategySelector {
             executor_id = executor_id,
             miner_uid = miner_uid,
             validation_strategy = "Lightweight",
+            has_active_rental = has_active_rental,
             previous_score = previous_score,
             gpu_count = gpu_count,
             binary_validation_successful = binary_validation_successful,
-            "[EVAL_FLOW] Strategy: Lightweight validation with previous validation data"
+            "[EVAL_FLOW] Strategy: Lightweight validation with previous validation data (has_active_rental: {})", has_active_rental
         );
 
         Ok(ValidationStrategy::Lightweight {
@@ -510,34 +550,44 @@ impl ValidationExecutor {
         validation_details.ssh_score = if ssh_connection_successful { 0.8 } else { 0.0 };
 
         // Phase 1.5: Node Profiling Collection
+        let mut quality_validations_successful = false;
         if ssh_connection_successful {
             let executor_id = executor_info.id.to_string();
+            let hardware_collector = self.hardware_collector.clone();
+            let network_collector = self.network_collector.clone();
+            let speedtest_collector = self.speedtest_collector.clone();
+            let docker_collector = self.docker_collector.clone();
+            let nat_collector = self.nat_collector.clone();
 
             let hardware_future =
-                self.hardware_collector
-                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                hardware_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
             let network_future =
-                self.network_collector
-                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
-            let speedtest_future = self.speedtest_collector.collect_with_fallback(
-                &executor_id,
-                miner_uid,
-                ssh_details,
-            );
+                network_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
+            let speedtest_future =
+                speedtest_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
             let docker_future =
-                self.docker_collector
-                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                docker_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
             let nat_future =
-                self.nat_collector
-                    .collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                nat_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
 
-            tokio::join!(
+            let (_hardware, _network, _speedtest, docker_result, nat_result) = tokio::join!(
                 hardware_future,
                 network_future,
                 speedtest_future,
                 docker_future,
                 nat_future
             );
+
+            quality_validations_successful = docker_result.is_some() && nat_result.is_some();
+            if !quality_validations_successful {
+                error!(
+                    miner_uid = miner_uid,
+                    executor_id = %executor_info.id,
+                    docker_successful = docker_result.is_some(),
+                    nat_successful = nat_result.is_some(),
+                    "[EVAL_FLOW] Critical pre-validations failed"
+                );
+            }
         }
 
         // Phase 2: Binary Validation
@@ -545,8 +595,10 @@ impl ValidationExecutor {
         let mut executor_result = None;
         let mut binary_score = 0.0;
         let mut gpu_count = 0u64;
+        let pre_validations_successful =
+            ssh_connection_successful && quality_validations_successful;
 
-        if ssh_connection_successful && binary_config.enabled {
+        if pre_validations_successful && binary_config.enabled {
             match self
                 .binary_validator
                 .execute_binary_validation(
@@ -601,16 +653,15 @@ impl ValidationExecutor {
                     }
                 }
             }
-        } else if !binary_config.enabled {
+        } else if !binary_config.enabled && quality_validations_successful {
             binary_validation_successful = true;
             binary_score = 0.8;
         }
 
-        // Calculate combined score
         let combined_score = self.calculate_combined_verification_score(
             validation_details.ssh_score,
             binary_score,
-            ssh_connection_successful,
+            pre_validations_successful,
             binary_validation_successful,
             binary_config,
         );
@@ -624,7 +675,8 @@ impl ValidationExecutor {
             grpc_endpoint: executor_info.grpc_endpoint.clone(),
             verification_score: combined_score,
             ssh_connection_successful,
-            binary_validation_successful,
+            binary_validation_successful: pre_validations_successful
+                && binary_validation_successful,
             executor_result,
             error: None,
             execution_time: total_start.elapsed(),
@@ -725,18 +777,18 @@ impl ValidationExecutor {
         &self,
         ssh_score: f64,
         binary_score: f64,
-        ssh_successful: bool,
+        pre_validations_successful: bool,
         binary_successful: bool,
         binary_config: &crate::config::BinaryValidationConfig,
     ) -> f64 {
         info!(
-            "[EVAL_FLOW] Starting combined score calculation - SSH: {:.3} (success: {}), Binary: {:.3} (success: {})",
-            ssh_score, ssh_successful, binary_score, binary_successful
+            "[EVAL_FLOW] Starting combined score calculation - pre-val: {:.3} (success: {}), Binary: {:.3} (success: {})",
+            ssh_score, pre_validations_successful, binary_score, binary_successful
         );
 
         // If SSH fails, total score is 0
-        if !ssh_successful {
-            error!("[EVAL_FLOW] SSH validation failed, returning combined score: 0.0");
+        if !pre_validations_successful {
+            error!("[EVAL_FLOW] pre validations failed, returning combined score: 0.0");
             return 0.0;
         }
 

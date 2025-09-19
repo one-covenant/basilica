@@ -3,13 +3,13 @@ use basilica_common::ssh::SshConnectionDetails;
 use basilica_common::utils::validate_docker_image;
 use std::sync::Arc;
 use tokio::time::{timeout, Duration};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::persistence::SimplePersistence;
 use crate::ssh::ValidatorSshClient;
 
-const DEFAULT_TIMEOUT_SECS: u64 = 15;
+const DEFAULT_TIMEOUT_SECS: u64 = 60;
 
 /// Docker validation profile
 #[derive(Debug, Clone)]
@@ -55,6 +55,7 @@ impl DockerProfile {
 }
 
 /// Docker validation collector
+#[derive(Clone)]
 pub struct DockerCollector {
     ssh_client: Arc<ValidatorSshClient>,
     persistence: Arc<SimplePersistence>,
@@ -116,60 +117,42 @@ impl DockerCollector {
             "[DOCKER_PROFILE] Starting Docker validation"
         );
 
-        let mut service_active = false;
-        let mut docker_version: Option<String> = None;
         let mut images_pulled = Vec::new();
-        let mut validation_error: Option<String> = None;
+        let validation_error: Option<String> = None;
 
         // Check Docker service status
-        match self.check_docker_service(ssh_details).await {
+        let service_active = match self.check_docker_service(ssh_details).await {
             Ok(active) => {
-                service_active = active;
                 if !active {
                     let error = "Docker service is not active".to_string();
                     error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
-                    validation_error = Some(error);
-                    return Ok(DockerProfile::new(
-                        service_active,
-                        docker_version,
-                        images_pulled,
-                        false, // dind_supported - not checked yet
-                        false,
-                        validation_error,
-                    ));
+                    return Err(anyhow::anyhow!("Docker validation failed: {}", error));
                 }
+                active
             }
             Err(e) => {
                 let error = format!("Failed to check Docker service: {}", e);
                 error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
-                validation_error = Some(error);
-                return Ok(DockerProfile::new(
-                    service_active,
-                    docker_version,
-                    images_pulled,
-                    false, // dind_supported - not checked yet
-                    false,
-                    validation_error,
-                ));
+                return Err(anyhow::anyhow!("Docker validation failed: {}", error));
             }
-        }
+        };
 
         // Get Docker version
-        match self.get_docker_version(ssh_details).await {
+        let docker_version = match self.get_docker_version(ssh_details).await {
             Ok(version) => {
-                docker_version = Some(version.clone());
                 info!(
                     executor_id = executor_id,
                     docker_version = version,
                     "[DOCKER_PROFILE] Docker version detected"
                 );
+                Some(version)
             }
             Err(e) => {
                 let error = format!("Failed to get Docker version: {}", e);
-                warn!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
-                validation_error = Some(error);
+                error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
+                return Err(anyhow::anyhow!("Docker validation failed: {}", error));
             }
-        }
+        };
 
         // Pull Docker image
         match self
@@ -187,49 +170,33 @@ impl DockerCollector {
             Err(e) => {
                 let error = format!("Failed to pull Docker image {}: {}", self.docker_image, e);
                 error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
-                validation_error = Some(error);
-                return Ok(DockerProfile::new(
-                    service_active,
-                    docker_version,
-                    images_pulled,
-                    false, // dind_supported - not checked yet
-                    false,
-                    validation_error,
-                ));
+                return Err(anyhow::anyhow!("Docker validation failed: {}", error));
             }
         }
 
         // Check GPU runtime support
-        let gpu_runtime_supported = if service_active && !images_pulled.is_empty() {
-            match self
-                .check_gpu_runtime(ssh_details, &self.docker_image)
-                .await
-            {
-                Ok(supported) => {
-                    if supported {
-                        info!(
-                            executor_id = executor_id,
-                            "[DOCKER_PROFILE] GPU runtime validation passed"
-                        );
-                    } else {
-                        info!(
-                            executor_id = executor_id,
-                            "[DOCKER_PROFILE] GPU runtime not available or not configured"
-                        );
-                    }
-                    supported
-                }
-                Err(e) => {
-                    warn!(
+        let gpu_runtime_supported = match self
+            .check_gpu_runtime(ssh_details, &self.docker_image)
+            .await
+        {
+            Ok(supported) => {
+                if supported {
+                    info!(
                         executor_id = executor_id,
-                        error = %e,
-                        "[DOCKER_PROFILE] GPU runtime check encountered an error"
+                        "[DOCKER_PROFILE] GPU runtime validation passed"
                     );
-                    false
+                    supported
+                } else {
+                    let error = "GPU runtime not available or not configured".to_string();
+                    error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
+                    return Err(anyhow::anyhow!("Docker validation failed: {}", error));
                 }
             }
-        } else {
-            false
+            Err(e) => {
+                let error = format!("GPU runtime check failed: {}", e);
+                error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
+                return Err(anyhow::anyhow!("Docker validation failed: {}", error));
+            }
         };
 
         // Check Docker-in-Docker support (non-critical)
@@ -297,30 +264,60 @@ impl DockerCollector {
         Ok(docker_profile)
     }
 
-    /// Collect Docker profile with error handling (non-critical operation)
+    /// Collect Docker profile with error handling
     pub async fn collect_with_fallback(
         &self,
         executor_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Option<DockerProfile> {
-        match self.collect(executor_id, ssh_details).await {
+        info!(
+            executor_id = executor_id,
+            miner_uid = miner_uid,
+            "[DOCKER_PROFILE] collect_with_fallback called - starting Docker validation"
+        );
+
+        let collect_result = match tokio::time::timeout(
+            Duration::from_secs(2400), // 40 minutes timeout
+            self.collect(executor_id, ssh_details),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                error!(
+                    executor_id = executor_id,
+                    miner_uid = miner_uid,
+                    "[DOCKER_PROFILE] Docker validation timed out after 30 minutes"
+                );
+                return None;
+            }
+        };
+
+        match collect_result {
             Ok(profile) => {
+                debug!(
+                    executor_id = executor_id,
+                    "[DOCKER_PROFILE] Docker validation succeeded, attempting to store profile"
+                );
                 // Try to store but don't fail if storage fails
                 if let Err(e) = self.store(miner_uid, executor_id, &profile).await {
                     warn!(
                         executor_id = executor_id,
                         error = %e,
-                        "[DOCKER_PROFILE] Failed to store Docker profile (non-critical)"
+                        "[DOCKER_PROFILE] Failed to store Docker profile: {}",
+                        e
                     );
                 }
                 Some(profile)
             }
             Err(e) => {
-                warn!(
+                error!(
                     executor_id = executor_id,
+                    miner_uid = miner_uid,
                     error = %e,
-                    "[DOCKER_PROFILE] Failed to collect Docker profile (non-critical)"
+                    "[DOCKER_PROFILE] Docker validation failed: {}",
+                    e
                 );
                 None
             }
