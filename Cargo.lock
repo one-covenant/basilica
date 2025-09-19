@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "basilica-cli"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "axum 0.7.9",
  "base64 0.21.7",
