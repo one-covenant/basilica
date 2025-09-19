@@ -36,13 +36,13 @@ pub enum Commands {
 
     /// Check instance status
     Status {
-        /// Rental UID/HUID (optional)
+        /// Rental UUID (optional)
         target: Option<String>,
     },
 
     /// View instance logs
     Logs {
-        /// Rental UID/HUID (optional)
+        /// Rental UUID (optional)
         target: Option<String>,
 
         #[command(flatten)]
@@ -52,7 +52,7 @@ pub enum Commands {
     /// Terminate instance
     #[command(alias = "stop")]
     Down {
-        /// Rental UID/HUID to terminate (optional)
+        /// Rental UUID to terminate (optional)
         target: Option<String>,
 
         /// Stop all active rentals
@@ -65,7 +65,7 @@ pub enum Commands {
         /// Command to execute
         command: String,
 
-        /// Rental UID/HUID (optional)
+        /// Rental UUID (optional)
         #[arg(long)]
         target: Option<String>,
     },
@@ -73,7 +73,7 @@ pub enum Commands {
     /// SSH into instances
     #[command(alias = "connect")]
     Ssh {
-        /// Rental UID/HUID (optional)
+        /// Rental UUID (optional)
         target: Option<String>,
 
         #[command(flatten)]
