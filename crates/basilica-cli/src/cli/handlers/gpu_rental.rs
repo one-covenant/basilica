@@ -126,13 +126,14 @@ pub async fn handle_ls(
         json_output(&response)?;
     } else {
         // Use table_output module for consistent styling
-        if filters.detailed {
+        // Default to detailed view, use compact only if explicitly requested
+        if filters.compact {
+            table_output::display_available_executors_compact(&response.available_executors)?;
+        } else {
             table_output::display_available_executors_detailed(
                 &response.available_executors,
-                filters.detailed,
+                true,
             )?;
-        } else {
-            table_output::display_available_executors_compact(&response.available_executors)?;
         }
     }
 
@@ -198,7 +199,7 @@ pub async fn handle_up(
 
         // Use interactive selector to choose an executor
         let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_executor(&response.available_executors, options.detailed)?
+        selector.select_executor(&response.available_executors, true)?
     };
 
     let spinner = create_spinner("Preparing rental request...");
@@ -382,7 +383,7 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
     if json {
         json_output(&rentals_list)?;
     } else {
-        table_output::display_rental_items(&rentals_list.rentals[..], filters.detailed)?;
+        table_output::display_rental_items(&rentals_list.rentals[..], !filters.compact)?;
         println!("\nTotal: {} active rentals", rentals_list.rentals.len());
 
         display_ps_quick_start_commands();
