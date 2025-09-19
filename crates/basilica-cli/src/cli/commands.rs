@@ -219,6 +219,10 @@ pub struct ListFilters {
     /// Use compact view (group by country and GPU type)
     #[arg(long)]
     pub compact: bool,
+
+    /// Use detailed view (shows executor IDs)
+    #[arg(long)]
+    pub detailed: bool,
 }
 
 /// Options for provisioning instances
@@ -275,6 +279,14 @@ pub struct UpOptions {
     /// Create rental in detached mode (don't auto-connect via SSH)
     #[arg(short = 'd', long)]
     pub detach: bool,
+
+    /// Use compact view (group executors by GPU type)
+    #[arg(long)]
+    pub compact: bool,
+
+    /// Use detailed view (shows executor IDs during selection)
+    #[arg(long)]
+    pub detailed: bool,
 }
 
 /// Filters for listing active rentals
@@ -295,6 +307,10 @@ pub struct PsFilters {
     /// Use compact view (minimal columns)
     #[arg(long)]
     pub compact: bool,
+
+    /// Use detailed view (shows rental and executor IDs)
+    #[arg(long)]
+    pub detailed: bool,
 }
 
 /// Options for viewing logs

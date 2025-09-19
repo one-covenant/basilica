@@ -126,13 +126,16 @@ pub async fn handle_ls(
         json_output(&response)?;
     } else {
         // Use table_output module for consistent styling
-        // Default to detailed view, use compact only if explicitly requested
         if filters.compact {
+            // Compact view: grouped by country and GPU type
             table_output::display_available_executors_compact(&response.available_executors)?;
         } else {
+            // Default or detailed view: show individual executors
+            // Detailed view includes executor IDs
             table_output::display_available_executors_detailed(
                 &response.available_executors,
                 true,
+                filters.detailed,
             )?;
         }
     }
@@ -198,8 +201,14 @@ pub async fn handle_up(
         complete_spinner_and_clear(spinner);
 
         // Use interactive selector to choose an executor
+        // Compact mode uses grouped selector, otherwise use detailed selector
         let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_executor(&response.available_executors, true)?
+        let use_detailed = !options.compact;
+        selector.select_executor(
+            &response.available_executors,
+            use_detailed,
+            options.detailed,
+        )?
     };
 
     let spinner = create_spinner("Preparing rental request...");
@@ -383,7 +392,11 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
     if json {
         json_output(&rentals_list)?;
     } else {
-        table_output::display_rental_items(&rentals_list.rentals[..], !filters.compact)?;
+        table_output::display_rental_items(
+            &rentals_list.rentals[..],
+            !filters.compact,
+            filters.detailed,
+        )?;
         println!("\nTotal: {} active rentals", rentals_list.rentals.len());
 
         display_ps_quick_start_commands();

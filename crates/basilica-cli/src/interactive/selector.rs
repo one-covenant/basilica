@@ -29,15 +29,16 @@ impl InteractiveSelector {
     pub fn select_executor(
         &self,
         executors: &[AvailableExecutor],
-        detailed: bool,
+        use_detailed: bool,
+        show_ids: bool,
     ) -> Result<ExecutorSelection> {
         if executors.is_empty() {
             return Err(eyre!("No executors available").into());
         }
 
-        if detailed {
+        if use_detailed {
             // Detailed mode: Show all executors individually
-            self.select_executor_detailed(executors)
+            self.select_executor_detailed(executors, show_ids)
         } else {
             // Grouped mode: Group by GPU configuration
             self.select_executor_grouped(executors)
@@ -48,9 +49,11 @@ impl InteractiveSelector {
     fn select_executor_detailed(
         &self,
         executors: &[AvailableExecutor],
+        show_ids: bool,
     ) -> Result<ExecutorSelection> {
         // Collect all display components to calculate proper column widths
         struct DisplayComponents {
+            executor_id: String,
             gpu_info: String,
             cpu_info: String,
             ram_info: String,
@@ -60,6 +63,18 @@ impl InteractiveSelector {
         let display_components: Vec<DisplayComponents> = executors
             .iter()
             .map(|executor| {
+                // Extract executor ID (remove miner prefix if present)
+                let executor_id = if show_ids {
+                    executor
+                        .executor
+                        .id
+                        .split_once("__")
+                        .map(|(_, id)| id)
+                        .unwrap_or(&executor.executor.id)
+                        .to_string()
+                } else {
+                    String::new()
+                };
                 // Format GPU info
                 let gpu_info = if executor.executor.gpu_specs.is_empty() {
                     "No GPUs".to_string()
@@ -108,6 +123,7 @@ impl InteractiveSelector {
                 };
 
                 DisplayComponents {
+                    executor_id,
                     gpu_info,
                     cpu_info,
                     ram_info,
@@ -117,6 +133,16 @@ impl InteractiveSelector {
             .collect();
 
         // Calculate maximum widths for each column
+        let id_max_width = if show_ids {
+            display_components
+                .iter()
+                .map(|c| c.executor_id.len())
+                .max()
+                .unwrap_or(36) // UUID default length
+        } else {
+            0
+        };
+
         let gpu_max_width = display_components
             .iter()
             .map(|c| c.gpu_info.len())
@@ -139,16 +165,31 @@ impl InteractiveSelector {
         let selector_items: Vec<String> = display_components
             .iter()
             .map(|components| {
-                format!(
-                    "{:<gpu_width$} │ {:<cpu_width$} │ {:<ram_width$} │ {}",
-                    components.gpu_info,
-                    components.cpu_info,
-                    components.ram_info,
-                    components.use_case,
-                    gpu_width = gpu_max_width,
-                    cpu_width = cpu_max_width,
-                    ram_width = ram_max_width
-                )
+                if show_ids {
+                    format!(
+                        "{:<id_width$} │ {:<gpu_width$} │ {:<cpu_width$} │ {:<ram_width$} │ {}",
+                        components.executor_id,
+                        components.gpu_info,
+                        components.cpu_info,
+                        components.ram_info,
+                        components.use_case,
+                        id_width = id_max_width,
+                        gpu_width = gpu_max_width,
+                        cpu_width = cpu_max_width,
+                        ram_width = ram_max_width
+                    )
+                } else {
+                    format!(
+                        "{:<gpu_width$} │ {:<cpu_width$} │ {:<ram_width$} │ {}",
+                        components.gpu_info,
+                        components.cpu_info,
+                        components.ram_info,
+                        components.use_case,
+                        gpu_width = gpu_max_width,
+                        cpu_width = cpu_max_width,
+                        ram_width = ram_max_width
+                    )
+                }
             })
             .collect();
 
