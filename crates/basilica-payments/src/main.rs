@@ -165,16 +165,22 @@ async fn main() -> Result<()> {
 
     let price = PriceConverter::new(oracle, cfg.treasury.tao_decimals);
 
-    let grpc_svc = GrpcPaymentsServer::new(repos.clone(), treasury, aead).into_service();
-    let dispatcher = OutboxDispatcher::new(repos.clone(), billing, price);
+    let grpc_svc = GrpcPaymentsServer::new(repos.clone(), treasury, aead, metrics_system.clone())
+        .into_service();
+
+    let dispatcher = OutboxDispatcher::new(repos.clone(), billing, price, metrics_system.clone());
 
     info!(
         "Connecting to substrate node at: {}",
         cfg.blockchain.websocket_url
     );
-    let monitor = ChainMonitor::new(repos.clone(), &cfg.blockchain.websocket_url)
-        .await
-        .context("Failed to initialize blockchain monitor")?;
+    let monitor = ChainMonitor::new(
+        repos.clone(),
+        &cfg.blockchain.websocket_url,
+        metrics_system.clone(),
+    )
+    .await
+    .context("Failed to initialize blockchain monitor")?;
 
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter
