@@ -1012,6 +1012,30 @@ impl SimplePersistence {
         Ok(())
     }
 
+    /// Check if an executor has an active rental
+    pub async fn has_active_rental(
+        &self,
+        executor_id: &str,
+        miner_id: &str,
+    ) -> Result<bool, anyhow::Error> {
+        let query = r#"
+            SELECT COUNT(*) as count
+            FROM rentals
+            WHERE executor_id = ?
+                AND miner_id = ?
+                AND state = 'active'
+        "#;
+
+        let row = sqlx::query(query)
+            .bind(executor_id)
+            .bind(miner_id)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let count: i64 = row.get("count");
+        Ok(count > 0)
+    }
+
     /// Helper function to parse rental state from string
     fn parse_rental_state(state_str: &str, rental_id: &str) -> RentalState {
         match state_str {
