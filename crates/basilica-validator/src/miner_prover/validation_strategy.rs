@@ -82,28 +82,46 @@ impl ValidationStrategySelector {
             "[EVAL_FLOW] Determining validation strategy"
         );
 
-        let needs_binary_validation = self
-            .is_binary_validation_needed(executor_id, &miner_id, miner_uid)
+        // Check if executor has an active rental
+        let has_active_rental = self
+            .persistence
+            .has_active_rental(executor_id, &miner_id)
             .await
             .unwrap_or_else(|e| {
-                error!(
+                warn!(
                     executor_id = executor_id,
                     miner_uid = miner_uid,
                     error = %e,
-                    "[EVAL_FLOW] Failed to determine if binary validation needed, defaulting to full"
+                    "[EVAL_FLOW] Failed to check for active rental, assuming no rental"
                 );
-                true
+                false
             });
 
-        if needs_binary_validation {
-            info!(
-                security = true,
-                executor_id = executor_id,
-                miner_uid = miner_uid,
-                validation_strategy = "Full",
-                "[EVAL_FLOW] Strategy: Full validation required"
-            );
-            return Ok(ValidationStrategy::Full);
+        // If there's an active rental, skip binary validation check and go straight to lightweight
+        if !has_active_rental {
+            let needs_binary_validation = self
+                .is_binary_validation_needed(executor_id, &miner_id, miner_uid)
+                .await
+                .unwrap_or_else(|e| {
+                    error!(
+                        executor_id = executor_id,
+                        miner_uid = miner_uid,
+                        error = %e,
+                        "[EVAL_FLOW] Failed to determine if binary validation needed, defaulting to full"
+                    );
+                    true
+                });
+
+            if needs_binary_validation {
+                info!(
+                    security = true,
+                    executor_id = executor_id,
+                    miner_uid = miner_uid,
+                    validation_strategy = "Full",
+                    "[EVAL_FLOW] Strategy: Full validation required"
+                );
+                return Ok(ValidationStrategy::Full);
+            }
         }
 
         let (previous_score, executor_result, gpu_count, binary_validation_successful) = match self
@@ -115,21 +133,42 @@ impl ValidationStrategySelector {
                 (score, exec_result, gpu_cnt, binary_success)
             }
             Ok(None) => {
+                // If no previous validation data and no active rental, require full validation
+                if !has_active_rental {
+                    debug!(
+                        executor_id = executor_id,
+                        miner_uid = miner_uid,
+                        "[EVAL_FLOW] No previous validation data found - requiring full validation"
+                    );
+                    return Ok(ValidationStrategy::Full);
+                }
+                // For active rentals without previous data, use default values
                 debug!(
                     executor_id = executor_id,
                     miner_uid = miner_uid,
-                    "[EVAL_FLOW] No previous validation data found - requiring full validation"
+                    "[EVAL_FLOW] Active rental with no previous validation data - using defaults"
                 );
-                return Ok(ValidationStrategy::Full);
+                (0.8, None, 0, false)
             }
             Err(e) => {
-                error!(
+                // If we can't get previous data and no active rental, require full validation
+                if !has_active_rental {
+                    error!(
+                        executor_id = executor_id,
+                        miner_uid = miner_uid,
+                        error = %e,
+                        "[EVAL_FLOW] Failed to get previous validation data - requiring full validation"
+                    );
+                    return Ok(ValidationStrategy::Full);
+                }
+                // For active rentals, use defaults even if we can't get previous data
+                warn!(
                     executor_id = executor_id,
                     miner_uid = miner_uid,
                     error = %e,
-                    "[EVAL_FLOW] Failed to get previous validation data - requiring full validation"
+                    "[EVAL_FLOW] Active rental, failed to get previous data - using defaults"
                 );
-                return Ok(ValidationStrategy::Full);
+                (0.8, None, 0, false)
             }
         };
 
@@ -138,10 +177,11 @@ impl ValidationStrategySelector {
             executor_id = executor_id,
             miner_uid = miner_uid,
             validation_strategy = "Lightweight",
+            has_active_rental = has_active_rental,
             previous_score = previous_score,
             gpu_count = gpu_count,
             binary_validation_successful = binary_validation_successful,
-            "[EVAL_FLOW] Strategy: Lightweight validation with previous validation data"
+            "[EVAL_FLOW] Strategy: Lightweight validation with previous validation data (has_active_rental: {})", has_active_rental
         );
 
         Ok(ValidationStrategy::Lightweight {
