@@ -510,6 +510,7 @@ impl ValidationExecutor {
         validation_details.ssh_score = if ssh_connection_successful { 0.8 } else { 0.0 };
 
         // Phase 1.5: Node Profiling Collection
+        let mut quality_validations_successful = false;
         if ssh_connection_successful {
             let executor_id = executor_info.id.to_string();
 
@@ -531,13 +532,24 @@ impl ValidationExecutor {
                 self.nat_collector
                     .collect_with_fallback(&executor_id, miner_uid, ssh_details);
 
-            tokio::join!(
+            let (_hardware, _network, _speedtest, docker_result, nat_result) = tokio::join!(
                 hardware_future,
                 network_future,
                 speedtest_future,
                 docker_future,
                 nat_future
             );
+
+            quality_validations_successful = docker_result.is_some() && nat_result.is_some();
+            if !quality_validations_successful {
+                error!(
+                    miner_uid = miner_uid,
+                    executor_id = %executor_info.id,
+                    docker_successful = docker_result.is_some(),
+                    nat_successful = nat_result.is_some(),
+                    "[EVAL_FLOW] Critical pre-validations failed"
+                );
+            }
         }
 
         // Phase 2: Binary Validation
@@ -545,8 +557,10 @@ impl ValidationExecutor {
         let mut executor_result = None;
         let mut binary_score = 0.0;
         let mut gpu_count = 0u64;
+        let pre_validations_successful =
+            ssh_connection_successful && quality_validations_successful;
 
-        if ssh_connection_successful && binary_config.enabled {
+        if pre_validations_successful && binary_config.enabled {
             match self
                 .binary_validator
                 .execute_binary_validation(
@@ -601,16 +615,15 @@ impl ValidationExecutor {
                     }
                 }
             }
-        } else if !binary_config.enabled {
+        } else if !binary_config.enabled && quality_validations_successful {
             binary_validation_successful = true;
             binary_score = 0.8;
         }
 
-        // Calculate combined score
         let combined_score = self.calculate_combined_verification_score(
             validation_details.ssh_score,
             binary_score,
-            ssh_connection_successful,
+            pre_validations_successful,
             binary_validation_successful,
             binary_config,
         );
@@ -624,7 +637,8 @@ impl ValidationExecutor {
             grpc_endpoint: executor_info.grpc_endpoint.clone(),
             verification_score: combined_score,
             ssh_connection_successful,
-            binary_validation_successful,
+            binary_validation_successful: pre_validations_successful
+                && binary_validation_successful,
             executor_result,
             error: None,
             execution_time: total_start.elapsed(),
@@ -725,18 +739,18 @@ impl ValidationExecutor {
         &self,
         ssh_score: f64,
         binary_score: f64,
-        ssh_successful: bool,
+        pre_validations_successful: bool,
         binary_successful: bool,
         binary_config: &crate::config::BinaryValidationConfig,
     ) -> f64 {
         info!(
-            "[EVAL_FLOW] Starting combined score calculation - SSH: {:.3} (success: {}), Binary: {:.3} (success: {})",
-            ssh_score, ssh_successful, binary_score, binary_successful
+            "[EVAL_FLOW] Starting combined score calculation - pre-val: {:.3} (success: {}), Binary: {:.3} (success: {})",
+            ssh_score, pre_validations_successful, binary_score, binary_successful
         );
 
         // If SSH fails, total score is 0
-        if !ssh_successful {
-            error!("[EVAL_FLOW] SSH validation failed, returning combined score: 0.0");
+        if !pre_validations_successful {
+            error!("[EVAL_FLOW] pre validations failed, returning combined score: 0.0");
             return 0.0;
         }
 
