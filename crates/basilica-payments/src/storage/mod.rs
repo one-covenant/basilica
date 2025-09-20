@@ -81,6 +81,7 @@ pub trait OutboxRepo {
     async fn claim_batch(&self, limit: i64) -> sqlx::Result<Vec<OutboxRow>>;
     async fn mark_dispatched_tx(&self, tx: &mut PgTx<'_>, id: i64) -> sqlx::Result<()>;
     async fn backoff(&self, id: i64, secs: i64) -> sqlx::Result<()>;
+    async fn get_pending_count(&self) -> sqlx::Result<usize>;
 }
 
 #[derive(Clone)]

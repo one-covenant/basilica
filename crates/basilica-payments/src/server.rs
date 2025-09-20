@@ -1,4 +1,5 @@
 use crate::config::PaymentsConfig;
+use crate::metrics::PaymentsMetricsSystem;
 use axum::{http::StatusCode, response::Json, routing::get, Router};
 use chrono;
 use serde_json::Value;
@@ -13,11 +14,20 @@ use tracing::{error, info};
 pub struct PaymentsServer {
     config: PaymentsConfig,
     db_pool: Arc<PgPool>,
+    metrics: Option<Arc<PaymentsMetricsSystem>>,
 }
 
 impl PaymentsServer {
-    pub fn new(config: PaymentsConfig, db_pool: Arc<PgPool>) -> Self {
-        Self { config, db_pool }
+    pub fn new(
+        config: PaymentsConfig,
+        db_pool: Arc<PgPool>,
+        metrics: Option<Arc<PaymentsMetricsSystem>>,
+    ) -> Self {
+        Self {
+            config,
+            db_pool,
+            metrics,
+        }
     }
 
     pub async fn serve(
@@ -38,12 +48,12 @@ impl PaymentsServer {
         let (http_tx, http_rx) = tokio::sync::oneshot::channel();
 
         let db_pool = self.db_pool.clone();
+        let metrics = self.metrics.clone();
 
         // Start HTTP server
-        let http_handle =
-            tokio::spawn(
-                async move { Self::start_http_server(http_listener, http_rx, db_pool).await },
-            );
+        let http_handle = tokio::spawn(async move {
+            Self::start_http_server(http_listener, http_rx, db_pool, metrics).await
+        });
 
         // Wait for shutdown signal and propagate to HTTP server
         tokio::spawn(async move {
@@ -62,6 +72,7 @@ impl PaymentsServer {
         listener: tokio::net::TcpListener,
         shutdown_signal: tokio::sync::oneshot::Receiver<()>,
         db_pool: Arc<PgPool>,
+        metrics: Option<Arc<PaymentsMetricsSystem>>,
     ) -> anyhow::Result<()> {
         let addr = listener.local_addr()?;
         info!("Starting payments HTTP server on {}", addr);
@@ -74,7 +85,7 @@ impl PaymentsServer {
                     .layer(CorsLayer::permissive())
                     .into_inner(),
             )
-            .with_state(AppState { db_pool });
+            .with_state(AppState { db_pool, metrics });
 
         let server = axum::serve(listener, app);
 
@@ -93,6 +104,7 @@ impl PaymentsServer {
 #[derive(Clone)]
 struct AppState {
     db_pool: Arc<PgPool>,
+    metrics: Option<Arc<PaymentsMetricsSystem>>,
 }
 
 async fn health_check(
@@ -116,6 +128,11 @@ async fn health_check(
     }
 }
 
-async fn metrics_handler() -> Result<String, StatusCode> {
-    Ok("# Payments service metrics endpoint\n".to_string())
+async fn metrics_handler(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Result<String, StatusCode> {
+    match state.metrics {
+        Some(metrics) => Ok(metrics.render_prometheus()),
+        None => Ok("# Metrics collection disabled\n".to_string()),
+    }
 }

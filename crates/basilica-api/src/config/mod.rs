@@ -68,6 +68,25 @@ impl Default for DatabaseConfig {
     }
 }
 
+/// Payments service configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentsServiceConfig {
+    /// Enable payments service integration
+    pub enabled: bool,
+
+    /// Payments service gRPC endpoint
+    pub endpoint: String,
+}
+
+impl Default for PaymentsServiceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            endpoint: "http://localhost:50061".to_string(),
+        }
+    }
+}
+
 /// Main configuration structure for the Basilica API
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
@@ -85,6 +104,9 @@ pub struct Config {
 
     /// Database configuration
     pub database: DatabaseConfig,
+
+    /// Payments service configuration
+    pub payments: PaymentsServiceConfig,
 }
 
 impl Config {
