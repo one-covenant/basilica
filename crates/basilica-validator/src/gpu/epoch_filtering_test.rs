@@ -46,16 +46,14 @@ mod tests {
             // Seed miner_executors table with online status
             let executor_key = format!("{}:{}", &miner_id, &executor_id);
             sqlx::query(
-                "INSERT OR REPLACE INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, status, gpu_uuids, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR REPLACE INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, status, gpu_uuids, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&executor_key)
             .bind(&miner_id)
             .bind(&executor_id)
             .bind("http://127.0.0.1:50051")
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
-            .bind("[]") // Empty gpu_specs JSON array
-            .bind("{}") // Empty cpu_specs JSON object
             .bind("online")
             .bind("") // Empty gpu_uuids, we'll use gpu_uuid_assignments instead
             .bind(now.to_rfc3339())
