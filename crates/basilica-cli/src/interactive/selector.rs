@@ -29,15 +29,16 @@ impl InteractiveSelector {
     pub fn select_executor(
         &self,
         executors: &[AvailableExecutor],
-        detailed: bool,
+        use_detailed: bool,
+        show_ids: bool,
     ) -> Result<ExecutorSelection> {
         if executors.is_empty() {
             return Err(eyre!("No executors available").into());
         }
 
-        if detailed {
+        if use_detailed {
             // Detailed mode: Show all executors individually
-            self.select_executor_detailed(executors)
+            self.select_executor_detailed(executors, show_ids)
         } else {
             // Grouped mode: Group by GPU configuration
             self.select_executor_grouped(executors)
@@ -48,12 +49,34 @@ impl InteractiveSelector {
     fn select_executor_detailed(
         &self,
         executors: &[AvailableExecutor],
+        show_ids: bool,
     ) -> Result<ExecutorSelection> {
-        // First pass: collect GPU info strings to determine max width
-        let gpu_infos: Vec<String> = executors
+        // Collect all display components to calculate proper column widths
+        struct DisplayComponents {
+            executor_id: String,
+            gpu_info: String,
+            cpu_info: String,
+            ram_info: String,
+            use_case: String,
+        }
+
+        let display_components: Vec<DisplayComponents> = executors
             .iter()
             .map(|executor| {
-                if executor.executor.gpu_specs.is_empty() {
+                // Extract executor ID (remove miner prefix if present)
+                let executor_id = if show_ids {
+                    executor
+                        .executor
+                        .id
+                        .split_once("__")
+                        .map(|(_, id)| id)
+                        .unwrap_or(&executor.executor.id)
+                        .to_string()
+                } else {
+                    String::new()
+                };
+                // Format GPU info
+                let gpu_info = if executor.executor.gpu_specs.is_empty() {
                     "No GPUs".to_string()
                 } else {
                     let gpu = &executor.executor.gpu_specs[0];
@@ -67,30 +90,105 @@ impl InteractiveSelector {
                     } else {
                         format!("1x {}", gpu_display_name)
                     }
+                };
+
+                // Format CPU info - handle "Unknown" case
+                let cpu_info = if executor.executor.cpu_specs.model == "Unknown"
+                    || executor.executor.cpu_specs.cores == 0
+                {
+                    "Unknown CPU".to_string()
+                } else {
+                    format!(
+                        "{} ({} cores)",
+                        executor.executor.cpu_specs.model, executor.executor.cpu_specs.cores
+                    )
+                };
+
+                // Format RAM info
+                let ram_info = if executor.executor.cpu_specs.memory_gb == 0 {
+                    "Unknown".to_string()
+                } else {
+                    format!("{}GB", executor.executor.cpu_specs.memory_gb)
+                };
+
+                // Get use case description for GPUs
+                let use_case = if executor.executor.gpu_specs.is_empty() {
+                    "General compute".to_string()
+                } else {
+                    let gpu = &executor.executor.gpu_specs[0];
+                    GpuCategory::from_str(&gpu.name)
+                        .unwrap()
+                        .description()
+                        .to_string()
+                };
+
+                DisplayComponents {
+                    executor_id,
+                    gpu_info,
+                    cpu_info,
+                    ram_info,
+                    use_case,
                 }
             })
             .collect();
 
-        // Calculate the maximum width needed for proper alignment
-        let max_width = gpu_infos.iter().map(|s| s.len()).max().unwrap_or(30);
-        let padding = max_width + 3;
+        // Calculate maximum widths for each column
+        let id_max_width = if show_ids {
+            display_components
+                .iter()
+                .map(|c| c.executor_id.len())
+                .max()
+                .unwrap_or(36) // UUID default length
+        } else {
+            0
+        };
 
-        // Create items for the selector with GPU info and use cases
-        let selector_items: Vec<String> = executors
+        let gpu_max_width = display_components
             .iter()
-            .zip(gpu_infos.iter())
-            .map(|(executor, gpu_info)| {
-                if executor.executor.gpu_specs.is_empty() {
+            .map(|c| c.gpu_info.len())
+            .max()
+            .unwrap_or(30);
+
+        let cpu_max_width = display_components
+            .iter()
+            .map(|c| c.cpu_info.len())
+            .max()
+            .unwrap_or(40);
+
+        let ram_max_width = display_components
+            .iter()
+            .map(|c| c.ram_info.len())
+            .max()
+            .unwrap_or(10);
+
+        // Create formatted items for the selector
+        let selector_items: Vec<String> = display_components
+            .iter()
+            .map(|components| {
+                if show_ids {
                     format!(
-                        "{:<width$} {}",
-                        gpu_info,
-                        "General GPU compute",
-                        width = padding
+                        "{:<id_width$} │ {:<gpu_width$} │ {:<cpu_width$} │ {:<ram_width$} │ {}",
+                        components.executor_id,
+                        components.gpu_info,
+                        components.cpu_info,
+                        components.ram_info,
+                        components.use_case,
+                        id_width = id_max_width,
+                        gpu_width = gpu_max_width,
+                        cpu_width = cpu_max_width,
+                        ram_width = ram_max_width
                     )
                 } else {
-                    let gpu = &executor.executor.gpu_specs[0];
-                    let use_case = GpuCategory::from_str(&gpu.name).unwrap().description();
-                    format!("{:<width$} {}", gpu_info, use_case, width = padding)
+                    format!(
+                        "{:<gpu_width$} │ {:<cpu_width$} │ {:<ram_width$} │ {}",
+                        components.gpu_info,
+                        components.cpu_info,
+                        components.ram_info,
+                        components.use_case,
+                        gpu_width = gpu_max_width,
+                        cpu_width = cpu_max_width,
+                        ram_width = ram_max_width
+                    )
                 }
             })
             .collect();

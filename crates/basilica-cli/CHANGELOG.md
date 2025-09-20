@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Three-tier display system for `ls`, `up`, and `ps` commands with flexible output control:
+  - `--detailed` flag shows internal IDs (executor IDs in `ls`/`up`, rental IDs in `ps`) for debugging
+  - `--compact` flag provides minimal grouped display for cleaner overview
+  - Default mode shows essential information without internal IDs
+- Enhanced interactive selector with improved GPU information display in detailed mode
+
 ## [0.3.3]
 
 ### Added

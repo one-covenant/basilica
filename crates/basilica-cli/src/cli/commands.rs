@@ -36,13 +36,13 @@ pub enum Commands {
 
     /// Check instance status
     Status {
-        /// Rental UID/HUID (optional)
+        /// Rental UUID (optional)
         target: Option<String>,
     },
 
     /// View instance logs
     Logs {
-        /// Rental UID/HUID (optional)
+        /// Rental UUID (optional)
         target: Option<String>,
 
         #[command(flatten)]
@@ -52,7 +52,7 @@ pub enum Commands {
     /// Terminate instance
     #[command(alias = "stop")]
     Down {
-        /// Rental UID/HUID to terminate (optional)
+        /// Rental UUID to terminate (optional)
         target: Option<String>,
 
         /// Stop all active rentals
@@ -65,7 +65,7 @@ pub enum Commands {
         /// Command to execute
         command: String,
 
-        /// Rental UID/HUID (optional)
+        /// Rental UUID (optional)
         #[arg(long)]
         target: Option<String>,
     },
@@ -73,7 +73,7 @@ pub enum Commands {
     /// SSH into instances
     #[command(alias = "connect")]
     Ssh {
-        /// Rental UID/HUID (optional)
+        /// Rental UUID (optional)
         target: Option<String>,
 
         #[command(flatten)]
@@ -216,7 +216,11 @@ pub struct ListFilters {
     #[arg(long)]
     pub country: Option<String>,
 
-    /// Show detailed GPU information (full GPU names)
+    /// Use compact view (group by country and GPU type)
+    #[arg(long)]
+    pub compact: bool,
+
+    /// Use detailed view (shows executor IDs)
     #[arg(long)]
     pub detailed: bool,
 }
@@ -276,7 +280,11 @@ pub struct UpOptions {
     #[arg(short = 'd', long)]
     pub detach: bool,
 
-    /// Show detailed executor information (full GPU names and individual executors)
+    /// Use compact view (group executors by GPU type)
+    #[arg(long)]
+    pub compact: bool,
+
+    /// Use detailed view (shows executor IDs during selection)
     #[arg(long)]
     pub detailed: bool,
 }
@@ -296,7 +304,11 @@ pub struct PsFilters {
     #[arg(long)]
     pub min_gpu_count: Option<u32>,
 
-    /// Show detailed GPU information (full GPU names)
+    /// Use compact view (minimal columns)
+    #[arg(long)]
+    pub compact: bool,
+
+    /// Use detailed view (shows rental and executor IDs)
     #[arg(long)]
     pub detailed: bool,
 }
