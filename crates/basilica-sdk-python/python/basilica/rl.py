@@ -38,7 +38,10 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:  # publisher deps stay lazy; types cost nothing here
+    from basilica.publisher import PolicyStorage, RlPolicyHandle
 
 _TERMINAL_JOB_PHASES = frozenset({"Succeeded", "Failed", "TimedOut"})
 # Degraded is deliberately NOT here: a cluster degrades on transient fleet
@@ -334,10 +337,10 @@ class RlNamespace:
         tokenizer_digest: str,
         bucket: str,
         endpoint: str,
-        region: str | None = None,
-        access_key_id: str | None = None,
-        secret_access_key: str | None = None,
-        credentials_secret: str | None = None,
+        region: Optional[str] = None,
+        access_key_id: Optional[str] = None,
+        secret_access_key: Optional[str] = None,
+        credentials_secret: Optional[str] = None,
         update_format: str = "pulse-bf16-v1",
         backend: str = "r2",
     ) -> dict:
@@ -350,6 +353,23 @@ class RlNamespace:
         pair OR ``credentials_secret``, exactly one. The response's
         ``effectivePrefix`` is where the lineage lives in your bucket —
         scope a read-only IAM grant to it for the serving fleet."""
+        # Same fail-fast standard as the revision grammar: the exactly-one
+        # credential contract is checkable without a server round-trip.
+        inline = access_key_id is not None or secret_access_key is not None
+        if inline and credentials_secret is not None:
+            raise ValueError(
+                "pass EITHER the inline key pair OR credentials_secret — not both"
+            )
+        if inline and (access_key_id is None or secret_access_key is None):
+            raise ValueError(
+                "the inline credential form needs BOTH access_key_id and "
+                "secret_access_key"
+            )
+        if not inline and credentials_secret is None:
+            raise ValueError(
+                "storage credentials are required: pass access_key_id + "
+                "secret_access_key, or credentials_secret"
+            )
         body = _drop_none(
             {
                 "name": name,
@@ -385,16 +405,29 @@ class RlNamespace:
         Rejected | Superseded)."""
         return json.loads(self._core.rl_get_revision(policy, revision))
 
-    def policy(self, name: str, *, storage: "Any", anchor_every: int = 30) -> "Any":
+    def policy(
+        self,
+        name: str,
+        *,
+        storage: "PolicyStorage",
+        anchor_every: int = 30,
+        work_dir: Optional[str] = None,
+    ) -> "RlPolicyHandle":
         """Open a publishing handle on a policy lineage.
 
         ``storage`` is a :class:`basilica.publisher.PolicyStorage` — YOUR
         bucket coordinates; artifact bytes upload straight from the trainer
-        to your storage and never transit the platform. The heavy publisher
-        dependencies (torch, xxhash, zstandard, safetensors, boto3) are
-        imported lazily here — ``pip install 'basilica-sdk[publisher]'``."""
+        to your storage and never transit the platform. ``work_dir`` stages
+        artifacts before upload (anchors are ~15 GB for 7B — point it at
+        real disk where /tmp is tmpfs). The heavy publisher dependencies
+        (torch, xxhash, zstandard, safetensors, boto3) are imported lazily
+        here — ``pip install 'basilica-sdk[publisher]'``."""
         from basilica.publisher import RlPolicyHandle
 
         return RlPolicyHandle(
-            self._core, name, storage=storage, anchor_every=anchor_every
+            self._core,
+            name,
+            storage=storage,
+            anchor_every=anchor_every,
+            work_dir=work_dir,
         )

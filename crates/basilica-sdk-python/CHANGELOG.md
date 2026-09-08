@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **BYOT policy registry + trainer-side publisher (#1666, toward 0.36.0).**
+- **BYOT policy registry + trainer-side publisher (#1666; ships as 0.36.0).**
   Registry surface: `client.rl.create_policy(...)` registers a model
   lineage against your own storage (base-model pin with immutable HF
   commit + tokenizer digest; credentials write-only, never echoed),

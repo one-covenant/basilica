@@ -188,3 +188,28 @@ def test_delete_policy_wire_shape(server):
     rl(base).delete_policy("math-policy")
     (r,) = rec.requests
     assert (r["method"], r["path"]) == ("DELETE", "/rl/policies/math-policy")
+
+
+def test_get_policy_wire_shape(server):
+    base, rec = server
+    rec.responses = [
+        (
+            200,
+            {
+                "name": "math-policy",
+                "policyUid": "uid-1",
+                "effectivePrefix": "policies/uid-1/",
+                "repo": "Qwen/Qwen2.5-7B-Instruct",
+                "commit": "a" * 40,
+                "updateFormat": "pulse-bf16-v1",
+                "totalRevisions": 2,
+                "latestRevision": "step-0001",
+            },
+        )
+    ]
+    out = rl(base).get_policy("math-policy")
+    (r,) = rec.requests
+    assert (r["method"], r["path"]) == ("GET", "/rl/policies/math-policy")
+    assert r["auth"] == "Bearer test-key"
+    assert out["effectivePrefix"] == "policies/uid-1/"
+    assert out["latestRevision"] == "step-0001"

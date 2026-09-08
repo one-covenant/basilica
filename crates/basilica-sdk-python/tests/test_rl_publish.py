@@ -175,3 +175,103 @@ def test_revision_grammar_is_validated_before_any_work(handle):
     with pytest.raises(ValueError):
         handle.wait_until_active("Bad.Name")
     assert handle._test_core.revisions == [], "nothing must reach the registry"
+
+
+def test_work_dir_threads_through_to_artifact_staging(handle, monkeypatch):
+    # HIGH (#1666 review): anchors are ~15 GB — they must stage where the
+    # caller says, not in the platform default tmpdir (often tmpfs).
+    import tempfile
+
+    seen_dirs = []
+    real_tmpdir = tempfile.TemporaryDirectory
+
+    def recording_tmpdir(*args, **kwargs):
+        seen_dirs.append(kwargs.get("dir"))
+        kwargs.pop("dir", None)  # stage in the default for the test itself
+        return real_tmpdir(*args, **kwargs)
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", recording_tmpdir)
+    handle._work_dir = "/data/scratch"
+    handle.publish_anchor(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    assert seen_dirs == ["/data/scratch", "/data/scratch"], (
+        "both publish paths must stage under work_dir"
+    )
+
+
+def test_register_failure_deletes_the_orphaned_artifact(handle, monkeypatch):
+    # A manifest POST failure after a successful upload leaves an
+    # unreferenced multi-GB object in the customer's bucket — best-effort
+    # cleanup must fire, and the surfaced error must be the REGISTER one.
+    handle.publish_anchor(_state(1.0).items(), revision="step-0000")
+    deleted = []
+    monkeypatch.setattr(handle, "_delete_orphan", deleted.append)
+
+    def broken_register(*a, **k):
+        raise ConnectionError("registry 503")
+
+    monkeypatch.setattr(handle, "_register", broken_register)
+    with pytest.raises(PublishError, match="registry 503"):
+        handle.publish(_state(1.25).items(), revision="step-0001")
+    assert deleted == ["policies/uid-1/step-0001/patch.pulsept"]
+    # And H1 still holds: the diff base rolled back.
+    assert handle._parent == "step-0000"
+
+
+def test_upload_failure_does_not_attempt_orphan_delete(handle, monkeypatch):
+    # Nothing was uploaded — a delete would be pure noise (and could mask
+    # the real error if the bucket also refuses deletes).
+    handle.publish_anchor(_state(1.0).items(), revision="step-0000")
+    deleted = []
+    monkeypatch.setattr(handle, "_delete_orphan", deleted.append)
+    monkeypatch.setattr(
+        handle, "_upload", lambda *a: (_ for _ in ()).throw(ConnectionError("net down"))
+    )
+    with pytest.raises(PublishError):
+        handle.publish(_state(1.25).items(), revision="step-0001")
+    assert deleted == []
+
+
+def test_step_numbers_do_not_drift_on_failed_publishes(handle, monkeypatch):
+    # LOW (#1666 review): a failed encode/save/upload must not consume a
+    # step number — both paths advance the counter only on success.
+    handle.publish_anchor(_state(1.0).items(), revision="r0")
+    step_after_anchor = handle._step
+    monkeypatch.setattr(
+        handle, "_upload", lambda *a: (_ for _ in ()).throw(ConnectionError("down"))
+    )
+    with pytest.raises(PublishError):
+        handle.publish(_state(1.1).items(), revision="r1")
+    assert handle._step == step_after_anchor
+
+
+def test_wait_until_active_fails_fast_on_unknown_state(handle):
+    from basilica.exceptions import BasilicaError
+
+    handle._test_core.revision_states["weird"] = [{"state": "Quarantined"}]
+    with pytest.raises(BasilicaError, match="unrecognized state 'Quarantined'"):
+        handle.wait_until_active("weird", poll_interval=0.01)
+
+
+def test_create_policy_validates_credential_exclusivity_client_side():
+    # LOW (#1666 review): the exactly-one credential contract fails fast,
+    # before any server round-trip — the core is never touched.
+    from basilica.rl import RlNamespace
+
+    ns = RlNamespace(object())  # any core attribute access would explode
+    common = dict(
+        repo="r",
+        commit="a" * 40,
+        tokenizer_digest="sha256:" + "b" * 64,
+        bucket="b",
+        endpoint="https://e.example",
+    )
+    with pytest.raises(ValueError, match="not both"):
+        ns.create_policy(
+            "p", access_key_id="AK", secret_access_key="SK",
+            credentials_secret="s", **common,
+        )
+    with pytest.raises(ValueError, match="BOTH"):
+        ns.create_policy("p", access_key_id="AK", **common)
+    with pytest.raises(ValueError, match="credentials are required"):
+        ns.create_policy("p", **common)

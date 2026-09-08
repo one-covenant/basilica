@@ -17,6 +17,12 @@ Dependency contract: importing this module is cheap; the heavy publisher
 dependencies (torch, numpy, xxhash, zstandard, safetensors, boto3) load
 lazily inside the publish paths and fail with an actionable message naming
 the extra to install.
+
+Disk contract: anchors serialize to a temporary file before upload —
+~2 bytes/param, so ~15 GB for a 7B model. The staging directory is
+``work_dir`` (or ``$TMPDIR`` when unset); on trainer nodes where /tmp is
+tmpfs or a small root partition, point ``work_dir`` at real disk or a
+publish can OOM the node / ENOSPC mid-upload.
 """
 
 from __future__ import annotations
@@ -24,10 +30,11 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Optional, Tuple
+from typing import Any, Iterable, Optional, Tuple, Union
 
 from basilica.exceptions import BasilicaError
 
@@ -163,6 +170,7 @@ class RlPolicyHandle:
         *,
         storage: PolicyStorage,
         anchor_every: int = DEFAULT_ANCHOR_EVERY,
+        work_dir: Optional[Union[str, Path]] = None,
     ):
         if anchor_every < 1:
             raise ValueError("anchor_every must be >= 1")
@@ -170,10 +178,19 @@ class RlPolicyHandle:
         self.name = name
         self._storage = storage
         self._anchor_every = anchor_every
+        # Artifact staging directory (see the module's disk contract):
+        # anchors are ~15 GB for 7B — the platform default tmpdir is often
+        # tmpfs on trainer nodes, so this must be overridable.
+        self._work_dir = str(work_dir) if work_dir is not None else None
         meta = json.loads(core.rl_get_policy(name))
         self._effective_prefix: str = meta["effectivePrefix"]
         self._repo: str = meta["repo"]
         self._commit: str = meta["commit"]
+        # One publish at a time: the diff base + step counter + staged
+        # commit/rollback pair are a single unit of state; interleaved
+        # publishes could roll back each other's staged encode.
+        self._lock = threading.Lock()
+        self._s3 = None  # lazy, cached across uploads (connection pool)
         # Publishing state — all of it advances ONLY on registry-accepted
         # publishes (H1).
         self._snapshot = None  # last-published Snapshot (the diff base)
@@ -187,22 +204,38 @@ class RlPolicyHandle:
     def _artifact_key(self, revision: str, filename: str) -> str:
         return f"{self._effective_prefix}{revision}/{filename}"
 
+    def _s3_client(self):
+        """The upload client, built once and reused: publishes are frequent
+        (every training step in the tightest loop) and rebuilding the client
+        re-resolves credentials and discards the connection pool."""
+        if self._s3 is None:
+            self._s3 = _boto3().client(
+                "s3",
+                endpoint_url=self._storage.endpoint,
+                region_name=self._storage.region,
+                aws_access_key_id=self._storage.access_key_id,
+                aws_secret_access_key=self._storage.secret_access_key,
+            )
+        return self._s3
+
     def _upload(self, key: str, path: Path) -> str:
         """PUT the file to the customer bucket; returns the s3:// URI.
 
         boto3's managed transfer handles multipart automatically — anchors
         for 7B-class models are ~15 GB and must not go through a single PUT.
         """
-        boto3 = _boto3()
-        client = boto3.client(
-            "s3",
-            endpoint_url=self._storage.endpoint,
-            region_name=self._storage.region,
-            aws_access_key_id=self._storage.access_key_id,
-            aws_secret_access_key=self._storage.secret_access_key,
-        )
-        client.upload_file(str(path), self._storage.bucket, key)
+        self._s3_client().upload_file(str(path), self._storage.bucket, key)
         return f"s3://{self._storage.bucket}/{key}"
+
+    def _delete_orphan(self, key: str) -> None:
+        """Best-effort cleanup of an uploaded artifact whose manifest POST
+        failed — nothing references it, and 15 GB orphans add up. Failure
+        here is swallowed: the publish error the caller sees must be the
+        REGISTER failure, not the cleanup's."""
+        try:
+            self._s3_client().delete_object(Bucket=self._storage.bucket, Key=key)
+        except Exception:  # noqa: BLE001 — deliberately best-effort
+            pass
 
     def _register(
         self,
@@ -221,21 +254,37 @@ class RlPolicyHandle:
             body["parentRevision"] = parent
         return json.loads(self._core.rl_create_revision(self.name, json.dumps(body)))
 
+    # The `_locked` suffix is a contract, not a hope: both methods run only
+    # under `self._lock` (acquired by the public surface below).
+
     def _publish_anchor_locked(self, named: Iterable[Tuple[str, Any]], revision: str) -> dict:
         anchor_mod, codec_mod, _digest_mod = _pulse_modules()
         snapshot = codec_mod.Snapshot.from_named_tensors(named)
-        self._step += 1
-        with tempfile.TemporaryDirectory(prefix="basilica-anchor-") as td:
+        # Handle state (step included) advances ONLY at the success point at
+        # the bottom — an encode/save/upload failure leaves the handle
+        # exactly as it was, so a retry is always safe and step numbers
+        # never drift (the patch path is deliberately symmetric).
+        step = self._step + 1
+        key = self._artifact_key(revision, "anchor.safetensors")
+        uploaded = False
+        with tempfile.TemporaryDirectory(
+            prefix="basilica-anchor-", dir=self._work_dir
+        ) as td:
             path = Path(td) / "anchor.safetensors"
-            state_digest = anchor_mod.save_anchor(snapshot, path, step=self._step)
+            state_digest = anchor_mod.save_anchor(snapshot, path, step=step)
             sha256 = _sha256_file(path)
             try:
-                uri = self._upload(self._artifact_key(revision, "anchor.safetensors"), path)
+                uri = self._upload(key, path)
+                uploaded = True
                 resp = self._register(revision, None, uri, sha256, state_digest)
             except Exception as e:
-                self._step -= 1  # nothing published; the counter must not drift
+                if uploaded:
+                    # Registered nowhere, referenced by nothing — don't
+                    # leave a 15 GB orphan in the customer's bucket.
+                    self._delete_orphan(key)
                 raise PublishError(f"anchor publish of {revision!r} failed: {e}") from e
         # Registry accepted: the anchor is the new diff base and chain root.
+        self._step = step
         self._snapshot = snapshot
         self._parent = revision
         self._anchor_digest = state_digest
@@ -250,28 +299,37 @@ class RlPolicyHandle:
             param_count=self._snapshot.param_count(),
         )
         base_step = self._step
-        self._step += 1
-        # encode_step stages the advance; commit/rollback below is the H1
-        # contract the vendored codec provides.
+        step = base_step + 1
+        # encode_step is atomic (a failure leaves the snapshot untouched)
+        # and stages the advance; commit/rollback below is the H1 contract
+        # the vendored codec provides. `self._step` moves only on success —
+        # symmetric with the anchor path.
         patch_bytes, state_digest = self._snapshot.encode_step(
             named,
-            step=self._step,
+            step=step,
             base_step=base_step,
             model=model,
             base_state_digest=self._snapshot.digest(),
         )
-        with tempfile.TemporaryDirectory(prefix="basilica-patch-") as td:
-            path = Path(td) / "patch.pulsept"
-            path.write_bytes(patch_bytes)
-            sha256 = _sha256_file(path)
-            try:
-                uri = self._upload(self._artifact_key(revision, "patch.pulsept"), path)
+        key = self._artifact_key(revision, "patch.pulsept")
+        uploaded = False
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="basilica-patch-", dir=self._work_dir
+            ) as td:
+                path = Path(td) / "patch.pulsept"
+                path.write_bytes(patch_bytes)
+                sha256 = _sha256_file(path)
+                uri = self._upload(key, path)
+                uploaded = True
                 resp = self._register(revision, self._parent, uri, sha256, state_digest)
-            except Exception as e:
-                self._snapshot.rollback_last_encode()
-                self._step -= 1
-                raise PublishError(f"patch publish of {revision!r} failed: {e}") from e
+        except Exception as e:
+            self._snapshot.rollback_last_encode()
+            if uploaded:
+                self._delete_orphan(key)
+            raise PublishError(f"patch publish of {revision!r} failed: {e}") from e
         self._snapshot.commit_step()
+        self._step = step
         self._parent = revision
         self._patches_since_anchor += 1
         return resp
@@ -283,21 +341,26 @@ class RlPolicyHandle:
 
         Returns the registry's revision record (state ``Validated``). The
         anchor becomes the handle's diff base; the next ``publish`` diffs
-        against exactly these tensors.
+        against exactly these tensors. Thread-safe: publishes on one handle
+        serialize (the diff base is a single unit of state).
         """
-        return self._publish_anchor_locked(named_tensors, _validate_revision(revision))
+        rev = _validate_revision(revision)
+        with self._lock:
+            return self._publish_anchor_locked(named_tensors, rev)
 
     def publish(self, named_tensors: Iterable[Tuple[str, Any]], *, revision: str) -> dict:
         """Publish the state as a sparse patch over the last published revision.
 
         Transparently promotes to an anchor when the handle has no diff base
         yet, or when ``anchor_every`` patches have accumulated since the last
-        anchor (default 30 — the late-join replay bound).
+        anchor (default 30 — the late-join replay bound). Thread-safe:
+        publishes on one handle serialize.
         """
         rev = _validate_revision(revision)
-        if self._snapshot is None or self._patches_since_anchor >= self._anchor_every:
-            return self._publish_anchor_locked(named_tensors, rev)
-        return self._publish_patch_locked(named_tensors, rev)
+        with self._lock:
+            if self._snapshot is None or self._patches_since_anchor >= self._anchor_every:
+                return self._publish_anchor_locked(named_tensors, rev)
+            return self._publish_patch_locked(named_tensors, rev)
 
     def wait_until_active(
         self,
@@ -328,6 +391,15 @@ class RlPolicyHandle:
             if state == "Superseded":
                 raise RevisionSuperseded(
                     f"revision {rev!r} was superseded by a newer publish"
+                )
+            if state not in ("Validated", "Loading"):
+                # An unrecognized state is contract drift between this SDK
+                # and the server — fail LOUD now, not after a 30-minute
+                # spin ending in a generic timeout.
+                raise BasilicaError(
+                    f"revision {rev!r} reports unrecognized state {state!r} — "
+                    "the server speaks a newer revision protocol than this "
+                    "SDK; upgrade basilica-sdk"
                 )
             if time.monotonic() >= deadline:
                 raise BasilicaError(

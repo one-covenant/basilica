@@ -447,7 +447,12 @@ jobs:
 
       - name: Install locked Python dependencies
         working-directory: crates/basilica-sdk-python
-        run: uv sync --locked --extra dev --no-install-project
+        # --extra publisher is load-bearing (#1666 review): the codec
+        # parity and publish-flow suites importorskip torch/xxhash/etc.,
+        # so without the extra CI reports green while running ZERO of the
+        # golden-vector byte-parity tests. torch resolves from the CPU
+        # index (tool.uv.sources) — no CUDA/nvidia wheels in CI.
+        run: uv sync --locked --extra dev --extra publisher --no-install-project
 
       - name: Run Python SDK clippy
         if: matrix.python-version == '3.12'

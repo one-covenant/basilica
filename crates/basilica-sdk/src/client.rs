@@ -367,6 +367,13 @@ impl BasilicaClient {
         &self,
         request: CreateRlClusterRequest,
     ) -> Result<CreateRlClusterResponse> {
+        if request
+            .relay
+            .as_ref()
+            .is_some_and(|r| r.access_key_id.is_some() || r.secret_access_key.is_some())
+        {
+            self.require_tls_for_credentials("create_rl_cluster with inline relay credentials")?;
+        }
         self.post("/rl/clusters", &request).await
     }
 
@@ -399,6 +406,7 @@ impl BasilicaClient {
         request: RotateRelayCredentialsRequest,
     ) -> Result<RotateRlCredentialsResponse> {
         Self::validate_rl_name(name)?;
+        self.require_tls_for_credentials("rotate_rl_cluster_credentials")?;
         self.post(&format!("/rl/clusters/{}/credentials", name), &request)
             .await
     }
@@ -425,6 +433,27 @@ impl BasilicaClient {
         manifest: RlManifestRequest,
     ) -> Result<RlManifestResponse> {
         self.post("/rl/manifest", &manifest).await
+    }
+
+    /// Refuse to send LIVE storage credentials over cleartext transport
+    /// (#1666 review). Loopback is exempt — local test harnesses (and the
+    /// recorded-HTTP contract suite) legitimately run plain HTTP on
+    /// 127.0.0.1; any other `http://` target would broadcast key material.
+    fn require_tls_for_credentials(&self, what: &str) -> Result<()> {
+        let url = self.base_url.trim_start_matches("http://");
+        let is_http = self.base_url.starts_with("http://");
+        let is_loopback =
+            url.starts_with("127.") || url.starts_with("localhost") || url.starts_with("[::1]");
+        if is_http && !is_loopback {
+            return Err(ApiError::InvalidRequest {
+                message: format!(
+                    "{what} sends storage credentials — refusing to do so \
+                     over cleartext http:// (base_url {:?}); use https://",
+                    self.base_url
+                ),
+            });
+        }
+        Ok(())
     }
 
     /// Server revision grammar, mirrored client-side (#1666): 1-128 chars
@@ -460,6 +489,9 @@ impl BasilicaClient {
         request: CreateRlPolicyRequest,
     ) -> Result<CreateRlPolicyResponse> {
         Self::validate_rl_name(&request.name)?;
+        if request.storage.access_key_id.is_some() || request.storage.secret_access_key.is_some() {
+            self.require_tls_for_credentials("create_rl_policy with inline credentials")?;
+        }
         self.post("/rl/policies", &request).await
     }
 
@@ -1803,6 +1835,7 @@ impl ClientBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rl::{RlPolicyBaseModel, RlPolicyStorage};
     use serde_json::json;
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1833,6 +1866,88 @@ mod tests {
 
         assert_eq!(health.status, "healthy");
         assert_eq!(health.version, "1.0.0");
+    }
+
+    #[tokio::test]
+    async fn credential_bearing_calls_refuse_cleartext_transport() {
+        // #1666 review: live storage keys must never travel plain http://
+        // to a non-loopback host. Loopback stays exempt — the recorded-HTTP
+        // contract suites (and wiremock below) legitimately run http on
+        // 127.0.0.1.
+        let cleartext = ClientBuilder::default()
+            .base_url("http://api.example.com")
+            .with_tokens("t", "r")
+            .build()
+            .unwrap();
+        let rotate = RotateRelayCredentialsRequest {
+            access_key_id: "AK".into(),
+            secret_access_key: "SK".into(),
+        };
+        let err = cleartext
+            .rotate_rl_cluster_credentials("pool", rotate)
+            .await
+            .expect_err("cleartext refused");
+        assert!(err.to_string().contains("cleartext"), "{err}");
+        let policy = CreateRlPolicyRequest {
+            name: "p".into(),
+            base_model: RlPolicyBaseModel {
+                repo: "r".into(),
+                commit: "a".repeat(40),
+                tokenizer_digest: format!("sha256:{}", "b".repeat(64)),
+            },
+            update_format: "pulse-bf16-v1".into(),
+            storage: RlPolicyStorage {
+                backend: "r2".into(),
+                bucket: "b".into(),
+                endpoint: "https://e.example".into(),
+                region: None,
+                credentials_secret: None,
+                access_key_id: Some("AK".into()),
+                secret_access_key: Some("SK".into()),
+            },
+            extra: Default::default(),
+        };
+        let err = cleartext
+            .create_rl_policy(policy.clone())
+            .await
+            .expect_err("cleartext refused");
+        assert!(err.to_string().contains("cleartext"), "{err}");
+
+        // A referenced-secret create carries no key material — allowed even
+        // over http (it will simply fail at transport here, NOT at the guard).
+        let mut no_keys = policy;
+        no_keys.storage.access_key_id = None;
+        no_keys.storage.secret_access_key = None;
+        no_keys.storage.credentials_secret = Some("my-secret".into());
+        let err = cleartext.create_rl_policy(no_keys).await.unwrap_err();
+        assert!(!err.to_string().contains("cleartext"), "{err}");
+
+        // Loopback http is exempt: the guard passes and the call reaches a
+        // real (mock) server.
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/rl/clusters/pool/credentials"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "name": "pool", "rotatedAt": "2026-09-08T00:00:00Z",
+            })))
+            .mount(&mock_server)
+            .await;
+        let loopback = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("t", "r")
+            .build()
+            .unwrap();
+        let rotated = loopback
+            .rotate_rl_cluster_credentials(
+                "pool",
+                RotateRelayCredentialsRequest {
+                    access_key_id: "AK".into(),
+                    secret_access_key: "SK".into(),
+                },
+            )
+            .await
+            .expect("loopback http passes the guard");
+        assert_eq!(rotated.name, "pool");
     }
 
     #[tokio::test]
