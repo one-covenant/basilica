@@ -172,3 +172,37 @@ def test_publishing_delegates_to_the_attached_handle():
     assert client.publish({}, revision="r1")["state"] == "Validated"
     assert client.wait_until_active("r1")["state"] == "Active"
     assert pub.calls == [("publish", "r1"), ("wait", "r1")]
+
+
+def test_platform_calls_without_identification_are_refused():
+    client = RlSessionClient("http://127.0.0.1:9", "t")
+    for call in (client.usage, client.park, client.resume):
+        with pytest.raises(Exception, match="not identified to the platform"):
+            call()
+
+
+def test_platform_calls_delegate_to_the_rl_api():
+    class FakeRlApi:
+        def __init__(self):
+            self.calls = []
+
+        def session_usage(self, uid):
+            self.calls.append(("usage", uid))
+            return {"gpuHours": 1.0}
+
+        def park_session(self, uid):
+            self.calls.append(("park", uid))
+            return {"state": "parked"}
+
+        def resume_session(self, uid):
+            self.calls.append(("resume", uid))
+            return {"state": "starting"}
+
+    api = FakeRlApi()
+    client = RlSessionClient(
+        "http://127.0.0.1:9", "t", api=api, session_uid="0b1c"
+    )
+    assert client.usage() == {"gpuHours": 1.0}
+    assert client.park()["state"] == "parked"
+    assert client.resume()["state"] == "starting"
+    assert api.calls == [("usage", "0b1c"), ("park", "0b1c"), ("resume", "0b1c")]

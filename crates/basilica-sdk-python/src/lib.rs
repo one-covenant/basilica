@@ -328,6 +328,42 @@ impl BasilicaClient {
         serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Usage & cost for a session (interface doc step 7).
+    fn rl_get_session_usage(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_rl_session_usage(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Park a session: the fleet scales away, identity survives.
+    fn rl_park_session(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.park_rl_session(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Resume a parked session on the same lineage.
+    fn rl_resume_session(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.resume_rl_session(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     /// Read one revision's registry state — the wait_until_active poll.
     fn rl_get_revision(&self, py: Python, policy: String, revision: String) -> PyResult<String> {
         let client = Arc::clone(&self.inner);

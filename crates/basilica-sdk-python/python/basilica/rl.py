@@ -480,14 +480,50 @@ class RlNamespace:
         bucket — a new session resumes the lineage."""
         return json.loads(self._core.rl_delete_session(session_uid))
 
+    def session_usage(self, session_uid: str) -> dict:
+        """Usage & cost, any time (interface doc step 7):
+        ``gpuHours`` (fleet devices × wall-clock), ``promptTokens`` /
+        ``completionTokens`` and ``samplingUtilization`` from the
+        session's own replicas, plus ``costUsd`` /
+        ``effectiveCostPerMTok`` when the platform has a configured rate
+        (ABSENT otherwise — never invented)."""
+        return json.loads(self._core.rl_get_session_usage(session_uid))
+
+    def park_session(self, session_uid: str) -> dict:
+        """Park a session: the fleet scales away and new gpu-hours stop
+        with it; the URL, token and policy binding all survive."""
+        return json.loads(self._core.rl_park_session(session_uid))
+
+    def resume_session(self, session_uid: str) -> dict:
+        """Resume a parked session on the SAME lineage (the fleet
+        replays the newest Active revision). Poll ``get_session`` until
+        ``active``."""
+        return json.loads(self._core.rl_resume_session(session_uid))
+
     def open_session(
-        self, url: str, token: str, *, publisher: "Any" = None, timeout: float = 1800.0
+        self,
+        url: str,
+        token: str,
+        *,
+        publisher: "Any" = None,
+        session_uid: Optional[str] = None,
+        timeout: float = 1800.0,
     ) -> "Any":
         """Open a serving client on a session (interface doc steps 5+6):
         ``generate()`` speaks the training dialect (token IDs both ways,
         sampler logprobs, revision assertion, servedRevision). Attach a
         publisher (``client.rl.policy(...)``) and the step-6 loop runs on
-        one object — generate / publish / wait_until_active."""
+        one object — generate / publish / wait_until_active. Pass
+        ``session_uid`` and ``usage()`` / ``park()`` / ``resume()`` work
+        on the same object too (they call the platform API, not the
+        session)."""
         from basilica.session import RlSessionClient
 
-        return RlSessionClient(url, token, publisher=publisher, timeout=timeout)
+        return RlSessionClient(
+            url,
+            token,
+            publisher=publisher,
+            api=self if session_uid else None,
+            session_uid=session_uid,
+            timeout=timeout,
+        )

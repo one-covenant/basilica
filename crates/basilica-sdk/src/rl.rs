@@ -572,12 +572,28 @@ pub struct CreateRlSessionResponse {
 #[serde(rename_all = "camelCase")]
 pub struct RlSessionStatusResponse {
     pub session_uid: String,
-    /// `starting` | `active` | `failed` | `terminating`.
+    /// `starting` | `active` | `parked` | `failed` | `terminating`.
     pub state: String,
     pub policy: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chain_head: Option<String>,
     pub url: String,
+    /// T7 blame conditions — absent on the wire when there is nothing to
+    /// say (and from servers predating the field, hence `default`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<RlSessionCondition>,
+}
+
+/// One curated condition on a session read: `type` is the family
+/// (`Revision`), `reason` the interface doc's failure name where one
+/// applies, `message` human-actionable.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionCondition {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub reason: String,
+    pub message: String,
 }
 
 /// Response after deleting a session (`DELETE /rl/rollout-sessions/{id}`).
@@ -585,6 +601,37 @@ pub struct RlSessionStatusResponse {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteRlSessionResponse {
     pub session_uid: String,
+}
+
+/// Usage & cost (`GET /rl/rollout-sessions/{id}/usage`; interface doc
+/// step 7). Cost fields are ABSENT (not null) when the platform has no
+/// per-GPU-hour rate configured, and `effectiveCostPerMTok` also when no
+/// tokens were generated — omission over invention.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionUsageResponse {
+    /// DEVICE-hours: fleet devices × wall-clock since creation.
+    pub gpu_hours: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    /// Σ busy-seconds / Σ alive-seconds across reporting replicas.
+    pub sampling_utilization: f64,
+    /// `costUsd` per million GENERATED tokens; prefill rides free.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_cost_per_m_tok: Option<f64>,
+    /// Token counts and utilization cover exactly this many replicas.
+    pub replicas_reporting: u32,
+}
+
+/// Response of `POST /rl/rollout-sessions/{id}/park` (and `/resume`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParkRlSessionResponse {
+    pub session_uid: String,
+    /// `parked` after park, `starting` after resume.
+    pub state: String,
 }
 
 #[cfg(test)]

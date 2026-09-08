@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Session usage, cost and park/resume (#1667, #1694; interface doc
+  step 7).** `client.rl.session_usage(uid)` returns the step-7 shape —
+  `gpuHours` (fleet devices × wall-clock), token counters and
+  `samplingUtilization` measured by the session's own replicas, and
+  `costUsd`/`effectiveCostPerMTok` when the platform has a configured
+  rate (ABSENT otherwise, never null). `park_session`/`resume_session`
+  scale the fleet away and back on the same lineage.
+  `open_session(..., session_uid=...)` puts `usage()`/`park()`/`resume()`
+  on the session object itself, and session reads now carry the T7
+  `conditions` field (blame-attributed `{type, reason, message}`) when
+  the platform has something to say.
 - **BYOT rollout sessions + the serving client (#1666; interface doc
   steps 2+5+6).** `client.rl.create_session(policy, gpu_model=, ...)`
   starts a private token-gated vLLM fleet (token shown once; NOT

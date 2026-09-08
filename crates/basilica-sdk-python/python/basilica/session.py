@@ -66,11 +66,22 @@ class RlSessionClient:
     """A rollout session's client: serving always, publishing when a
     :class:`basilica.publisher.RlPolicyHandle` is attached."""
 
-    def __init__(self, url: str, token: str, *, publisher: Any = None, timeout: float = 1800.0):
+    def __init__(
+        self,
+        url: str,
+        token: str,
+        *,
+        publisher: Any = None,
+        api: Any = None,
+        session_uid: Optional[str] = None,
+        timeout: float = 1800.0,
+    ):
         self._base = url.rstrip("/")
         self._token = token
         self._timeout = timeout
         self._publisher = publisher
+        self._api = api
+        self._session_uid = session_uid
 
     # -- serving (T4 dialect) ---------------------------------------------
 
@@ -167,6 +178,29 @@ class RlSessionClient:
                 "client.rl.open_session(url, token, publisher=client.rl.policy(...))"
             )
         return self._publisher
+
+    # -- platform surface (delegates to the RL API when identified) --------
+
+    def _need_api(self) -> Any:
+        if self._api is None or self._session_uid is None:
+            raise BasilicaError(
+                "this session is not identified to the platform — open it with "
+                "client.rl.open_session(url, token, session_uid=...) to use "
+                "usage()/park()/resume()"
+            )
+        return self._api
+
+    def usage(self) -> dict:
+        """Usage & cost for THIS session (interface doc step 7)."""
+        return self._need_api().session_usage(self._session_uid)
+
+    def park(self) -> dict:
+        """Park this session's fleet; the session identity survives."""
+        return self._need_api().park_session(self._session_uid)
+
+    def resume(self) -> dict:
+        """Resume this parked session on the same lineage."""
+        return self._need_api().resume_session(self._session_uid)
 
     def publish(self, named_tensors, *, revision: str) -> dict:
         return self._need_publisher().publish(named_tensors, revision=revision)

@@ -47,9 +47,9 @@ use crate::{
         CreateRlPolicyRequest, CreateRlPolicyResponse, CreateRlRevisionRequest,
         CreateRlSessionRequest, CreateRlSessionResponse, DeleteRlClusterResponse,
         DeleteRlJobResponse, DeleteRlPolicyResponse, DeleteRlSessionResponse,
-        RlClusterStatusResponse, RlJobStatusResponse, RlManifestRequest, RlManifestResponse,
-        RlPolicyResponse, RlRevisionResponse, RlSessionStatusResponse,
-        RotateRelayCredentialsRequest, RotateRlCredentialsResponse,
+        ParkRlSessionResponse, RlClusterStatusResponse, RlJobStatusResponse, RlManifestRequest,
+        RlManifestResponse, RlPolicyResponse, RlRevisionResponse, RlSessionStatusResponse,
+        RlSessionUsageResponse, RotateRelayCredentialsRequest, RotateRlCredentialsResponse,
     },
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
@@ -559,6 +559,35 @@ impl BasilicaClient {
     pub async fn delete_rl_session(&self, id: &str) -> Result<DeleteRlSessionResponse> {
         Self::validate_rl_session_id(id)?;
         self.delete(&format!("/rl/rollout-sessions/{}", id)).await
+    }
+
+    /// Usage & cost for a session, any time (interface doc step 7).
+    pub async fn get_rl_session_usage(&self, id: &str) -> Result<RlSessionUsageResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.get(&format!("/rl/rollout-sessions/{}/usage", id))
+            .await
+    }
+
+    /// Park a session (T9): the fleet scales away and new gpu-hours stop
+    /// with it; identity, URL, token and policy binding all survive.
+    pub async fn park_rl_session(&self, id: &str) -> Result<ParkRlSessionResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.post(
+            &format!("/rl/rollout-sessions/{}/park", id),
+            &serde_json::json!({}),
+        )
+        .await
+    }
+
+    /// Resume a parked session on the SAME lineage — the consumer replays
+    /// the newest Active revision. Poll `get_rl_session` until `active`.
+    pub async fn resume_rl_session(&self, id: &str) -> Result<ParkRlSessionResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.post(
+            &format!("/rl/rollout-sessions/{}/resume", id),
+            &serde_json::json!({}),
+        )
+        .await
     }
 
     /// Read one revision's registry state — the `wait_until_active` poll.

@@ -261,3 +261,65 @@ def test_session_id_grammar_refused_client_side(server):
     with pytest.raises(ValueError, match="session id"):
         rl(base).get_session("NOT_A_VALID/ID")
     assert rec.requests == [], "an invalid id never reaches the wire"
+
+
+def test_session_usage_wire_shape(server):
+    base, rec = server
+    uid = _SESSION_RESP["sessionUid"]
+    rec.responses = [
+        (
+            200,
+            {
+                "gpuHours": 332.0,
+                "costUsd": 664.0,
+                "promptTokens": 150,
+                "completionTokens": 5000000,
+                "samplingUtilization": 0.35,
+                "effectiveCostPerMTok": 132.8,
+                "replicasReporting": 2,
+            },
+        )
+    ]
+    out = rl(base).session_usage(uid)
+    (r,) = rec.requests
+    assert (r["method"], r["path"]) == ("GET", f"/rl/rollout-sessions/{uid}/usage")
+    assert out["gpuHours"] == 332.0
+    assert out["effectiveCostPerMTok"] == 132.8
+
+
+def test_session_usage_cost_fields_stay_absent_when_server_omits(server):
+    # The step-7 contract: no configured rate means the cost keys are
+    # ABSENT — the SDK must not resurrect them as null.
+    base, rec = server
+    uid = _SESSION_RESP["sessionUid"]
+    rec.responses = [
+        (
+            200,
+            {
+                "gpuHours": 1.0,
+                "promptTokens": 0,
+                "completionTokens": 0,
+                "samplingUtilization": 0.0,
+                "replicasReporting": 0,
+            },
+        )
+    ]
+    out = rl(base).session_usage(uid)
+    assert "costUsd" not in out
+    assert "effectiveCostPerMTok" not in out
+
+
+def test_park_and_resume_paths(server):
+    base, rec = server
+    uid = _SESSION_RESP["sessionUid"]
+    rec.responses = [
+        (200, {"sessionUid": uid, "state": "parked"}),
+        (200, {"sessionUid": uid, "state": "starting"}),
+    ]
+    assert rl(base).park_session(uid)["state"] == "parked"
+    assert rl(base).resume_session(uid)["state"] == "starting"
+    paths = [(r["method"], r["path"]) for r in rec.requests]
+    assert paths == [
+        ("POST", f"/rl/rollout-sessions/{uid}/park"),
+        ("POST", f"/rl/rollout-sessions/{uid}/resume"),
+    ]

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 import threading
 import time
@@ -182,6 +183,11 @@ class RlPolicyHandle:
         # anchors are ~15 GB for 7B — the platform default tmpdir is often
         # tmpfs on trainer nodes, so this must be overridable.
         self._work_dir = str(work_dir) if work_dir is not None else None
+        # Created eagerly: tempfile.mkdtemp(dir=...) does NOT create
+        # parents, and "your staging dir is missing" should fail here, at
+        # configuration time, not minutes later mid-publish.
+        if self._work_dir is not None:
+            os.makedirs(self._work_dir, exist_ok=True)
         meta = json.loads(core.rl_get_policy(name))
         self._effective_prefix: str = meta["effectivePrefix"]
         self._repo: str = meta["repo"]
