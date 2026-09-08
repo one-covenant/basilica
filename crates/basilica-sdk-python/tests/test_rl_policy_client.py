@@ -213,3 +213,51 @@ def test_get_policy_wire_shape(server):
     assert r["auth"] == "Bearer test-key"
     assert out["effectivePrefix"] == "policies/uid-1/"
     assert out["latestRevision"] == "step-0001"
+
+
+_SESSION_RESP = {
+    "sessionUid": "0b5e7a2e-1c1c-4a6c-9f6d-2f9f6b1e7a10",
+    "url": "https://s-01bc.rollouts.basilica.ai",
+    "token": "one-time-token",
+    "state": "starting",
+}
+
+
+def test_create_session_wire_shape(server):
+    base, rec = server
+    rec.responses = [(200, _SESSION_RESP)]
+    out = rl(base).create_session(
+        "math-policy", gpu_model="H100", gpu_count=4, replicas=2
+    )
+    (r,) = rec.requests
+    assert (r["method"], r["path"]) == ("POST", "/rl/rollout-sessions")
+    assert r["body"] == {
+        "policy": "math-policy",
+        "fleet": {"replicas": 2, "gpu": {"model": "H100", "count": 4}},
+    }
+    assert "activation" not in r["body"], "default async = OMITTED, not sent"
+    assert out["token"] == "one-time-token"
+
+
+def test_get_and_delete_session_paths(server):
+    base, rec = server
+    uid = _SESSION_RESP["sessionUid"]
+    rec.responses = [
+        (200, {"sessionUid": uid, "state": "active", "policy": "math-policy",
+               "url": _SESSION_RESP["url"]}),
+        (200, {"sessionUid": uid}),
+    ]
+    assert rl(base).get_session(uid)["state"] == "active"
+    rl(base).delete_session(uid)
+    paths = [(r["method"], r["path"]) for r in rec.requests]
+    assert paths == [
+        ("GET", f"/rl/rollout-sessions/{uid}"),
+        ("DELETE", f"/rl/rollout-sessions/{uid}"),
+    ]
+
+
+def test_session_id_grammar_refused_client_side(server):
+    base, rec = server
+    with pytest.raises(ValueError, match="session id"):
+        rl(base).get_session("NOT_A_VALID/ID")
+    assert rec.requests == [], "an invalid id never reaches the wire"

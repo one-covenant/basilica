@@ -288,6 +288,46 @@ impl BasilicaClient {
         serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Start a rollout session. `request_json` must match
+    /// basilica_sdk::rl::CreateRlSessionRequest. NOT idempotent.
+    fn rl_create_session(&self, py: Python, request_json: String) -> PyResult<String> {
+        let request: basilica_sdk::rl::CreateRlSessionRequest = serde_json::from_str(&request_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid RL session request: {e}")))?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.create_rl_session(request).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Read a session's lifecycle state (never echoes the token).
+    fn rl_get_session(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_rl_session(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Delete a session (the policy + revisions stay in the customer's
+    /// bucket).
+    fn rl_delete_session(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.delete_rl_session(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     /// Read one revision's registry state — the wait_until_active poll.
     fn rl_get_revision(&self, py: Python, policy: String, revision: String) -> PyResult<String> {
         let client = Arc::clone(&self.inner);

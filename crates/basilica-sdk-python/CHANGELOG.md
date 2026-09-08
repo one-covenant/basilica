@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **BYOT rollout sessions + the serving client (#1666; interface doc
+  steps 2+5+6).** `client.rl.create_session(policy, gpu_model=, ...)`
+  starts a private token-gated vLLM fleet (token shown once; NOT
+  idempotent — documented), with `get_session`/`delete_session` beside
+  it. `client.rl.open_session(url, token)` returns an `RlSessionClient`
+  whose `generate()` speaks the T4 training dialect: token-ID prompts
+  (the server never tokenizes on the training path), the sampler's own
+  logprobs as a flat array, `revision` as an assertion (`StaleRevisionError`
+  on mismatch, typed — the one failure trainers branch on), and
+  `served_revision` on every result. Attach a publisher
+  (`publisher=client.rl.policy(...)`) and the interface doc's step-6
+  training loop runs verbatim on one object — generate / publish /
+  wait_until_active. The session client is pure stdlib: session traffic
+  goes to the session's own host, and the base SDK stays zero-dependency.
 - **BYOT policy registry + trainer-side publisher (#1666; ships as 0.36.0).**
   Registry surface: `client.rl.create_policy(...)` registers a model
   lineage against your own storage (base-model pin with immutable HF

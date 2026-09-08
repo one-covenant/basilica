@@ -531,6 +531,62 @@ pub struct RlRevisionResponse {
     pub submitted_at: String,
 }
 
+// ---------------------------------------------------------------------------
+// BYOT rollout-session DTOs (#1666; server routes #1663)
+// ---------------------------------------------------------------------------
+
+/// Start a rollout session (`POST /rl/rollout-sessions`): a PRIVATE,
+/// token-gated vLLM fleet serving one policy. NOT idempotent — a retry
+/// after a lost response creates a second fleet (bounded by the
+/// per-tenant cap); list deployments before retrying.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlSessionRequest {
+    /// The policy this fleet serves (must exist).
+    pub policy: String,
+    /// Fleet shape — same type and bounds as the managed RL fleets.
+    pub fleet: RlFleetRequest,
+    /// `async` (default) | `sync`. v1 refuses `sync` at admission
+    /// (SessionSyncUnavailable) until the activation barrier ships.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activation: Option<String>,
+    /// Forward-compat catch-all (the cluster-request contract).
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// The create response. `token` is shown ONCE — the platform stores only
+/// its hash; losing it means recreating the session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlSessionResponse {
+    pub session_uid: String,
+    /// Where `/v1/completions` terminates (the T4 serving surface).
+    pub url: String,
+    pub token: String,
+    pub state: String,
+}
+
+/// One session's lifecycle view (`GET /rl/rollout-sessions/{id}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionStatusResponse {
+    pub session_uid: String,
+    /// `starting` | `active` | `failed` | `terminating`.
+    pub state: String,
+    pub policy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain_head: Option<String>,
+    pub url: String,
+}
+
+/// Response after deleting a session (`DELETE /rl/rollout-sessions/{id}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRlSessionResponse {
+    pub session_uid: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

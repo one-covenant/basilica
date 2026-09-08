@@ -45,10 +45,11 @@ use crate::{
     rl::{
         CreateRlClusterRequest, CreateRlClusterResponse, CreateRlJobRequest, CreateRlJobResponse,
         CreateRlPolicyRequest, CreateRlPolicyResponse, CreateRlRevisionRequest,
-        DeleteRlClusterResponse, DeleteRlJobResponse, DeleteRlPolicyResponse,
+        CreateRlSessionRequest, CreateRlSessionResponse, DeleteRlClusterResponse,
+        DeleteRlJobResponse, DeleteRlPolicyResponse, DeleteRlSessionResponse,
         RlClusterStatusResponse, RlJobStatusResponse, RlManifestRequest, RlManifestResponse,
-        RlPolicyResponse, RlRevisionResponse, RotateRelayCredentialsRequest,
-        RotateRlCredentialsResponse,
+        RlPolicyResponse, RlRevisionResponse, RlSessionStatusResponse,
+        RotateRelayCredentialsRequest, RotateRlCredentialsResponse,
     },
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
@@ -519,6 +520,45 @@ impl BasilicaClient {
         Self::validate_rl_revision(&request.revision)?;
         self.post(&format!("/rl/policies/{}/revisions", policy), &request)
             .await
+    }
+
+    /// Session ids are UUID-shaped (the server caps at 52 of [a-z0-9-]);
+    /// mirrored so a typo is a clean client error, not a routed 404.
+    fn validate_rl_session_id(id: &str) -> Result<()> {
+        let ok = !id.is_empty()
+            && id.len() <= 52
+            && id
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if ok {
+            Ok(())
+        } else {
+            Err(ApiError::InvalidRequest {
+                message: format!("invalid session id {id:?}: 1-52 chars of [a-z0-9-]"),
+            })
+        }
+    }
+
+    /// Start a rollout session (#1666; server #1663). NOT idempotent.
+    pub async fn create_rl_session(
+        &self,
+        request: CreateRlSessionRequest,
+    ) -> Result<CreateRlSessionResponse> {
+        Self::validate_rl_name(&request.policy)?;
+        self.post("/rl/rollout-sessions", &request).await
+    }
+
+    /// Read a session's lifecycle state (never echoes the token).
+    pub async fn get_rl_session(&self, id: &str) -> Result<RlSessionStatusResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.get(&format!("/rl/rollout-sessions/{}", id)).await
+    }
+
+    /// Delete a session. The policy and every revision stay in the
+    /// customer's bucket — a new session resumes the lineage.
+    pub async fn delete_rl_session(&self, id: &str) -> Result<DeleteRlSessionResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.delete(&format!("/rl/rollout-sessions/{}", id)).await
     }
 
     /// Read one revision's registry state — the `wait_until_active` poll.

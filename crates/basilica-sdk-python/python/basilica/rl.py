@@ -431,3 +431,63 @@ class RlNamespace:
             anchor_every=anchor_every,
             work_dir=work_dir,
         )
+
+    # -- BYOT rollout sessions (#1666; interface doc steps 2+5+6) ----------
+
+    def create_session(
+        self,
+        policy: str,
+        *,
+        gpu_model: str,
+        gpu_count: int,
+        replicas: int = 1,
+        min_gpu_memory_gb: Optional[int] = None,
+        activation: Optional[str] = None,
+    ) -> dict:
+        """Start a rollout session: a PRIVATE, token-gated vLLM fleet
+        serving one policy (POST /rl/rollout-sessions).
+
+        The response's ``token`` is shown ONCE — the platform stores only
+        its hash. NOT idempotent: a retry after a lost response creates a
+        second fleet (bounded by the per-tenant cap); list your
+        deployments before retrying. ``activation`` defaults to ``async``
+        (the training idiom); v1 refuses ``sync`` until the activation
+        barrier ships."""
+        body = _drop_none(
+            {
+                "policy": policy,
+                "fleet": {
+                    "replicas": replicas,
+                    "gpu": _drop_none(
+                        {
+                            "model": gpu_model,
+                            "count": gpu_count,
+                            "minMemoryGb": min_gpu_memory_gb,
+                        }
+                    ),
+                },
+                "activation": activation,
+            }
+        )
+        return json.loads(self._core.rl_create_session(json.dumps(body)))
+
+    def get_session(self, session_uid: str) -> dict:
+        """A session's lifecycle state (never echoes the token)."""
+        return json.loads(self._core.rl_get_session(session_uid))
+
+    def delete_session(self, session_uid: str) -> dict:
+        """Stop a session. The policy and every revision stay in YOUR
+        bucket — a new session resumes the lineage."""
+        return json.loads(self._core.rl_delete_session(session_uid))
+
+    def open_session(
+        self, url: str, token: str, *, publisher: "Any" = None, timeout: float = 1800.0
+    ) -> "Any":
+        """Open a serving client on a session (interface doc steps 5+6):
+        ``generate()`` speaks the training dialect (token IDs both ways,
+        sampler logprobs, revision assertion, servedRevision). Attach a
+        publisher (``client.rl.policy(...)``) and the step-6 loop runs on
+        one object — generate / publish / wait_until_active."""
+        from basilica.session import RlSessionClient
+
+        return RlSessionClient(url, token, publisher=publisher, timeout=timeout)
