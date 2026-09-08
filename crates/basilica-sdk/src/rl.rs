@@ -381,6 +381,156 @@ pub struct DeleteRlJobResponse {
     pub name: String,
 }
 
+// ---------------------------------------------------------------------------
+// BYOT policy registry DTOs (#1666; server routes #1662)
+// ---------------------------------------------------------------------------
+
+/// Pinned base-model identity for a policy lineage (interface doc step 1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlPolicyBaseModel {
+    /// HF-style repo, e.g. `Qwen/Qwen2.5-7B-Instruct`.
+    pub repo: String,
+    /// Immutable HF commit SHA (40 or 64 hex; a branch/tag is refused).
+    pub commit: String,
+    /// `sha256:<hex>` of the tokenizer the trainer tokenizes with.
+    pub tokenizer_digest: String,
+}
+
+/// The CUSTOMER's storage the lineage lives in. Credentials are WRITE-ONLY
+/// server-side: pass EITHER the inline pair OR `credentials_secret`,
+/// exactly one — the server refuses both and neither.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlPolicyStorage {
+    /// Storage backend. v1: `r2` (any S3-compatible endpoint).
+    pub backend: String,
+    pub bucket: String,
+    /// https + DNS hostname only (server-side §6.1 hygiene).
+    pub endpoint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// Referenced namespaced Secret (one credential form).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credentials_secret: Option<String>,
+    /// Inline access key id (the other credential form).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_key_id: Option<String>,
+    /// Inline secret access key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_access_key: Option<String>,
+}
+
+// §7a: key material must not leak through a traced request's Debug —
+// same hand-written redaction as `RlRelayRequest`.
+impl std::fmt::Debug for RlPolicyStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RlPolicyStorage")
+            .field("backend", &self.backend)
+            .field("bucket", &self.bucket)
+            .field("endpoint", &self.endpoint)
+            .field("region", &self.region)
+            .field("credentials_secret", &self.credentials_secret)
+            .field(
+                "access_key_id",
+                &self.access_key_id.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "secret_access_key",
+                &self.secret_access_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+/// Register a model lineage (`POST /rl/policies`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlPolicyRequest {
+    /// DNS-1123 label; becomes the CR and platform Secret name.
+    pub name: String,
+    pub base_model: RlPolicyBaseModel,
+    /// Weight-update wire format. v1 admits `pulse-bf16-v1` only.
+    pub update_format: String,
+    pub storage: RlPolicyStorage,
+    /// Forward-compat catch-all (same contract as the cluster request).
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Response to a policy create.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlPolicyResponse {
+    pub policy_uid: String,
+    /// `policies/<policy-uid>/` — scope your fleet's read-only IAM grant to
+    /// this, and upload every artifact under it.
+    pub effective_prefix: String,
+}
+
+/// One policy's registry view (`GET /rl/policies/{name}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlPolicyResponse {
+    pub name: String,
+    pub policy_uid: String,
+    pub effective_prefix: String,
+    pub repo: String,
+    pub commit: String,
+    pub update_format: String,
+    pub total_revisions: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_revision: Option<String>,
+}
+
+/// Response after deleting a policy (`DELETE /rl/policies/{name}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRlPolicyResponse {
+    pub name: String,
+}
+
+/// The artifact coordinates of one revision manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlRevisionArtifact {
+    /// `s3://<bucket>/<key>` — must live under the policy's
+    /// `effective_prefix`.
+    pub uri: String,
+    /// 64 lowercase hex chars of the artifact bytes.
+    pub sha256: String,
+}
+
+/// Register a revision manifest (`POST /rl/policies/{name}/revisions`).
+/// No credentials here: the artifact already lives in the customer's
+/// bucket; this only registers + verifies it (interface doc step 3).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlRevisionRequest {
+    /// 1-128 chars of `[a-z0-9._-]` with letter-or-digit edges.
+    pub revision: String,
+    /// Absent = anchor (chain root); present = patch over that revision.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_revision: Option<String>,
+    pub artifact: RlRevisionArtifact,
+    /// `xxh3_128:<32 lowercase hex>` — the whole-state digest every serving
+    /// replica must match post-apply.
+    pub expected_state_digest: String,
+}
+
+/// One revision's registry state
+/// (`GET /rl/policies/{name}/revisions/{revision}` and the create response).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlRevisionResponse {
+    pub revision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_revision: Option<String>,
+    /// `Validated` | `Loading` | `Active` | `Rejected` | `Superseded`.
+    pub state: String,
+    pub submitted_at: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -563,5 +713,86 @@ mod tests {
         assert_eq!(s.phase, "Succeeded");
         assert_eq!(s.artifact_uri.as_deref(), Some("s3://x/uid"));
         assert_eq!(s.step, Some(50));
+    }
+
+    #[test]
+    fn policy_request_wire_shape_and_debug_redaction() {
+        let req = CreateRlPolicyRequest {
+            name: "math-policy".into(),
+            base_model: RlPolicyBaseModel {
+                repo: "Qwen/Qwen2.5-7B-Instruct".into(),
+                commit: "a".repeat(40),
+                tokenizer_digest: format!("sha256:{}", "b".repeat(64)),
+            },
+            update_format: "pulse-bf16-v1".into(),
+            storage: RlPolicyStorage {
+                backend: "r2".into(),
+                bucket: "my-weights".into(),
+                endpoint: "https://acc.r2.cloudflarestorage.com".into(),
+                region: None,
+                credentials_secret: None,
+                access_key_id: Some("AKIALIVEKEY".into()),
+                secret_access_key: Some("SECRETSECRET".into()),
+            },
+            extra: Default::default(),
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        // The server DTO is deny_unknown_fields camelCase — the exact keys
+        // are the contract.
+        assert_eq!(
+            v["baseModel"]["tokenizerDigest"],
+            req.base_model.tokenizer_digest
+        );
+        assert_eq!(v["updateFormat"], "pulse-bf16-v1");
+        assert_eq!(v["storage"]["accessKeyId"], "AKIALIVEKEY");
+        assert!(
+            v["storage"].get("region").is_none(),
+            "None must be OMITTED, not null"
+        );
+        // §7a: a traced request must not print key material.
+        let dbg = format!("{req:?}");
+        assert!(!dbg.contains("AKIALIVEKEY"), "{dbg}");
+        assert!(!dbg.contains("SECRETSECRET"), "{dbg}");
+        assert!(dbg.contains("<redacted>"), "{dbg}");
+    }
+
+    #[test]
+    fn revision_request_omits_absent_parent() {
+        // An anchor's manifest must not carry `"parentRevision": null` — the
+        // server treats presence itself as "this is a patch".
+        let anchor = CreateRlRevisionRequest {
+            revision: "step-0000".into(),
+            parent_revision: None,
+            artifact: RlRevisionArtifact {
+                uri: "s3://my-weights/policies/u/step-0000/anchor.safetensors".into(),
+                sha256: "c".repeat(64),
+            },
+            expected_state_digest: format!("xxh3_128:{}", "d".repeat(32)),
+        };
+        let v = serde_json::to_value(&anchor).unwrap();
+        assert!(v.get("parentRevision").is_none());
+        assert_eq!(v["artifact"]["sha256"], anchor.artifact.sha256);
+        assert_eq!(v["expectedStateDigest"], anchor.expected_state_digest);
+
+        let rec: RlRevisionResponse = serde_json::from_str(
+            r#"{"revision":"step-0001","parentRevision":"step-0000",
+                "state":"Validated","submittedAt":"2026-09-07T16:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(rec.parent_revision.as_deref(), Some("step-0000"));
+        assert_eq!(rec.state, "Validated");
+    }
+
+    #[test]
+    fn policy_response_parses() {
+        let p: RlPolicyResponse = serde_json::from_str(
+            r#"{"name":"math-policy","policyUid":"u-1","effectivePrefix":"policies/u-1/",
+                "repo":"Qwen/Qwen2.5-7B-Instruct","commit":"deadbeef","updateFormat":"pulse-bf16-v1",
+                "totalRevisions":3,"latestRevision":"step-0002"}"#,
+        )
+        .unwrap();
+        assert_eq!(p.effective_prefix, "policies/u-1/");
+        assert_eq!(p.total_revisions, 3);
+        assert_eq!(p.latest_revision.as_deref(), Some("step-0002"));
     }
 }

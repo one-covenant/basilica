@@ -322,3 +322,79 @@ class RlNamespace:
 
     def submit_manifest(self, manifest: dict) -> dict:
         return json.loads(self._core.rl_submit_manifest(json.dumps(manifest)))
+
+    # -- BYOT policies (#1666; interface doc steps 1+3) --------------------
+
+    def create_policy(
+        self,
+        name: str,
+        *,
+        repo: str,
+        commit: str,
+        tokenizer_digest: str,
+        bucket: str,
+        endpoint: str,
+        region: str | None = None,
+        access_key_id: str | None = None,
+        secret_access_key: str | None = None,
+        credentials_secret: str | None = None,
+        update_format: str = "pulse-bf16-v1",
+        backend: str = "r2",
+    ) -> dict:
+        """Register a model lineage against your OWN storage.
+
+        POST /rl/policies. ``commit`` must be the immutable HF commit SHA
+        (40 or 64 hex — a branch name is refused); ``tokenizer_digest`` is
+        ``sha256:<hex>`` of the tokenizer you train with. Credentials are
+        WRITE-ONLY platform-side (never echoed back); pass EITHER the inline
+        pair OR ``credentials_secret``, exactly one. The response's
+        ``effectivePrefix`` is where the lineage lives in your bucket —
+        scope a read-only IAM grant to it for the serving fleet."""
+        body = _drop_none(
+            {
+                "name": name,
+                "baseModel": {
+                    "repo": repo,
+                    "commit": commit,
+                    "tokenizerDigest": tokenizer_digest,
+                },
+                "updateFormat": update_format,
+                "storage": _drop_none(
+                    {
+                        "backend": backend,
+                        "bucket": bucket,
+                        "endpoint": endpoint,
+                        "region": region,
+                        "credentialsSecret": credentials_secret,
+                        "accessKeyId": access_key_id,
+                        "secretAccessKey": secret_access_key,
+                    }
+                ),
+            }
+        )
+        return json.loads(self._core.rl_create_policy(json.dumps(body)))
+
+    def get_policy(self, name: str) -> dict:
+        return json.loads(self._core.rl_get_policy(name))
+
+    def delete_policy(self, name: str) -> dict:
+        return json.loads(self._core.rl_delete_policy(name))
+
+    def get_revision(self, policy: str, revision: str) -> dict:
+        """One revision's registry state (Validated | Loading | Active |
+        Rejected | Superseded)."""
+        return json.loads(self._core.rl_get_revision(policy, revision))
+
+    def policy(self, name: str, *, storage: "Any", anchor_every: int = 30) -> "Any":
+        """Open a publishing handle on a policy lineage.
+
+        ``storage`` is a :class:`basilica.publisher.PolicyStorage` — YOUR
+        bucket coordinates; artifact bytes upload straight from the trainer
+        to your storage and never transit the platform. The heavy publisher
+        dependencies (torch, xxhash, zstandard, safetensors, boto3) are
+        imported lazily here — ``pip install 'basilica-sdk[publisher]'``."""
+        from basilica.publisher import RlPolicyHandle
+
+        return RlPolicyHandle(
+            self._core, name, storage=storage, anchor_every=anchor_every
+        )

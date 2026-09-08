@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **BYOT policy registry + trainer-side publisher (#1666, toward 0.36.0).**
+  Registry surface: `client.rl.create_policy(...)` registers a model
+  lineage against your own storage (base-model pin with immutable HF
+  commit + tokenizer digest; credentials write-only, never echoed),
+  `get_policy`, `delete_policy`, and `get_revision` for revision state.
+  Publisher surface: `client.rl.policy(name, storage=PolicyStorage(...))`
+  opens a `basilica.publisher.RlPolicyHandle` — `publish_anchor` (full
+  BF16 state as a safetensors anchor) and `publish` (PULSE sparse patch
+  over the last published revision, with automatic re-anchoring every
+  30 patches so late-join replay stays bounded), plus
+  `wait_until_active(revision)` mapping `Rejected`/`Superseded` to typed
+  exceptions. Artifact bytes upload straight from the trainer to YOUR
+  bucket under the policy's `effectivePrefix`; the platform receives only
+  the manifest (URI + sha256 + whole-state xxh3 digest). The wire format
+  is the PULSE codec (contracts doc C2.4-C2.5), vendored under
+  `basilica._pulse` and parity-pinned byte-for-byte against the normative
+  implementation by golden-vector tests. Publisher dependencies (torch,
+  numpy, xxhash, zstandard, safetensors, boto3) are a new optional extra:
+  `pip install 'basilica-sdk[publisher]'` — the base SDK stays
+  zero-dependency, and a failed publish rolls the diff base back so a
+  retry is always safe. Everything the publisher does remains
+  reproducible without the SDK: one upload + one
+  `POST /rl/policies/{name}/revisions`.
+
 ## [0.35.0] - 2026-08-31
 
 ### Added

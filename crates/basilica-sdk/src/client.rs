@@ -44,8 +44,10 @@ use crate::{
     },
     rl::{
         CreateRlClusterRequest, CreateRlClusterResponse, CreateRlJobRequest, CreateRlJobResponse,
-        DeleteRlClusterResponse, DeleteRlJobResponse, RlClusterStatusResponse, RlJobStatusResponse,
-        RlManifestRequest, RlManifestResponse, RotateRelayCredentialsRequest,
+        CreateRlPolicyRequest, CreateRlPolicyResponse, CreateRlRevisionRequest,
+        DeleteRlClusterResponse, DeleteRlJobResponse, DeleteRlPolicyResponse,
+        RlClusterStatusResponse, RlJobStatusResponse, RlManifestRequest, RlManifestResponse,
+        RlPolicyResponse, RlRevisionResponse, RotateRelayCredentialsRequest,
         RotateRlCredentialsResponse,
     },
     types::{
@@ -423,6 +425,80 @@ impl BasilicaClient {
         manifest: RlManifestRequest,
     ) -> Result<RlManifestResponse> {
         self.post("/rl/manifest", &manifest).await
+    }
+
+    /// Server revision grammar, mirrored client-side (#1666): 1-128 chars
+    /// of `[a-z0-9._-]` with letter-or-digit edges — a typo fails before a
+    /// multi-GB artifact uploads, and the name is safe to interpolate into
+    /// the URL path unencoded.
+    fn validate_rl_revision(revision: &str) -> Result<()> {
+        let edge_ok = |c: u8| c.is_ascii_lowercase() || c.is_ascii_digit();
+        let ok = !revision.is_empty()
+            && revision.len() <= 128
+            && revision.bytes().next().is_some_and(edge_ok)
+            && revision.bytes().last().is_some_and(edge_ok)
+            && revision
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"._-".contains(&c));
+        if ok {
+            Ok(())
+        } else {
+            Err(ApiError::InvalidRequest {
+                message: format!(
+                    "invalid revision name {revision:?}: 1-128 chars of \
+                     [a-z0-9._-] with letter-or-digit edges"
+                ),
+            })
+        }
+    }
+
+    /// Register a BYOT policy lineage against the caller's own storage
+    /// (#1666; server #1662). Credentials in `storage` are write-only
+    /// server-side and redacted from this type's `Debug`.
+    pub async fn create_rl_policy(
+        &self,
+        request: CreateRlPolicyRequest,
+    ) -> Result<CreateRlPolicyResponse> {
+        Self::validate_rl_name(&request.name)?;
+        self.post("/rl/policies", &request).await
+    }
+
+    /// Read one policy's registry view.
+    pub async fn get_rl_policy(&self, name: &str) -> Result<RlPolicyResponse> {
+        Self::validate_rl_name(name)?;
+        self.get(&format!("/rl/policies/{}", name)).await
+    }
+
+    /// Delete a policy. The registry record goes; artifact bytes in the
+    /// customer's bucket are theirs and are never touched.
+    pub async fn delete_rl_policy(&self, name: &str) -> Result<DeleteRlPolicyResponse> {
+        Self::validate_rl_name(name)?;
+        self.delete(&format!("/rl/policies/{}", name)).await
+    }
+
+    /// Register a revision manifest: the artifact already lives in the
+    /// customer's bucket; this records + verifies its coordinates.
+    pub async fn create_rl_revision(
+        &self,
+        policy: &str,
+        request: CreateRlRevisionRequest,
+    ) -> Result<RlRevisionResponse> {
+        Self::validate_rl_name(policy)?;
+        Self::validate_rl_revision(&request.revision)?;
+        self.post(&format!("/rl/policies/{}/revisions", policy), &request)
+            .await
+    }
+
+    /// Read one revision's registry state — the `wait_until_active` poll.
+    pub async fn get_rl_revision(
+        &self,
+        policy: &str,
+        revision: &str,
+    ) -> Result<RlRevisionResponse> {
+        Self::validate_rl_name(policy)?;
+        Self::validate_rl_revision(revision)?;
+        self.get(&format!("/rl/policies/{}/revisions/{}", policy, revision))
+            .await
     }
 
     /// Resume a suspended job
