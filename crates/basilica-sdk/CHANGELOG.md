@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **BYOT policy-registry surface (#1666).** Request/response DTOs mirroring
+  basilica-api's `/rl/policies` routes (`CreateRlPolicyRequest` with
+  write-only, Debug-redacted storage credentials; `RlPolicyResponse`;
+  `CreateRlRevisionRequest`/`RlRevisionResponse`) and client methods
+  `create_rl_policy`, `get_rl_policy`, `delete_rl_policy`,
+  `create_rl_revision`, `get_rl_revision` — with client-side mirrors of the
+  server's name/revision grammars so invalid input fails before the wire.
+- **Cleartext-credential guard.** Credential-bearing calls
+  (`create_rl_policy` with inline keys, `rotate_rl_cluster_credentials`,
+  `create_rl_cluster` with an inline relay pair) refuse a plain-`http://`
+  base URL unless it is loopback — live storage keys never travel cleartext.
+
 ## [0.35.0] - 2026-08-31
 
 ### Added

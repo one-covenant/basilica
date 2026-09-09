@@ -44,9 +44,13 @@ use crate::{
     },
     rl::{
         CreateRlClusterRequest, CreateRlClusterResponse, CreateRlJobRequest, CreateRlJobResponse,
-        DeleteRlClusterResponse, DeleteRlJobResponse, RlClusterStatusResponse, RlJobStatusResponse,
-        RlManifestRequest, RlManifestResponse, RotateRelayCredentialsRequest,
-        RotateRlCredentialsResponse,
+        CreateRlPolicyRequest, CreateRlPolicyResponse, CreateRlRevisionRequest,
+        CreateRlSessionRequest, CreateRlSessionResponse, DeleteRlClusterResponse,
+        DeleteRlJobResponse, DeleteRlPolicyResponse, DeleteRlSessionResponse,
+        ParkRlSessionResponse, RlClusterStatusResponse, RlJobStatusResponse, RlManifestRequest,
+        RlManifestResponse, RlPolicyResponse, RlRevisionResponse, RlSessionStatusResponse,
+        RlSessionUsageResponse, RotateRelayCredentialsRequest, RotateRlCredentialsResponse,
+        RotateRlPolicyCredentialsResponse,
     },
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
@@ -365,6 +369,13 @@ impl BasilicaClient {
         &self,
         request: CreateRlClusterRequest,
     ) -> Result<CreateRlClusterResponse> {
+        if request
+            .relay
+            .as_ref()
+            .is_some_and(|r| r.access_key_id.is_some() || r.secret_access_key.is_some())
+        {
+            self.require_tls_for_credentials("create_rl_cluster with inline relay credentials")?;
+        }
         self.post("/rl/clusters", &request).await
     }
 
@@ -397,6 +408,7 @@ impl BasilicaClient {
         request: RotateRelayCredentialsRequest,
     ) -> Result<RotateRlCredentialsResponse> {
         Self::validate_rl_name(name)?;
+        self.require_tls_for_credentials("rotate_rl_cluster_credentials")?;
         self.post(&format!("/rl/clusters/{}/credentials", name), &request)
             .await
     }
@@ -423,6 +435,193 @@ impl BasilicaClient {
         manifest: RlManifestRequest,
     ) -> Result<RlManifestResponse> {
         self.post("/rl/manifest", &manifest).await
+    }
+
+    /// Refuse to send LIVE storage credentials over cleartext transport
+    /// (#1666 review). Loopback is exempt — local test harnesses (and the
+    /// recorded-HTTP contract suite) legitimately run plain HTTP on
+    /// 127.0.0.1; any other `http://` target would broadcast key material.
+    fn require_tls_for_credentials(&self, what: &str) -> Result<()> {
+        let url = self.base_url.trim_start_matches("http://");
+        let is_http = self.base_url.starts_with("http://");
+        let is_loopback =
+            url.starts_with("127.") || url.starts_with("localhost") || url.starts_with("[::1]");
+        if is_http && !is_loopback {
+            return Err(ApiError::InvalidRequest {
+                message: format!(
+                    "{what} sends storage credentials — refusing to do so \
+                     over cleartext http:// (base_url {:?}); use https://",
+                    self.base_url
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    /// Server revision grammar, mirrored client-side (#1666): 1-128 chars
+    /// of `[a-z0-9._-]` with letter-or-digit edges — a typo fails before a
+    /// multi-GB artifact uploads, and the name is safe to interpolate into
+    /// the URL path unencoded.
+    fn validate_rl_revision(revision: &str) -> Result<()> {
+        let edge_ok = |c: u8| c.is_ascii_lowercase() || c.is_ascii_digit();
+        let ok = !revision.is_empty()
+            && revision.len() <= 128
+            && revision.bytes().next().is_some_and(edge_ok)
+            && revision.bytes().last().is_some_and(edge_ok)
+            && revision
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"._-".contains(&c));
+        if ok {
+            Ok(())
+        } else {
+            Err(ApiError::InvalidRequest {
+                message: format!(
+                    "invalid revision name {revision:?}: 1-128 chars of \
+                     [a-z0-9._-] with letter-or-digit edges"
+                ),
+            })
+        }
+    }
+
+    /// Register a BYOT policy lineage against the caller's own storage
+    /// (#1666; server #1662). Credentials in `storage` are write-only
+    /// server-side and redacted from this type's `Debug`.
+    pub async fn create_rl_policy(
+        &self,
+        request: CreateRlPolicyRequest,
+    ) -> Result<CreateRlPolicyResponse> {
+        Self::validate_rl_name(&request.name)?;
+        if request.storage.access_key_id.is_some() || request.storage.secret_access_key.is_some() {
+            self.require_tls_for_credentials("create_rl_policy with inline credentials")?;
+        }
+        self.post("/rl/policies", &request).await
+    }
+
+    /// Read one policy's registry view.
+    pub async fn get_rl_policy(&self, name: &str) -> Result<RlPolicyResponse> {
+        Self::validate_rl_name(name)?;
+        self.get(&format!("/rl/policies/{}", name)).await
+    }
+
+    /// Delete a policy. The registry record goes; artifact bytes in the
+    /// customer's bucket are theirs and are never touched.
+    pub async fn delete_rl_policy(&self, name: &str) -> Result<DeleteRlPolicyResponse> {
+        Self::validate_rl_name(name)?;
+        self.delete(&format!("/rl/policies/{}", name)).await
+    }
+
+    /// Rotate a BYOT policy's storage credentials — the #1577 mechanism,
+    /// policy flavor (`POST /rl/policies/{name}/credentials`). Only for
+    /// policies registered with the INLINE key pair (platform-managed
+    /// secret); a policy using `credentialsSecret` is refused — update
+    /// your own Secret, then restart the policy's relay daemon yourself
+    /// (its credentials are read at process start). Sequencing: create
+    /// the NEW key at your provider first (both keys valid), call this,
+    /// then revoke the OLD key after the returned `rotatedAt` plus the
+    /// daemon roll — revoking first fails in-flight artifact fetches
+    /// with `RelayAuthFailed` until the roll lands.
+    pub async fn rotate_rl_policy_credentials(
+        &self,
+        name: &str,
+        request: RotateRelayCredentialsRequest,
+    ) -> Result<RotateRlPolicyCredentialsResponse> {
+        Self::validate_rl_name(name)?;
+        self.require_tls_for_credentials("rotate_rl_policy_credentials")?;
+        self.post(&format!("/rl/policies/{}/credentials", name), &request)
+            .await
+    }
+
+    /// Register a revision manifest: the artifact already lives in the
+    /// customer's bucket; this records + verifies its coordinates.
+    pub async fn create_rl_revision(
+        &self,
+        policy: &str,
+        request: CreateRlRevisionRequest,
+    ) -> Result<RlRevisionResponse> {
+        Self::validate_rl_name(policy)?;
+        Self::validate_rl_revision(&request.revision)?;
+        self.post(&format!("/rl/policies/{}/revisions", policy), &request)
+            .await
+    }
+
+    /// Session ids are UUID-shaped (the server caps at 52 of [a-z0-9-]);
+    /// mirrored so a typo is a clean client error, not a routed 404.
+    fn validate_rl_session_id(id: &str) -> Result<()> {
+        let ok = !id.is_empty()
+            && id.len() <= 52
+            && id
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if ok {
+            Ok(())
+        } else {
+            Err(ApiError::InvalidRequest {
+                message: format!("invalid session id {id:?}: 1-52 chars of [a-z0-9-]"),
+            })
+        }
+    }
+
+    /// Start a rollout session (#1666; server #1663). NOT idempotent.
+    pub async fn create_rl_session(
+        &self,
+        request: CreateRlSessionRequest,
+    ) -> Result<CreateRlSessionResponse> {
+        Self::validate_rl_name(&request.policy)?;
+        self.post("/rl/rollout-sessions", &request).await
+    }
+
+    /// Read a session's lifecycle state (never echoes the token).
+    pub async fn get_rl_session(&self, id: &str) -> Result<RlSessionStatusResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.get(&format!("/rl/rollout-sessions/{}", id)).await
+    }
+
+    /// Delete a session. The policy and every revision stay in the
+    /// customer's bucket — a new session resumes the lineage.
+    pub async fn delete_rl_session(&self, id: &str) -> Result<DeleteRlSessionResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.delete(&format!("/rl/rollout-sessions/{}", id)).await
+    }
+
+    /// Usage & cost for a session, any time (interface doc step 7).
+    pub async fn get_rl_session_usage(&self, id: &str) -> Result<RlSessionUsageResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.get(&format!("/rl/rollout-sessions/{}/usage", id))
+            .await
+    }
+
+    /// Park a session (T9): the fleet scales away and new gpu-hours stop
+    /// with it; identity, URL, token and policy binding all survive.
+    pub async fn park_rl_session(&self, id: &str) -> Result<ParkRlSessionResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.post(
+            &format!("/rl/rollout-sessions/{}/park", id),
+            &serde_json::json!({}),
+        )
+        .await
+    }
+
+    /// Resume a parked session on the SAME lineage — the consumer replays
+    /// the newest Active revision. Poll `get_rl_session` until `active`.
+    pub async fn resume_rl_session(&self, id: &str) -> Result<ParkRlSessionResponse> {
+        Self::validate_rl_session_id(id)?;
+        self.post(
+            &format!("/rl/rollout-sessions/{}/resume", id),
+            &serde_json::json!({}),
+        )
+        .await
+    }
+
+    /// Read one revision's registry state — the `wait_until_active` poll.
+    pub async fn get_rl_revision(
+        &self,
+        policy: &str,
+        revision: &str,
+    ) -> Result<RlRevisionResponse> {
+        Self::validate_rl_name(policy)?;
+        Self::validate_rl_revision(revision)?;
+        self.get(&format!("/rl/policies/{}/revisions/{}", policy, revision))
+            .await
     }
 
     /// Resume a suspended job
@@ -1727,6 +1926,7 @@ impl ClientBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rl::{RlPolicyBaseModel, RlPolicyStorage};
     use serde_json::json;
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1757,6 +1957,131 @@ mod tests {
 
         assert_eq!(health.status, "healthy");
         assert_eq!(health.version, "1.0.0");
+    }
+
+    #[tokio::test]
+    async fn credential_bearing_calls_refuse_cleartext_transport() {
+        // #1666 review: live storage keys must never travel plain http://
+        // to a non-loopback host. Loopback stays exempt — the recorded-HTTP
+        // contract suites (and wiremock below) legitimately run http on
+        // 127.0.0.1.
+        let cleartext = ClientBuilder::default()
+            .base_url("http://api.example.com")
+            .with_tokens("t", "r")
+            .build()
+            .unwrap();
+        let rotate = RotateRelayCredentialsRequest {
+            access_key_id: "AK".into(),
+            secret_access_key: "SK".into(),
+        };
+        let err = cleartext
+            .rotate_rl_cluster_credentials("pool", rotate.clone())
+            .await
+            .expect_err("cleartext refused");
+        assert!(err.to_string().contains("cleartext"), "{err}");
+        // The POLICY rotation carries the same key material — same guard.
+        let err = cleartext
+            .rotate_rl_policy_credentials("pol", rotate)
+            .await
+            .expect_err("cleartext refused");
+        assert!(err.to_string().contains("cleartext"), "{err}");
+        let policy = CreateRlPolicyRequest {
+            name: "p".into(),
+            base_model: RlPolicyBaseModel {
+                repo: "r".into(),
+                commit: "a".repeat(40),
+                tokenizer_digest: format!("sha256:{}", "b".repeat(64)),
+            },
+            update_format: "pulse-bf16-v1".into(),
+            storage: RlPolicyStorage {
+                backend: "r2".into(),
+                bucket: "b".into(),
+                endpoint: "https://e.example".into(),
+                region: None,
+                credentials_secret: None,
+                access_key_id: Some("AK".into()),
+                secret_access_key: Some("SK".into()),
+            },
+            extra: Default::default(),
+        };
+        let err = cleartext
+            .create_rl_policy(policy.clone())
+            .await
+            .expect_err("cleartext refused");
+        assert!(err.to_string().contains("cleartext"), "{err}");
+
+        // A referenced-secret create carries no key material — allowed even
+        // over http (it will simply fail at transport here, NOT at the guard).
+        let mut no_keys = policy;
+        no_keys.storage.access_key_id = None;
+        no_keys.storage.secret_access_key = None;
+        no_keys.storage.credentials_secret = Some("my-secret".into());
+        let err = cleartext.create_rl_policy(no_keys).await.unwrap_err();
+        assert!(!err.to_string().contains("cleartext"), "{err}");
+
+        // Loopback http is exempt: the guard passes and the call reaches a
+        // real (mock) server.
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/rl/clusters/pool/credentials"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "name": "pool", "rotatedAt": "2026-09-08T00:00:00Z",
+            })))
+            .mount(&mock_server)
+            .await;
+        let loopback = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("t", "r")
+            .build()
+            .unwrap();
+        let rotated = loopback
+            .rotate_rl_cluster_credentials(
+                "pool",
+                RotateRelayCredentialsRequest {
+                    access_key_id: "AK".into(),
+                    secret_access_key: "SK".into(),
+                },
+            )
+            .await
+            .expect("loopback http passes the guard");
+        assert_eq!(rotated.name, "pool");
+    }
+
+    /// The policy rotation speaks the documented wire: POST to the policy
+    /// credentials path, camelCase pair in the body, `{name, rotatedAt}`
+    /// back — one mock round-trip pins path, body, and response mapping.
+    #[tokio::test]
+    async fn rotate_rl_policy_credentials_wire_shape() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/rl/policies/math/credentials"))
+            .and(body_json(json!({
+                "accessKeyId": "NEWAK", "secretAccessKey": "NEWSK",
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "name": "math", "rotatedAt": "2026-09-09T00:00:00Z",
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("t", "r")
+            .build()
+            .unwrap();
+        let out = client
+            .rotate_rl_policy_credentials(
+                "math",
+                RotateRelayCredentialsRequest {
+                    access_key_id: "NEWAK".into(),
+                    secret_access_key: "NEWSK".into(),
+                },
+            )
+            .await
+            .expect("rotation round-trips");
+        assert_eq!(
+            (out.name.as_str(), out.rotated_at.as_str()),
+            ("math", "2026-09-09T00:00:00Z")
+        );
     }
 
     #[tokio::test]

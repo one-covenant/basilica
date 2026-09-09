@@ -292,6 +292,19 @@ pub struct RotateRlCredentialsResponse {
     pub rotated_at: String,
 }
 
+/// Response after rotating a POLICY's storage credentials (the #1577
+/// mechanism, BYOT flavor — server `POST /rl/policies/{name}/credentials`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RotateRlPolicyCredentialsResponse {
+    /// The policy whose credentials were rotated.
+    pub name: String,
+    /// When the rotation was applied (RFC 3339). The serving fleet's
+    /// storage access restarts onto the new key material shortly after
+    /// this instant — keep the OLD key valid until then, then revoke it.
+    pub rotated_at: String,
+}
+
 /// Cluster status (`GET /rl/clusters/{name}`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -379,6 +392,259 @@ pub struct DeleteRlClusterResponse {
 pub struct DeleteRlJobResponse {
     /// The deleted job's name.
     pub name: String,
+}
+
+// ---------------------------------------------------------------------------
+// BYOT policy registry DTOs (#1666; server routes #1662)
+// ---------------------------------------------------------------------------
+
+/// Pinned base-model identity for a policy lineage (interface doc step 1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlPolicyBaseModel {
+    /// HF-style repo, e.g. `Qwen/Qwen2.5-7B-Instruct`.
+    pub repo: String,
+    /// Immutable HF commit SHA (40 or 64 hex; a branch/tag is refused).
+    pub commit: String,
+    /// `sha256:<hex>` of the tokenizer the trainer tokenizes with.
+    pub tokenizer_digest: String,
+}
+
+/// The CUSTOMER's storage the lineage lives in. Credentials are WRITE-ONLY
+/// server-side: pass EITHER the inline pair OR `credentials_secret`,
+/// exactly one — the server refuses both and neither.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlPolicyStorage {
+    /// Storage backend. v1: `r2` (any S3-compatible endpoint).
+    pub backend: String,
+    pub bucket: String,
+    /// https + DNS hostname only (server-side §6.1 hygiene).
+    pub endpoint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// Referenced namespaced Secret (one credential form).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credentials_secret: Option<String>,
+    /// Inline access key id (the other credential form).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_key_id: Option<String>,
+    /// Inline secret access key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_access_key: Option<String>,
+}
+
+// §7a: key material must not leak through a traced request's Debug —
+// same hand-written redaction as `RlRelayRequest`.
+impl std::fmt::Debug for RlPolicyStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RlPolicyStorage")
+            .field("backend", &self.backend)
+            .field("bucket", &self.bucket)
+            .field("endpoint", &self.endpoint)
+            .field("region", &self.region)
+            .field("credentials_secret", &self.credentials_secret)
+            .field(
+                "access_key_id",
+                &self.access_key_id.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "secret_access_key",
+                &self.secret_access_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+/// Register a model lineage (`POST /rl/policies`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlPolicyRequest {
+    /// DNS-1123 label; becomes the CR and platform Secret name.
+    pub name: String,
+    pub base_model: RlPolicyBaseModel,
+    /// Weight-update wire format. v1 admits `pulse-bf16-v1` only.
+    pub update_format: String,
+    pub storage: RlPolicyStorage,
+    /// Forward-compat catch-all (same contract as the cluster request).
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Response to a policy create.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlPolicyResponse {
+    pub policy_uid: String,
+    /// `policies/<policy-uid>/` — scope your fleet's read-only IAM grant to
+    /// this, and upload every artifact under it.
+    pub effective_prefix: String,
+}
+
+/// One policy's registry view (`GET /rl/policies/{name}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlPolicyResponse {
+    pub name: String,
+    pub policy_uid: String,
+    pub effective_prefix: String,
+    pub repo: String,
+    pub commit: String,
+    pub update_format: String,
+    pub total_revisions: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_revision: Option<String>,
+}
+
+/// Response after deleting a policy (`DELETE /rl/policies/{name}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRlPolicyResponse {
+    pub name: String,
+}
+
+/// The artifact coordinates of one revision manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlRevisionArtifact {
+    /// `s3://<bucket>/<key>` — must live under the policy's
+    /// `effective_prefix`.
+    pub uri: String,
+    /// 64 lowercase hex chars of the artifact bytes.
+    pub sha256: String,
+}
+
+/// Register a revision manifest (`POST /rl/policies/{name}/revisions`).
+/// No credentials here: the artifact already lives in the customer's
+/// bucket; this only registers + verifies it (interface doc step 3).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlRevisionRequest {
+    /// 1-128 chars of `[a-z0-9._-]` with letter-or-digit edges.
+    pub revision: String,
+    /// Absent = anchor (chain root); present = patch over that revision.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_revision: Option<String>,
+    pub artifact: RlRevisionArtifact,
+    /// `xxh3_128:<32 lowercase hex>` — the whole-state digest every serving
+    /// replica must match post-apply.
+    pub expected_state_digest: String,
+}
+
+/// One revision's registry state
+/// (`GET /rl/policies/{name}/revisions/{revision}` and the create response).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlRevisionResponse {
+    pub revision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_revision: Option<String>,
+    /// `Validated` | `Loading` | `Active` | `Rejected` | `Superseded`.
+    pub state: String,
+    pub submitted_at: String,
+}
+
+// ---------------------------------------------------------------------------
+// BYOT rollout-session DTOs (#1666; server routes #1663)
+// ---------------------------------------------------------------------------
+
+/// Start a rollout session (`POST /rl/rollout-sessions`): a PRIVATE,
+/// token-gated vLLM fleet serving one policy. NOT idempotent — a retry
+/// after a lost response creates a second fleet (bounded by the
+/// per-tenant cap); list deployments before retrying.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlSessionRequest {
+    /// The policy this fleet serves (must exist).
+    pub policy: String,
+    /// Fleet shape — same type and bounds as the managed RL fleets.
+    pub fleet: RlFleetRequest,
+    /// `async` (default) | `sync`. v1 refuses `sync` at admission
+    /// (SessionSyncUnavailable) until the activation barrier ships.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activation: Option<String>,
+    /// Forward-compat catch-all (the cluster-request contract).
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// The create response. `token` is shown ONCE — the platform stores only
+/// its hash; losing it means recreating the session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRlSessionResponse {
+    pub session_uid: String,
+    /// Where `/v1/completions` terminates (the T4 serving surface).
+    pub url: String,
+    pub token: String,
+    pub state: String,
+}
+
+/// One session's lifecycle view (`GET /rl/rollout-sessions/{id}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionStatusResponse {
+    pub session_uid: String,
+    /// `starting` | `active` | `parked` | `failed` | `terminating`.
+    pub state: String,
+    pub policy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain_head: Option<String>,
+    pub url: String,
+    /// T7 blame conditions — absent on the wire when there is nothing to
+    /// say (and from servers predating the field, hence `default`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<RlSessionCondition>,
+}
+
+/// One curated condition on a session read: `type` is the family
+/// (`Revision`), `reason` the interface doc's failure name where one
+/// applies, `message` human-actionable.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionCondition {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub reason: String,
+    pub message: String,
+}
+
+/// Response after deleting a session (`DELETE /rl/rollout-sessions/{id}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRlSessionResponse {
+    pub session_uid: String,
+}
+
+/// Usage & cost (`GET /rl/rollout-sessions/{id}/usage`; interface doc
+/// step 7). Cost fields are ABSENT (not null) when the platform has no
+/// per-GPU-hour rate configured, and `effectiveCostPerMTok` also when no
+/// tokens were generated — omission over invention.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionUsageResponse {
+    /// DEVICE-hours: fleet devices × wall-clock since creation.
+    pub gpu_hours: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    /// Σ busy-seconds / Σ alive-seconds across reporting replicas.
+    pub sampling_utilization: f64,
+    /// `costUsd` per million GENERATED tokens; prefill rides free.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_cost_per_m_tok: Option<f64>,
+    /// Token counts and utilization cover exactly this many replicas.
+    pub replicas_reporting: u32,
+}
+
+/// Response of `POST /rl/rollout-sessions/{id}/park` (and `/resume`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParkRlSessionResponse {
+    pub session_uid: String,
+    /// `parked` after park, `starting` after resume.
+    pub state: String,
 }
 
 #[cfg(test)]
@@ -563,5 +829,86 @@ mod tests {
         assert_eq!(s.phase, "Succeeded");
         assert_eq!(s.artifact_uri.as_deref(), Some("s3://x/uid"));
         assert_eq!(s.step, Some(50));
+    }
+
+    #[test]
+    fn policy_request_wire_shape_and_debug_redaction() {
+        let req = CreateRlPolicyRequest {
+            name: "math-policy".into(),
+            base_model: RlPolicyBaseModel {
+                repo: "Qwen/Qwen2.5-7B-Instruct".into(),
+                commit: "a".repeat(40),
+                tokenizer_digest: format!("sha256:{}", "b".repeat(64)),
+            },
+            update_format: "pulse-bf16-v1".into(),
+            storage: RlPolicyStorage {
+                backend: "r2".into(),
+                bucket: "my-weights".into(),
+                endpoint: "https://acc.r2.cloudflarestorage.com".into(),
+                region: None,
+                credentials_secret: None,
+                access_key_id: Some("AKIALIVEKEY".into()),
+                secret_access_key: Some("SECRETSECRET".into()),
+            },
+            extra: Default::default(),
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        // The server DTO is deny_unknown_fields camelCase — the exact keys
+        // are the contract.
+        assert_eq!(
+            v["baseModel"]["tokenizerDigest"],
+            req.base_model.tokenizer_digest
+        );
+        assert_eq!(v["updateFormat"], "pulse-bf16-v1");
+        assert_eq!(v["storage"]["accessKeyId"], "AKIALIVEKEY");
+        assert!(
+            v["storage"].get("region").is_none(),
+            "None must be OMITTED, not null"
+        );
+        // §7a: a traced request must not print key material.
+        let dbg = format!("{req:?}");
+        assert!(!dbg.contains("AKIALIVEKEY"), "{dbg}");
+        assert!(!dbg.contains("SECRETSECRET"), "{dbg}");
+        assert!(dbg.contains("<redacted>"), "{dbg}");
+    }
+
+    #[test]
+    fn revision_request_omits_absent_parent() {
+        // An anchor's manifest must not carry `"parentRevision": null` — the
+        // server treats presence itself as "this is a patch".
+        let anchor = CreateRlRevisionRequest {
+            revision: "step-0000".into(),
+            parent_revision: None,
+            artifact: RlRevisionArtifact {
+                uri: "s3://my-weights/policies/u/step-0000/anchor.safetensors".into(),
+                sha256: "c".repeat(64),
+            },
+            expected_state_digest: format!("xxh3_128:{}", "d".repeat(32)),
+        };
+        let v = serde_json::to_value(&anchor).unwrap();
+        assert!(v.get("parentRevision").is_none());
+        assert_eq!(v["artifact"]["sha256"], anchor.artifact.sha256);
+        assert_eq!(v["expectedStateDigest"], anchor.expected_state_digest);
+
+        let rec: RlRevisionResponse = serde_json::from_str(
+            r#"{"revision":"step-0001","parentRevision":"step-0000",
+                "state":"Validated","submittedAt":"2026-09-07T16:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(rec.parent_revision.as_deref(), Some("step-0000"));
+        assert_eq!(rec.state, "Validated");
+    }
+
+    #[test]
+    fn policy_response_parses() {
+        let p: RlPolicyResponse = serde_json::from_str(
+            r#"{"name":"math-policy","policyUid":"u-1","effectivePrefix":"policies/u-1/",
+                "repo":"Qwen/Qwen2.5-7B-Instruct","commit":"deadbeef","updateFormat":"pulse-bf16-v1",
+                "totalRevisions":3,"latestRevision":"step-0002"}"#,
+        )
+        .unwrap();
+        assert_eq!(p.effective_prefix, "policies/u-1/");
+        assert_eq!(p.total_revisions, 3);
+        assert_eq!(p.latest_revision.as_deref(), Some("step-0002"));
     }
 }

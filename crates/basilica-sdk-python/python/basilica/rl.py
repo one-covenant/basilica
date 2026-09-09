@@ -38,7 +38,10 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:  # publisher deps stay lazy; types cost nothing here
+    from basilica.publisher import PolicyStorage, RlPolicyHandle
 
 _TERMINAL_JOB_PHASES = frozenset({"Succeeded", "Failed", "TimedOut"})
 # Degraded is deliberately NOT here: a cluster degrades on transient fleet
@@ -322,3 +325,228 @@ class RlNamespace:
 
     def submit_manifest(self, manifest: dict) -> dict:
         return json.loads(self._core.rl_submit_manifest(json.dumps(manifest)))
+
+    # -- BYOT policies (#1666; interface doc steps 1+3) --------------------
+
+    def create_policy(
+        self,
+        name: str,
+        *,
+        repo: str,
+        commit: str,
+        tokenizer_digest: str,
+        bucket: str,
+        endpoint: str,
+        region: Optional[str] = None,
+        access_key_id: Optional[str] = None,
+        secret_access_key: Optional[str] = None,
+        credentials_secret: Optional[str] = None,
+        update_format: str = "pulse-bf16-v1",
+        backend: str = "r2",
+    ) -> dict:
+        """Register a model lineage against your OWN storage.
+
+        POST /rl/policies. ``commit`` must be the immutable HF commit SHA
+        (40 or 64 hex — a branch name is refused); ``tokenizer_digest`` is
+        ``sha256:<hex>`` of the tokenizer you train with. Credentials are
+        WRITE-ONLY platform-side (never echoed back); pass EITHER the inline
+        pair OR ``credentials_secret``, exactly one. The response's
+        ``effectivePrefix`` is where the lineage lives in your bucket —
+        scope a read-only IAM grant to it for the serving fleet."""
+        # Same fail-fast standard as the revision grammar: the exactly-one
+        # credential contract is checkable without a server round-trip.
+        inline = access_key_id is not None or secret_access_key is not None
+        if inline and credentials_secret is not None:
+            raise ValueError(
+                "pass EITHER the inline key pair OR credentials_secret — not both"
+            )
+        if inline and (access_key_id is None or secret_access_key is None):
+            raise ValueError(
+                "the inline credential form needs BOTH access_key_id and "
+                "secret_access_key"
+            )
+        if not inline and credentials_secret is None:
+            raise ValueError(
+                "storage credentials are required: pass access_key_id + "
+                "secret_access_key, or credentials_secret"
+            )
+        body = _drop_none(
+            {
+                "name": name,
+                "baseModel": {
+                    "repo": repo,
+                    "commit": commit,
+                    "tokenizerDigest": tokenizer_digest,
+                },
+                "updateFormat": update_format,
+                "storage": _drop_none(
+                    {
+                        "backend": backend,
+                        "bucket": bucket,
+                        "endpoint": endpoint,
+                        "region": region,
+                        "credentialsSecret": credentials_secret,
+                        "accessKeyId": access_key_id,
+                        "secretAccessKey": secret_access_key,
+                    }
+                ),
+            }
+        )
+        return json.loads(self._core.rl_create_policy(json.dumps(body)))
+
+    def get_policy(self, name: str) -> dict:
+        return json.loads(self._core.rl_get_policy(name))
+
+    def delete_policy(self, name: str) -> dict:
+        return json.loads(self._core.rl_delete_policy(name))
+
+    def rotate_policy_credentials(
+        self, policy: str, *, access_key_id: str, secret_access_key: str
+    ) -> dict:
+        """Rotate a policy's storage credentials — the cluster rotation's
+        BYOT twin (POST /rl/policies/{name}/credentials).
+
+        Applies only to policies registered with the inline key pair
+        (platform-managed secret); a policy using ``credentialsSecret``
+        is refused — update your own Secret, then restart the policy's
+        relay daemon yourself (its credentials are read at process
+        start).
+
+        Sequencing: create the NEW key at your provider first (both keys
+        valid), call this, then revoke the OLD key after the returned
+        ``rotatedAt`` plus a couple of minutes — the daemon rolls onto
+        the new material in that window. Revoking first fails every
+        session replica's artifact fetch with ``RelayAuthFailed`` until
+        the roll lands (recoverable, but avoidable)."""
+        req = {"accessKeyId": access_key_id, "secretAccessKey": secret_access_key}
+        return json.loads(
+            self._core.rl_rotate_policy_credentials(policy, json.dumps(req))
+        )
+
+    def get_revision(self, policy: str, revision: str) -> dict:
+        """One revision's registry state (Validated | Loading | Active |
+        Rejected | Superseded)."""
+        return json.loads(self._core.rl_get_revision(policy, revision))
+
+    def policy(
+        self,
+        name: str,
+        *,
+        storage: "PolicyStorage",
+        anchor_every: int = 30,
+        work_dir: Optional[str] = None,
+    ) -> "RlPolicyHandle":
+        """Open a publishing handle on a policy lineage.
+
+        ``storage`` is a :class:`basilica.publisher.PolicyStorage` — YOUR
+        bucket coordinates; artifact bytes upload straight from the trainer
+        to your storage and never transit the platform. ``work_dir`` stages
+        artifacts before upload (anchors are ~15 GB for 7B — point it at
+        real disk where /tmp is tmpfs). The heavy publisher dependencies
+        (torch, xxhash, zstandard, safetensors, boto3) are imported lazily
+        here — ``pip install 'basilica-sdk[publisher]'``."""
+        from basilica.publisher import RlPolicyHandle
+
+        return RlPolicyHandle(
+            self._core,
+            name,
+            storage=storage,
+            anchor_every=anchor_every,
+            work_dir=work_dir,
+        )
+
+    # -- BYOT rollout sessions (#1666; interface doc steps 2+5+6) ----------
+
+    def create_session(
+        self,
+        policy: str,
+        *,
+        gpu_model: str,
+        gpu_count: int,
+        replicas: int = 1,
+        min_gpu_memory_gb: Optional[int] = None,
+        activation: Optional[str] = None,
+    ) -> dict:
+        """Start a rollout session: a PRIVATE, token-gated vLLM fleet
+        serving one policy (POST /rl/rollout-sessions).
+
+        The response's ``token`` is shown ONCE — the platform stores only
+        its hash. NOT idempotent: a retry after a lost response creates a
+        second fleet (bounded by the per-tenant cap); list your
+        deployments before retrying. ``activation`` defaults to ``async``
+        (the training idiom); v1 refuses ``sync`` until the activation
+        barrier ships."""
+        body = _drop_none(
+            {
+                "policy": policy,
+                "fleet": {
+                    "replicas": replicas,
+                    "gpu": _drop_none(
+                        {
+                            "model": gpu_model,
+                            "count": gpu_count,
+                            "minMemoryGb": min_gpu_memory_gb,
+                        }
+                    ),
+                },
+                "activation": activation,
+            }
+        )
+        return json.loads(self._core.rl_create_session(json.dumps(body)))
+
+    def get_session(self, session_uid: str) -> dict:
+        """A session's lifecycle state (never echoes the token)."""
+        return json.loads(self._core.rl_get_session(session_uid))
+
+    def delete_session(self, session_uid: str) -> dict:
+        """Stop a session. The policy and every revision stay in YOUR
+        bucket — a new session resumes the lineage."""
+        return json.loads(self._core.rl_delete_session(session_uid))
+
+    def session_usage(self, session_uid: str) -> dict:
+        """Usage & cost, any time (interface doc step 7):
+        ``gpuHours`` (fleet devices × wall-clock), ``promptTokens`` /
+        ``completionTokens`` and ``samplingUtilization`` from the
+        session's own replicas, plus ``costUsd`` /
+        ``effectiveCostPerMTok`` when the platform has a configured rate
+        (ABSENT otherwise — never invented)."""
+        return json.loads(self._core.rl_get_session_usage(session_uid))
+
+    def park_session(self, session_uid: str) -> dict:
+        """Park a session: the fleet scales away and new gpu-hours stop
+        with it; the URL, token and policy binding all survive."""
+        return json.loads(self._core.rl_park_session(session_uid))
+
+    def resume_session(self, session_uid: str) -> dict:
+        """Resume a parked session on the SAME lineage (the fleet
+        replays the newest Active revision). Poll ``get_session`` until
+        ``active``."""
+        return json.loads(self._core.rl_resume_session(session_uid))
+
+    def open_session(
+        self,
+        url: str,
+        token: str,
+        *,
+        publisher: "Any" = None,
+        session_uid: Optional[str] = None,
+        timeout: float = 1800.0,
+    ) -> "Any":
+        """Open a serving client on a session (interface doc steps 5+6):
+        ``generate()`` speaks the training dialect (token IDs both ways,
+        sampler logprobs, revision assertion, servedRevision). Attach a
+        publisher (``client.rl.policy(...)``) and the step-6 loop runs on
+        one object — generate / publish / wait_until_active. Pass
+        ``session_uid`` and ``usage()`` / ``park()`` / ``resume()`` work
+        on the same object too (they call the platform API, not the
+        session)."""
+        from basilica.session import RlSessionClient
+
+        return RlSessionClient(
+            url,
+            token,
+            publisher=publisher,
+            api=self if session_uid else None,
+            session_uid=session_uid,
+            timeout=timeout,
+        )

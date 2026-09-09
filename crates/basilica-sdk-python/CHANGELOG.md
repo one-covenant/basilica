@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Policy credential rotation (#1661 follow-up; the #1577 twin).**
+  `client.rl.rotate_policy_credentials(policy, access_key_id=,
+  secret_access_key=)` — `POST /rl/policies/{name}/credentials`. Same
+  contracts as the cluster rotation: write-only key material behind the
+  shared cleartext-transport guard, platform-managed secrets only (a
+  `credentialsSecret` policy is refused with the manual-roll guidance),
+  and the create-new → rotate → wait past `rotatedAt` → revoke-old
+  sequencing documented on the method. The serving fleet's per-policy
+  daemon rolls onto the new material server-side.
+- **Session usage, cost and park/resume (#1667, #1694; interface doc
+  step 7).** `client.rl.session_usage(uid)` returns the step-7 shape —
+  `gpuHours` (fleet devices × wall-clock), token counters and
+  `samplingUtilization` measured by the session's own replicas, and
+  `costUsd`/`effectiveCostPerMTok` when the platform has a configured
+  rate (ABSENT otherwise, never null). `park_session`/`resume_session`
+  scale the fleet away and back on the same lineage.
+  `open_session(..., session_uid=...)` puts `usage()`/`park()`/`resume()`
+  on the session object itself, and session reads now carry the T7
+  `conditions` field (blame-attributed `{type, reason, message}`) when
+  the platform has something to say.
+- **BYOT rollout sessions + the serving client (#1666; interface doc
+  steps 2+5+6).** `client.rl.create_session(policy, gpu_model=, ...)`
+  starts a private token-gated vLLM fleet (token shown once; NOT
+  idempotent — documented), with `get_session`/`delete_session` beside
+  it. `client.rl.open_session(url, token)` returns an `RlSessionClient`
+  whose `generate()` speaks the T4 training dialect: token-ID prompts
+  (the server never tokenizes on the training path), the sampler's own
+  logprobs as a flat array, `revision` as an assertion (`StaleRevisionError`
+  on mismatch, typed — the one failure trainers branch on), and
+  `served_revision` on every result. Attach a publisher
+  (`publisher=client.rl.policy(...)`) and the interface doc's step-6
+  training loop runs verbatim on one object — generate / publish /
+  wait_until_active. The session client is pure stdlib: session traffic
+  goes to the session's own host, and the base SDK stays zero-dependency.
+- **BYOT policy registry + trainer-side publisher (#1666; ships as 0.36.0).**
+  Registry surface: `client.rl.create_policy(...)` registers a model
+  lineage against your own storage (base-model pin with immutable HF
+  commit + tokenizer digest; credentials write-only, never echoed),
+  `get_policy`, `delete_policy`, and `get_revision` for revision state.
+  Publisher surface: `client.rl.policy(name, storage=PolicyStorage(...))`
+  opens a `basilica.publisher.RlPolicyHandle` — `publish_anchor` (full
+  BF16 state as a safetensors anchor) and `publish` (PULSE sparse patch
+  over the last published revision, with automatic re-anchoring every
+  30 patches so late-join replay stays bounded), plus
+  `wait_until_active(revision)` mapping `Rejected`/`Superseded` to typed
+  exceptions. Artifact bytes upload straight from the trainer to YOUR
+  bucket under the policy's `effectivePrefix`; the platform receives only
+  the manifest (URI + sha256 + whole-state xxh3 digest). The wire format
+  is the PULSE codec (contracts doc C2.4-C2.5), vendored under
+  `basilica._pulse` and parity-pinned byte-for-byte against the normative
+  implementation by golden-vector tests. Publisher dependencies (torch,
+  numpy, xxhash, zstandard, safetensors, boto3) are a new optional extra:
+  `pip install 'basilica-sdk[publisher]'` — the base SDK stays
+  zero-dependency, and a failed publish rolls the diff base back so a
+  retry is always safe. Everything the publisher does remains
+  reproducible without the SDK: one upload + one
+  `POST /rl/policies/{name}/revisions`.
+
 ## [0.35.0] - 2026-08-31
 
 ### Added
