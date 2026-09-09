@@ -366,6 +366,32 @@ def test_rotate_credentials_wire_shape(server):
     assert out["rotatedAt"].startswith("2026-08-31")
 
 
+def test_rotate_policy_credentials_wire_shape(server):
+    base, rec = server
+    rec.responses = [(200, {"name": "math",
+                            "rotatedAt": "2026-09-09T12:00:00+00:00"})]
+    out = rl(base).rotate_policy_credentials(
+        "math", access_key_id="NEWAK", secret_access_key="NEWSK"
+    )
+    (r,) = rec.requests
+    assert (r["method"], r["path"]) == ("POST", "/rl/policies/math/credentials")
+    assert r["body"] == {"accessKeyId": "NEWAK", "secretAccessKey": "NEWSK"}
+    assert out["rotatedAt"].startswith("2026-09-09")
+
+
+def test_rotate_policy_credentials_maps_custody_refusal(server):
+    # A policy whose credentials live in the user's own referenced Secret
+    # is refused with the manual-roll guidance -> ValueError carrying it.
+    base, rec = server
+    rec.responses = [(400, _api_error(
+        "policy math's credentials live in your own Secret \"my-secret\" "
+        "— the platform never mutates it"))]
+    with pytest.raises(ValueError, match="your own Secret"):
+        rl(base).rotate_policy_credentials(
+            "math", access_key_id="A", secret_access_key="B"
+        )
+
+
 def test_rotate_credentials_maps_errors(server):
     # A platform-mode cluster refuses rotation with an actionable 400 ->
     # ValueError carrying the server message.

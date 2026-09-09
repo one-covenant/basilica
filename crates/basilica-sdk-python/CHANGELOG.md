@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Policy credential rotation (#1661 follow-up; the #1577 twin).**
+  `client.rl.rotate_policy_credentials(policy, access_key_id=,
+  secret_access_key=)` — `POST /rl/policies/{name}/credentials`. Same
+  contracts as the cluster rotation: write-only key material behind the
+  shared cleartext-transport guard, platform-managed secrets only (a
+  `credentialsSecret` policy is refused with the manual-roll guidance),
+  and the create-new → rotate → wait past `rotatedAt` → revoke-old
+  sequencing documented on the method. The serving fleet's per-policy
+  daemon rolls onto the new material server-side.
 - **Session usage, cost and park/resume (#1667, #1694; interface doc
   step 7).** `client.rl.session_usage(uid)` returns the step-7 shape —
   `gpuHours` (fleet devices × wall-clock), token counters and

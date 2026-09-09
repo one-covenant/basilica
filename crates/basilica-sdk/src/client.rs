@@ -50,6 +50,7 @@ use crate::{
         ParkRlSessionResponse, RlClusterStatusResponse, RlJobStatusResponse, RlManifestRequest,
         RlManifestResponse, RlPolicyResponse, RlRevisionResponse, RlSessionStatusResponse,
         RlSessionUsageResponse, RotateRelayCredentialsRequest, RotateRlCredentialsResponse,
+        RotateRlPolicyCredentialsResponse,
     },
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
@@ -507,6 +508,27 @@ impl BasilicaClient {
     pub async fn delete_rl_policy(&self, name: &str) -> Result<DeleteRlPolicyResponse> {
         Self::validate_rl_name(name)?;
         self.delete(&format!("/rl/policies/{}", name)).await
+    }
+
+    /// Rotate a BYOT policy's storage credentials — the #1577 mechanism,
+    /// policy flavor (`POST /rl/policies/{name}/credentials`). Only for
+    /// policies registered with the INLINE key pair (platform-managed
+    /// secret); a policy using `credentialsSecret` is refused — update
+    /// your own Secret, then restart the policy's relay daemon yourself
+    /// (its credentials are read at process start). Sequencing: create
+    /// the NEW key at your provider first (both keys valid), call this,
+    /// then revoke the OLD key after the returned `rotatedAt` plus the
+    /// daemon roll — revoking first fails in-flight artifact fetches
+    /// with `RelayAuthFailed` until the roll lands.
+    pub async fn rotate_rl_policy_credentials(
+        &self,
+        name: &str,
+        request: RotateRelayCredentialsRequest,
+    ) -> Result<RotateRlPolicyCredentialsResponse> {
+        Self::validate_rl_name(name)?;
+        self.require_tls_for_credentials("rotate_rl_policy_credentials")?;
+        self.post(&format!("/rl/policies/{}/credentials", name), &request)
+            .await
     }
 
     /// Register a revision manifest: the artifact already lives in the
@@ -1953,7 +1975,13 @@ mod tests {
             secret_access_key: "SK".into(),
         };
         let err = cleartext
-            .rotate_rl_cluster_credentials("pool", rotate)
+            .rotate_rl_cluster_credentials("pool", rotate.clone())
+            .await
+            .expect_err("cleartext refused");
+        assert!(err.to_string().contains("cleartext"), "{err}");
+        // The POLICY rotation carries the same key material — same guard.
+        let err = cleartext
+            .rotate_rl_policy_credentials("pol", rotate)
             .await
             .expect_err("cleartext refused");
         assert!(err.to_string().contains("cleartext"), "{err}");
@@ -2017,6 +2045,43 @@ mod tests {
             .await
             .expect("loopback http passes the guard");
         assert_eq!(rotated.name, "pool");
+    }
+
+    /// The policy rotation speaks the documented wire: POST to the policy
+    /// credentials path, camelCase pair in the body, `{name, rotatedAt}`
+    /// back — one mock round-trip pins path, body, and response mapping.
+    #[tokio::test]
+    async fn rotate_rl_policy_credentials_wire_shape() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/rl/policies/math/credentials"))
+            .and(body_json(json!({
+                "accessKeyId": "NEWAK", "secretAccessKey": "NEWSK",
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "name": "math", "rotatedAt": "2026-09-09T00:00:00Z",
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("t", "r")
+            .build()
+            .unwrap();
+        let out = client
+            .rotate_rl_policy_credentials(
+                "math",
+                RotateRelayCredentialsRequest {
+                    access_key_id: "NEWAK".into(),
+                    secret_access_key: "NEWSK".into(),
+                },
+            )
+            .await
+            .expect("rotation round-trips");
+        assert_eq!(
+            (out.name.as_str(), out.rotated_at.as_str()),
+            ("math", "2026-09-09T00:00:00Z")
+        );
     }
 
     #[tokio::test]

@@ -400,6 +400,29 @@ class RlNamespace:
     def delete_policy(self, name: str) -> dict:
         return json.loads(self._core.rl_delete_policy(name))
 
+    def rotate_policy_credentials(
+        self, policy: str, *, access_key_id: str, secret_access_key: str
+    ) -> dict:
+        """Rotate a policy's storage credentials — the cluster rotation's
+        BYOT twin (POST /rl/policies/{name}/credentials).
+
+        Applies only to policies registered with the inline key pair
+        (platform-managed secret); a policy using ``credentialsSecret``
+        is refused — update your own Secret, then restart the policy's
+        relay daemon yourself (its credentials are read at process
+        start).
+
+        Sequencing: create the NEW key at your provider first (both keys
+        valid), call this, then revoke the OLD key after the returned
+        ``rotatedAt`` plus a couple of minutes — the daemon rolls onto
+        the new material in that window. Revoking first fails every
+        session replica's artifact fetch with ``RelayAuthFailed`` until
+        the roll lands (recoverable, but avoidable)."""
+        req = {"accessKeyId": access_key_id, "secretAccessKey": secret_access_key}
+        return json.loads(
+            self._core.rl_rotate_policy_credentials(policy, json.dumps(req))
+        )
+
     def get_revision(self, policy: str, revision: str) -> dict:
         """One revision's registry state (Validated | Loading | Active |
         Rejected | Superseded)."""

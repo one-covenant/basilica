@@ -146,6 +146,29 @@ impl BasilicaClient {
         serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Rotate a BYOT policy's storage credentials (the #1577 mechanism,
+    /// policy flavor). `request_json` must match
+    /// basilica_sdk::rl::RotateRelayCredentialsRequest.
+    fn rl_rotate_policy_credentials(
+        &self,
+        py: Python,
+        name: String,
+        request_json: String,
+    ) -> PyResult<String> {
+        let request: basilica_sdk::rl::RotateRelayCredentialsRequest =
+            serde_json::from_str(&request_json)
+                .map_err(|e| PyValueError::new_err(format!("invalid rotation request: {e}")))?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    client.rotate_rl_policy_credentials(&name, request).await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     /// Delete an RL cluster (refused with an actionable error while a job
     /// is active — delete the job first; that is the cancel path).
     fn rl_delete_cluster(&self, py: Python, name: String) -> PyResult<String> {

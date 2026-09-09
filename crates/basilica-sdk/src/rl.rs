@@ -292,6 +292,19 @@ pub struct RotateRlCredentialsResponse {
     pub rotated_at: String,
 }
 
+/// Response after rotating a POLICY's storage credentials (the #1577
+/// mechanism, BYOT flavor — server `POST /rl/policies/{name}/credentials`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RotateRlPolicyCredentialsResponse {
+    /// The policy whose credentials were rotated.
+    pub name: String,
+    /// When the rotation was applied (RFC 3339). The serving fleet's
+    /// storage access restarts onto the new key material shortly after
+    /// this instant — keep the OLD key valid until then, then revoke it.
+    pub rotated_at: String,
+}
+
 /// Cluster status (`GET /rl/clusters/{name}`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
