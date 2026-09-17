@@ -246,7 +246,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source, bootstrap patch and explicit model protocol pushed; packaging pending | `37dc442e6`, `23e8f7dc5`; adapter/scheduler/source/CLI checks plus 11 model-runtime tests |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
-| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Authenticated connection API and provider validation pushed; scoped gateway pending | `786b96f84`; 771 API unit + 10 connection/service/HTTP database tests; 9 provider HTTP tests included in library suite |
+| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime identities and authorized credential resolution pushed; gateway transport pending | `40750b9fa`; 772 API unit + 27 lifecycle/connection/runtime database tests; 9 provider HTTP tests included in library suite |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTOs and SDK transport pushed; CLI pending | `f0e1c972`; 100 library + 10 HTTP-client tests |
@@ -460,6 +460,27 @@ observed row-lock expiry races for issuance and refresh. The API library passed
 instruction checks, and pinned full eleven-commit secret scanning passed.
 HTTP refresh, protected bootstrap delivery, and the streaming gateway still need
 integration; these tests do not establish runtime or live-provider acceptance.
+
+Backend `40750b9fa59b76b702ce930b0ca9aa3a37972439` pushed gateway credential
+resolution. Runtime authentication and credential lookup share one authority
+predicate; identity, owner-bound connection, model, version and ciphertext are
+read in a single PostgreSQL snapshot before context-checked decryption. Each new
+request observes committed rotation without a runtime-token change or plaintext
+cache. The current approved catalog gates existing connections too. The result
+is server-only, redacted and not serializable. The transport must still validate
+requested model/protocol, inject keys only at fixed provider destinations, and
+cancel on runtime expiry/revocation. These transport handlers are not yet present.
+Five new database tests cover rotation, exact OpenAI/OpenRouter bindings, removed
+catalog entries, expired/revoked/fenced access, and ciphertext substitution across
+owner/connection/provider/model/version. A first run caught an invalid expiry
+fixture (expiry before creation); the fixture was corrected without weakening the
+schema. The final `CARGO_BUILD_JOBS=4 python3 scripts/exo/tests/run_lifecycle_db.py`
+passed 27 tests: 6 lifecycle, 10 connection, and 11 runtime identity/access tests.
+`CARGO_BUILD_JOBS=4 just test-crate basilica-api` passed 772 tests (9 existing
+ignored). Scoped Clippy with `-D warnings`, formatting, instruction checks, and the
+pinned full twelve-commit secret scan passed. Hosted CI
+[35274671719](https://github.com/one-covenant/basilica-backend/actions/runs/35274671719)
+is queued for this exact head; success is not yet established.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime packaging, lifecycle reconciliation/API wiring, gateway,
