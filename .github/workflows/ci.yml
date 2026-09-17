@@ -242,7 +242,8 @@ jobs:
           ./scripts/gen-key.sh
       - name: Build and test validator
         run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          export VALIDATOR_PUBLIC_KEY
           cargo build --locked -p basilica-validator
           cargo nextest run --locked -p basilica-validator --all-features --no-fail-fast
           ./target/debug/basilica-validator --help
@@ -316,7 +317,8 @@ jobs:
           ./scripts/gen-key.sh
       - name: Build and test miner
         run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          export VALIDATOR_PUBLIC_KEY
           cargo build --locked -p basilica-miner
           cargo nextest run --locked -p basilica-miner --lib --no-fail-fast
           ./target/debug/basilica-miner --help
@@ -382,10 +384,10 @@ jobs:
         uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
         with:
           tool: nextest
-      - name: Build and test basilica-cli
+      - name: Build and test CLI and Rust SDK
         run: |
           cargo build --locked -p basilica-cli
-          cargo nextest run --locked -p basilica-cli --all-features --no-fail-fast
+          cargo nextest run --locked -p basilica-cli -p basilica-sdk --all-features --no-fail-fast
           ./target/debug/basilica --help
 
   # Build and test Python SDK

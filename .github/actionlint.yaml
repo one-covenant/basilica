@@ -1,0 +1,4 @@
+# CI uses the existing Blacksmith runner pool.
+self-hosted-runner:
+  labels:
+    - blacksmith-32vcpu-ubuntu-2404
