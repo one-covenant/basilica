@@ -141,7 +141,7 @@ Protected runtime identity file v1 is a private JSON object with exactly `schema
 
 Canonical-state bootstrap v1 takes the prepared writable source, patched CLI, explicit local pricing artifact, approved model/protocol and protected identity file. Separate stable source/state mount paths are required; the state parent is private (0700). Bootstrap stages `.exo`, `master.key` and a versioned `bootstrap.json` receipt together, verifies the encrypted model binding using typed Exo APIs, fsyncs staged data and publishes by same-filesystem rename. The workspace `.exo` link targets this one canonical state. Canonical slugs are agent/model `managed`, conversation `chat`, and secret `managed-gateway`; the agent uses the Exo harness, local-process provider and agent sandbox scope with tool creation enabled. Repeat setup preserves all records and user edits, requiring the same instance/model/protocol/source/origin/scoped grant and master key. Changed grants need a separate explicit preserve-state rotation flow, still pending. Readiness events describe setup only; renewal must authorize the identity before service start. Image assembly/seeding, filesystem suitability, service/guardian integration and hosted acceptance remain separate gates.
 
-Service execution v1 wraps image-owned `services.py` with `runtime_identity.py` after canonical bootstrap. The foreground supervisor holds the bootstrap OS lock, passes the canonical root/key and explicit model protocol to both scheduler and adapter runners, and inherits only tool/home/locale/TLS-trust environment fields. Each child has an owned process group; shutdown uses one shared three-second TERM grace plus bounded reaping after KILL. Any unexpected runner exit, including zero, stops its sibling and reports failure. Diagnostics identify actual child PIDs, never use persisted PID files as authority, and do not establish chat/model readiness. Both runners use OS-held locks and retain their lock inodes. Image-level orphan reaping/cleanup and lifecycle generation fencing remain required. Managed drain/rebuild control, interrupted-schedule handling and healthy-code recovery remain pending; the upstream guardian must not run unchanged.
+Service execution v1 wraps image-owned `services.py` with `runtime_identity.py` after canonical bootstrap. The foreground supervisor holds the bootstrap OS lock, passes the canonical root/key and explicit model protocol to both scheduler and adapter runners, and inherits only tool/home/locale/TLS-trust environment fields. Each child has an owned process group; shutdown uses one shared three-second TERM grace plus bounded reaping after KILL. Any unexpected runner exit, including zero, stops its sibling and reports failure. Diagnostics identify actual child PIDs, never use persisted PID files as authority, and do not establish chat/model readiness. Both runners use OS-held locks and retain their lock inodes. Image-level orphan reaping/cleanup and lifecycle generation fencing remain required. Managed drain/rebuild control follows the contract below; image wiring, interrupted-schedule handling and healthy-code recovery remain pending. The upstream guardian must not run unchanged.
 
 Managed rebuild v1 is opt-in until image assembly supplies the pinned build tools. In managed mode the existing rebuild tool publishes a private, fsynced guardian update and never launches a detached guardian. The foreground owner serializes queued requests, records phases durably, runs locked Rust build/tests and TypeScript checking with bounded cancellation, and copies the executable pair into a unique immutable-by-convention candidate directory. Build failure preserves running services. Successful validation requests graceful drain with a bounded deadline; failed or interrupted drain fails the service generation rather than restarting over uncertain in-flight work. After both runners exit successfully, the owner atomically selects a digest-checked binary pair and starts it with unchanged canonical state. Selection and process survival do not establish model/chat readiness or a healthy recovery checkpoint. Nonterminal claimed requests found after supervisor restart fail as interrupted and are never automatically replayed. The selected candidate persists across ordinary supervisor restarts; immutable baseline and compatible code/dependency checkpoints remain separate required recovery work. No detached restart loop, lock-inode deletion or process-name matching is permitted.
 
@@ -254,7 +254,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap/service execution v1 for final wiring | Pinned source, canonical bootstrap, identity renewal and foreground service supervision pushed; managed rebuild and image integration pending | `29b124c87`; 12 service tests, 17 bootstrap tests, 68 CLI tests, 2 scheduler tests, plus adapter/source/renewal suites |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap/service/rebuild v1 for final wiring | Pinned source, canonical bootstrap, identity renewal, foreground supervision and opt-in managed rebuilds pushed; image/checkpoint/recovery integration pending | `8c9b70fdb`; 16 rebuild tests, 12 service tests, 6 guardian tests, real locked build/68 CLI/2 scheduler pipeline; earlier bootstrap/adapter/source/renewal evidence below |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
@@ -666,9 +666,9 @@ and 2 scheduler unit tests and scoped Clippy with `-D warnings` passed. Python
 compilation, whitespace/instruction checks, Actionlint and the managed runtime
 Act dry run passed. Gitleaks 8.30.1 found no leaks across all 17 backend commits.
 Hosted CI [35285951770](https://github.com/one-covenant/basilica-backend/actions/runs/35285951770)
-is running for this exact head; its result remains pending.
+passed for this exact head.
 
-Managed drain/rebuild control remains next. The existing tool launches a detached
+Inspection for the subsequent rebuild integration found that the existing tool launches a detached
 shell guardian, whose stop path deletes a lock inode and uses broad process-name
 matching. It cannot be enabled unchanged with the new supervisor. The replacement
 must submit rebuild work to the single foreground owner, build and validate a
@@ -676,6 +676,57 @@ candidate without overwriting active binaries, coordinate runner drain, and reco
 activation/failure durably. Image-level orphan cleanup, interrupted-task policy,
 healthy checkpoints, out-of-band code recovery and actual runtime acceptance are
 still required.
+
+Backend `8c9b70fdb5fe21ec0056185bd361b2c453597030` pushed managed rebuild
+coordination after contract v1 was published in plan commit `1ae3cb43`. The
+foreground supervisor opts in with image-owned cargo/pnpm paths. Patch `0005`
+makes the tool publish a bounded private fsynced request, blocks legacy guardian
+invocation in managed mode, and checks scheduler drain markers before reading
+tasks or leasing another pass. Without opt-in the managed tool fails explicitly;
+it cannot fall through to the detached guardian.
+
+The controller serializes requests, journals phases, runs frozen pnpm install and
+TypeScript checking plus locked Rust build/CLI/scheduler tests, and copies the
+binary pair into a unique digest-checked bundle. Compiler/SDK settings have an
+explicit build-only allowlist and build parallelism defaults to two jobs. Build
+failure leaves current runners running. Successful validation requests bounded
+graceful drain; both successful exit and consumed markers are required before
+atomic durable selection. An incomplete/failed drain fails the generation rather
+than restarting over uncertain work. The selection survives supervisor restart;
+claimed nonterminal operations become failed/interrupted and are never replayed.
+Success is recorded after three seconds of process survival, separately from any
+model/chat readiness or healthy-checkpoint claim. Outcome persistence precedes a
+bounded conversation-event append; cancellation can leave event delivery pending.
+
+All 16 rebuild tests passed with actual compiled runners and isolated build-tool
+processes. They cover complete supervisor request/restart, preserved canonical
+records and appended conversation event, build failure/timeout, cancellation of a
+hung build and all owned runners, restart interruption, invalid/symlink requests
+and manifests, digest mismatch, failed startup/drain, unclaimed drain, environment
+exclusion, and legacy guardian refusal before config execution. The 12 service
+regressions and 3 complete Git patch-stack tests passed. All 6 TypeScript guardian
+tests, full TypeScript checking, scoped Oxlint, shell syntax/Shellcheck, Python
+compilation, instruction/whitespace checks, Actionlint and the selected
+`workflow_call` Act dry run passed.
+
+A separate real controller build ran frozen pnpm install, TypeScript checking,
+both locked Rust builds, all 68 CLI tests and both scheduler tests, then copied and
+verified the candidate pair. It used the prepared checkout and existing developer
+target cache, with no running services from that cache; this is neither a clean
+build benchmark nor hosted runtime acceptance. Initial native attempts exposed
+missing Mac compiler/SDK settings; the explicit build environment fixed them and
+the subsequent complete pipeline passed. Scoped scheduler Clippy passed with
+`-D warnings`. The diff was self-reviewed; no independent subagent review ran.
+Pinned Gitleaks found no leaks across all 18 backend commits. Required CI now adds
+the managed TypeScript and rebuild suites. Hosted CI
+[35288390276](https://github.com/one-covenant/basilica-backend/actions/runs/35288390276)
+is running for the exact pushed head; its result remains pending.
+
+Source and installed node dependencies remain writable; binary selection is not
+an atomic source/dependency snapshot. Image assembly/seeding and scoped identity
+delivery/rotation, immutable baseline and compatible healthy code/dependency
+checkpoints, out-of-band recovery, interrupted-task policy, storage sizing/retention
+and export remain required runtime work. No paid model or cloud acceptance ran.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime image/service integration, lifecycle reconciliation/API wiring,
