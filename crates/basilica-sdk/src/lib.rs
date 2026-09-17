@@ -5,6 +5,7 @@
 //! This crate provides a type-safe client for the Basilica API, supporting
 //! both authenticated and unauthenticated requests.
 
+pub mod agents;
 pub mod auth;
 pub mod client;
 pub mod error;

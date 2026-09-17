@@ -80,6 +80,7 @@ use std::time::Duration;
 #[derive(Debug)]
 pub struct BasilicaClient {
     http_client: reqwest::Client,
+    agent_http_client: reqwest::Client,
     base_url: String,
     token_manager: Arc<TokenManager>,
 }
@@ -96,11 +97,291 @@ impl BasilicaClient {
             .build()
             .map_err(ApiError::HttpClient)?;
 
+        // Never forward managed-agent mutation bodies (including provider keys)
+        // to a redirect destination, even if the destination is the same host.
+        let agent_http_client = reqwest::Client::builder()
+            .timeout(timeout)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(ApiError::HttpClient)?;
+
         Ok(Self {
             http_client,
+            agent_http_client,
             base_url: base_url.into(),
             token_manager,
         })
+    }
+
+    // ===== Managed agents (v1) =====
+
+    /// List tested agent templates and available compute shapes.
+    pub async fn list_agent_templates(&self) -> Result<Vec<crate::agents::AgentTemplate>> {
+        self.get("/agent-templates").await
+    }
+
+    /// Obtain an expiring quote; never silently replace an expired quote.
+    pub async fn quote_agent(
+        &self,
+        request: &crate::agents::AgentQuoteRequest,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::AgentQuote> {
+        self.agent_mutation(
+            reqwest::Method::POST,
+            "/agent-instances/quote",
+            request,
+            idempotency_key,
+        )
+        .await
+    }
+
+    /// Persist launch intent. Reuse the same key and body after an uncertain response.
+    pub async fn create_agent(
+        &self,
+        request: &crate::agents::CreateAgentRequest,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::AgentMutationResponse> {
+        self.agent_mutation(
+            reqwest::Method::POST,
+            "/agent-instances",
+            request,
+            idempotency_key,
+        )
+        .await
+    }
+
+    pub async fn list_agents(
+        &self,
+        query: &crate::agents::AgentPageQuery,
+    ) -> Result<crate::agents::AgentPage<crate::agents::AgentInstance>> {
+        self.agent_page("/agent-instances", query, 100).await
+    }
+
+    /// General status contains no provider credentials or chat access tokens.
+    pub async fn get_agent(&self, id: &str) -> Result<crate::agents::AgentInstance> {
+        self.get(&agent_resource_path("agent-instances", id)?).await
+    }
+
+    pub async fn get_agent_operation(&self, id: &str) -> Result<crate::agents::AgentOperation> {
+        self.get(&agent_resource_path("agent-operations", id)?)
+            .await
+    }
+
+    pub async fn restart_agent(
+        &self,
+        id: &str,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::AgentMutationResponse> {
+        self.agent_mutation(
+            reqwest::Method::POST,
+            &format!("{}/restart", agent_resource_path("agent-instances", id)?),
+            &serde_json::json!({}),
+            idempotency_key,
+        )
+        .await
+    }
+
+    pub async fn export_agent(
+        &self,
+        id: &str,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::AgentMutationResponse> {
+        self.agent_mutation(
+            reqwest::Method::POST,
+            &format!("{}/export", agent_resource_path("agent-instances", id)?),
+            &serde_json::json!({}),
+            idempotency_key,
+        )
+        .await
+    }
+
+    /// Recover code from a compatible checkpoint without reverting user history.
+    pub async fn recover_agent(
+        &self,
+        id: &str,
+        request: &crate::agents::RecoverAgentRequest,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::AgentMutationResponse> {
+        self.agent_mutation(
+            reqwest::Method::POST,
+            &format!("{}/recover", agent_resource_path("agent-instances", id)?),
+            request,
+            idempotency_key,
+        )
+        .await
+    }
+
+    /// Request durable deletion. Track the operation for cleanup and billing completion.
+    pub async fn delete_agent(
+        &self,
+        id: &str,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::AgentMutationResponse> {
+        self.agent_mutation(
+            reqwest::Method::DELETE,
+            &agent_resource_path("agent-instances", id)?,
+            &serde_json::json!({}),
+            idempotency_key,
+        )
+        .await
+    }
+
+    pub async fn get_agent_logs(
+        &self,
+        id: &str,
+        query: &crate::agents::AgentPageQuery,
+    ) -> Result<crate::agents::AgentPage<crate::agents::AgentLogEntry>> {
+        self.agent_page(
+            &format!("{}/logs", agent_resource_path("agent-instances", id)?),
+            query,
+            1000,
+        )
+        .await
+    }
+
+    /// Request scoped browser access separately from safe general status.
+    pub async fn create_agent_chat_session(
+        &self,
+        id: &str,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::AgentChatSession> {
+        self.agent_mutation(
+            reqwest::Method::POST,
+            &format!(
+                "{}/chat-sessions",
+                agent_resource_path("agent-instances", id)?
+            ),
+            &serde_json::json!({}),
+            idempotency_key,
+        )
+        .await
+    }
+
+    pub async fn create_model_connection(
+        &self,
+        request: &crate::agents::CreateModelConnectionRequest,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::ModelConnection> {
+        self.agent_mutation(
+            reqwest::Method::POST,
+            "/model-connections",
+            request,
+            idempotency_key,
+        )
+        .await
+    }
+
+    pub async fn list_model_connections(
+        &self,
+        query: &crate::agents::AgentPageQuery,
+    ) -> Result<crate::agents::AgentPage<crate::agents::ModelConnection>> {
+        self.agent_page("/model-connections", query, 100).await
+    }
+
+    pub async fn rotate_model_connection(
+        &self,
+        id: &str,
+        request: &crate::agents::RotateModelConnectionRequest,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::ModelConnection> {
+        self.agent_mutation(
+            reqwest::Method::PATCH,
+            &agent_resource_path("model-connections", id)?,
+            request,
+            idempotency_key,
+        )
+        .await
+    }
+
+    /// Fails with conflict while a nondeleted instance uses this connection.
+    pub async fn delete_model_connection(
+        &self,
+        id: &str,
+        idempotency_key: &str,
+    ) -> Result<crate::agents::DeleteModelConnectionResponse> {
+        self.agent_mutation(
+            reqwest::Method::DELETE,
+            &agent_resource_path("model-connections", id)?,
+            &serde_json::json!({}),
+            idempotency_key,
+        )
+        .await
+    }
+
+    async fn agent_mutation<B: Serialize, T: DeserializeOwned>(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: &B,
+        idempotency_key: &str,
+    ) -> Result<T> {
+        if !(16..=128).contains(&idempotency_key.len())
+            || !idempotency_key
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err(ApiError::InvalidRequest { message: "Idempotency-Key must contain 16–128 ASCII letters, digits, hyphens or underscores".into() });
+        }
+        let base = reqwest::Url::parse(&self.base_url).map_err(|_| ApiError::InvalidRequest {
+            message: "Invalid API base URL".into(),
+        })?;
+        let loopback = base.host_str().is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+        });
+        if !(base.scheme() == "https" || (base.scheme() == "http" && loopback))
+            || !base.username().is_empty()
+            || base.password().is_some()
+            || base.query().is_some()
+            || base.fragment().is_some()
+        {
+            return Err(ApiError::InvalidRequest { message: "Managed-agent mutations require an HTTPS API URL (HTTP is allowed only on loopback for local testing) without URL credentials, query or fragment".into() });
+        }
+        // No automatic retry or replacement key: callers retain the original
+        // intent across transport failures, process restarts, and refreshes.
+        let request = self
+            .agent_http_client
+            .request(method, format!("{}{}", self.base_url, path))
+            .header("Idempotency-Key", idempotency_key)
+            .json(body);
+        let response = self
+            .apply_auth(request)
+            .await?
+            .send()
+            .await
+            .map_err(ApiError::HttpClient)?;
+        self.handle_response(response).await
+    }
+
+    async fn agent_page<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &crate::agents::AgentPageQuery,
+        max_limit: u32,
+    ) -> Result<T> {
+        if query
+            .limit
+            .is_some_and(|limit| limit == 0 || limit > max_limit)
+        {
+            return Err(ApiError::InvalidRequest {
+                message: format!("Page limit must be between 1 and {max_limit}"),
+            });
+        }
+        let request = self
+            .agent_http_client
+            .get(format!("{}{}", self.base_url, path))
+            .query(query);
+        let response = self
+            .apply_auth(request)
+            .await?
+            .send()
+            .await
+            .map_err(ApiError::HttpClient)?;
+        self.handle_response(response).await
     }
 
     // ===== Rentals =====
@@ -1569,6 +1850,21 @@ impl BasilicaClient {
             }
         }
     }
+}
+
+/// Keep opaque resource IDs in one path segment, including rejecting dot paths.
+fn agent_resource_path(collection: &str, id: &str) -> Result<String> {
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(ApiError::InvalidRequest {
+            message: "Invalid managed-agent resource ID".into(),
+        });
+    }
+    Ok(format!("/{collection}/{id}"))
 }
 
 /// Format human-readable phase message for progress output
