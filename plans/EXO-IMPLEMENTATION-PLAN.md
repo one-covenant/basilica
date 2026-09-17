@@ -244,9 +244,9 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source and bootstrap patch pushed; packaging pending | `37dc442e6`; 5 adapter + 1 scheduler + 3 source + 3 compiled-CLI tests |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source, bootstrap patch and explicit model protocol pushed; packaging pending | `37dc442e6`, `23e8f7dc5`; adapter/scheduler/source/CLI checks plus 11 model-runtime tests |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
-| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection storage and access-validation service pushed; authenticated routes under test; gateway pending | `281a6b245`, `f1727c20a`, `09d956a3f`; 9 provider HTTP + 9 connection/service database tests |
+| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Authenticated connection API and provider validation pushed; scoped gateway pending | `786b96f84`; 771 API unit + 10 connection/service/HTTP database tests; 9 provider HTTP tests included in library suite |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTOs and SDK transport pushed; CLI pending | `f0e1c972`; 100 library + 10 HTTP-client tests |
@@ -302,8 +302,9 @@ Contract decisions for the initial implementation:
   and separate runtime pairing. Message IDs and persisted acknowledgments must
   prevent replay after reconnect. General status never contains chat credentials.
 
-Remaining G0 work includes executable OpenAPI, exact runtime bootstrap/transport
-schemas, and persistence feasibility. The frontend test/build baseline is established.
+Remaining G0 work includes instance/operation/chat OpenAPI, exact runtime
+bootstrap/transport schemas, and persistence feasibility. Connection OpenAPI is
+implemented in both generated public and private API documents. The frontend test/build baseline is established.
 CO reserves backend API migration
 `035_managed_agents.sql` for owner-scoped connections, quotes, instances, durable
 operations, idempotency records, and scoped runtime/chat identities. Database
@@ -412,8 +413,39 @@ retries bypass provider calls; rotation checks ownership before validation and
 rechecks deletion on commit. Nine loopback HTTP tests passed, plus all 6 lifecycle
 and 9 connection/service PostgreSQL tests, including deletion during an in-flight
 provider check. Clippy, formatting, instruction checks and the complete eight-commit
-secret scan passed. HTTP handlers/configuration/OpenAPI wiring is under test in
-an uncommitted follow-up; this does not claim a deployed connection service.
+secret scan passed. The authenticated route/configuration increment below completes the connection
+API wiring; this does not claim a deployed connection service.
+
+
+Backend `786b96f84` pushed authenticated connection create/list/rotate/delete
+handlers, optional protected keyring/catalog configuration, scope registration,
+and public/private OpenAPI artifacts. Extractor errors are sanitized, mutation
+headers validated, and request bodies capped at 32 KiB. Owner identity comes only
+from the verified auth context. With configuration absent the service returns 503;
+no provider/model is enabled by default. A first test run caught missing private
+OpenAPI registration; both specs were corrected and an explicit contract guard
+added. The final `CARGO_BUILD_JOBS=4 just test-crate basilica-api` passed 771 tests
+(9 existing ignored). The disposable PostgreSQL runner passed 6 lifecycle and
+10 connection/service/HTTP tests. `cargo check --locked -p basilica-api --all-targets`,
+Clippy for the library and both database targets with `-D warnings`, formatting,
+instruction checks, and the complete nine-commit secret scan passed. The actual
+`gen-openapi` binary generated both artifacts; every schema reference resolves
+and pre-existing paths are unchanged.
+
+Backend `23e8f7dc5` pushed an upstream runtime compatibility fix: the pinned Exo
+implementation infers OpenRouter's Chat Completions protocol from its hostname,
+which fails behind a Basilica gateway. `EXO_MODEL_API_STYLE` now explicitly selects
+`responses` or `chat_completions` before provider/model heuristics, preserves the
+configured endpoint and bearer credential, and rejects invalid/empty values
+without echoing them. The managed bootstrap contract must set this for its single
+model binding: OpenAI uses Responses; the pinned OpenRouter integration uses
+Chat Completions. It grants no authority; scoped runtime authentication is still
+required. With the variable absent, upstream behavior remains unchanged.
+`CC=/usr/bin/clang CXX=/usr/bin/clang++ SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk CARGO_BUILD_JOBS=2 cargo +1.97.1 test --locked -p executor --lib harness_runtime::tests`
+passed all 11 tests, including 3 new protocol cases. All 3 source-preparation tests
+passed with the actual pinned mirror and both patches. Formatting and full ten-commit
+secret scanning passed. Hosted CI [35272414776](https://github.com/one-covenant/basilica-backend/actions/runs/35272414776)
+was dispatched for this final backend head and remains pending.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime packaging, lifecycle reconciliation/API wiring, gateway,
