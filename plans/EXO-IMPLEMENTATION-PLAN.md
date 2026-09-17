@@ -246,7 +246,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source, bootstrap patch and explicit model protocol pushed; packaging pending | `37dc442e6`, `23e8f7dc5`; adapter/scheduler/source/CLI checks plus 11 model-runtime tests |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
-| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime identities and authorized credential resolution pushed; gateway transport pending | `40750b9fa`; 772 API unit + 27 lifecycle/connection/runtime database tests; 9 provider HTTP tests included in library suite |
+| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime authority and bounded provider transport pushed; HTTP gateway/refresh and accounting pending | `c5d7bcbf9`; 785 API unit + 27 lifecycle/connection/runtime database tests; 13 transport checks included in the library suite |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTOs and SDK transport pushed; CLI pending | `f0e1c972`; 100 library + 10 HTTP-client tests |
@@ -480,7 +480,43 @@ passed 27 tests: 6 lifecycle, 10 connection, and 11 runtime identity/access test
 ignored). Scoped Clippy with `-D warnings`, formatting, instruction checks, and the
 pinned full twelve-commit secret scan passed. Hosted CI
 [35274671719](https://github.com/one-covenant/basilica-backend/actions/runs/35274671719)
-is queued for this exact head; success is not yet established.
+completed successfully for this exact head.
+
+Backend `c5d7bcbf9fa1bc8c4a5b9a22963f7d769ae39e2a` pushed the bounded model
+transport. It constructs fixed-destination HTTPS requests with sensitive provider
+authorization, no caller headers, no redirects or ambient proxies, and exact
+model/protocol binding. Canonical JSON prevents duplicate model-key ambiguity.
+The initial managed contract permits text/local function tools and rejects hosted
+tools, background requests, provider file/item references and stored conversation
+or response references. Provider storage is disabled; Responses includes encrypted
+reasoning content for stateless replay in Exo. Real pinned-runtime conformance is
+still required and no models were added to the approved catalog.
+
+The producer continues authority checks under client backpressure; revocation,
+expiry, disconnect and deadlines drop the upstream connection and release its
+concurrency permit. Requests/frames are limited to 4 MiB, replies to 32 MiB, and
+concurrent requests to 32 per process. Connect/header/idle/provider-lifetime bounds
+are 5/30/60/600 seconds; authority work is bounded and rechecked every second.
+SSE parsing preserves tool/usage JSON, handles split UTF-8 and LF/CRLF/CR framing,
+normalizes comments to fixed keepalives, suppresses provider diagnostics, and
+rejects malformed/in-band-error/truncated streams. EOF without a terminal event
+is not successful completion. Cancellation does not guarantee provider billing
+has stopped; usage forwarding is not yet accounting integration or a spending cap.
+
+The final `CARGO_BUILD_JOBS=4 just test-crate basilica-api` passed 785 tests
+(9 existing ignored), including 13 transport checks. Actual loopback HTTP tests
+cover protocol/model rejection before HTTP, exact endpoint/key substitution,
+redirects, safe HTTP/JSON/SSE errors, usage/tool events, response bounds with and
+without Content-Length, idle/total deadlines, dropped clients, and observed server
+connection teardown on revocation during idle reads and backpressure. A full run
+caught a heartbeat test fixture lacking the separating blank line; it was corrected
+and the entire API suite rerun. The disposable PostgreSQL runner passed all 27
+tests, including the real transport authority recheck before and after revocation.
+Scoped Clippy with `-D warnings`, formatting, instruction checks and pinned full
+thirteen-commit secret scanning passed. Hosted CI
+[35276886704](https://github.com/one-covenant/basilica-backend/actions/runs/35276886704)
+is queued for this exact head. HTTP route/configuration integration, runtime
+refresh, usage accounting and real model/runtime conformance remain outstanding.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime packaging, lifecycle reconciliation/API wiring, gateway,
