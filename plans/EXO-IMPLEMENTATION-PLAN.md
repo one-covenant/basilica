@@ -445,7 +445,21 @@ required. With the variable absent, upstream behavior remains unchanged.
 passed all 11 tests, including 3 new protocol cases. All 3 source-preparation tests
 passed with the actual pinned mirror and both patches. Formatting and full ten-commit
 secret scanning passed. Hosted CI [35272414776](https://github.com/one-covenant/basilica-backend/actions/runs/35272414776)
-was dispatched for this final backend head and remains pending.
+completed successfully for this exact backend head.
+
+Backend `b5382523f` pushed scoped runtime identity persistence. Issuance requires
+a live, current worker lease; credentials contain 256 random bits and only their
+SHA-256 digest is stored. Runtime/account token formats reject one another.
+Authentication checks instance, owner-bound connection, generation, usable phase,
+desired state, expiry, and revocation. Refresh retains the bearer token for safe
+lost-response retries and rechecks authorization after row locks. Delete intent
+continues to revoke identities atomically. The final disposable PostgreSQL runner
+passed all 22 tests (6 lifecycle, 10 connections, 6 runtime identity), including
+observed row-lock expiry races for issuance and refresh. The API library passed
+772 tests (9 existing ignored). Scoped Clippy with `-D warnings`, formatting,
+instruction checks, and pinned full eleven-commit secret scanning passed.
+HTTP refresh, protected bootstrap delivery, and the streaming gateway still need
+integration; these tests do not establish runtime or live-provider acceptance.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime packaging, lifecycle reconciliation/API wiring, gateway,
