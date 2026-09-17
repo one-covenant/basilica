@@ -252,7 +252,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source, atomic canonical-state bootstrap and identity renewal launcher pushed; image/service wiring pending | `9aef315e3`; 17 compiled-CLI bootstrap tests, 68 upstream CLI tests, 1 scheduler and 11 protocol tests, plus adapter/source/renewal suites |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap/service execution v1 for final wiring | Pinned source, canonical bootstrap, identity renewal and foreground service supervision pushed; managed rebuild and image integration pending | `29b124c87`; 12 service tests, 17 bootstrap tests, 68 CLI tests, 2 scheduler tests, plus adapter/source/renewal suites |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
@@ -635,12 +635,45 @@ passed for this exact head, including the new pinned-runtime Linux job. These
 results do not establish model/tool execution, scheduler continuity or complete
 runtime acceptance.
 
-Next runtime integration must own foreground service processes and pass the
-canonical root/master key explicitly. Inspection confirmed the upstream guardian
+Inspection confirmed the upstream guardian
 uses `nohup`, broad `pkill` matching and implicit key/root settings; it must not be
 installed unchanged under the scoped renewal launcher. Image/source assembly,
 service/guardian coordination, protected grant delivery/rotation, chat pairing and
 bad-rebuild recovery remain required work.
+
+Backend `29b124c8727a24b504988bfafa12ce901d30f5f3` pushed the foreground
+service supervisor and OS-owned runner locks after service execution v1 was
+published in plan commit `77cbfa1d`. The supervisor holds the canonical bootstrap
+lock, supplies explicit state/key/protocol settings and starts separate owned
+process groups for the scheduler and adapters. An unexpected exit stops the
+sibling; shutdown uses a shared TERM deadline, KILL escalation and bounded direct
+child reaping. It never searches process names or trusts persisted PIDs. Patch
+`0004` replaces both runner PID-file locks with OS-held file locks; retained lock
+inodes permit recovery after process death without PID-reuse conflicts.
+
+All 12 service tests passed using real processes, the compiled pinned runners and
+an isolated HTTPS renewal fixture. They cover repeat start/stop with canonical
+state preservation, concurrent supervisor/bootstrap exclusion, actual runner
+crash and lock reacquisition, old live-PID contents, environment/argument wiring,
+missing-key refusal, unexpected clean exit, partial spawn failure, descendants
+of exited leaders, SIGINT, TERM-resistant groups, and renewal rejection stopping
+both native runners. Stores are empty: these checks do not exercise task or model
+execution. The 17 bootstrap, 3 compiled adapter, 3 Git patch preparation and 17
+renewal tests passed. Both binaries built with locked dependencies; all 68 CLI
+and 2 scheduler unit tests and scoped Clippy with `-D warnings` passed. Python
+compilation, whitespace/instruction checks, Actionlint and the managed runtime
+Act dry run passed. Gitleaks 8.30.1 found no leaks across all 17 backend commits.
+Hosted CI [35285951770](https://github.com/one-covenant/basilica-backend/actions/runs/35285951770)
+is running for this exact head; its result remains pending.
+
+Managed drain/rebuild control remains next. The existing tool launches a detached
+shell guardian, whose stop path deletes a lock inode and uses broad process-name
+matching. It cannot be enabled unchanged with the new supervisor. The replacement
+must submit rebuild work to the single foreground owner, build and validate a
+candidate without overwriting active binaries, coordinate runner drain, and record
+activation/failure durably. Image-level orphan cleanup, interrupted-task policy,
+healthy checkpoints, out-of-band code recovery and actual runtime acceptance are
+still required.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime image/service integration, lifecycle reconciliation/API wiring,
