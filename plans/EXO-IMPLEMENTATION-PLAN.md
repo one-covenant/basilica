@@ -244,9 +244,9 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | Unassigned | Section 4 runtime paths | Bootstrap v1 for final wiring | Not started | None |
-| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Schema pushed; intent/lease code under test | `086c698a5`; 15 PostgreSQL constraint tests |
-| MG | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0 | Not started | None |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source and bootstrap patch under test | Native CLI built; 3 source + 3 CLI setup tests; lock race fix verification pending |
+| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
+| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Versioned credential vault pushed; connection/gateway services pending | `281a6b245`; 5 encryption tests |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTOs and SDK transport pushed; CLI pending | `f0e1c972`; 100 library + 10 HTTP-client tests |
@@ -265,8 +265,8 @@ Original checkouts remain untouched. Implementation worktrees are
 `f3749c7211e828c5c8ff34f6995f822cf83ccd2f`) and
 `basilica-backend-exo` (backend `feat/exo`, freshly fetched main base
 `4bbef3368d2f0fef7f52d53284eed00b57161f99`). Frontend main remains
-`5854e17d952a62906206ee60d8a64a4cb9cf8a95`; create its isolated worktree
-before editing. Backend drift adds placement work outside the reserved API paths.
+`5854e17d952a62906206ee60d8a64a4cb9cf8a95`; its isolated worktree is
+`basilica-site-exo`. Backend drift adds placement work outside the reserved API paths.
 
 CO currently executes the workstreams sequentially. Section 4 backend reservations
 are confirmed against current module conventions. Public wire types are owned by
@@ -303,7 +303,8 @@ Contract decisions for the initial implementation:
   prevent replay after reconnect. General status never contains chat credentials.
 
 Remaining G0 work includes executable OpenAPI, exact runtime bootstrap/transport
-schemas, persistence feasibility, and frontend test baseline. CO reserves backend API migration
+schemas, and persistence feasibility. The frontend test/build baseline is established.
+CO reserves backend API migration
 `035_managed_agents.sql` for owner-scoped connections, quotes, instances, durable
 operations, idempotency records, and scoped runtime/chat identities. Database
 constraints and transition storage are validated against disposable local PostgreSQL.
@@ -334,11 +335,64 @@ No live resources have been provisioned and no product gate has passed.
   scan of the existing SDK directory flagged two pre-existing findings outside
   this commit; no scanner bypass or exclusion was added.
 
-Backend intent/lease code is not yet committed or claimed passing; it must use
-this published public SDK revision through the explicit locked Git dependency
-update and pass its disposable PostgreSQL Rust integration runner. CLI tests and
-hosted CI remain required as their work is integrated. Runtime source was fetched
-at the plan's pinned revision into `/tmp/basilica-exo-upstream`; source inspection
-confirmed Rust MSRV 1.95 and typed AdapterStore APIs. No runtime build, model call,
-cloud resource, or hosted authenticated acceptance has been performed. G0–G4
-remain incomplete.
+- Public `c22700c0` pushed: CI now executes Rust SDK tests alongside CLI tests.
+  Actionlint and complete-range secret scanning passed. Hosted run
+  [35262586904](https://github.com/one-covenant/basilica/actions/runs/35262586904)
+  finished: CLI/SDK, validator, Python matrix, lint, and secret checks passed;
+  security audit failed on Rustls 0.23.36 (RUSTSEC-2026-0285), and the miner image
+  scan failed on PCRE2 10.42-1 (fixed package 10.42-1+deb12u1). Local fixes are
+  under verification; this run is not green.
+- Backend `29109f046`, `281a6b245`, and `fec2645fc` pushed: owner-serialized
+  create/delete intent and durable retry responses, generation-fenced leases,
+  context-bound AES-256-GCM credential storage and keyring rotation, plus a
+  heartbeat lock-wait expiry fix. Backend intentionally locks all five public
+  crates to `f0e1c972930da5a8317ed9c70fc6bd3e7131d0f1`; full locked Cargo metadata
+  inspection passed, with no local dependency override.
+  `CARGO_BUILD_JOBS=4 just test-crate basilica-api` passed 756 tests (9 existing
+  ignored). `CARGO_BUILD_JOBS=4 python3 scripts/exo/tests/run_lifecycle_db.py`
+  passed all 6 tests after the lease fix, including an observed PostgreSQL row-lock
+  race. Its temporary database stopped/removed. `cargo clippy --locked -p
+  basilica-api --lib --test agent_lifecycle_db -- -D warnings`, `just fmt-check`,
+  and `just instructions-check` passed. Pinned Gitleaks passed the complete
+  four-commit backend range through `fec2645fc` before push. Hosted backend CI
+  remains required.
+- Backend `87cb2cde63a7df76b8730d8f463509f9facc11d6` pushed: required CI now
+  executes schema and lifecycle tests using disposable native PostgreSQL. Test
+  runner edits select the Rust lane. Actionlint, instruction checks, and an Act
+  `workflow_call` dry run of `workspace-hermetic` with `rust_selected=true` passed;
+  this is graph validation, not a hosted build. Full five-commit secret scan
+  passed. Hosted run [35266047579](https://github.com/one-covenant/basilica-backend/actions/runs/35266047579)
+  is in progress for this exact head.
+- Public `234a8de1120eaab50c80ae0450505b7028831723` pushed: Rustls updated to
+  0.23.45 with its required crypto dependencies; miner image explicitly installs
+  the current PCRE2 package. `cargo deny --locked check` passed all four policy
+  categories. `CARGO_BUILD_JOBS=2 cargo test --locked -p basilica-sdk -p basilica-cli`
+  passed 212 CLI unit tests, 1 noninteractive test, 100 SDK unit tests, 10 agent
+  HTTP tests, and 10 doctests (2 existing ignored). Running the package update
+  in the exact pinned Debian amd64 base installed PCRE2 10.42-1+deb12u1. This is
+  package verification, not a fresh full-image vulnerability scan. Full branch
+  secret scan passed. Hosted run [35266045472](https://github.com/one-covenant/basilica/actions/runs/35266045472)
+  is in progress for this exact head.
+
+Runtime source is at the pinned revision in `/tmp/basilica-exo-upstream`.
+The first native build failed because Homebrew Clang could not find macOS SDK
+headers; explicitly selecting Apple Clang and SDKROOT produced a successful
+locked native CLI build (11m47s, including the initial bootstrap patch). A
+versioned patch adds typed, idempotent adapter setup with an OS lock and explicit
+scheduler master-key selection. Three actual compiled-CLI tests passed for retry,
+conflict/disabled records, missing references, and master-key preservation.
+Parallel Rust unit tests exposed a transient lock-release race while other tests
+spawned processes; sequential tests passed. The candidate now explicitly unlocks
+its guard on drop. Its parallel regression rerun is queued behind the scheduler's
+feature-specific build and must pass before the runtime patch is committed.
+Source preparation tests passed 3 cases again after this fix against the actual
+upstream tree, including patch applicability and refusals to modify existing
+destinations. Shell syntax and Shellcheck passed. The final CLI binary must be
+rebuilt and the CLI tests rerun after the guard fix. This is not evidence of
+runtime scheduling, chat, self-rebuild, or recovery. The upstream pinned runtime
+dependency graph still needs its release security audit and necessary locked
+updates; the public/backend lockfiles are independent of upstream's lockfile.
+
+No paid model call, cloud resource, or hosted authenticated acceptance has been
+performed. Runtime packaging, lifecycle reconciliation/API wiring, gateway,
+chat, product UI, CLI, full required CI, and G0–G4 remain incomplete.
