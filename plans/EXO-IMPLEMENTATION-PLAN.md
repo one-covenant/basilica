@@ -137,7 +137,7 @@ Internal bootstrap v1 joins RT/LC/MG/CT: instance ID, pinned baseline, local-pro
 
 Runtime gateway HTTP v1 now uses the model base URL `/agent-runtime/{instance_id}/v1/` under the API origin, with a trailing slash. Bootstrap supplies the protected runtime bearer identity and explicit `EXO_MODEL_API_STYLE`; Responses and Chat Completions are separate POST routes under that base. `POST /agent-runtime/{instance_id}/identity/refresh` accepts no body or `{}`, extends the same token to at least one hour from renewal without shortening existing expiry, and returns only `expires_at`. Account/JWT credentials, query tokens, and caller-selected renewal lifetimes are rejected. The guest renewal launcher is implemented; protected issuance/delivery and image/bootstrap wiring still require LC/RT integration.
 
-Protected runtime identity file v1 is a private JSON object with exactly `schema_version: 1`, canonical UUID `instance_id`, HTTPS `api_origin` (origin only), and scoped bearer `token`. Delivery makes a private regular file owned by the launcher user, mode 0400 or 0600, in a trusted parent directory; projected symlinks must be copied. This is internal secret delivery, never general instance metadata. RT stores the same token in the encrypted Exo model binding, then invokes the image-owned `runtime_identity.py` launcher in Python isolated mode around the supervised service command. Successful refresh precedes process start; periodic renewal failure/expiry stops the process group. The image must provide orphan reaping and container isolation, and LC retains generation fencing authority. The launcher is implemented; protected delivery, deterministic binding, image/service wiring and real acceptance remain pending.
+Protected runtime identity file v1 is a private JSON object with exactly `schema_version: 1`, canonical UUID `instance_id`, HTTPS `api_origin` (origin only), and scoped bearer `token`. Delivery makes a private regular file owned by the launcher user, mode 0400 or 0600, in a trusted parent directory; projected symlinks must be copied. This is internal secret delivery, never general instance metadata. RT stores the same token in the encrypted Exo model binding, then invokes the image-owned `runtime_identity.py` launcher in Python isolated mode around the supervised service command. Successful refresh precedes process start; periodic renewal failure/expiry stops the process group. The image must provide orphan reaping and container isolation, and LC retains generation fencing authority. The launcher and initial encrypted binding/bootstrap are implemented; protected delivery/rotation, image/service wiring and real acceptance remain pending.
 
 Canonical-state bootstrap v1 takes the prepared writable source, patched CLI, explicit local pricing artifact, approved model/protocol and protected identity file. Separate stable source/state mount paths are required; the state parent is private (0700). Bootstrap stages `.exo`, `master.key` and a versioned `bootstrap.json` receipt together, verifies the encrypted model binding using typed Exo APIs, fsyncs staged data and publishes by same-filesystem rename. The workspace `.exo` link targets this one canonical state. Canonical slugs are agent/model `managed`, conversation `chat`, and secret `managed-gateway`; the agent uses the Exo harness, local-process provider and agent sandbox scope with tool creation enabled. Repeat setup preserves all records and user edits, requiring the same instance/model/protocol/source/origin/scoped grant and master key. Changed grants need a separate explicit preserve-state rotation flow, still pending. Readiness events describe setup only; renewal must authorize the identity before service start. Image assembly/seeding, filesystem suitability, service/guardian integration and hosted acceptance remain separate gates.
 
@@ -250,7 +250,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source, bootstrap patch, model protocol and identity renewal launcher pushed; image/bootstrap wiring pending | `754c8645a`; 17 HTTPS/process tests and 20 repeated signal-shutdown runs; prior adapter/scheduler/source/CLI/model-runtime checks |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source, atomic canonical-state bootstrap and identity renewal launcher pushed; image/service wiring pending | `9aef315e3`; 17 compiled-CLI bootstrap tests, 68 upstream CLI tests, 1 scheduler and 11 protocol tests, plus adapter/source/renewal suites |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
@@ -591,7 +591,55 @@ no findings. The new suite runs in the required workspace lane, and any
 passed for this exact pushed head. These tests do not launch Exo, exercise a
 real model, deliver an identity from the reconciler, or validate a runtime image.
 
+Backend `9aef315e3a5c8bb02b843031c1f04cf309caaf98` pushed canonical-state
+bootstrap. Contract v1 was published in plan commit `43a4f2e8` before this code
+publication. `bootstrap.py` invokes the actual pinned CLI to stage the model
+credential/binding, Exo local-process agent and canonical chat conversation beside
+the state destination. It verifies typed records and decrypts/compares the model
+credential, writes a private receipt, fsyncs the tree and publishes `.exo` plus its
+master key in one directory rename. The workspace `.exo` link targets that state.
+Repeats preserve all records, configuration, user source edits and artifacts;
+conflicts, duplicates, missing keys/records and corrupt encrypted credentials fail
+without repair. Repeated setup can finish a missing workspace link and directory
+sync barriers after publication. Abandoned unpublished staging is never adopted
+or automatically deleted. The helper requires a private state parent and a
+filesystem that supports the declared rename/fsync semantics; hosted persistence
+is still unproven.
+
+Patch `0003` adds bounded exact-UTF-8 `secret set --stdin` and typed `model verify`
+with credential comparison over stdin. No bearer value enters child argv or its
+minimal environment. Verification writes no model/secret records. The bootstrap
+receipt binds instance/model/protocol/source/origin/grant and the master-key digest;
+it does not authenticate the image or implement credential rotation. Changed grants
+still need an explicit preserve-state rotation flow and lifecycle integration.
+
+The actual compiled-CLI bootstrap suite passed 17 tests, covering state/ID/key
+preservation, local-process configuration, guest edits, conflicting inputs,
+missing/corrupt keys and credentials, duplicate records, partial initialization,
+concurrency, publication/link recovery, injected directory-sync failure, unsafe
+locks, stdin bounds and token exclusion from child arguments/environment. All 68
+upstream CLI unit tests passed, including the new stdin cases; the scheduler
+master-key test and 11 model-protocol tests also passed. The three existing
+compiled adapter tests, three actual Git source/patch tests, and 17 HTTPS/process
+renewal tests passed. Both real Exo executables built with locked dependencies.
+Scoped upstream Clippy with `-D warnings`, Actionlint, Python compilation,
+instruction contracts, whitespace checks, and Act dry runs of the new job and
+updated aggregate passed. Full sixteen-commit pinned Gitleaks scanning found no
+secrets. The new required `managed-exo-bootstrap` job prepares all patches, builds
+the executables and runs these relevant suites on Linux; the aggregate requires
+its success. Hosted CI
+[35283873550](https://github.com/one-covenant/basilica-backend/actions/runs/35283873550)
+is queued for this exact head. Local results do not establish Linux CI success,
+model/tool execution, scheduler continuity or complete runtime acceptance.
+
+Next runtime integration must own foreground service processes and pass the
+canonical root/master key explicitly. Inspection confirmed the upstream guardian
+uses `nohup`, broad `pkill` matching and implicit key/root settings; it must not be
+installed unchanged under the scoped renewal launcher. Image/source assembly,
+service/guardian coordination, protected grant delivery/rotation, chat pairing and
+bad-rebuild recovery remain required work.
+
 No paid model call, cloud resource, or hosted authenticated acceptance has been
-performed. Runtime packaging/bootstrap, lifecycle reconciliation/API wiring,
+performed. Runtime image/service integration, lifecycle reconciliation/API wiring,
 gateway accounting/conformance, chat, product UI, CLI, full required CI, and
 G0–G4 remain incomplete.
