@@ -135,7 +135,9 @@ First-release recovery is user-accessible code recovery, distinct from optional 
 
 Internal bootstrap v1 joins RT/LC/MG/CT: instance ID, pinned baseline, local-process provider, persistent path mapping, model binding/base URL, scoped gateway identity through protected delivery, scoped chat pairing. No upstream provider key or account-wide token. RT emits structured readiness/diagnostics/version rather than secrets in stdout. Freeze service-start/stop and replacement/fencing expectations.
 
-Runtime gateway HTTP v1 now uses the model base URL `/agent-runtime/{instance_id}/v1/` under the API origin, with a trailing slash. Bootstrap supplies the protected runtime bearer identity and explicit `EXO_MODEL_API_STYLE`; Responses and Chat Completions are separate POST routes under that base. `POST /agent-runtime/{instance_id}/identity/refresh` accepts no body or `{}`, extends the same token to at least one hour from renewal without shortening existing expiry, and returns only `expires_at`. Account/JWT credentials, query tokens, and caller-selected renewal lifetimes are rejected. Protected issuance and the guest renewal loop still require LC/RT integration.
+Runtime gateway HTTP v1 now uses the model base URL `/agent-runtime/{instance_id}/v1/` under the API origin, with a trailing slash. Bootstrap supplies the protected runtime bearer identity and explicit `EXO_MODEL_API_STYLE`; Responses and Chat Completions are separate POST routes under that base. `POST /agent-runtime/{instance_id}/identity/refresh` accepts no body or `{}`, extends the same token to at least one hour from renewal without shortening existing expiry, and returns only `expires_at`. Account/JWT credentials, query tokens, and caller-selected renewal lifetimes are rejected. The guest renewal launcher is implemented; protected issuance/delivery and image/bootstrap wiring still require LC/RT integration.
+
+Protected runtime identity file v1 is a private JSON object with exactly `schema_version: 1`, canonical UUID `instance_id`, HTTPS `api_origin` (origin only), and scoped bearer `token`. Delivery makes a private regular file owned by the launcher user, mode 0400 or 0600, in a trusted parent directory; projected symlinks must be copied. This is internal secret delivery, never general instance metadata. RT stores the same token in the encrypted Exo model binding, then invokes the image-owned `runtime_identity.py` launcher in Python isolated mode around the supervised service command. Successful refresh precedes process start; periodic renewal failure/expiry stops the process group. The image must provide orphan reaping and container isolation, and LC retains generation fencing authority. The launcher is implemented; protected delivery, deterministic binding, image/service wiring and real acceptance remain pending.
 
 MG fixes request protocol, owner/runtime identity, destination/model allowlist, issuance/revocation, rotation and usage semantics. CT fixes message IDs/acknowledgments, session roles/expiry, reconnect, channel identity, origins and transport schema. A URL alone is not an adequate contract. FE/SDK obtain chat access only through owner-authorized operations.
 
@@ -246,9 +248,9 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source, bootstrap patch and explicit model protocol pushed; packaging pending | `37dc442e6`, `23e8f7dc5`; adapter/scheduler/source/CLI checks plus 11 model-runtime tests |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source, bootstrap patch, model protocol and identity renewal launcher pushed; image/bootstrap wiring pending | `754c8645a`; 17 HTTPS/process tests and 20 repeated signal-shutdown runs; prior adapter/scheduler/source/CLI/model-runtime checks |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
-| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP and refresh pushed; accounting and guest renewal loop pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
+| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTOs and SDK transport pushed; CLI pending | `f0e1c972`; 100 library + 10 HTTP-client tests |
@@ -552,9 +554,42 @@ both artifacts: the public artifact is byte-identical, the private spec adds exa
 three paths, all pre-existing paths are unchanged, and every schema reference resolves.
 The private spec uses a separate runtime bearer security scheme. Hosted CI
 [35279539932](https://github.com/one-covenant/basilica-backend/actions/runs/35279539932)
-is queued for this exact head. Usage accounting, bootstrap renewal, lifecycle and
+passed for this exact head. Usage accounting, protected bootstrap, lifecycle and
 runtime integration, product UI/CLI and full G0–G4 acceptance remain incomplete.
 
+Backend `754c8645a00fb9b85690b5375f40db2d909eadb1` pushed the runtime identity
+renewal launcher and its required CI coverage. It reads the protected v1 identity
+file without following symlinks, checks ownership/private mode/link count/schema,
+and keeps the token out of child arguments, added environment, and launcher logs.
+Actual HTTPS verifies CA and hostname, ignores proxies and ambient TLS key logging,
+rejects redirects, and bounds replies. The service starts only after successful
+refresh. Renewal runs every five minutes, with bounded transient retries; a
+3590-second monotonic lease begins at request initiation, independent of guest
+wall-clock skew. Denial, malformed replies, expiry or a ten-second total request
+timeout stops the service. A single daemon request thread leaves signal/process
+supervision responsive without accumulating abandoned retries. SIGTERM/SIGINT and
+service exit stop the entire process group, escalating to SIGKILL after grace and
+reaping the direct child. No automatic restart loop competes with Exo's guardian.
+The image must still supply an orphan-reaping init and container isolation.
+
+`python3 scripts/exo/tests/test_runtime_identity.py` passed all 17 tests using a
+disposable, verified localhost TLS certificate and real child processes. Cases
+cover private files and schema, CA/hostname rejection, exact request/auth/body,
+redirect/proxy/key-log prevention, malformed/oversized replies, retry recovery,
+revocation, expiry, hung requests, responsive signals, ignored SIGTERM, descendants
+of exited leaders, child status propagation and safe diagnostics. The real CLI
+signal-shutdown case additionally passed 20 consecutive runs after fixing the
+observed process-group probe race. A permission-denied probe is never treated as
+proof of exit; actual signal errors still fail supervision. Python compilation,
+Actionlint, instruction contracts, whitespace checks, and the Act `workspace-hermetic`
+dry run passed. Pinned Gitleaks scanned the full fifteen-commit backend range with
+no findings. The new suite runs in the required workspace lane, and any
+`scripts/exo/**` change selects that lane. Hosted CI
+[35281395747](https://github.com/one-covenant/basilica-backend/actions/runs/35281395747)
+is queued for this exact pushed head. These tests do not launch Exo, exercise a
+real model, deliver an identity from the reconciler, or validate a runtime image.
+
 No paid model call, cloud resource, or hosted authenticated acceptance has been
-performed. Runtime packaging, lifecycle reconciliation/API wiring, gateway,
-chat, product UI, CLI, full required CI, and G0–G4 remain incomplete.
+performed. Runtime packaging/bootstrap, lifecycle reconciliation/API wiring,
+gateway accounting/conformance, chat, product UI, CLI, full required CI, and
+G0–G4 remain incomplete.
