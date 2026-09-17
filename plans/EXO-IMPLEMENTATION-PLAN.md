@@ -245,11 +245,11 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | Unassigned | Section 4 runtime paths | Bootstrap v1 for final wiring | Not started | None |
-| LC | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; G1 for runtime adapter | Not started | None |
+| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Schema pushed; intent/lease code under test | `086c698a5`; 15 PostgreSQL constraint tests |
 | MG | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0 | Not started | None |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
-| FE | Unassigned | Section 8 | G0; G2 for final acceptance | Not started | None |
-| SDK | Unassigned | Section 9 | G0; G2 for final acceptance | Not started | None |
+| FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
+| SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTOs and SDK transport pushed; CLI pending | `f0e1c972`; 100 library + 10 HTTP-client tests |
 
 Every handoff includes owned files, contract version, commit/image digest, exact checks/results, redacted evidence location, unresolved failures, outstanding resources, and consumers now unblocked. Worker code completion is not a passed product gate. CO serializes migrations/shared edits, integrates commits, updates consumers and records final component versions.
 
@@ -303,5 +303,42 @@ Contract decisions for the initial implementation:
   prevent replay after reconnect. General status never contains chat credentials.
 
 Remaining G0 work includes executable OpenAPI, exact runtime bootstrap/transport
-schemas, migration allocation, persistence feasibility, and frontend test baseline.
+schemas, persistence feasibility, and frontend test baseline. CO reserves backend API migration
+`035_managed_agents.sql` for owner-scoped connections, quotes, instances, durable
+operations, idempotency records, and scoped runtime/chat identities. Database
+constraints and transition storage are validated against disposable local PostgreSQL.
 No live resources have been provisioned and no product gate has passed.
+
+### Verified incremental commits
+
+- Public plan `dbb130a1` pushed to `docs/exo-implementation-plan`.
+- Backend `086c698a5` pushed to `feat/exo`: additive migration 035 and disposable
+  PostgreSQL constraint runner. `python3 scripts/exo/tests/test_schema.py` passed
+  15 tests. Temporary PostgreSQL stopped/removed. Pinned Gitleaks 8.30.1, verified
+  against upstream release checksum, passed the complete branch range.
+- Frontend `51f53f8` pushed to `feat/exo` in isolated `basilica-site-exo`:
+  validated Auth0 appState return paths, removed partial token logging, and added
+  noninteractive ESLint/Node test tooling. `npm ci` passed before lint-tooling
+  installation; `npm run test:agents` passed 4 tests; `CI=1 npm run lint` passed
+  with four existing warnings (image elements and Header hook dependency).
+  `NEXT_PUBLIC_MOCK=false NEXT_TELEMETRY_DISABLED=1 npm run build` passed, including
+  sitemap generation; generated sitemap files are ignored and uncommitted.
+  Existing metadataBase warnings remain. Complete commit-range secret scan passed.
+- Public `f0e1c972930da5a8317ed9c70fc6bd3e7131d0f1` pushed to `feat/exo`:
+  shared agent types and authenticated Rust SDK methods. `cargo test --locked -p
+  basilica-sdk --lib` and the same command with `--features openapi` each passed
+  100 tests. `cargo test --locked -p basilica-sdk --test agents_client` passed
+  10 tests after the final HTTPS guard. `cargo clippy --locked -p basilica-sdk
+  --all-targets --features openapi -- -D warnings` and `just fmt-check` passed.
+  The exact changed commit range passed secret scanning. A broader exploratory
+  scan of the existing SDK directory flagged two pre-existing findings outside
+  this commit; no scanner bypass or exclusion was added.
+
+Backend intent/lease code is not yet committed or claimed passing; it must use
+this published public SDK revision through the explicit locked Git dependency
+update and pass its disposable PostgreSQL Rust integration runner. CLI tests and
+hosted CI remain required as their work is integrated. Runtime source was fetched
+at the plan's pinned revision into `/tmp/basilica-exo-upstream`; source inspection
+confirmed Rust MSRV 1.95 and typed AdapterStore APIs. No runtime build, model call,
+cloud resource, or hosted authenticated acceptance has been performed. G0–G4
+remain incomplete.
