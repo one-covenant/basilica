@@ -135,6 +135,8 @@ First-release recovery is user-accessible code recovery, distinct from optional 
 
 Internal bootstrap v1 joins RT/LC/MG/CT: instance ID, pinned baseline, local-process provider, persistent path mapping, model binding/base URL, scoped gateway identity through protected delivery, scoped chat pairing. No upstream provider key or account-wide token. RT emits structured readiness/diagnostics/version rather than secrets in stdout. Freeze service-start/stop and replacement/fencing expectations.
 
+Runtime gateway HTTP v1 now uses the model base URL `/agent-runtime/{instance_id}/v1/` under the API origin, with a trailing slash. Bootstrap supplies the protected runtime bearer identity and explicit `EXO_MODEL_API_STYLE`; Responses and Chat Completions are separate POST routes under that base. `POST /agent-runtime/{instance_id}/identity/refresh` accepts no body or `{}`, extends the same token to at least one hour from renewal without shortening existing expiry, and returns only `expires_at`. Account/JWT credentials, query tokens, and caller-selected renewal lifetimes are rejected. Protected issuance and the guest renewal loop still require LC/RT integration.
+
 MG fixes request protocol, owner/runtime identity, destination/model allowlist, issuance/revocation, rotation and usage semantics. CT fixes message IDs/acknowledgments, session roles/expiry, reconnect, channel identity, origins and transport schema. A URL alone is not an adequate contract. FE/SDK obtain chat access only through owner-authorized operations.
 
 G0 checklist: exact module ownership; schema/migration allocation; dependency mode; wire/error/event types; idempotency and in-flight transitions; quote/retention/persistence policy; runtime identity delivery; chat deployment shape; origins/scopes; test runner. CO records decisions here and in generated contracts. Resolve routine choices from repository conventions rather than repeatedly asking the user.
@@ -246,7 +248,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source, bootstrap patch and explicit model protocol pushed; packaging pending | `37dc442e6`, `23e8f7dc5`; adapter/scheduler/source/CLI checks plus 11 model-runtime tests |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
-| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime authority and bounded provider transport pushed; HTTP gateway/refresh and accounting pending | `c5d7bcbf9`; 785 API unit + 27 lifecycle/connection/runtime database tests; 13 transport checks included in the library suite |
+| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP and refresh pushed; accounting and guest renewal loop pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTOs and SDK transport pushed; CLI pending | `f0e1c972`; 100 library + 10 HTTP-client tests |
@@ -515,8 +517,43 @@ tests, including the real transport authority recheck before and after revocatio
 Scoped Clippy with `-D warnings`, formatting, instruction checks and pinned full
 thirteen-commit secret scanning passed. Hosted CI
 [35276886704](https://github.com/one-covenant/basilica-backend/actions/runs/35276886704)
-is queued for this exact head. HTTP route/configuration integration, runtime
-refresh, usage accounting and real model/runtime conformance remain outstanding.
+completed successfully for this exact head. The following increment adds HTTP
+route/configuration integration and runtime refresh; usage accounting and real
+model/runtime conformance remain outstanding.
+
+Backend `53256bc7cf9745661025b8034d89ada91520800e` pushed the runtime HTTP
+integration and renewal endpoints. A dedicated route builder attaches scoped bearer
+authentication before body collection; its three routes are enumerated by the
+router inventory guard. They reject account credentials, duplicate Authorization
+headers, query tokens and invalid instance IDs. Existing optional model-connection
+configuration constructs both runtime services from the same protected keyring and
+approved catalog. JSON/SSE responses use no-store; SSE disables proxy buffering.
+Refresh accepts empty input, extends the existing identity under server policy,
+and returns only expiry. Protected bootstrap delivery and periodic guest renewal
+remain unimplemented.
+
+Both existing API timeout layers now recognize the exact runtime POST templates
+and grant 640 seconds for handler completion; ordinary routes retain their configured
+budget. Body, authority and provider work keep their independent shorter bounds.
+Tests verify timeout selection using real matched routes and requests through the
+timeout layer. Runtime tracing and metric labels use route templates, omitting
+untrusted path values and query strings and avoiding one metric series per instance.
+Ingress timeout compatibility still requires hosted acceptance.
+
+The final `CARGO_BUILD_JOBS=4 just test-crate basilica-api` passed 791 tests
+(9 existing ignored), including actual route-builder tests for authentication before
+unending body reads, body limits, content types, both model protocols, JSON/SSE
+responses, safe errors and cache headers. The disposable PostgreSQL runner passed
+28 tests (6 lifecycle, 10 connection, 12 runtime), including HTTP refresh, durable
+retry with an unchanged token, wrong-instance/account-key rejection and revocation.
+Scoped Clippy with `-D warnings`, formatting, instruction checks and pinned full
+fourteen-commit secret scanning passed. The actual `gen-openapi` binary generated
+both artifacts: the public artifact is byte-identical, the private spec adds exactly
+three paths, all pre-existing paths are unchanged, and every schema reference resolves.
+The private spec uses a separate runtime bearer security scheme. Hosted CI
+[35279539932](https://github.com/one-covenant/basilica-backend/actions/runs/35279539932)
+is queued for this exact head. Usage accounting, bootstrap renewal, lifecycle and
+runtime integration, product UI/CLI and full G0–G4 acceptance remain incomplete.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime packaging, lifecycle reconciliation/API wiring, gateway,
