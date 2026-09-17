@@ -141,6 +141,8 @@ Protected runtime identity file v1 is a private JSON object with exactly `schema
 
 Canonical-state bootstrap v1 takes the prepared writable source, patched CLI, explicit local pricing artifact, approved model/protocol and protected identity file. Separate stable source/state mount paths are required; the state parent is private (0700). Bootstrap stages `.exo`, `master.key` and a versioned `bootstrap.json` receipt together, verifies the encrypted model binding using typed Exo APIs, fsyncs staged data and publishes by same-filesystem rename. The workspace `.exo` link targets this one canonical state. Canonical slugs are agent/model `managed`, conversation `chat`, and secret `managed-gateway`; the agent uses the Exo harness, local-process provider and agent sandbox scope with tool creation enabled. Repeat setup preserves all records and user edits, requiring the same instance/model/protocol/source/origin/scoped grant and master key. Changed grants need a separate explicit preserve-state rotation flow, still pending. Readiness events describe setup only; renewal must authorize the identity before service start. Image assembly/seeding, filesystem suitability, service/guardian integration and hosted acceptance remain separate gates.
 
+Service execution v1 wraps image-owned `services.py` with `runtime_identity.py` after canonical bootstrap. The foreground supervisor holds the bootstrap OS lock, passes the canonical root/key and explicit model protocol to both scheduler and adapter runners, and inherits only tool/home/locale/TLS-trust environment fields. Each child has an owned process group; shutdown uses one shared three-second TERM grace plus bounded reaping after KILL. Any unexpected runner exit, including zero, stops its sibling and reports failure. Diagnostics identify actual child PIDs, never use persisted PID files as authority, and do not establish chat/model readiness. Both runners use OS-held locks and retain their lock inodes. Image-level orphan reaping/cleanup and lifecycle generation fencing remain required. Managed drain/rebuild control, interrupted-schedule handling and healthy-code recovery remain pending; the upstream guardian must not run unchanged.
+
 MG fixes request protocol, owner/runtime identity, destination/model allowlist, issuance/revocation, rotation and usage semantics. CT fixes message IDs/acknowledgments, session roles/expiry, reconnect, channel identity, origins and transport schema. A URL alone is not an adequate contract. FE/SDK obtain chat access only through owner-authorized operations.
 
 G0 checklist: exact module ownership; schema/migration allocation; dependency mode; wire/error/event types; idempotency and in-flight transitions; quote/retention/persistence policy; runtime identity delivery; chat deployment shape; origins/scopes; test runner. CO records decisions here and in generated contracts. Resolve routine choices from repository conventions rather than repeatedly asking the user.
@@ -629,8 +631,9 @@ secrets. The new required `managed-exo-bootstrap` job prepares all patches, buil
 the executables and runs these relevant suites on Linux; the aggregate requires
 its success. Hosted CI
 [35283873550](https://github.com/one-covenant/basilica-backend/actions/runs/35283873550)
-is queued for this exact head. Local results do not establish Linux CI success,
-model/tool execution, scheduler continuity or complete runtime acceptance.
+passed for this exact head, including the new pinned-runtime Linux job. These
+results do not establish model/tool execution, scheduler continuity or complete
+runtime acceptance.
 
 Next runtime integration must own foreground service processes and pass the
 canonical root/master key explicitly. Inspection confirmed the upstream guardian
