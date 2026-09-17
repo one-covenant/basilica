@@ -1,6 +1,6 @@
 # Exo on Basilica — unified implementation plan
 
-Updated: 2026-09-17. Status: implementation in progress; G0 contracts and baseline underway.
+Updated: 2026-09-18. Status: implementation in progress; G0 contracts and baseline underway.
 
 Planning branch: `docs/exo-implementation-plan`, created from freshly fetched `origin/main` at `f3749c7211e828c5c8ff34f6995f822cf83ccd2f`. Plan worktree: `/Users/samueldare/code/cc/basilica/basilica-exo-plan`. The original public checkout remains on its unrelated `docs/basilica-fly-school` branch and must not be used as the branch base for Exo implementation.
 
@@ -244,9 +244,9 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source and bootstrap patch under test | Native CLI built; 3 source + 3 CLI setup tests; lock race fix verification pending |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap v1 for final wiring | Pinned source and bootstrap patch pushed; packaging pending | `37dc442e6`; 5 adapter + 1 scheduler + 3 source + 3 compiled-CLI tests |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
-| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Versioned credential vault pushed; connection/gateway services pending | `281a6b245`; 5 encryption tests |
+| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection storage and access-validation service pushed; authenticated routes under test; gateway pending | `281a6b245`, `f1727c20a`, `09d956a3f`; 9 provider HTTP + 9 connection/service database tests |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTOs and SDK transport pushed; CLI pending | `f0e1c972`; 100 library + 10 HTTP-client tests |
@@ -340,8 +340,7 @@ No live resources have been provisioned and no product gate has passed.
   [35262586904](https://github.com/one-covenant/basilica/actions/runs/35262586904)
   finished: CLI/SDK, validator, Python matrix, lint, and secret checks passed;
   security audit failed on Rustls 0.23.36 (RUSTSEC-2026-0285), and the miner image
-  scan failed on PCRE2 10.42-1 (fixed package 10.42-1+deb12u1). Local fixes are
-  under verification; this run is not green.
+  scan failed on PCRE2 10.42-1 (fixed package 10.42-1+deb12u1). Fixed by `234a8de1` below; this historical run is not green.
 - Backend `29109f046`, `281a6b245`, and `fec2645fc` pushed: owner-serialized
   create/delete intent and durable retry responses, generation-fenced leases,
   context-bound AES-256-GCM credential storage and keyring rotation, plus a
@@ -362,7 +361,7 @@ No live resources have been provisioned and no product gate has passed.
   `workflow_call` dry run of `workspace-hermetic` with `rust_selected=true` passed;
   this is graph validation, not a hosted build. Full five-commit secret scan
   passed. Hosted run [35266047579](https://github.com/one-covenant/basilica-backend/actions/runs/35266047579)
-  is in progress for this exact head.
+  completed successfully for this exact head.
 - Public `234a8de1120eaab50c80ae0450505b7028831723` pushed: Rustls updated to
   0.23.45 with its required crypto dependencies; miner image explicitly installs
   the current PCRE2 package. `cargo deny --locked check` passed all four policy
@@ -372,26 +371,49 @@ No live resources have been provisioned and no product gate has passed.
   in the exact pinned Debian amd64 base installed PCRE2 10.42-1+deb12u1. This is
   package verification, not a fresh full-image vulnerability scan. Full branch
   secret scan passed. Hosted run [35266045472](https://github.com/one-covenant/basilica/actions/runs/35266045472)
-  is in progress for this exact head.
+  completed successfully for this exact head.
 
 Runtime source is at the pinned revision in `/tmp/basilica-exo-upstream`.
-The first native build failed because Homebrew Clang could not find macOS SDK
-headers; explicitly selecting Apple Clang and SDKROOT produced a successful
-locked native CLI build (11m47s, including the initial bootstrap patch). A
-versioned patch adds typed, idempotent adapter setup with an OS lock and explicit
-scheduler master-key selection. Three actual compiled-CLI tests passed for retry,
-conflict/disabled records, missing references, and master-key preservation.
-Parallel Rust unit tests exposed a transient lock-release race while other tests
-spawned processes; sequential tests passed. The candidate now explicitly unlocks
-its guard on drop. Its parallel regression rerun is queued behind the scheduler's
-feature-specific build and must pass before the runtime patch is committed.
-Source preparation tests passed 3 cases again after this fix against the actual
-upstream tree, including patch applicability and refusals to modify existing
-destinations. Shell syntax and Shellcheck passed. The final CLI binary must be
-rebuilt and the CLI tests rerun after the guard fix. This is not evidence of
-runtime scheduling, chat, self-rebuild, or recovery. The upstream pinned runtime
-dependency graph still needs its release security audit and necessary locked
-updates; the public/backend lockfiles are independent of upstream's lockfile.
+Backend `37dc442e6` pushed the source pin, preparation script, upstream adapter
+and scheduler patch, and actual source/compiled-CLI checks. Apple Clang and explicit
+SDKROOT resolved the native macOS build prerequisite. Final adapter Rust tests
+passed all 5 cases; 20 parallel binary reruns passed all 100 test executions after
+explicit unlock fixed the inherited-descriptor race. The scheduler key-selection
+test passed. The CLI was rebuilt after the fix and all 3 compiled-CLI setup tests
+passed. All 3 source-preparation tests passed against the actual pinned Git source;
+patch apply/reverse checks, shell syntax, Shellcheck, and full-range secret scanning
+passed. Patch-only blank context lines were normalized before publication so
+`git diff --check` passes without exclusions. These are bootstrap checks, not runtime
+scheduling/chat/self-rebuild/recovery evidence. Upstream's independent dependency
+graph still requires release security auditing and necessary locked updates.
+
+Backend `f1727c20a9c1e5337c0cad76d824c3eedf3d8a99` pushed owner-scoped
+connection persistence: encrypted creation, versioned rotation, safe durable
+retry responses with a dedicated HMAC key, stable pagination, deletion checks,
+and ciphertext erasure after deletion. Creation/deletion share the agent owner
+lock, preventing a concurrently accepted broken binding. Provider validation is
+an explicit precondition of the storage boundary, not simulated there. Locked
+public dependency inspection passed; only the API's existing HMAC dependency
+edge was added. `just test-crate basilica-api` passed 757 tests (9 existing ignored).
+The disposable PostgreSQL runner passed 6 lifecycle and 6 connection tests.
+Clippy for the library and both integration targets, formatting, instruction checks,
+and the full seven-commit secret scan passed. Hosted CI
+[35268498110](https://github.com/one-covenant/basilica-backend/actions/runs/35268498110)
+completed successfully for that exact head.
+
+
+Backend `09d956a3f` pushed credential/model-access validation and the connection
+service. Production HTTP goes only to fixed OpenAI/OpenRouter HTTPS destinations,
+with redirects/proxies disabled, bounded bodies/time/concurrency, and safe errors.
+The deployment catalog defaults to empty and must contain only models that
+separately pass live runtime/tool conformance. Provider discovery does not expand
+it. Metadata validation does not generate tokens or guarantee credit. Accepted
+retries bypass provider calls; rotation checks ownership before validation and
+rechecks deletion on commit. Nine loopback HTTP tests passed, plus all 6 lifecycle
+and 9 connection/service PostgreSQL tests, including deletion during an in-flight
+provider check. Clippy, formatting, instruction checks and the complete eight-commit
+secret scan passed. HTTP handlers/configuration/OpenAPI wiring is under test in
+an uncommitted follow-up; this does not claim a deployed connection service.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime packaging, lifecycle reconciliation/API wiring, gateway,
