@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, aggregator CPU allocator and API allocation guard; migrations 035–039 | G0; G1 for runtime adapter | Durable intents/status/checkpoints, catalog/quotes and CPU allocator with current-lease guard pushed; launch controller, billing and runtime reconciliation pending | `ef44cba6f`; 132 PostgreSQL/transport tests, 805 API + 270 aggregator unit tests and strict Clippy passed; preceding CI 35350159897 green; exact-head CI 35351974825 queued |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator and authority; API migrations 035–039; billing registration/client and billing migration 048 | G0; G1 for runtime adapter | Durable intents/status/checkpoints, catalog/quotes, guarded CPU allocator and atomic managed billing registration implemented; launch/controller, billing activation/settlement and runtime reconciliation pending | `05a842d97`; 805 API + 57 billing unit tests, 142 owned database/runtime cases, five client transport tests and strict billing Clippy passed; preceding CI 35351974825 green; exact-head CI 35355566807 queued |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -1935,10 +1935,114 @@ no independent agent review ran.
 
 The existing PR 1872 includes current scope and validation. Exact-head hosted
 [CI 35351974825](https://github.com/one-covenant/basilica-backend/actions/runs/35351974825)
-is queued; the preceding allocator CI 35350159897 passed. Logs use
+has completed successfully; the preceding allocator CI 35350159897 passed. Logs use
 `/tmp/basilica-exo-allocation-guard-`. No live migration, cloud allocation,
 registry publication or paid model request occurred. G1/G2 statuses now accurately
 show implementation in progress, with acceptance incomplete; neither gate passed.
 The full original G0–G4 objective remains active, including controller wiring,
 billing/model usage accounting, protected host/runtime delivery, physical fencing,
 frontend and remaining CLI flows, retention policy and real hosted acceptance.
+
+### 2026-09-18 — managed rental registration v1 contract
+
+CO reserves billing migration `048_managed_rental_registrations.sql`, billing
+gRPC/storage registration modules, the existing rental/event transaction helpers,
+and an owned PostgreSQL integration target/runner for LC accounting work.
+The existing `TrackRental` request selects this additive contract with metadata
+`basilica_managed_agent_registration=v1`; unknown versions fail closed. It requires
+a secure CPU rental, the stable instance/rental UUID, owner, actual provider binding,
+exact accepted CPU/RAM/storage rates and dimensions, and original dispatch
+`start_time`. Time is normalized to PostgreSQL microseconds; prices that cannot
+be represented by existing billing columns are rejected rather than rounded.
+Other request metadata is rejected on this internal path to prevent ignored terms.
+
+Registration atomically inserts the ordinary billing rental, its start UsageEvent,
+and a durable registration receipt containing canonical immutable terms. The
+receipt is not a second cost ledger. Concurrent/retried calls return the current
+rental status only for identical terms, including owner and dispatch time; a
+conflicting or legacy unreceipted rental fails closed. A terminal rental never
+reactivates. Event retention cannot cause re-registration; the receipt and rental
+remain retained together. A failed transaction leaves none of these writes behind.
+Ordinary secure/community/storage and orchestrator-reactivation contracts remain
+unchanged. No new public protocol revision is needed. Deployment requires the
+additive billing migration before enabling managed callers. Balance checks,
+telemetry/settlement and lifecycle-controller wiring remain separate required work.
+
+The registration v1 rollout contract additionally requires a positive response
+with tracking ID `managed-agent:v1:<rental UUID>`. Old servers ignore request
+metadata and return a bare rental UUID; that is not proof of registration. CO
+extends LC scope to the existing billing client and its hermetic gRPC reliability
+target so acknowledgment checking is enforced in the shared client before any
+controller consumes this API. There is no automatic unmarked retry or new rental
+ID fallback. The deployment order remains billing migration/server before callers.
+
+Pricing preserves the existing billing convention: request per-resource rates
+already include accepted markup; billing stores markup as metadata and does not
+apply it twice. The eventual caller must derive those customer rates from the
+consumed quote and reject nonrepresentable terms before purchase. Inspection
+found that catalog configuration currently allows markup through 1000 percent
+while the existing billing column accepts only 0–100, and catalog rates are not
+yet checked against the six-decimal billing columns. Admission alignment is an
+explicit prerequisite to enabling paid launch, not permission to round or reprice
+an accepted quote.
+
+### 2026-09-18 — atomic managed billing registration implementation
+
+The previous goal turn made concrete progress by publishing current-lifecycle
+allocation authority and its evidence. Its exact-head hosted CI 35351974825 is
+now green. Pushed backend commit `05a842d9747fb12ca5416f885ebdc5abce00fba2`
+implements registration v1 and decision 0011 without enabling the launch controller.
+Existing PR 1872 contains the current scope and evidence; exact-head
+[CI 35355566807](https://github.com/one-covenant/basilica-backend/actions/runs/35355566807)
+is queued and its instruction-contract workflow has passed.
+
+The real billing RPC validates CPU dimensions, provider binding, supplied dispatch
+time and prices, then transactionally inserts the ordinary rental, start usage
+event and immutable receipt. PostgreSQL enforces receipt retention and protects
+its referenced rental from deletion. Same-ID concurrent calls serialize, identical
+replays return current status, and changed owner/binding/price/resource/time terms
+conflict. Replays also detect drift in the stored rental charge basis. Legacy
+unreceipted rows are not adopted, and terminal rows cannot be reactivated. Usage
+event retention does not remove the registration identity. Metrics record only
+the call that actually creates the registration; accounting remains in the
+existing billing rental/credit machinery.
+
+The shared billing client checks the explicit versioned acknowledgment before
+accepting success. Loopback tests reject a legacy bare ID, another version/ID or
+negative acknowledgment without automatic retry; ordinary callers keep their
+existing response contract. This closes the old-server rollout ambiguity found
+during review. Billing migration/server deployment must precede managed callers.
+Existing request protocols, Cargo dependencies and workflow files are unchanged.
+The existing CI lifecycle runner now includes both billing regression targets,
+and `--billing-only` provides the focused owned-database/loopback path.
+
+Final validation passed: 805 API unit tests (nine existing ignored, 4.07s), 57
+billing unit tests (0.00s), strict billing library/registration/client-test Clippy
+(4m10s including waiting for Cargo's build lock), formatting and 68 instruction
+contracts. The complete owned runner passed 142 database/runtime cases: catalog
+ten (0.35s), chat 16 (3.12s, including the actual Node worker/Rust relay), lifecycle
+66 (1.92s), model connections ten (0.19s), runtime identities 12 (0.71s), allocator
+18 (1.53s), and new billing registration ten (1.58s). Five billing client transport
+cases passed in 4.01s. New cases exercise concurrent duplicate/conflicting calls,
+restarted service replay, interrupted event/receipt writes and deferred commit
+failure, invalid terms, terminal settlement preservation, receipt immutability,
+stored-term drift and ordinary secure/community/orchestrator compatibility.
+
+Initial validation exposed a test fixture missing explicit database configuration,
+a PostgreSQL backend-close race during fixture teardown, and large-error Clippy
+findings at the parsing boundary; all were corrected. Cleanup force-drops only
+generated databases inside the runner-owned disposable cluster. The final full
+runner completed successfully and removed that cluster. Changed-document links
+and diff checks passed; Gitleaks 8.30.1 scanned all 36 committed branch changes
+against freshly fetched main with no findings. Logs use
+`/tmp/basilica-exo-billing-registration-`. The diff was self-reviewed; no independent
+agent review ran. Unchanged runtime image and API schema suites were not rerun.
+
+Registration is not billing activation, a credit reservation, telemetry, settlement
+or a ready runtime. Catalog/dispatch admission must first enforce the marked-up
+price precision and stored markup range described above. Controller wiring,
+protected host/runtime delivery, physical fencing and verified cleanup, model
+accounting/conformance, frontend and remaining CLI/export flows, retention policy
+and real hosted acceptance remain required. No existing database, cloud purchase,
+registry publication or paid model request was used. The original G0–G4 goal
+remains active and no acceptance gate is marked complete.
