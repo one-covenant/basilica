@@ -264,6 +264,12 @@ pub enum Commands {
     #[command(name = "deploy", visible_alias = "summon", alias = "d")]
     Deploy(Box<DeployCommand>),
 
+    /// Manage persistent agents (separate from deployments and rentals)
+    Agents {
+        #[command(subcommand)]
+        action: crate::cli::handlers::agents::AgentAction,
+    },
+
     /// Distributed training commands (NCCL collectives, multi-rank UDs).
     ///
     /// Sibling verb to `deploy` -- distributed training has a different
@@ -474,7 +480,8 @@ impl Commands {
             | Commands::SshKeys { .. }
             | Commands::Volumes { .. }
             | Commands::Fund { .. }
-            | Commands::Balance => true,
+            | Commands::Balance
+            | Commands::Agents { .. } => true,
 
             // Deploy commands: most require auth, except Metadata (public endpoint)
             Commands::Deploy(cmd) => !matches!(cmd.action, Some(DeployAction::Metadata { .. })),
@@ -726,7 +733,7 @@ pub struct DeployCommand {
 }
 
 /// Naming and identification options
-#[derive(clap::Args, Debug, Clone, Default)]
+#[derive(clap::Args, Debug, Clone, Default, PartialEq)]
 pub struct NamingOptions {
     /// Deployment name (auto-generated if not specified)
     #[arg(short, long)]
@@ -742,7 +749,7 @@ pub struct NamingOptions {
 }
 
 /// Resource allocation options (limits and requests)
-#[derive(clap::Args, Debug, Clone)]
+#[derive(clap::Args, Debug, Clone, PartialEq)]
 pub struct ResourceOptions {
     /// CPU limit (e.g., "500m", "2")
     #[arg(long, default_value = "500m")]
@@ -773,7 +780,7 @@ impl Default for ResourceOptions {
 }
 
 /// GPU configuration options
-#[derive(clap::Args, Debug, Clone, Default)]
+#[derive(clap::Args, Debug, Clone, Default, PartialEq)]
 pub struct GpuOptions {
     /// Number of GPUs (1-8)
     #[arg(long)]
@@ -825,7 +832,7 @@ pub struct GpuOptions {
 }
 
 /// Storage configuration options
-#[derive(clap::Args, Debug, Clone)]
+#[derive(clap::Args, Debug, Clone, PartialEq)]
 pub struct StorageOptions {
     /// Enable persistent storage
     #[arg(long)]
@@ -856,7 +863,7 @@ impl Default for StorageOptions {
 }
 
 /// CLI argument for spread mode
-#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+#[derive(Debug, Clone, Copy, ValueEnum, Default, PartialEq)]
 pub enum SpreadModeArg {
     /// Best-effort spreading (ScheduleAnyway)
     #[default]
@@ -869,7 +876,7 @@ pub enum SpreadModeArg {
 }
 
 /// Topology spread configuration options
-#[derive(clap::Args, Debug, Clone)]
+#[derive(clap::Args, Debug, Clone, PartialEq)]
 pub struct TopologySpreadOptions {
     /// Pod spreading mode: preferred, required, or unique-nodes
     /// - preferred: Best-effort spreading (default)
@@ -907,7 +914,7 @@ impl Default for TopologySpreadOptions {
 }
 
 /// WebSocket configuration options
-#[derive(clap::Args, Debug, Clone)]
+#[derive(clap::Args, Debug, Clone, PartialEq)]
 pub struct WebSocketOptions {
     /// Enable WebSocket support for long-lived connections
     #[arg(long)]
@@ -928,7 +935,7 @@ impl Default for WebSocketOptions {
 }
 
 /// Health check configuration options
-#[derive(clap::Args, Debug, Clone, Default)]
+#[derive(clap::Args, Debug, Clone, Default, PartialEq)]
 pub struct HealthCheckOptions {
     /// HTTP path for liveness probe
     #[arg(long)]
@@ -972,7 +979,7 @@ pub struct HealthCheckOptions {
 }
 
 /// Networking options
-#[derive(clap::Args, Debug, Clone)]
+#[derive(clap::Args, Debug, Clone, PartialEq)]
 pub struct NetworkingOptions {
     /// Container ports (format: PORT[:NAME], e.g., 8000:http, 9090:metrics)
     #[arg(short, long, value_name = "PORT[:NAME]", default_value = "8000")]
@@ -1017,7 +1024,7 @@ impl Default for NetworkingOptions {
 }
 
 /// Lifecycle options
-#[derive(clap::Args, Debug, Clone)]
+#[derive(clap::Args, Debug, Clone, PartialEq)]
 pub struct LifecycleOptions {
     /// Time-to-live in seconds (60-604800, auto-delete after expiry)
     #[arg(long)]
@@ -1055,6 +1062,9 @@ impl Default for LifecycleOptions {
 /// Deploy subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum DeployAction {
+    /// Launch a persistent Exo agent using an owner-scoped model connection
+    Exo(crate::cli::handlers::agents::ExoOptions),
+
     /// List all deployments
     #[command(name = "ls", visible_alias = "list")]
     List {

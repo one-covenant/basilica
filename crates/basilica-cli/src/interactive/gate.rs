@@ -120,6 +120,20 @@ pub fn ask_confirm(field: &str, prompt: &str, default: bool, hint: &str) -> Resu
     }
 }
 
+/// Read a secret without echoing it or accepting it as a command-line value.
+pub fn ask_secret(field: &str, prompt: &str, hint: &str) -> Result<String, CliError> {
+    match current() {
+        Interactivity::NonInteractive => Err(CliError::MissingInput {
+            field: field.to_string(),
+            hint: hint.to_string(),
+        }),
+        Interactivity::Interactive => dialoguer::Password::new()
+            .with_prompt(prompt)
+            .interact()
+            .map_err(|_| CliError::Internal(color_eyre::eyre::eyre!("Could not read secret"))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,5 +241,14 @@ mod tests {
             }
             other => panic!("expected MissingInput, got {other:?}"),
         }
+    }
+    #[test]
+    #[serial]
+    fn ask_secret_non_interactive_returns_structured_error() {
+        let _env = NonInteractiveEnv::set();
+        let error =
+            ask_secret("provider_key", "Provider key", "Pass --key-env VARIABLE").unwrap_err();
+        assert!(matches!(error, CliError::MissingInput { field, hint }
+            if field == "provider_key" && hint == "Pass --key-env VARIABLE"));
     }
 }

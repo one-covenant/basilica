@@ -18,6 +18,10 @@ mod validation;
 
 /// Handle all deploy subcommands (matches existing handler pattern)
 pub async fn handle_deploy(cmd: DeployCommand, config: &CliConfig) -> Result<(), CliError> {
+    if matches!(cmd.action, Some(DeployAction::Exo(_))) {
+        crate::cli::handlers::agents::validate_parent_options(&cmd)?;
+    }
+
     // Handle unauthenticated commands first
     if let Some(DeployAction::Metadata { ref name }) = cmd.action {
         return metadata::handle_get_public_metadata(&config.api.base_url, name, cmd.json).await;
@@ -45,6 +49,9 @@ pub async fn handle_deploy(cmd: DeployCommand, config: &CliConfig) -> Result<(),
     let show_phases = cmd.show_phases;
 
     match cmd.action {
+        Some(DeployAction::Exo(options)) => {
+            crate::cli::handlers::agents::launch(&client, options, json, show_phases).await
+        }
         Some(DeployAction::List { .. }) => {
             let output = list_output.ok_or_else(|| {
                 CliError::Internal(color_eyre::eyre::eyre!(

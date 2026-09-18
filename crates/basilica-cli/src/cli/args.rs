@@ -334,6 +334,11 @@ impl Args {
                 handlers::balance::handle_check_balance(&client, self.json).await?;
             }
 
+            Commands::Agents { action } => {
+                let client = crate::client::create_authenticated_client(config).await?;
+                handlers::agents::handle(&client, action.clone(), self.json).await?;
+            }
+
             // Deploy command
             Commands::Deploy(cmd) => {
                 let mut cmd = *cmd.clone();

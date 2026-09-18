@@ -1,5 +1,6 @@
 //! Command handlers for the Basilica CLI
 
+pub mod agents;
 pub mod auth;
 pub mod balance;
 pub mod deploy;

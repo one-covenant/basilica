@@ -6,6 +6,7 @@ User guides for the Basilica CLI and Python SDK.
 
 - **[Quickstart](quickstart.md)** — install the CLI, log in, rent a GPU, and deploy a service.
 - **[Getting Started (SDK)](GETTING-STARTED.md)** — generate an API token and drive Basilica from Python end-to-end.
+- **[Managed Exo CLI](EXO.md)** — development-branch command contract, quoted launch, durable operations and current integration limits.
 - **[Agent Cloud Ops](agent-cloud-ops.md)** — canonical playbook for agents operating Basilica (auth, funding, rentals, deploys, cleanup).
 
 ## Examples
