@@ -9,3 +9,9 @@
 - [ ] Complete implementation gates G0–G4; status and evidence live only in the [unified plan](EXO-IMPLEMENTATION-PLAN.md).
 
 This file tracks planning; it is not an additional specification. No application implementation or paid resources were created by the planning work.
+
+## Active implementation increment
+
+- [ ] Add explicit managed-agent CLI routing, quoted launch, operations and safe model-connection input.
+- [ ] Verify parsing, resource isolation, replay inputs, terminal outcomes and redaction; run CLI/SDK checks.
+- [ ] Record tested CLI scope and remaining integration requirements in the unified plan.

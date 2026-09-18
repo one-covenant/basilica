@@ -266,6 +266,23 @@ Implement `basilica summon exo` with agreed name/connection/size/region/lifetime
 
 Provide resource-kind-aware list/status/open/logs/restart/export/recover/delete routing. `summon` is currently a deploy alias: preserve generic/OpenClaw behavior and explicitly handle name collisions. Unsupported pause/resume are absent. Open retrieves scoped access separately from general status JSON. Rust SDK represents the shared contract; Python expansion is deferred to avoid unrelated ongoing Python work.
 
+CLI management v1 uses an explicit `basilica agents` namespace for managed-agent
+list/status/operation/logs/restart/export/recover/delete and model connections.
+Existing rental and generic/OpenClaw deployment routes retain their resource kind.
+Bare UUID targets are IDs; `id:` and `name:` disambiguate UUID-shaped names.
+Names are resolved through all managed-agent pages only, with ambiguity rejected.
+`basilica summon exo` adds a dedicated template with server-recommended sizes,
+region choice, an owner connection and `until-deleted` lifetime. A separate quote
+command permits review before launch. Every mutation requires an explicit retry
+key; launch prints exact non-secret replay inputs before submission and accepts
+`--quote-id` to replay without obtaining a new quote. No automatic mutation retry
+or silent repricing is allowed. `--detach` reports accepted intent; waiting checks
+durable operation identity, terminal state, cleanup and deletion billing. Model
+keys enter through hidden input or an environment variable name, never a CLI key
+value. General JSON remains secret-free. Open/chat handoff remains pending until
+CT's browser transport and session contract is integrated; this increment must
+not print credentials or manufacture a functional browser-open flow.
+
 Test parsing, phase/error mapping, secret redaction, idempotency reuse, and resource-kind dispatch. Document a real launch/reopen/cleanup flow. Match public repository style and use Conventional Commits when implementation work is committed.
 
 ## 10. Verification and dependency gates
@@ -299,7 +316,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owned reads, atomic checkpoint metadata registration and five lifecycle mutation routes pushed; quotes and actual reconciliation pending | `67ba2c0bc`; 80 real PostgreSQL and 797 API unit tests, schema checks, generated OpenAPI and scoped Clippy passed; CI 35326738439 pending; prior CI 35323743823 green |
+| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owned reads, atomic checkpoint metadata registration and five lifecycle mutation routes pushed; quotes and actual reconciliation pending | `67ba2c0bc`; 80 real PostgreSQL and 797 API unit tests, schema checks, generated OpenAPI and scoped Clippy passed; CI 35326738439 green; prior CI 35323743823 green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -1361,7 +1378,7 @@ change runtime behavior; the full library, generator and Clippy were rerun.
 The diff was self-reviewed; no independent subagent review ran. Gitleaks 8.30.1
 scanned all 29 backend branch commits against freshly fetched main with no leaks
 before push. [Hosted CI 35326738439](https://github.com/one-covenant/basilica-backend/actions/runs/35326738439)
-is dispatched for this exact head and pending. The preceding checkpoint
+completed successfully for this exact head. The preceding checkpoint
 registration head's CI 35323743823 is confirmed green above.
 
 This completes HTTP intent submission, not lifecycle execution. Inspection of the
