@@ -266,7 +266,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup and interrupted scheduling v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery, grant rotation and interrupted-task holds implemented; lifecycle, export and healthy checkpoints pending | `80876011`; 43 native scheduler + 3 real process tests, final Linux image interruption/replacement tests passed; CI 35310209617 pending; prior image CI 35308537209 green |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and healthy checkpoints pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 pending; prior CI 35310209617 green |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
@@ -935,14 +935,80 @@ were removed. No registry image was published.
 
 Backend `80876011` is pushed;
 [hosted CI 35310209617](https://github.com/one-covenant/basilica-backend/actions/runs/35310209617)
-is dispatched for the exact head and remains pending. The required native runtime
-job now includes scheduler and process tests; the image job also exercises the
+completed successfully for the exact head, including all required checks. The
+required native runtime job includes scheduler and process tests; the image job also exercises the
 interruption test before replacement. Previous image head `ff8e6e16` completed
 full hosted CI successfully. These are local/component interruption guarantees,
 not hosted generation fencing, normal schedule-to-conversation/model delivery or
 exactly-once wakeups. Export and healthy-checkpoint/lifecycle integration remain
 open; no G0–G4 gate is claimed.
 
+Backend `34401b33d02799abb1c5282f7f8147bb46d31bd0` implements persistent-state
+export v1, frozen in plan commit `4d35773d`. The trusted helper snapshots the whole
+declared data tree and selected executable pair under the bootstrap/runner locks,
+checks the requested instance against the canonical receipt, and refuses pending
+recovery/rotation. A separate protected 32-byte export key encrypts canonical keys,
+records, source/dependencies, Git metadata, journals and home/tmp files using a
+distinct AES-GCM/HKDF domain. Known locks, regular PID files and sockets are listed
+in an encrypted omission report; unsafe links/special files and exceeded bounds
+fail without publishing an artifact. Same-ID retries verify the original snapshot
+and repeat the parent-directory durability barrier.
+
+Verification authenticates before parsing, checks owner/instance/schema/platform,
+the baseline manifest, canonical key/receipt binding and selected executable pair.
+Extraction publishes only a new private directory outside the encrypted bundle
+and original data tree. Internal absolute links become relative; bootstrap accepts
+only its exact canonical relative equivalent or the original absolute state link.
+The helper never overwrites live state or starts services. The operating guide
+and decision `0007-managed-exo-state-export.md` describe key delivery, layout,
+scratch-space requirements, failure recovery and the lifecycle boundary.
+
+All 17 native export tests passed in 31.528s with the actual compiled CLI and
+encrypted bootstrap state. Cases cover file/key round trips and bootstrap at the
+original mount path, original-snapshot retries, wrong owner/instance/schema/key/
+baseline/platform, tampering before archive parsing, private independent keys,
+omission reports, external links/special files, locks/pending transitions, source
+mutation, canonical-key mismatch, selected-pair preservation, existing/unsafe
+destinations, encryption-domain separation, interrupted publication and limits.
+The selected-pair case uses explicitly labeled executable fixtures; no provider
+request or real model turn is claimed. Regressions passed: 25 code-recovery tests
+(17.220s), 17 bootstrap tests (6.500s) and six entrypoint tests (5.518s).
+
+The final local Linux/arm64 image is
+`sha256:83804c74b64cbd0c026902ef4c8fefaa9821a2671a4b6171308b3d33b5c609b5`,
+size 4,902,336,358 bytes. Its baseline manifest SHA-256 remains
+`66994d3fc1a599bc0d6dec612d356535759527ed95886b1887bd38df11978b01`;
+delivered export/archive/bootstrap helper hashes matched the committed source.
+The final build reused the already-validated Rust/source baseline. In the image,
+three scheduler interruption tests passed (0.313s), followed by all 17 export tests
+(8.649s) and both actual renewal/service/container replacement cycles (39.390s and
+2.637s, including checks and shutdown). A separate stopped-runtime container
+captured and extracted the complete seeded persistent volume: 43,834 entries,
+1,158,950,260 ciphertext bytes, 101.131s including capture/verification/extraction.
+Installed dependencies, edited source, home files, canonical records and keys were
+preserved and the original canonical state remained unchanged. These tests used
+UID/GID 10001, read-only root, dropped capabilities, no privilege escalation and no
+external networking. All uniquely labeled test containers and both owned volumes
+were removed. No image was published to a registry.
+
+An initial Linux fixture run exposed that Docker's temporary `/tmp` mount was
+non-executable; the test copied the real CLI there. The fixture now uses an explicit
+executable private `/data` temporary mount, matching the runtime workspace, while
+retaining the restricted `/tmp` mount. The final image tests above passed with that
+fix. Python compilation, Actionlint, instruction contracts, document links and
+diff checks passed. Both selected reusable jobs passed Act dry-runs using
+`act workflow_call -W .github/workflows/rust-build-test.yml -j JOB --input
+rust_selected=true -n` for `managed-exo-bootstrap` and `managed-exo-image`.
+Act supplies graph validation; the container runs supply actual local Linux tests.
+The diff was self-reviewed; no independent subagent review ran. Gitleaks 8.30.1
+scanned all 23 backend branch commits with no leaks before the push.
+[Hosted CI 35312976428](https://github.com/one-covenant/basilica-backend/actions/runs/35312976428)
+is dispatched for the exact pushed head and remains pending. Both required runtime
+lanes now execute export tests; the image lane also verifies the complete volume.
+
+Export artifact integrity is not hosted owner authorization, key retrieval,
+generation fencing, restore readiness, retention/accounting or a product gate.
+Healthy-checkpoint registration and lifecycle/API integration remain open.
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Lifecycle reconciliation/API wiring, gateway accounting/conformance,
 chat, product UI, CLI, current required CI, and G0–G4 remain incomplete.
