@@ -260,7 +260,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap/service/rebuild/recovery/rotation v1 for final wiring | Pinned source, bootstrap, renewal, supervision, rebuild, encrypted recovery and preserve-state grant rotation implemented; image/lifecycle/healthy-checkpoint integration pending | `0c6267f5`; 18 rotation, 25 recovery, 17 bootstrap, 12 service, 16 rebuild and 68 native CLI tests; source/validation evidence below |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup v1; LC delivery and CT pairing for final wiring | Pinned image, atomic source seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery and grant rotation implemented; lifecycle, interrupted scheduling, export and healthy checkpoints pending | `ff8e6e16`; 11 baseline + 6 entrypoint tests and real Linux container replacement passed; hosted CI pending; prior component evidence below |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
@@ -825,7 +825,7 @@ rotation suite in the hash-locked recovery Python environment. Pinned Gitleaks
 8.30.1 scanned all 20 backend branch commits with no leaks. The diff was
 self-reviewed; no independent subagent review ran. Backend `0c6267f5` is pushed;
 [hosted CI 35306577208](https://github.com/one-covenant/basilica-backend/actions/runs/35306577208)
-is running for the exact head and remains pending.
+completed successfully for the exact head, including all required checks.
 
 These checks prove local record replacement and process exclusion, not hosted
 generation fencing, protected delivery, grant revocation/renewal or model/chat
@@ -833,7 +833,56 @@ readiness. Immutable baseline/image assembly is the next runtime integration
 step. Lifecycle reconciliation, healthy-checkpoint registration, interrupted-task
 policy, export and the product's remaining G0–G4 work remain open.
 
+Backend `ff8e6e164c0d7398cd8025558b1b8500c750d15b` implements the runtime
+image/startup contract frozen in plan commit `f2ee3193`. Root-owned helpers,
+compiled CLI/scheduler and a verified source/dependency baseline are packaged with
+Rust 1.97.1, Node 22.22.0, pnpm 10.26.2 and a PID-1 init. Startup seeds a private
+workspace atomically, preserves existing edits, verifies canonical bootstrap and
+execs renewal around the owned services with managed rebuilds enabled. Inputs
+are protected explicit identity, model/protocol and pricing files. Missing source
+with existing state requires recovery; changed grants require explicit rotation.
+The guide and decision `0005-managed-exo-runtime-image.md` describe the input,
+storage, upgrade and isolation boundaries.
+
+The actual Docker Linux/arm64 release image built successfully. Its local image
+ID is `sha256:b634a601674c19e6411fcf75df71a079f8f93a64cd4adc3829e1728b87d8027d`,
+uncompressed size 4,901,581,248 bytes, baseline manifest SHA-256
+`b67d359f92d48c44b076899c17088aa7f0c65739f36d4d6635bd16c2981d4d15`.
+The image was not published to a registry. Runtime helper hashes matched the
+committed source. Build-time frozen pnpm install, TypeScript checking, all six
+managed guardian tests and both release executable builds passed. The initial
+native release compilation reported 6m14s; this is build evidence, not a hosted
+self-rebuild benchmark or a capacity recommendation. A final invocation through
+`docker buildx build --load` reused cached layers and produced the same image ID.
+
+The real container test passed both starts on one owned persistent volume under
+UID/GID 10001, read-only root filesystem, zero capabilities, no privilege escalation
+and external networking disabled. It used a synthetic loopback TLS renewal fixture
+with actual bootstrap, scheduler and adapter processes. Offline Node dependency
+execution and Rust compilation passed. Container replacement retained edited
+source, home files, canonical artifacts, the master key, bootstrap/seed receipts
+and agent configuration. Both containers stopped gracefully with exit 143 and
+without OOM. Full first/second test cycles took 51.709s and 3.300s respectively;
+these include fixture/tool checks and shutdown, not time-to-chat measurements.
+All uniquely labeled smoke containers and their volume were removed.
+
+Local checks also passed: 11 atomic baseline tests (0.110s), six actual-CLI
+entrypoint tests with intercepted exec (5.259s), Python compilation, Bash syntax,
+ShellCheck, Actionlint, changed-document relative links, `just instructions-check`
+and `git diff --check`. Both selected reusable-workflow jobs passed Act dry-runs:
+`act workflow_call -W .github/workflows/rust-build-test.yml -j JOB --input
+rust_selected=true -n`, for `managed-exo-bootstrap` and `managed-exo-image`.
+Act validates the graph; the Docker smoke supplies actual local Linux execution.
+The diff was self-reviewed; no independent subagent review ran. Pinned Gitleaks
+8.30.1 scanned all 21 backend branch commits with no leaks. Backend `ff8e6e16`
+is pushed; [hosted CI 35308537209](https://github.com/one-covenant/basilica-backend/actions/runs/35308537209)
+has been dispatched for that exact head and remains pending. The new required
+image job repeats build and replacement on CI Linux; no image publication occurs.
+
+These tests do not prove real model/tool turns, chat readiness, scheduled side
+effects, export, healthy-checkpoint registration, hosting filesystem suitability,
+lifecycle generation fencing or G1 acceptance. Interrupted-task handling and
+export remain the next runtime work; LC/MG/CT/FE/SDK integration remains required.
 No paid model call, cloud resource, or hosted authenticated acceptance has been
-performed. Runtime image/service integration, lifecycle reconciliation/API wiring,
-gateway accounting/conformance, chat, product UI, CLI, full required CI, and
-G0–G4 remain incomplete.
+performed. Lifecycle reconciliation/API wiring, gateway accounting/conformance,
+chat, product UI, CLI, current required CI, and G0–G4 remain incomplete.
