@@ -18,6 +18,6 @@ This file tracks planning; it is not an additional specification. No application
 
 ## Chat service increment
 
-- [ ] Implement scoped sessions/runtime pairing and durable, fenced text delivery.
-- [ ] Wire first-frame authenticated WebSockets, owner session issuance, configuration and OpenAPI.
-- [ ] Verify PostgreSQL concurrency/revocation/reconnect and actual local WebSocket behavior; record limits and CI.
+- [x] Implement scoped sessions/runtime pairing and durable, fenced text delivery.
+- [x] Wire first-frame authenticated WebSockets, owner session issuance, configuration and OpenAPI.
+- [x] Verify PostgreSQL concurrency/revocation/reconnect and actual local WebSocket behavior; record limits and CI.

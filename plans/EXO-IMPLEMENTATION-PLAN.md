@@ -206,7 +206,8 @@ read-only). New message events contain role/text; later state events omit text.
 At most 128 user messages may await dispatch per instance. Runtime connection
 slots use a 15-second database lease, refreshed on transport checks. Expired or
 replaced connection claims become uncertain, never queued again. Generation or
-deletion transitions interrupt old queued/dispatched work transactionally.
+deletion transitions interrupt old queued/dispatched user work transactionally;
+published assistant messages remain accepted history.
 Owner locks serialize event allocation/commit for each instance so cursors cannot
 skip late commits. HTTP upgrades and frames are bounded; first authentication and
 socket writes time out. Periodic database checks propagate revocation while idle.
@@ -342,9 +343,9 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owned reads, atomic checkpoint metadata registration and five lifecycle mutation routes pushed; quotes and actual reconciliation pending | `67ba2c0bc`; 80 real PostgreSQL and 797 API unit tests, schema checks, generated OpenAPI and scoped Clippy passed; CI 35326738439 green; prior CI 35323743823 green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
-| CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
+| CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | RT adapter/bootstrap and LC grant delivery for final acceptance | Scoped sessions, durable delivery and first-frame WebSockets pushed; runtime adapter and hosted acceptance pending | `e76d801e4`; 95 PostgreSQL/socket, 803 API unit and 16 schema tests passed; strict scoped Clippy and generated contracts passed; CI 35338466216 pending |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
-| SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTO/SDK and CLI quoted launch, lifecycle, logs and model connections pushed; browser open, export download and hosted parity pending | `f566ee0e`; 349 tests/doctests passed, two existing doctests ignored; strict all-target/all-feature Clippy passed; CI 35334088788 pending |
+| SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTO/SDK and CLI quoted launch, lifecycle, logs and model connections pushed; browser open, export download and hosted parity pending | `f566ee0e`; 349 tests/doctests passed, two existing doctests ignored; strict all-target/all-feature Clippy passed; CI 35334088788 green |
 
 Every handoff includes owned files, contract version, commit/image digest, exact checks/results, redacted evidence location, unresolved failures, outstanding resources, and consumers now unblocked. Worker code completion is not a passed product gate. CO serializes migrations/shared edits, integrates commits, updates consumers and records final component versions.
 
@@ -1474,7 +1475,7 @@ diff checks passed. Logs are `/tmp/basilica-exo-agent-cli-final-test.log`,
 The diff was self-reviewed; no independent subagent review ran. Gitleaks 8.30.1
 scanned all four public branch commits against freshly fetched main with no leaks
 before push. [Hosted CI 35334088788](https://github.com/one-covenant/basilica/actions/runs/35334088788)
-was dispatched for this exact pushed head and is pending. The preceding public
+completed successfully for this exact pushed head. The preceding public
 head's CI 35266045472 is confirmed successful. Backend lifecycle mutation CI
 35326738439 is also now confirmed successful and the LC ledger is updated.
 No SDK wire types, dependencies or backend files changed; no backend dependency
@@ -1485,4 +1486,87 @@ acceptance. Browser open/scoped chat handoff and artifact download remain pendin
 as do verified catalog/quote issuance, actual lifecycle reconciliation, runtime
 and provider adapters, model accounting/conformance, authenticated chat, product
 frontend and hosted G0–G4 acceptance. No cloud resource, paid model call or hosted
+acceptance ran. The full implementation goal remains active.
+
+### 2026-09-18 — scoped durable chat transport increment
+
+Backend revision `e76d801e4651938a63e3e820f3b2872f1e43fb44` implements the frozen managed chat v1
+service in `agents/chat/**` and `api/routes/agent_chat/**`, with migration 037,
+optional protected configuration, separate socket route placement, owner session
+issuance, safe tracing/metrics and public/private OpenAPI. The new decision 0008
+and `scripts/exo/README.md#scoped-managed-chat` record configuration, protocol,
+limits, migration/rollback and remaining release prerequisites.
+
+Browser issuance uses the existing owner lock and global idempotency namespace.
+Only ready owned instances with the chat capability and an active model binding
+can obtain a new session. The protected 32-byte HMAC key derives a token from a
+random session UUID and its owner/instance/generation/audience binding. PostgreSQL
+stores only its digest; retry metadata stores a session ID. Replay preserves the
+original token and expiry and never revives revoked access. The configured retry
+key must remain consistent across API replicas/restarts; changing it fails old
+session retries closed. There is no key-rotation migration in this increment.
+
+Internal runtime pairing validates the full current lifecycle lease identity and
+wall-clock expiry, revokes prior runtime grants, and leaves browser grants alone.
+The transport requires scoped first-frame authentication within ten seconds,
+rejects query credentials and Authorization headers, validates exact HTTPS browser
+origins, and separates user/assistant/receipt/renew authority. Runtime grant renewal
+requires the current live exclusive connection. Browser sessions last 15 minutes;
+runtime grants last one hour. Both audiences are checked while idle and during
+mutations. No account endpoint can mint a runtime pairing grant.
+
+Messages use stable caller UUIDs, bounded UTF-8 text and server-selected roles.
+Duplicate matching content returns existing state across reconnect and generation
+changes; changed content conflicts. Instance events commit under serialization
+before cursors advance. Runtime dispatch commits before socket writes. Cross-replica
+connection replacement or expiry marks missing receipts uncertain and never
+requeues those actions. The lifecycle trigger revokes both session audiences,
+removes runtime ownership and interrupts queued/dispatched user actions, preserving
+already published assistant history. Final authority checks roll back late writes.
+A receipt records transport delivery, not model/tool completion.
+
+The final owned PostgreSQL runner passed 95 tests: 15 new chat tests (2.44s), 58
+lifecycle tests (1.92s), ten model-connection tests (0.21s) and 12 runtime-identity
+tests (0.82s). Chat coverage includes concurrent issuance and message identity,
+digest-only storage, lease/owner/generation fencing, expiry after observed lock
+waits, final-write rollback, expired runtime slots, bounded queues/text/cursors,
+HTTP session handling and actual loopback WebSocket roundtrip/resume/takeover/
+revocation. The socket clients and account/runtime state are explicit fixtures;
+these are transport checks, not real Exo/model/tool acceptance. The runner stops
+and removes its private Unix-socket PostgreSQL cluster. The final 16 native schema
+checks also passed (3.095s).
+
+`cargo test --locked -p basilica-api --lib` passed 803 tests, zero failed, with nine
+existing tests ignored (6.62s; compilation 2m02s). Six added library tests cover
+configuration, strict frames/cursors, route placement, request-path redaction,
+disabled transport and both generated document contracts. Strict Clippy passed for
+the API library plus all four database targets (1m42s including lock wait). An
+initial lint finding in a test helper's name was fixed; no allow was added.
+Formatting, instruction contracts (68 maintained documents), changed-document
+links and diff checks passed. The locked-source verifier confirmed all five public
+packages still resolve to Git revision `f0e1c972`; the sole lockfile change is a
+new direct dev-dependency edge to the already-locked `tokio-tungstenite 0.29.0`.
+Validation used Rust 1.97.1, two build jobs, explicit Mac compiler/SDK paths and
+`NO_K8S_TESTS=1`. Existing dependency future-compatibility notices remain for
+`proc-macro-error2` and `trie-db`.
+
+Both OpenAPI documents were generated and structurally checked: exactly two new
+paths and eight new schemas, no changes to existing definitions, and all schema
+references resolved. Gitleaks 8.30.1 scanned all 30 backend branch commits against
+freshly fetched main with no leaks before push. Hosted CI: [35338466216](https://github.com/one-covenant/basilica-backend/actions/runs/35338466216)
+is running for the exact pushed backend head.
+Local logs are `/tmp/basilica-exo-chat-final-db.log`,
+`/tmp/basilica-exo-chat-final-unit.log`, `/tmp/basilica-exo-chat-final-clippy.log`,
+`/tmp/basilica-exo-chat-schema.log` and `/tmp/basilica-exo-chat-openapi.log`.
+The diff was self-reviewed; no independent subagent review ran.
+
+CT service implementation is now available to FE and RT, but G2 remains open.
+Exo adapter/bootstrap integration, protected lifecycle delivery, passive readiness,
+real model/tool roundtrip, scheduler continuity during chat, public ingress/TLS and
+hosted reconnection still require implementation or acceptance. The upstream
+ExoChat worker has incompatible framing and publishes access URLs; it cannot be
+substituted unchanged. Its inbound marker uses a flush without filesystem sync,
+and needs explicit durable acknowledgement handling for the managed contract.
+Transcript history is retained in PostgreSQL; a release retention/purge policy is
+still required. No cloud resource, paid model call, live migration or hosted
 acceptance ran. The full implementation goal remains active.
