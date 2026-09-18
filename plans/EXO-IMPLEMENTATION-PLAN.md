@@ -1106,13 +1106,70 @@ contracts, document links and diff checks passed. The diff was self-reviewed; no
 independent subagent review ran. Gitleaks 8.30.1 scanned all 25 backend branch commits
 with no leaks before push.
 [Hosted CI 35317419604](https://github.com/one-covenant/basilica-backend/actions/runs/35317419604)
-is dispatched for the exact pushed head and remains pending. No deployment or
-provider operation ran.
+completed successfully for the exact pushed head. No deployment or provider
+operation ran.
 
 This endpoint reports durable state; it does not execute pending intent or prove
 runtime readiness. Remaining lifecycle mutation/read surfaces, reconciliation,
 healthy-checkpoint registration, physical fencing, quote/allocation/accounting and
 hosted acceptance remain open.
+
+Backend `b3a631f22265dc2ff7035e1fea31263801c6d6ab` implements worker persistence v1,
+frozen in plan commit `258c18aa`. The internal `apply_agent_worker_update` API now
+records resource bindings, monotonic progress, bounded delayed retries, immutable
+export metadata, verified cleanup and ready/failed/deleted outcomes. It takes the
+owner lock and locks the current operation/instance, matching the complete lease
+identity. Database wall-clock expiry is checked after row-lock acquisition and
+at the final operation write. Lost authority returns false and rolls back all
+instance, grant and operation changes. Typed failures expose fixed safe messages;
+database diagnostics log SQLSTATE without raw rejected rows.
+
+Readiness requires starting phase, a bound resource, observed schema and healthy
+runtime/model/chat observations; recovery preserves the authoritative schema.
+Unsupported capabilities are rejected. Export additionally requires immutable,
+unexpired version-1 metadata bound to the operation UUID. Cleanup remains sticky
+across retries. A distinct cleanup observation requires both resource absence and
+final billing; it revokes access and clears capabilities while retaining the
+historical binding. Failed creation requires this observation even without an
+allocation. Maintenance failure retains the resource and ongoing costs and cannot
+complete with unresolved cleanup. Delete requires recorded cleanup and billing.
+All terminal writes clear leases and record completion atomically. Identical
+historical bindings remain retryable after cleanup; new bindings cannot reopen
+finalized resource billing. Operation-kind-incompatible phases are rejected.
+
+Fourteen new real PostgreSQL tests cover complete create/restart/recover/export/
+delete transitions, concurrent terminal writes, immutable/cross-instance resource
+bindings, payload bounds, health/schema/capability rejection, retry identity/delay,
+sticky cleanup, access revocation, billing requirements, export metadata and expiry,
+all lease identity fields, current pointer/generation/desired state/deletion fences,
+lease replacement/preemption, expiry during an observed row-lock wait, injected
+expiry after instance mutation and rollback on final-write failure. These are
+trusted-controller observation fixtures, not physical allocation, runtime health,
+artifact-integrity or settlement evidence. No external operations run in storage.
+
+Final validation passed with Rust 1.97.1, the unchanged locked graph, two build jobs,
+explicit Mac compiler/SDK paths and `NO_K8S_TESTS=1`. The disposable database runner
+passed 34 lifecycle/status/worker tests (1.63s), ten connection tests (0.19s), and
+12 runtime-identity tests (0.76s); its build completed in 1m35s and cleanup succeeded.
+The full API unit suite passed 793 tests with nine existing ignored tests (4.32s;
+build 1m20s). Final scoped Clippy passed with `-D warnings` (5.54s); an earlier API
+library/all-tests Clippy run also passed (2m20s). The 16 schema tests passed (2.818s).
+Commands were `python3 scripts/exo/tests/run_lifecycle_db.py`, `cargo test --locked
+-p basilica-api --lib`, `cargo clippy --locked -p basilica-api --lib --test
+agent_lifecycle_db --test model_connections_db --test runtime_identities_db --
+-D warnings`, and `python3 scripts/exo/tests/test_schema.py`. Formatting, instruction
+contracts, relative document links and diff checks passed. The diff was self-reviewed;
+no independent subagent review ran. Gitleaks 8.30.1 scanned all 26 backend branch
+commits against freshly fetched main with no leaks before push.
+[Hosted CI 35319809436](https://github.com/one-covenant/basilica-backend/actions/runs/35319809436)
+is dispatched for the exact pushed head and remains pending. The preceding
+operation-status commit's hosted CI is now confirmed successful above.
+
+This increment provides durable worker writes; the actual reconciler still must
+verify external resource ownership, fence writers, run runtime helpers, deliver
+grants, validate artifacts and obtain health/billing evidence. Healthy-checkpoint
+registration, provider/runtime adapters, quote/allocation/accounting, the remaining
+API surfaces, chat, product UI, CLI and hosted acceptance remain required.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Lifecycle reconciliation/API wiring, gateway accounting/conformance,
