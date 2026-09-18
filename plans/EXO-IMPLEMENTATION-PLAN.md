@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Section 4 lifecycle/catalog paths confirmed; migrations 035–038 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owned reads, checkpoints, approved CPU catalog and durable quotes pushed; actual allocation/reconciliation pending | `859a3f536`; 106 PostgreSQL/socket tests, 805 API unit tests, 17 schema checks, generated OpenAPI and strict Clippy passed; CI 35346217769 queued; preceding runtime CI 35342366206 green |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog plus aggregator managed CPU allocator; migrations 035–039 | G0; G1 for runtime adapter | Durable intents/leases, status/checkpoints, approved catalog/quotes and internal CPU allocator pushed; launch controller, accounting and runtime reconciliation pending | `a537ee05b`; 121 PostgreSQL/transport tests, 805 API + 270 aggregator unit tests, 18 schema checks and strict Clippy passed; preceding CI 35347648907 green; exact-head CI 35350159897 queued |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -1761,8 +1761,14 @@ Backend commit `859a3f536dff2bff783b5a6cc4e2cf65f3987c52` is pushed to
 `feat/exo`. Gitleaks 8.30.1 scanned all 32 branch commits against freshly fetched
 main and found no leaks before push. Exact-head hosted
 [CI 35346217769](https://github.com/one-covenant/basilica-backend/actions/runs/35346217769)
-and its instruction-contract workflow are queued; queued CI is not a passing
-result. Local logs use `/tmp/basilica-exo-catalog-`.
+failed its generated OpenAPI drift check; test jobs and instruction contracts passed.
+The generated files had been verified locally but were omitted from the commit.
+Correction `aa91419609e119b77155c1fc581951b81c5cc906` commits both generated
+documents: exactly two new paths and five DTO schemas in each, with no existing
+path changes. Gitleaks scanned 33 commits without findings before push. Its
+[CI 35347648907](https://github.com/one-covenant/basilica-backend/actions/runs/35347648907)
+completed successfully for exact head `aa9141960`; instruction contracts also passed.
+Local logs use `/tmp/basilica-exo-catalog-` and `/tmp/basilica-exo-openapi-fix-`.
 
 Apply additive migrations 035–038 before the new API, even while catalog is
 disabled. The optional catalog has no enabled default and requires configured
@@ -1776,3 +1782,95 @@ frontend/remaining CLI flows, retention policy and G0–G4 remain required. This
 concrete implementation progress within the original goal; it does not make a
 configured catalog evidence of a ready production service. No cloud allocation,
 live migration, registry publication or paid model call was performed.
+
+### 2026-09-18 — durable CPU allocator implementation
+
+The prior turn was concrete progress: approved catalog and durable quotes were
+implemented and pushed. Hosted CI subsequently found the generated OpenAPI files
+were missing from that commit. Correction `aa9141960` publishes them; its OpenAPI
+drift check is now green. Full hosted CI status is recorded separately above.
+
+CO reserves migration 039 and extends LC's implementation scope to
+`crates/basilica-aggregator/src/service/managed_cpu/`, the small shared rental-insert
+refactor in `src/db.rs`, and managed CPU service registration in `src/service.rs`.
+The public SDK/backend dependency remains locked to `f0e1c972`. No existing rental
+route is switched to the new allocator in this increment.
+
+The existing synchronous allocator generated a fresh ID for each call and saved
+the rental only after provider allocation. That crash window cannot satisfy the
+managed-agent retry contract. The new internal methods prepare an immutable,
+owner-scoped request using the existing AZ routing/SSH-key registration, CPU
+inventory and `OfferingSnapshot`. Preparation atomically inserts its dispatch
+journal and an ordinary pending rental. The journal is a retry/dispatch record,
+not a second compute or billing ledger. Hostnames use the environment prefix and
+full allocation UUID. Preparation can register a public SSH key but buys no VM.
+
+Submission rechecks exact quoted resources/rates, native flavor and freshness,
+locks journal then rental, and commits one submission marker before invoking the
+existing provider. Its timestamp becomes the ordinary rental's creation time for
+billing registration. Provider errors, timeout, interrupted execution and failed
+response persistence never reset the marker. Successors only observe by full
+hostname and verify flavor/SSH handle. Empty/failed listings and multiple or
+incompatible matches remain uncertain; they never permit a second purchase.
+Provider identities already bound to another active/archived rental are rejected.
+Observation and rental persistence commit together. Preparation cannot recycle an
+archived rental identity, and retaining the journal prevents later rental removal
+from enabling resubmission.
+
+Cancellation succeeds only before submission; it shares the database lock order
+with dispatch. A crash after marker commit but before purchase can remain uncertain
+without a VM: that is an explicit limitation until provider idempotency or stronger
+absence evidence is available. It does not permit false cleanup/billing completion.
+The caller must retain and reconcile such cases rather than silently relaunch.
+
+Before enabling launch, the controller still must persist allocation identity,
+fence current generation/operation authority, verify balance, supply a protected
+platform SSH key, gate generic stop/GC paths, register/settle existing billing,
+resolve uncertain cleanup, deliver runtime configuration/access, and verify passive
+readiness. Source inspection found the current Hyperstack delete path can return
+success after an accepted delete with only inconclusive follow-up reads; managed
+cleanup must independently prove absence before finalizing resource/billing state.
+The existing API `ssh/client.rs` is a K3s token client and uses
+`ServerCheckMethod::NoCheck`; it is not a suitable protected runtime-delivery
+transport without verified host identity. This inspection does not change shared
+K3s behavior; the managed host transport must establish its own trusted identity.
+The internal allocator is not yet the launch controller or a hosted
+acceptance result. No migration against a live database, VM purchase, registry
+publication or paid model request was performed.
+
+Backend commit `a537ee05b20b0ab2e13a4b6d859d2ad6b5a14051` is pushed to
+`feat/exo`. The complete API unit suite passed 805 tests (nine existing ignored,
+5.37s), and the aggregator suite passed 270 ordinary unit tests (15 owned-database
+cases separately run, 0.58s). The final owned database/transport run passed all
+121 cases: ten catalog (0.39s), 16 chat (3.23s, including actual Node/Rust relay
+revocation), 58 lifecycle (2.08s), ten connections (0.24s), 12 runtime identities
+(0.77s), and 15 durable allocator tests (1.40s).
+
+Allocator tests apply the actual rental migrations, with unrelated user-rental
+tables and the external provider as explicit fixtures. They exercise account-key
+ownership through the real aggregator service, concurrent prepare/dispatch,
+interrupted provider calls, lost responses, failed/empty/ambiguous inventory,
+changed rates/resources/native flavor/freshness, cancellation, archived identity
+reuse, final-write expiry, transaction failure, and a single-connection pool.
+The final-write expiry case verifies its delayed write was reached before rollback.
+No fixture result establishes provider capacity, billing settlement or host readiness.
+
+All 18 schema checks passed (2.692s). Strict aggregator library/test Clippy passed
+(7m30s first dependency check; 2.25s final cached check). Formatting, Python compile,
+68 instruction contracts, changed-document links and diff checks passed. Gitleaks
+8.30.1 found no leaks across all 34 commits against freshly fetched main before
+push. Migration 039 has no numbering collision with current main (through 034).
+The default lifecycle CI runner includes the new allocator cases; the documented
+`--allocation-only` mode supports focused local execution. No workflow was edited.
+This increment was self-reviewed; no independent agent review ran.
+
+The existing backend PR 1872 now describes the implemented scope, actual tests,
+rollout requirements and unfinished integration. Exact-head hosted
+[CI 35350159897](https://github.com/one-covenant/basilica-backend/actions/runs/35350159897)
+is queued; instruction contracts passed. The preceding OpenAPI correction's CI 35347648907
+completed successfully; that result does not prove the new commit's CI. Local
+logs use `/tmp/basilica-exo-allocation-`.
+
+This is concrete implementation progress toward the original full goal. G0–G4,
+controller/runtime/accounting integration, frontend/remaining CLI flows, retention
+policy and real hosted acceptance are still incomplete; the goal remains active.

@@ -33,3 +33,10 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Record the FUSE incompatibility and CPU-VM fallback contract without weakening runtime persistence checks.
 - [x] Implement approved offers/catalog and owner-scoped repeat-safe quotes using existing CPU pricing and balance checks.
 - [x] Verify quote expiry, catalog changes, ownership, retries, wire contracts and fresh offering checks; record remaining allocation work.
+
+## Durable CPU allocation increment
+
+- [x] Add stable allocation preparation and durable single-dispatch tracking in the existing aggregator/rental database; migration 039 reserved by CO.
+- [x] Reconcile uncertain provider responses without buying a second machine; verify ownership, concurrency, interruption and persistence failure against owned PostgreSQL/provider fixtures.
+- [x] Record the allocator contract, integration limits and validation.
+- [ ] Connect allocation to the lifecycle controller with billing, protected host/runtime delivery, fencing and verified cleanup.
