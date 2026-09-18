@@ -48,14 +48,15 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Verify stale/deleted workers, lock waits and rollback; record billing registration gaps and remaining controller work.
 - [x] Implement atomic managed secure-rental billing registration and preserve original dispatch time, with immutable retry receipts and versioned client acknowledgment.
 - [x] Align catalog/allocation admission with marked-up billing rate precision and the stored markup range before provider dispatch.
-- [ ] Connect durable managed metering from dispatch through verified cleanup to existing credit operations, and make finalization atomic/retry-safe before accepting settlement.
+- [x] Connect durable managed metering from dispatch through verified cleanup to existing credit operations, and make finalization atomic/retry-safe before accepting settlement.
 
 
 ## Durable managed billing increment
 
 - [x] Add atomic cumulative metering and retained settlement identity over existing rental/credit ledgers.
 - [x] Fence generic billing writers and verify concurrency, interruption, drift, retention and ordinary compatibility on owned PostgreSQL.
-- [ ] Wire a versioned internal RPC/client and lifecycle metering/cleanup; resolve insufficient-credit settlement policy before launch.
+- [x] Wire a versioned internal RPC/client and lifecycle metering/cleanup.
+- [ ] Resolve insufficient-credit retention/export and unpaid settlement policy before launch.
 
 
 ## Managed metering transport increment
@@ -78,4 +79,10 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Connect verified absence to the frozen billing boundary; retain pending cleanup on uncertainty and preserve ordinary rental behavior.
 - [x] Verify loopback provider behavior, database concurrency/lease/generation boundaries and billing ordering; publish evidence and rollout contract.
 
-- [ ] Complete controller coordination, including ordinary rental archival after retained settlement, protected host/runtime delivery and state-preservation policy.
+- [ ] Complete controller coordination, including protected host/runtime delivery and state-preservation policy.
+
+## Settled rental archival increment
+
+- [x] Atomically archive the owned managed rental with verified cleanup and retain allocation/billing tombstones.
+- [x] Verify settled and never-dispatched cleanup, identity conflicts, retries and rollback under expired authority.
+- [x] Record validation and remaining controller work.

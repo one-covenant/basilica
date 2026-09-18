@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority, durable billing and provider cleanup; API migrations 035–041; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intent/catalog/allocation, strict provider cleanup, registration/admission, atomic metering and delivery implemented; background controller, archival, unpaid-tail policy and host/runtime integration pending | `bb9fb12be`; 1,079 unit, 183 owned integration/transport and 18 schema cases passed; strict API/aggregator Clippy and 41-commit secret scan passed; preceding CI 35366731627 green; exact-head CI 35370797461 running; instruction-contract workflow green |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority, durable billing, strict provider cleanup and settled rental archival; API migrations 035–041; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intent/catalog/allocation, provider cleanup, billing delivery and atomic archival implemented; background controller, unpaid-tail policy and host/runtime integration pending | `b8b2786e3`; 806 API unit, 190 owned integration/transport and 18 schema cases passed; strict API Clippy and 42-commit secret scan passed; prior cleanup CI 35370797461 green; exact-head CI 35373783587 queued; instruction-contract workflow green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -2474,4 +2474,84 @@ Backend commit `bb9fb12bed5e7d066eb64861e7c5b9d440d63643` is pushed. Gitleaks
 no findings. Existing PR 1872 now reflects the final cleanup/recovery scope.
 
 Exact-head hosted [CI 35370797461](https://github.com/one-covenant/basilica-backend/actions/runs/35370797461)
-is running; the instruction-contract workflow on the same commit passed.
+passed; the instruction-contract workflow on the same commit also passed.
+
+### 2026-09-18 — settled rental archival contract (CO reservation)
+
+CO owns the API worker/rental persistence and owned lifecycle fixtures for this
+increment. No new migration or public wire change is reserved. Managed cleanup
+must archive the original ordinary rental in the same transaction as its verified
+cleanup state, after matching the stable owner/provider binding and retained
+absence/settlement receipt. The archived stop time is the frozen cleanup boundary.
+Never-dispatched allocations must be durably cancelled before completion; uncertain
+dispatch cannot be archived as absent. Replay accepts only the matching retained
+archive. Current lifecycle authority is checked after all writes, so lease loss
+rolls archival back. Allocation, cleanup and billing receipts remain retained.
+Generic billing finalization is not used. Background scheduling and preservation
+policy remain required; this increment enables no paid launch or live operation.
+
+This increment also reserves the ordinary teardown entry point and generic
+archival wrapper: both reject managed allocation IDs before bypassing lifecycle
+cleanup. Review found that generic teardown otherwise logs failed generic billing
+finalization and continues to archival. The new boundary preserves ordinary
+rental behavior while keeping managed cleanup under its retained receipts.
+
+The worker now also rechecks its retained lease deadline after the final operation
+UPDATE. Checking only that UPDATE's WHERE clause evaluates authority before its
+writes; a slow trigger can otherwise let an expired worker commit. The owned
+fixture delays that final write and verifies rollback of archival and completion.
+
+### 2026-09-18 — settled archival implementation and owned evidence
+
+The API worker now archives a managed ordinary rental in the same transaction as
+`CleanupVerified`, then revalidates that archive before terminal create failure or
+delete. It verifies the stable resource/owner, frozen provider/deploy key, accepted
+offering/snapshot/markup, immutable cleanup intent and retained settlement. The
+stop time equals the frozen absence boundary. Prepared allocations are durably
+cancelled and archived without inventing a billing registration. Uncertain
+dispatch, missing records, conflicting history and identity drift remain pending.
+Allocation, cleanup and billing records survive archival. No migration was added.
+
+Generic teardown now rejects managed IDs before volume detach or provider calls,
+and the generic archival wrapper also rejects them. This closes a bypass where
+ordinary teardown logged generic billing finalization failure but continued to
+archive. Ordinary rental archival still uses its existing status/reason behavior.
+The shared row-movement helper preserves complete rental data under a row lock.
+
+The owned integration run passed 190 cases: 138 API (12 catalog, 16 chat including
+the actual Node/Rust worker, 88 lifecycle, 10 model connections and 12 runtime
+identities), 22 allocator, eight billing-client transport and 22 billing database/
+RPC cases. Seven new archival cases cover concurrent replay, complete projection
+preservation, exact stop time, identity/financial drift, foreign/missing history,
+prepared cancellation rollback, uncertain dispatch, ordinary compatibility, storage
+failure and expiry during both archival and the final operation write. All 18
+schema cases and 68 instruction contracts also passed. These use owned PostgreSQL
+and loopback provider fixtures, not live provider or paid model evidence.
+
+An intermediate run exposed a fixture-name collision and interference between
+short lease probes. API schemas share a database, and owner advisory locks span
+those schemas; deliberate slow writes for the common fixture owner could expire
+a different test's lease. The runner now executes unrelated API fixture cases
+sequentially. Each concurrency/race case still starts its competing tasks. The
+final owned run passed and removed its temporary cluster. Logs use
+`/tmp/basilica-exo-archive-`; final database evidence is `db-complete.log`.
+
+The full G0–G4 goal remains active. Background coordination, fresh balance before
+purchase, protected host/runtime delivery, physical fencing, preservation/export
+and retention policy, model usage, frontend/CLI completion and hosted acceptance
+remain required. No launch worker, live migration, paid resource, registry publish
+or model request was enabled. Next lifecycle work must keep external balance and
+provider calls outside database locks; `ManagedCpuGuard::authorize` explicitly
+allows no external I/O.
+
+Backend commit `b8b2786e3c995a19166876cfd59b0d74e7023025` is pushed. Final
+validation also passed all 806 API unit tests (nine existing environment-dependent
+cases ignored), strict API library/lifecycle-test Clippy, formatting and changed
+document links. Gitleaks 8.30.1 scanned all 42 committed branch changes against
+freshly fetched main with no findings. The public dependency remains locked at
+`f0e1c972`; no lockfile changed. The diff was self-reviewed without independent
+agent review. Previous cleanup CI 35370797461 is green.
+
+Exact-head [CI 35373783587](https://github.com/one-covenant/basilica-backend/actions/runs/35373783587)
+is queued; instruction-contract workflow 35373782938 passed. Existing PR 1872
+now includes the archival, generic-teardown boundary and post-write lease checks.
