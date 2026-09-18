@@ -273,7 +273,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and healthy checkpoints pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable create/delete/restart/export/recover intent and leases pushed; reconciler pending | `9f3709a43`; 16 schema, 37 real PostgreSQL and 791 API unit tests, scoped Clippy passed; CI 35315257023 pending |
+| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable lifecycle intent, leases and owner operation-status HTTP endpoint pushed; reconciler and other lifecycle HTTP routes pending | `6e5dbb24a`; 42 real PostgreSQL and 793 API unit tests, scoped Clippy and generated OpenAPI checks passed; CI 35317419604 pending; prior CI 35315257023 green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -1053,10 +1053,60 @@ compiler/SDK environment. Existing dependency future-compatibility notices for
 The diff was self-reviewed; no independent subagent review ran. Gitleaks 8.30.1
 scanned all 24 backend branch commits with no leaks before push.
 [Hosted CI 35315257023](https://github.com/one-covenant/basilica-backend/actions/runs/35315257023)
-is dispatched for the exact pushed head and remains pending. No live migration
+completed successfully for the exact pushed head. No live migration
 or resource operation ran.
 HTTP routes, reconciliation, physical fencing, schema observation,
 healthy-checkpoint registration and runtime/provider acceptance remain required.
+
+Backend `6e5dbb24a5783e723a33f6365ba487f58cbbb1f5` implements operation status v1,
+frozen in plan commit `a559b567`. The returned `status_url` now resolves to an actual
+`GET /agent-operations/{id}` handler in the account-authenticated route group. One
+owner-scoped statement reads the requested operation and its instance. The shared
+typed response preserves historical operation state/error/cleanup/billing/export
+metadata while reporting current instance phase. Missing and other-owner IDs
+produce the same error fields; malformed IDs and invalid persisted metadata yield
+static errors. Handler responses carry `Cache-Control: no-store`. Reads do not
+change operations, retry records, grants or leases and do not require optional
+provider configuration. Only safe public metadata is serialized; no worker token,
+provider credential, resource ID, private artifact locator or key is returned.
+Structured diagnostics contain owner/operation context and database error codes,
+never decoded metadata or raw database detail.
+
+Five new actual PostgreSQL/HTTP-handler tests cover accepted status URLs, shared
+DTO decoding, owner/query-override rejection, invalid IDs, unchanged lease/retry
+records, superseded failure versus current deletion phase, cleanup/billing progress,
+safe export projection, private extra-field exclusion and corrupt metadata. HTTP
+tests supply an explicit verified-auth fixture; they are not hosted JWT acceptance.
+Database completion and artifact rows are labeled fixtures, not provider cleanup,
+billing settlement or actual export evidence. The full API unit suite passed 793
+tests with nine existing ignored tests (4.97s), including new checks of both OpenAPI
+variants and the actual assembled route inventory/scope map. GET/HEAD are confined
+to the protected group; unsupported methods/nested paths receive no scope mapping.
+The initial 42 database tests passed. After the final structured-logging update,
+the database suite was rerun: 20 lifecycle/status tests (0.87s), ten connection
+tests (0.14s), and 12 runtime-identity tests (0.71s), all passing. Scoped Clippy with
+`-D warnings` passed again for the library and all three database targets (42.85s).
+
+Commands used the existing Rust 1.97.1 locked graph, two build jobs, explicit Mac
+compiler/SDK paths and `NO_K8S_TESTS=1`: `python3 scripts/exo/tests/run_lifecycle_db.py`,
+`cargo test --locked -p basilica-api --lib`, and `cargo clippy --locked -p basilica-api
+--lib --test agent_lifecycle_db --test model_connections_db --test runtime_identities_db
+-- -D warnings`. `cargo run --locked -p basilica-api --bin gen-openapi` regenerated
+both tracked schemas; its binary dependency build completed in 8m56s. A structural
+comparison confirmed that only the new operation path and six response schemas were
+added; every previous path and schema remained unchanged. Public/private documents
+now contain 68/79 paths and 135/152 schemas respectively. Formatting, instruction
+contracts, document links and diff checks passed. The diff was self-reviewed; no
+independent subagent review ran. Gitleaks 8.30.1 scanned all 25 backend branch commits
+with no leaks before push.
+[Hosted CI 35317419604](https://github.com/one-covenant/basilica-backend/actions/runs/35317419604)
+is dispatched for the exact pushed head and remains pending. No deployment or
+provider operation ran.
+
+This endpoint reports durable state; it does not execute pending intent or prove
+runtime readiness. Remaining lifecycle mutation/read surfaces, reconciliation,
+healthy-checkpoint registration, physical fencing, quote/allocation/accounting and
+hosted acceptance remain open.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Lifecycle reconciliation/API wiring, gateway accounting/conformance,
