@@ -21,3 +21,9 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Implement scoped sessions/runtime pairing and durable, fenced text delivery.
 - [x] Wire first-frame authenticated WebSockets, owner session issuance, configuration and OpenAPI.
 - [x] Verify PostgreSQL concurrency/revocation/reconnect and actual local WebSocket behavior; record limits and CI.
+
+## Managed runtime chat adapter increment
+
+- [x] Implement strict scoped transport, durable inbound identity, bounded reconnect/renewal and persisted outbound acknowledgements.
+- [x] Add protected chat input and repeat-safe canonical adapter registration; preserve edited/deleted state.
+- [x] Verify worker, actual compiled setup, local transport integration and pinned patch/image checks; update evidence.

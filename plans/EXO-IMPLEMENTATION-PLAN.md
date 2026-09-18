@@ -212,6 +212,27 @@ Owner locks serialize event allocation/commit for each instance so cursors canno
 skip late commits. HTTP upgrades and frames are bounded; first authentication and
 socket writes time out. Periodic database checks propagate revocation while idle.
 
+Managed runtime chat input v1 is a private owned regular file `chat.json` in the
+protected inputs directory. It has exactly `schema_version: 1`, canonical
+`instance_id`, public `wss://.../agent-chat` URL as `websocket_url`, and the scoped
+runtime `token`. It must match the model identity's instance and API origin. Its
+path and nonsecret channel binding may appear in the managed adapter config; the
+token never appears there, in argv, diagnostic metadata or access URLs. The worker
+reads it privately at startup/reconnect and uses first-frame authentication.
+Clones and new generations require separately delivered current grants.
+
+Register one `basilica-chat` adapter for canonical agent `managed` and conversation
+`chat` under bootstrap ownership. A durable registration receipt distinguishes
+initial/retried setup from existing setup; repeat verification must not recreate a
+deleted adapter, re-enable it, or overwrite changed config. Existing state and IDs
+survive token renewal/replacement. A worker durably records the inbound message ID
+and text digest before publishing the event and receipt. Restart never replays a
+recorded inbound action; transport delivery still does not promise tool execution.
+Outbound command acknowledgements follow matching persisted server acknowledgements;
+network retries retain the exact UUID and text. Renewal is a bounded socket action,
+never a model call. Fixed diagnostics omit raw frames/errors/tokens/text. Image and
+real model/tool acceptance remain separate evidence from setup and transport tests.
+
 CO reserves migration 037 for chat session audiences/retries, runtime connection ownership and delivery/event metadata. CT owns new `agents/chat/**`, `api/routes/agent_chat/**` and focused integration tests; CO owns migration, configuration, route/security/OpenAPI and CI wiring; RT owns managed adapter/bootstrap patch integration. Existing worker revocation must revoke both browser and runtime chat audiences. Session/transport implementation, runtime integration and real model/tool acceptance are separate evidence and must be labeled as such.
 
 MG fixes request protocol, owner/runtime identity, destination/model allowlist, issuance/revocation, rotation and usage semantics. CT fixes message IDs/acknowledgments, session roles/expiry, reconnect, channel identity, origins and transport schema. A URL alone is not an adequate contract. FE/SDK obtain chat access only through owner-authorized operations.
@@ -343,7 +364,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owned reads, atomic checkpoint metadata registration and five lifecycle mutation routes pushed; quotes and actual reconciliation pending | `67ba2c0bc`; 80 real PostgreSQL and 797 API unit tests, schema checks, generated OpenAPI and scoped Clippy passed; CI 35326738439 green; prior CI 35323743823 green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
-| CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | RT adapter/bootstrap and LC grant delivery for final acceptance | Scoped sessions, durable delivery and first-frame WebSockets pushed; runtime adapter and hosted acceptance pending | `e76d801e4`; 95 PostgreSQL/socket, 803 API unit and 16 schema tests passed; strict scoped Clippy and generated contracts passed; CI 35338466216 pending |
+| CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 running |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTO/SDK and CLI quoted launch, lifecycle, logs and model connections pushed; browser open, export download and hosted parity pending | `f566ee0e`; 349 tests/doctests passed, two existing doctests ignored; strict all-target/all-feature Clippy passed; CI 35334088788 green |
 
@@ -1554,7 +1575,7 @@ Both OpenAPI documents were generated and structurally checked: exactly two new
 paths and eight new schemas, no changes to existing definitions, and all schema
 references resolved. Gitleaks 8.30.1 scanned all 30 backend branch commits against
 freshly fetched main with no leaks before push. Hosted CI: [35338466216](https://github.com/one-covenant/basilica-backend/actions/runs/35338466216)
-is running for the exact pushed backend head.
+completed successfully for the exact pushed backend head.
 Local logs are `/tmp/basilica-exo-chat-final-db.log`,
 `/tmp/basilica-exo-chat-final-unit.log`, `/tmp/basilica-exo-chat-final-clippy.log`,
 `/tmp/basilica-exo-chat-schema.log` and `/tmp/basilica-exo-chat-openapi.log`.
@@ -1570,3 +1591,82 @@ and needs explicit durable acknowledgement handling for the managed contract.
 Transcript history is retained in PostgreSQL; a release retention/purge policy is
 still required. No cloud resource, paid model call, live migration or hosted
 acceptance ran. The full implementation goal remains active.
+
+
+### 2026-09-18 — managed runtime chat worker and protected pairing
+
+Backend revision `5d6c59666c656f8081c6f0893bd731c0e5ba37a7` adds pinned-source
+patch `0008-scoped-managed-chat.patch`, bootstrap/entrypoint pairing, actual worker
+process and relay integration tests, CI coverage and decision 0009. It retains
+upstream pin `b2769b6295e3cf23b24aad2794230fca6c09149c` and patches 0001–0007.
+The preceding backend chat-service revision's exact hosted CI run 35338466216
+completed successfully. No public SDK dependency or model catalog was changed.
+
+The worker launches directly with Node and installed `tsx`, authenticates with a
+privately read runtime grant, renews on the authenticated socket and reconnects
+with bounded backoff. It reloads protected grants on reconnect. Inputs bind the
+instance, audience and canonical WSS endpoint; TLS validation remains enabled.
+The canonical adapter stores no grant. Outgoing UUID/text survive reconnect;
+Exo receives `command_ack` only after the service confirms persistence. The worker
+syncs an inbound UUID/digest marker before handoff/receipt and never re-emits a
+retained identity. This preserves at-most-once action delivery, with possible loss
+at the marker/handoff boundary; it does not assert tool success. Diagnostics are
+fixed, raw adapter events/commands are no longer traced, and shutdown is bounded.
+
+Bootstrap registers the typed `managed`/`chat` adapter and publishes a private
+receipt after file/directory persistence barriers. Retries preserve identity and
+history. Receipt-backed `--verify-only` refuses deleted/disabled/reconfigured
+registrations and cannot recreate an absent adapter store. Retrying after a
+receipt-directory sync failure repeats the barrier. Established chat setup rejects
+missing protected input. An unpaired component-mode boot still makes no chat
+readiness claim. Exports/recovery must preserve the inbox and registration receipt.
+
+Validation used the actual prepared source and executables. Thirteen TypeScript
+tests (seven chat plus six existing guardian tests), type checking and strict
+Oxlint passed. Rust CLI tests passed 69 cases; executor adapter tests passed 32;
+strict upstream Clippy passed for CLI and executor. Three patch preparation tests
+passed, including apply/reverse checks. Native Python suites passed six pairing,
+six actual TLS worker, 17 bootstrap, seven entrypoint and three bootstrap-patch
+cases. TLS process cases cover reconnect/grant reload, lost outbound ACK, restart
+deduplication, invalid permissions, revocation and rejection of an untrusted CA.
+Their relay is an explicitly labeled protocol fixture.
+
+The additional `run_lifecycle_db.py --with-runtime-chat` test executes the actual
+Node worker against the actual Rust relay and owned PostgreSQL, through a local
+TLS byte proxy that does not simulate application frames. A browser message is
+handed to the worker, its response commits before acknowledgement, and advancing
+the instance generation revokes it. All 96 database tests passed: 16 chat (4.13s),
+58 lifecycle (2.40s), ten connection (0.36s) and 12 runtime identity (1.02s). The
+Rust integration target passed strict Clippy. CI installs frozen Node dependencies
+and requires this real-worker mode; the default developer runner explicitly skips
+that one case when the flag is absent. Account/runtime database state is fixture
+state; these checks do not execute an Exo conversation or call a provider.
+
+The packaged local Linux/arm64 image is
+`sha256:4635b76a51aba1203889b130c545a9739053318035759863f6b3ad885ce57653`
+(4,902,584,746 bytes). Both six-case chat suites passed in this image, running as
+UID 10001, read-only root, dropped capabilities, no external network and private
+scratch directories. Scheduler recovery (three) and state export (17) also passed.
+The final image passed two container boots on one volume (18.215s and 3.011s),
+graceful shutdown, and encrypted full-state export/restore: 43,840 entries,
+1,158,992,436 ciphertext bytes, 105.885s for the export check. All owned containers
+and volumes were removed. Gitleaks 8.30.1 scanned all 31 branch commits against
+freshly fetched main with no findings before push. Exact-head hosted CI [35342366206](https://github.com/one-covenant/basilica-backend/actions/runs/35342366206)
+is running; its separate instruction-contract workflow already passed. Formatting, 68 instruction contracts, changed-document links,
+Actionlint and Act dry-runs for both changed jobs passed. Act is graph validation,
+not evidence of hosted CI execution. This diff was self-reviewed; no independent
+agent review ran.
+
+Evidence logs are `/tmp/basilica-exo-real-chat-relay-final.log`,
+`/tmp/basilica-exo-chat-relay-clippy.log`,
+`/tmp/basilica-exo-chat-packaged-image-tests.log`, and
+`/tmp/basilica-exo-chat-adapter-secret-scan.log`; upstream check logs use the prefix
+`/tmp/basilica-exo-chat-adapter-`. The image remains a local artifact; no registry
+publication, cloud allocation, live migration or paid model call occurred.
+
+This is concrete implementation progress, not G1/G2 completion. Outstanding work
+still includes protected lifecycle delivery and physical fencing, provider/runtime
+reconciliation, verified quotes/catalog and accounting, real model/tool and
+scheduler-during-chat acceptance, passive readiness, frontend and remaining CLI
+flows, retention policy, public ingress and G0–G4 hosted acceptance. The full goal
+remains active with its original scope.
