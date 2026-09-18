@@ -320,7 +320,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
-| SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTOs and SDK transport pushed; CLI pending | `f0e1c972`; 100 library + 10 HTTP-client tests |
+| SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTO/SDK and CLI quoted launch, lifecycle, logs and model connections pushed; browser open, export download and hosted parity pending | `f566ee0e`; 349 tests/doctests passed, two existing doctests ignored; strict all-target/all-feature Clippy passed; CI 35334088788 pending |
 
 Every handoff includes owned files, contract version, commit/image digest, exact checks/results, redacted evidence location, unresolved failures, outstanding resources, and consumers now unblocked. Worker code completion is not a passed product gate. CO serializes migrations/shared edits, integrates commits, updates consumers and records final component versions.
 
@@ -1388,3 +1388,77 @@ reconciliation. Verified catalog/quote issuance, provider/runtime adapters,
 reconciliation, physical fencing, artifact retrieval/retention, gateway accounting
 and real model conformance, chat, frontend/CLI completion and G0–G4 acceptance
 remain required. No paid model call, cloud operation or hosted acceptance ran.
+
+
+Public `f566ee0e9268b81b181448b108eb22c3076f5695` implements CLI management v1,
+frozen in plan commit `6ded4bbd`. `basilica summon exo` now uses a dedicated
+managed-agent template, with name, saved model connection, server-recommended
+size/region selection, reviewed quote IDs, until-deleted lifetime, explicit
+idempotency keys and detached or bounded operation waiting. Automatic quoting
+prints the exact server cost/persistence contract before confirmation. Launch
+prints non-secret replay inputs before sending intent; `--quote-id` preserves
+that request for replay without fetching a replacement quote. Timeout never
+cancels server work. `--show-phases` reports operation/cleanup/billing changes on
+stderr; machine-readable stdout contains the accepted or terminal response.
+
+The explicit `agents` namespace provides templates, quotes, paginated list/logs,
+status, operation, restart, export, recover and delete. Model connections support
+list/create/rotate/delete using hidden key entry or an environment variable name.
+Keys never become command options, debug output or saved CLI config. Mutations
+use the existing authenticated SDK and HTTPS guard. Name lookup traverses agent
+pages only, rejects ambiguous names/repeated cursors, and supports explicit `id:`
+and `name:` selectors. Existing rentals and generic/OpenClaw deployments retain
+their routes. Exo rejects irrelevant parent deployment settings as well as unknown
+child options. `exo` is reserved as a template; the guide explains qualified
+image names for generic deployment.
+
+The server retains authority over capabilities so replay can succeed after phase
+or capability changes. Operation state remains historical while phase reflects
+the current instance, including a later restart/deletion; this was checked against
+the actual backend status projection before finalizing the CLI. Failure exits
+nonzero. Successful export requires artifact metadata; successful deletion
+requires deleted phase, no pending cleanup and finalized billing. General output
+uses only the existing safe response types, never chat access credentials.
+
+Sixteen new CLI/gate tests cover parsing and legacy template dispatch, unrelated
+parent flags, key/page bounds, server recommendation and region selection,
+secret-free input/output types, hidden-input noninteractive failure, paginated
+name/ID resolution, ambiguity and repeated cursors, all lifecycle routes, exact
+launch replay, historical operation state, failed/inconsistent outcomes,
+completion, quote mismatch, timeout without cancellation and environment-key
+transport. HTTP tests run the actual SDK against owned loopback protocol fixtures;
+they do not prove hosted authentication, quotes, runtime operations, model use,
+cleanup settlement or chat. The new `docs/EXO.md` guide describes a launch/return/
+cleanup flow for an enabled server and explicitly identifies pending integrations.
+It is not a live acceptance transcript.
+
+Final validation used Rust 1.97.1, the unchanged locked dependency graph, two build
+jobs, explicit Mac compiler/SDK paths and `NO_K8S_TESTS=1`. `cargo test --locked
+-p basilica-cli -p basilica-sdk` passed 228 CLI unit tests (1.08s), one CLI
+noninteractive integration test (2.03s), 100 SDK unit tests (0.08s), ten SDK HTTP
+tests (0.10s), three CLI doctests (3.62s) and seven SDK doctests (0.72s), with two
+existing SDK doctests ignored. Some doctests are compile-only examples. Total:
+349 passed, zero failed, two ignored; final rebuild 27.19s. A preceding full run
+also passed, before the final phase-display integration found during compiled
+help inspection. `cargo clippy --locked -p basilica-cli -p basilica-sdk
+--all-targets --all-features -- -D warnings` passed (6m56s), reporting dependency
+future-compatibility notices for `proc-macro-error2` and `trie-db`. `just fmt-check`,
+compiled `summon exo --help`/`agents --help`, changed-document relative links and
+diff checks passed. Logs are `/tmp/basilica-exo-agent-cli-final-test.log`,
+`/tmp/basilica-exo-agent-cli-clippy.log` and the matching help/fmt files.
+
+The diff was self-reviewed; no independent subagent review ran. Gitleaks 8.30.1
+scanned all four public branch commits against freshly fetched main with no leaks
+before push. [Hosted CI 35334088788](https://github.com/one-covenant/basilica/actions/runs/35334088788)
+was dispatched for this exact pushed head and is pending. The preceding public
+head's CI 35266045472 is confirmed successful. Backend lifecycle mutation CI
+35326738439 is also now confirmed successful and the LC ledger is updated.
+No SDK wire types, dependencies or backend files changed; no backend dependency
+revision update was needed for this CLI-only increment.
+
+This completes the CLI launch/management transport increment, not G3 or release
+acceptance. Browser open/scoped chat handoff and artifact download remain pending,
+as do verified catalog/quote issuance, actual lifecycle reconciliation, runtime
+and provider adapters, model accounting/conformance, authenticated chat, product
+frontend and hosted G0–G4 acceptance. No cloud resource, paid model call or hosted
+acceptance ran. The full implementation goal remains active.
