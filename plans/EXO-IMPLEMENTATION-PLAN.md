@@ -139,7 +139,7 @@ Runtime gateway HTTP v1 now uses the model base URL `/agent-runtime/{instance_id
 
 Protected runtime identity file v1 is a private JSON object with exactly `schema_version: 1`, canonical UUID `instance_id`, HTTPS `api_origin` (origin only), and scoped bearer `token`. Delivery makes a private regular file owned by the launcher user, mode 0400 or 0600, in a trusted parent directory; projected symlinks must be copied. This is internal secret delivery, never general instance metadata. RT stores the same token in the encrypted Exo model binding, then invokes the image-owned `runtime_identity.py` launcher in Python isolated mode around the supervised service command. Successful refresh precedes process start; periodic renewal failure/expiry stops the process group. The image must provide orphan reaping and container isolation, and LC retains generation fencing authority. The launcher and initial encrypted binding/bootstrap are implemented; protected delivery/rotation, image/service wiring and real acceptance remain pending.
 
-Canonical-state bootstrap v1 takes the prepared writable source, patched CLI, explicit local pricing artifact, approved model/protocol and protected identity file. Separate stable source/state mount paths are required; the state parent is private (0700). Bootstrap stages `.exo`, `master.key` and a versioned `bootstrap.json` receipt together, verifies the encrypted model binding using typed Exo APIs, fsyncs staged data and publishes by same-filesystem rename. The workspace `.exo` link targets this one canonical state. Canonical slugs are agent/model `managed`, conversation `chat`, and secret `managed-gateway`; the agent uses the Exo harness, local-process provider and agent sandbox scope with tool creation enabled. Repeat setup preserves all records and user edits, requiring the same instance/model/protocol/source/origin/scoped grant and master key. Changed grants need a separate explicit preserve-state rotation flow, still pending. Readiness events describe setup only; renewal must authorize the identity before service start. Image assembly/seeding, filesystem suitability, service/guardian integration and hosted acceptance remain separate gates.
+Canonical-state bootstrap v1 takes the prepared writable source, patched CLI, explicit local pricing artifact, approved model/protocol and protected identity file. Separate stable source/state mount paths are required; the state parent is private (0700). Bootstrap stages `.exo`, `master.key` and a versioned `bootstrap.json` receipt together, verifies the encrypted model binding using typed Exo APIs, fsyncs staged data and publishes by same-filesystem rename. The workspace `.exo` link targets this one canonical state. Canonical slugs are agent/model `managed`, conversation `chat`, and secret `managed-gateway`; the agent uses the Exo harness, local-process provider and agent sandbox scope with tool creation enabled. Repeat setup preserves all records and user edits, requiring the same instance/model/protocol/source/origin/scoped grant and master key. Changed grants use the explicit preserve-state rotation flow below; lifecycle integration remains pending. Readiness events describe setup only; renewal must authorize the identity before service start. Image assembly/seeding, filesystem suitability, service/guardian integration and hosted acceptance remain separate gates.
 
 Service execution v1 wraps image-owned `services.py` with `runtime_identity.py` after canonical bootstrap. The foreground supervisor holds the bootstrap OS lock, passes the canonical root/key and explicit model protocol to both scheduler and adapter runners, and inherits only tool/home/locale/TLS-trust environment fields. Each child has an owned process group; shutdown uses one shared three-second TERM grace plus bounded reaping after KILL. Any unexpected runner exit, including zero, stops its sibling and reports failure. Diagnostics identify actual child PIDs, never use persisted PID files as authority, and do not establish chat/model readiness. Both runners use OS-held locks and retain their lock inodes. Image-level orphan reaping/cleanup and lifecycle generation fencing remain required. Managed drain/rebuild control follows the contract below; image wiring, interrupted-schedule handling and healthy-code recovery remain pending. The upstream guardian must not run unchanged.
 
@@ -258,7 +258,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap/service/rebuild/recovery v1 for final wiring | Pinned source, bootstrap, renewal, foreground supervision, managed rebuilds and encrypted code recovery pushed; image/lifecycle/healthy-checkpoint integration pending | `d2489a38`; 24 recovery tests, 17 bootstrap/12 services/16 rebuild regressions; earlier native build and runtime evidence below |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap/service/rebuild/recovery/rotation v1 for final wiring | Pinned source, bootstrap, renewal, supervision, rebuild, encrypted recovery and preserve-state grant rotation implemented; image/lifecycle/healthy-checkpoint integration pending | `0c6267f5`; 18 rotation, 25 recovery, 17 bootstrap, 12 service, 16 rebuild and 68 native CLI tests; source/validation evidence below |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
@@ -769,8 +769,8 @@ changed in this increment; existing native evidence and hosted CI remain distinc
 The diff was self-reviewed; no independent subagent review ran. Pinned Gitleaks
 8.30.1 scanned all 19 backend branch commits with no leaks.
 Hosted CI [35304940178](https://github.com/one-covenant/basilica-backend/actions/runs/35304940178)
-is running for this exact pushed head; its Linux/runtime and full branch checks
-remain pending.
+completed successfully for this exact pushed head, including Linux runtime
+recovery and the full required branch checks.
 
 Checkpoint creation is not healthy-checkpoint registration. The lifecycle owner
 still must fence detached/remote writers, supply an authoritative schema label,
@@ -778,6 +778,58 @@ renew scoped access and verify application readiness. Immutable baseline/image
 assembly, lifecycle integration, export, interrupted-schedule policy, storage
 retention/accounting and real hosted recovery remain incomplete. No G0–G4 gate
 is claimed by these component tests.
+
+Backend `0c6267f5435464fd1240b026fbe62c4c7eaa8fb8` implements the scoped-identity
+rotation contract frozen in plan commit `4ec28458`. The sixth pinned upstream
+patch adds local typed `model rotate-key`, validates the exact binding and old
+key digest, and preserves secret/binding IDs and metadata. It accepts replacement
+material only on bounded stdin, rejects remote-harness mode before transport,
+and treats an already-applied replacement as read-only. Its private replacement
+file is fsynced before rename, followed by a secret-directory fsync; ordinary
+object-store writes and `secret set` keep their existing behavior.
+
+The image-owned `rotate_identity.py` helper holds bootstrap/runner locks,
+validates the preserved key and receipt, journals token digests under a durable
+operation ID, blocks bootstrap/services/code-recovery mutations while rotation is
+pending, and verifies the new binding before publishing the updated receipt.
+Interrupted writes resume without the old plaintext token. Same-operation input
+changes conflict; completed retries never roll back a later rotation. Completion
+retries repeat the marker-removal directory barrier, also fixed and regression
+tested in code recovery. No agent/configuration/history/source reset occurs.
+
+Local validation passed with the real patched CLI and encrypted store: 18 rotation
+tests, 25 code-recovery tests, 17 bootstrap tests, 12 service tests and 16 rebuild
+tests. Rotation tests cover exact record/metadata preservation, changed old keys,
+duplicate bindings/secrets, missing keys/secrets, wrong instance/origin,
+unsafe store paths, journal corruption, each durable phase, interruption after
+secret/receipt writes, failed fsync, completed retries after a later rotation,
+active supervisor/orphan-runner exclusion, cross-operation startup barriers,
+remote-harness refusal and token redaction. The initial run found an incorrect
+secret-store path in the new helper; the actual `.exo/exoharness/secrets` layout
+and parent validation fixed it before publication. The final rotation run passed
+18 tests in 13.087s. Source preparation's three tests passed, and a separately
+prepared checkout's full Git diff exactly matched the actual tested checkout and
+all six delivered patches.
+
+The locked Rust 1.97.1 CLI build and all 68 native CLI tests passed. Scoped
+CLI and exoharness library Clippy both passed with `-D warnings`. The commands
+were `cargo +1.97.1 build --locked -p exo`, `cargo +1.97.1 test --locked -p exo
+--bin exo`, `cargo +1.97.1 clippy --locked -p exo --bin exo -- -D warnings` and
+`cargo +1.97.1 clippy --locked -p exoharness --features basic-backend --lib --
+-D warnings`, with explicit Mac compiler/SDK paths and two build jobs. Python compilation,
+`just instructions-check`, changed-document relative links, Actionlint and the
+selected reusable-workflow Act dry-run passed. The CI runtime lane now runs the
+rotation suite in the hash-locked recovery Python environment. Pinned Gitleaks
+8.30.1 scanned all 20 backend branch commits with no leaks. The diff was
+self-reviewed; no independent subagent review ran. Backend `0c6267f5` is pushed;
+[hosted CI 35306577208](https://github.com/one-covenant/basilica-backend/actions/runs/35306577208)
+is running for the exact head and remains pending.
+
+These checks prove local record replacement and process exclusion, not hosted
+generation fencing, protected delivery, grant revocation/renewal or model/chat
+readiness. Immutable baseline/image assembly is the next runtime integration
+step. Lifecycle reconciliation, healthy-checkpoint registration, interrupted-task
+policy, export and the product's remaining G0–G4 work remain open.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime image/service integration, lifecycle reconciliation/API wiring,
