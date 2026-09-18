@@ -270,8 +270,8 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and healthy checkpoints pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 pending; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and healthy checkpoints pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
+| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable create/delete/restart/export/recover intent and leases pushed; reconciler pending | `9f3709a43`; 16 schema, 37 real PostgreSQL and 791 API unit tests, scoped Clippy passed; CI 35315257023 pending |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -1007,12 +1007,55 @@ Act supplies graph validation; the container runs supply actual local Linux test
 The diff was self-reviewed; no independent subagent review ran. Gitleaks 8.30.1
 scanned all 23 backend branch commits with no leaks before the push.
 [Hosted CI 35312976428](https://github.com/one-covenant/basilica-backend/actions/runs/35312976428)
-is dispatched for the exact pushed head and remains pending. Both required runtime
-lanes now execute export tests; the image lane also verifies the complete volume.
+completed successfully for the exact pushed head. Both required runtime
+lanes execute export tests; the image lane also verifies the complete volume.
 
 Export artifact integrity is not hosted owner authorization, key retrieval,
 generation fencing, restore readiness, retention/accounting or a product gate.
 Healthy-checkpoint registration and lifecycle/API integration remain open.
+
+Backend `9f3709a4333fd18f119ef299b6c268db5c4242a0` implements maintenance
+intent v1 against the contract frozen in `0732a6dd`. The typed restart/export/recover action uses the existing owner advisory
+lock, persisted request digest and atomic retry response. It checks owned state,
+bound resource, explicit capability and absence of running work/unresolved cleanup.
+Recovery checks an owned same-instance checkpoint against the authoritative schema
+added by migration 036; an unknown schema is incompatible. Acceptance records the
+checkpoint on the operation, advances generation, resets health and revokes old
+runtime/chat grants. Claiming now returns the checkpoint ID. Export workers may
+issue fresh scoped access so services can resume after the fenced snapshot.
+Delete preemption and retry replay preserve their existing authority.
+
+The actual Rust storage suite passed against a disposable local PostgreSQL cluster:
+15 lifecycle tests (0.82s), ten model-connection tests (0.16s) and 12 runtime-identity
+tests (0.82s). Nine new lifecycle cases cover all three maintenance actions,
+duplicate/concurrent requests, owner/instance checkpoint isolation, schema and
+capability/state/cleanup rejection, changed retry bodies, grant revocation and new
+issuance, delete preemption/races, replay after deletion, generation exhaustion and
+rollback after an injected failure at the final retry-record write. The last case
+checks operation count, generation and both grant tables before retrying normally.
+Ready/failed state and checkpoint rows are explicitly database fixtures, not live
+runtime health evidence. All 16 migration constraint tests passed (2.677s).
+The initial new constraint used an unsupported PostgreSQL regex repetition bound;
+separate length and character checks fixed it, including tests at 256/257 characters.
+The final database test build completed in 12m14s with Rust 1.97.1, locked dependencies,
+explicit Mac compiler/SDK paths and two build jobs. Public dependency inspection
+confirmed all five public crates at `f0e1c972` in locked mode. Formatting, Python
+compilation, document links, instruction contracts and diff checks passed. The API
+unit suite passed 791 tests with nine existing ignored tests (4.90s). Scoped Clippy
+passed with `-D warnings` for the API library and all three database test targets
+(6m23s). The commands were `NO_K8S_TESTS=1 cargo test --locked -p basilica-api --lib`
+and `cargo clippy --locked -p basilica-api --lib --test agent_lifecycle_db --test
+model_connections_db --test runtime_identities_db -- -D warnings`, with the same
+compiler/SDK environment. Existing dependency future-compatibility notices for
+`proc-macro-error2` and `trie-db` remain; they were not new lint failures.
+The diff was self-reviewed; no independent subagent review ran. Gitleaks 8.30.1
+scanned all 24 backend branch commits with no leaks before push.
+[Hosted CI 35315257023](https://github.com/one-covenant/basilica-backend/actions/runs/35315257023)
+is dispatched for the exact pushed head and remains pending. No live migration
+or resource operation ran.
+HTTP routes, reconciliation, physical fencing, schema observation,
+healthy-checkpoint registration and runtime/provider acceptance remain required.
+
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Lifecycle reconciliation/API wiring, gateway accounting/conformance,
 chat, product UI, CLI, current required CI, and G0–G4 remain incomplete.
