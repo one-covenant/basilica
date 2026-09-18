@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority and durable billing delivery; API migrations 035–040; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intent/catalog/allocation, registration/admission, atomic metering, RPC/client and billing delivery journal implemented; background controller, unpaid-tail policy and runtime/provider-cleanup integration pending | `bc7260844`; 806 API unit, 174 owned integration/transport and 18 schema cases passed; strict API Clippy and full-range secret scan passed; preceding CI 35363037034 green; exact-head CI 35366731627 queued; instruction-contract workflow green |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority, durable billing and provider cleanup; API migrations 035–041; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intent/catalog/allocation, strict provider cleanup, registration/admission, atomic metering and delivery implemented; background controller, archival, unpaid-tail policy and host/runtime integration pending | `bb9fb12be`; 1,079 unit, 183 owned integration/transport and 18 schema cases passed; strict API/aggregator Clippy and 41-commit secret scan passed; preceding CI 35366731627 green; exact-head CI 35370797461 running; instruction-contract workflow green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -2385,3 +2385,93 @@ was used. No acceptance gate is newly complete; the full goal remains active.
 Exact-head hosted [CI 35366731627](https://github.com/one-covenant/basilica-backend/actions/runs/35366731627)
 is queued; its instruction-contract workflow passed. Existing backend PR 1872 now
 reflects durable delivery, validation and remaining integration work.
+
+### 2026-09-18 — provider cleanup contract reservation
+
+CO reserves API migration 041 and `agents/lifecycle/cleanup`, aggregator
+`service/managed_cpu/cleanup` and strict managed-provider observation/termination
+methods. Cleanup persists an immutable owner/allocation/VM target before any
+external mutation, under current create/delete authority. It revokes scoped
+access and makes cleanup pending. This is an irreversible cleanup intent; callers
+must complete the chosen state-preservation policy before invoking it.
+
+The managed Hyperstack path uses bounded direct requests without redirects. A
+successful GET is present regardless of its status word and must match the frozen
+VM ID, hostname, flavor and deploy key before deletion. Only a direct GET 404 for
+the known observed VM yields absence evidence; DELETE acceptance/404, malformed
+responses, authentication/transport failures, 5xx, redirects and empty lists never
+do. Prepared cancellation and uncertain submissions remain distinct allocation
+states. Provider absence evidence must match the persisted cleanup target before
+billing freezes database time; settlement is still a separate durable operation.
+
+Cleanup uses the original stable VM identity across operation generations. Lost
+leases cannot commit observations or begin new steps. An already dispatched
+termination cannot be recalled; no provider-side fencing guarantee is invented.
+Retries can reissue idempotent termination of that same irreversibly retired
+identity, but never buy a replacement. No cleanup worker or live resource action
+is enabled in this increment. Providers without the strict cleanup contract are
+not eligible for newly prepared managed CPU purchases.
+
+### 2026-09-18 — strict provider cleanup implementation
+
+API migration 041 retains an immutable owner/allocation/VM retirement target.
+Current create/delete authority atomically prepares that intent, enrolls billing,
+revokes scoped access and marks cleanup pending. The managed Hyperstack adapter
+uses a separate bounded client without redirects. It checks the exact VM's ID,
+hostname, flavor and deploy key before termination; only direct GET 404 yields
+typed absence evidence matching the persisted target. DELETE acceptance/404,
+status words, redirects, malformed/oversized bodies and failed reads cannot freeze
+billing's cleanup boundary. Lease loss prevents new steps or stale writes; a
+request already dispatched cannot be recalled. Retries preserve the same
+irreversibly retired target across operation generations. New managed catalog,
+quote and purchase admission rejects adapters lacking the strict contract.
+Ordinary provider deletion semantics are unchanged.
+
+CO also corrected uncertain allocation recovery in the existing managed allocator.
+Hyperstack inventory summaries omit deploy-key identity, so treating the summary
+as a complete VM prevented recovery after a lost create response. Reconciliation
+now resolves the unique hostname candidate through its exact VM-detail endpoint
+and validates the returned ID and deployment binding before recording it. Failed
+or mismatched details remain uncertain; no purchase is repeated. A real Hyperstack
+adapter on loopback plus the actual rental database proves that path.
+
+Final validation passed: 1,079 unit tests (806 API and 273 aggregator), 183 owned
+integration/transport cases and 18 schema cases. The 22 aggregator database tests
+ignored in the ordinary unit lane ran in the owned runner; nine existing API unit
+cases requiring separate environments remain ignored. The integration total is
+131 API cases (including six new cleanup cases and the actual Node/Rust chat
+adapter), 22 allocator cases, eight billing-client transport cases and 22 billing
+storage/RPC cases. New coverage includes immutable intent/concurrency, revocation,
+foreign/mismatched targets, uncertain allocations, expiry and delete generations
+during provider observation, post-write expiry rollback, unsupported-provider
+admission, and the actual cleanup-observation/billing-settlement/API-delete path.
+Provider responses are explicit fixtures, not live cloud cleanup evidence.
+
+The first database run passed the six new cleanup cases but an older billing
+expiry regression spent its short lease setting up the new loopback proof fixture
+and expired before reaching the intended write. Moving fixture setup before the
+countdown made that regression test the intended post-write boundary; the final
+full owned run passed and removed its temporary PostgreSQL cluster.
+
+Strict aggregator library/all-test and API library/lifecycle/catalog-test Clippy,
+formatting, diff checks, changed-document links and 68 instruction contracts
+passed. The locked public dependency remains `f0e1c972`; no lockfile changed.
+The diff was self-reviewed without an independent agent review. Logs use
+`/tmp/basilica-exo-cleanup-`. The previous delivery commit's CI 35366731627 passed.
+
+The background controller must still coordinate fresh balance, protected host
+identity/runtime delivery, state preservation, physical fencing and ordinary
+rental archival after retained settlement. Existing archival code is in
+`crates/basilica-api/src/db/rentals.rs`; generic secure-cloud teardown calls generic
+finalization, so the managed controller must reuse archival without downgrading
+its settlement contract. Model usage accounting, frontend/CLI completion and
+hosted G0–G4 acceptance remain required. No background worker, live migration,
+cloud termination/purchase, registry publication or paid model request ran.
+The full goal remains active; no acceptance gate is newly complete.
+
+Backend commit `bb9fb12bed5e7d066eb64861e7c5b9d440d63643` is pushed. Gitleaks
+8.30.1 scanned all 41 committed backend changes against freshly fetched main with
+no findings. Existing PR 1872 now reflects the final cleanup/recovery scope.
+
+Exact-head hosted [CI 35370797461](https://github.com/one-covenant/basilica-backend/actions/runs/35370797461)
+is running; the instruction-contract workflow on the same commit passed.

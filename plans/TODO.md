@@ -71,3 +71,11 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Preserve cleanup time independently of payment and require retained billing coverage/settlement for readiness/cleanup.
 - [x] Verify delivery across lease expiry, lost acknowledgment, completed launch, pending ticks and funding; publish evidence and rollout contract.
 - [ ] Integrate the background lifecycle controller, trusted provider absence proof and retention/export policy before paid launch.
+
+## Provider cleanup integration increment
+
+- [x] Add strict provider observation and termination, with immutable cleanup intent and lifecycle authority.
+- [x] Connect verified absence to the frozen billing boundary; retain pending cleanup on uncertainty and preserve ordinary rental behavior.
+- [x] Verify loopback provider behavior, database concurrency/lease/generation boundaries and billing ordering; publish evidence and rollout contract.
+
+- [ ] Complete controller coordination, including ordinary rental archival after retained settlement, protected host/runtime delivery and state-preservation policy.
