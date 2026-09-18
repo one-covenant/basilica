@@ -286,8 +286,8 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and healthy checkpoints pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable lifecycle intent, leases and owner operation-status HTTP endpoint pushed; reconciler and other lifecycle HTTP routes pending | `6e5dbb24a`; 42 real PostgreSQL and 793 API unit tests, scoped Clippy and generated OpenAPI checks passed; CI 35317419604 pending; prior CI 35315257023 green |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
+| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owner instance/operation reads and atomic checkpoint metadata registration pushed; quotes, mutation routes and actual reconciliation pending | `879b3a1ad`; 71 real PostgreSQL and 795 API unit tests, schema checks and scoped Clippy passed; CI 35323743823 pending; prior CI 35322295185 green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -1237,13 +1237,64 @@ links and diff checks passed. The diff was self-reviewed; no independent subagen
 review ran. Gitleaks 8.30.1 scanned all 27 backend branch commits against freshly
 fetched main with no leaks before push.
 [Hosted CI 35322295185](https://github.com/one-covenant/basilica-backend/actions/runs/35322295185)
-is dispatched for the exact pushed head and remains pending. The preceding worker
-persistence commit's hosted CI is confirmed successful above.
+completed successfully for the exact pushed head. The preceding worker persistence
+commit's hosted CI is also confirmed successful above.
 
 The owner read surface is implemented; lifecycle mutation/quote/template/log
 surfaces, actual reconciliation and runtime adapters, healthy-checkpoint
 registration, model accounting/conformance, chat, frontend/CLI integration and
 hosted acceptance remain required. No deployment or provider operation ran.
+
+Backend `879b3a1add9a2f4f940dcd72e3e5e71b83bcdb7a` implements healthy-checkpoint
+registration v1, frozen in plan commit `89f4672a`. The internal ready observation
+now accepts optional `AgentHealthyCheckpoint` metadata. Bounded code/schema/artifact
+labels, a non-nil UUID and lowercase SHA-256 are validated; schema must match the
+observed ready schema. Private artifact identifiers and digests are omitted from
+Debug output. The metadata contains no key and is not an account/guest request DTO.
+
+After the existing readiness checks, the worker inserts an immutable checkpoint
+bound to the lease's owner and instance, or verifies every field of an existing ID
+without replacing its artifact or timestamp. Registration and ready completion
+share the final lease guard and transaction. A later failure or expiry rolls back
+both. Recovery can be enabled only when this transaction registers or locks a
+checkpoint for the same owner/instance and observed schema. Ready with recovery
+disabled remains allowed when no compatible checkpoint exists. Old schemas are
+never rewritten to manufacture compatibility. The caller still must verify the
+actual artifact and correspondence between the captured code/dependencies and the
+runtime whose health it observed; successful capture alone is not registration.
+
+Eight new real PostgreSQL tests cover registration followed by durable recovery
+intent and completion, reuse of an existing compatible checkpoint, recovery
+capability rejection without one, immutable metadata/timestamp retries, changed
+metadata rejection, malformed bounds/digests/IDs, Debug redaction, unhealthy/wrong-
+phase/expired/preempted observations, owner/instance isolation, rollback after
+registration on lease expiry, and rollback on the final operation write failure.
+Existing worker fixtures now leave recovery disabled when they provide no checkpoint.
+Health, artifact and resource observations are explicit fixtures, not verified live
+runtime or archive evidence. No provider or runtime action executes in these methods.
+
+The unchanged Rust 1.97.1 locked graph, two build jobs, explicit Mac compiler/SDK
+paths and `NO_K8S_TESTS=1` were used. `python3 scripts/exo/tests/run_lifecycle_db.py`
+passed 49 lifecycle/status/worker/checkpoint/read tests (1.41s), ten connection tests
+(0.15s) and 12 runtime-identity tests (0.75s); build 2m48s, with successful owned
+PostgreSQL cleanup. `cargo test --locked -p basilica-api --lib` passed 795 tests
+with nine existing ignored tests (5.94s; build 2m46s). Scoped `cargo clippy --locked
+-p basilica-api --lib --test agent_lifecycle_db --test model_connections_db --test
+runtime_identities_db -- -D warnings` passed (1m31s). All 16 schema tests passed
+(3.110s). Formatting, instruction contracts, relative document links and diff
+checks passed. Public DTOs, generated OpenAPI, dependencies and migrations were
+unchanged. The diff was self-reviewed; no independent subagent review ran.
+Gitleaks 8.30.1 scanned all 28 backend branch commits against freshly fetched main
+with no leaks before push.
+[Hosted CI 35323743823](https://github.com/one-covenant/basilica-backend/actions/runs/35323743823)
+is dispatched for the exact pushed head and remains pending. The preceding instance
+read commit's hosted CI is confirmed successful above, and the LC ledger is updated.
+
+This completes the database registration boundary, not runtime-to-checkpoint
+integration or physical recovery acceptance. Actual artifact verification/storage/
+retention, runtime adapters and reconciliation, quote/mutation surfaces, model
+accounting/conformance, chat, frontend/CLI integration and hosted acceptance remain
+required. The runtime helpers still do not infer healthy checkpoints from capture.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Lifecycle reconciliation/API wiring, gateway accounting/conformance,
