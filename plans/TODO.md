@@ -40,3 +40,10 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Reconcile uncertain provider responses without buying a second machine; verify ownership, concurrency, interruption and persistence failure against owned PostgreSQL/provider fixtures.
 - [x] Record the allocator contract, integration limits and validation.
 - [ ] Connect allocation to the lifecycle controller with billing, protected host/runtime delivery, fencing and verified cleanup.
+
+## Allocation authority increment
+
+- [x] Require transaction-scoped launch authority for CPU preparation and submission.
+- [x] Bind the stable rental to the owned instance and recheck lease, generation, quote and connection before commit.
+- [x] Verify stale/deleted workers, lock waits and rollback; record billing registration gaps and remaining controller work.
+- [ ] Make secure rental billing registration atomic/recoverable and preserve the original dispatch time before wiring paid launch.

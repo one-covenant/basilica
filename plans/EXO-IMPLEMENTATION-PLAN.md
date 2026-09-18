@@ -384,8 +384,8 @@ Only format owned paths; broad checks run on the integration branch after shared
 | Gate | Owner | Pass condition | Status |
 | --- | --- | --- | --- |
 | G0 — contracts/baseline | CO | Wire/runtime/chat schemas and errors frozen; ownership/migrations/dependency mode fixed; test/hosting/persistence policies recorded | In progress |
-| G1 — runtime selection | RT + CO | Local-process rebuild/scheduling/declared persistence/export/bad-rebuild recovery demonstrated; deployment versus VM chosen with evidence | Not started |
-| G2 — services | LC + MG + CT + CO | Durable launch, scoped model access and real chat integrated; auth/revocation/retry/cleanup cases pass | Not started |
+| G1 — runtime selection | RT + CO | Local-process rebuild/scheduling/declared persistence/export/bad-rebuild recovery demonstrated; deployment versus VM chosen with evidence | In progress; acceptance incomplete |
+| G2 — services | LC + MG + CT + CO | Durable launch, scoped model access and real chat integrated; auth/revocation/retry/cleanup cases pass | In progress; acceptance incomplete |
 | G3 — product | FE + SDK + CO | Real web/CLI parity, fresh-device access, operations/redaction and OpenClaw regression pass | Not started |
 | G4 — release readiness | CO | Required CI passes, actual hosting configuration/cost/persistence disclosure ready, rollback documented, staging resources cleaned | Not started |
 
@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog plus aggregator managed CPU allocator; migrations 035–039 | G0; G1 for runtime adapter | Durable intents/leases, status/checkpoints, approved catalog/quotes and internal CPU allocator pushed; launch controller, accounting and runtime reconciliation pending | `a537ee05b`; 121 PostgreSQL/transport tests, 805 API + 270 aggregator unit tests, 18 schema checks and strict Clippy passed; preceding CI 35347648907 green; exact-head CI 35350159897 queued |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, aggregator CPU allocator and API allocation guard; migrations 035–039 | G0; G1 for runtime adapter | Durable intents/status/checkpoints, catalog/quotes and CPU allocator with current-lease guard pushed; launch controller, billing and runtime reconciliation pending | `ef44cba6f`; 132 PostgreSQL/transport tests, 805 API + 270 aggregator unit tests and strict Clippy passed; preceding CI 35350159897 green; exact-head CI 35351974825 queued |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -1867,10 +1867,78 @@ This increment was self-reviewed; no independent agent review ran.
 The existing backend PR 1872 now describes the implemented scope, actual tests,
 rollout requirements and unfinished integration. Exact-head hosted
 [CI 35350159897](https://github.com/one-covenant/basilica-backend/actions/runs/35350159897)
-is queued; instruction contracts passed. The preceding OpenAPI correction's CI 35347648907
+completed successfully for exact head `a537ee05b`; instruction contracts also passed. The preceding OpenAPI correction's CI 35347648907
 completed successfully; that result does not prove the new commit's CI. Local
 logs use `/tmp/basilica-exo-allocation-`.
 
 This is concrete implementation progress toward the original full goal. G0–G4,
 controller/runtime/accounting integration, frontend/remaining CLI flows, retention
 policy and real hosted acceptance are still incomplete; the goal remains active.
+
+### 2026-09-18 — allocation authority and atomic instance binding
+
+The previous goal turn made concrete progress: the durable CPU allocator was
+implemented, tested and pushed. Exact-head CI 35350159897 has now completed
+successfully. This increment connects its preparation/dispatch transactions to
+the existing managed-agent operation authority; it does not start a launch worker.
+CO extends LC's scope to `crates/basilica-api/src/agents/lifecycle/allocation.rs`
+and the existing lifecycle database integration target. No new migration is needed.
+
+Both allocator entry points that can prepare or buy resources require an explicit
+`ManagedCpuGuard` accepting a PostgreSQL transaction. The guard runs before
+journal/rental locks and after final writes. No production allow-all guard exists.
+The API implementation derives the stable rental UUID and exact CPU/rate terms
+from the instance's already-consumed quote. It locks the owner using the same
+advisory-lock namespace as lifecycle HTTP mutations, verifies current create
+operation/token/generation, active connection, unexpired database lease, compatible
+resource binding and absence of cleanup/settlement. It then binds that rental ID
+and provisioning phase in the same transaction as the allocation journal/rental.
+Expiry after lock waits or during final writes rolls back all related mutations.
+A delayed worker cannot substitute price/resources or replace another resource.
+
+A consumed quote remains the source of accepted terms after its original expiry;
+queue delay is not permission to reprice. The allocator still checks fresh current
+inventory before purchase. Already-submitted requests remain observable without
+new launch authority, because deletion and successor workers must reconcile a
+purchase authorized before they took over. Database authority is not physical VM
+fencing, and deletion after the submission marker commits still requires cleanup
+of the in-flight/uncertain provider request. No ready state or successful cleanup
+is inferred from these guards.
+
+Inspection identified the next accounting prerequisite: the existing billing
+`TrackRental` secure path inserts its rental and start event separately, returns
+an existing row without repairing a missing event, and does not use the supplied
+start time in that branch. A blind retry is insufficient proof of registration.
+Managed billing integration must make that path atomic/recoverable and preserve
+accepted dispatch time/identity before enabling the launch controller. This
+increment does not modify billing behavior or introduce a second billing ledger.
+
+Backend commit `ef44cba6fb241e494b3ef32aa835c01683de1edd` is pushed to
+`feat/exo`. All 805 API unit tests passed (nine existing ignored, 3.70s); all 270
+ordinary aggregator unit tests passed (18 owned-database cases separately run,
+0.50s). The full owned PostgreSQL/transport run passed 132 cases: ten catalog
+(0.38s), 16 chat (3.28s, including the actual Node worker/Rust relay), 66 lifecycle
+(1.93s), ten connections (0.16s), 12 runtime identities (0.74s), and 18 allocator
+cases (1.39s). The lifecycle target includes eight new actual database guard cases;
+the allocator target includes three new guard-hook cases, covering authority loss
+before and after writes plus observation after submission without new authority.
+Provider/authorization doubles are explicit in allocator tests; they do not
+substitute for hosted account authorization or a physical provider call.
+
+Strict aggregator library/test Clippy passed (14.86s), as did API library/lifecycle
+integration Clippy (1m38s). Formatting, 68 instruction contracts, changed-document
+links and diff checks passed. Gitleaks 8.30.1 scanned all 35 commits against freshly
+fetched main with no findings before push. No migration or workflow changed, and
+public dependencies remain locked to `f0e1c972`. Existing schema and runtime-image
+checks were not rerun for unchanged artifacts. This diff was self-reviewed;
+no independent agent review ran.
+
+The existing PR 1872 includes current scope and validation. Exact-head hosted
+[CI 35351974825](https://github.com/one-covenant/basilica-backend/actions/runs/35351974825)
+is queued; the preceding allocator CI 35350159897 passed. Logs use
+`/tmp/basilica-exo-allocation-guard-`. No live migration, cloud allocation,
+registry publication or paid model request occurred. G1/G2 statuses now accurately
+show implementation in progress, with acceptance incomplete; neither gate passed.
+The full original G0–G4 objective remains active, including controller wiring,
+billing/model usage accounting, protected host/runtime delivery, physical fencing,
+frontend and remaining CLI flows, retention policy and real hosted acceptance.
