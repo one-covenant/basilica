@@ -131,7 +131,7 @@ Mutations have owner-scoped idempotency. Same key + normalized body returns the 
 
 Maintenance intent v1 covers restart, export and code recovery. Only owned instances with desired state `running`, phase `ready` or `failed`, a bound runtime resource and the explicitly enabled action capability can accept new intent. Any running operation or unresolved cleanup conflicts; only delete may preempt. Same-key replay precedes current-state checks and never resurrects an instance after later deletion. Recovery additionally requires a checkpoint belonging to the same owner and instance whose schema exactly matches the authoritative current state schema. Migration 036 adds a nullable, bounded `state_schema_version`; unknown is incompatible, never inferred from a baseline or capability. The lifecycle controller must record observed schema and register only health-verified checkpoints before enabling recovery; artifact existence alone is insufficient.
 
-An accepted maintenance intent atomically advances generation, persists the operation/checkpoint and retry response, sets phase `restarting` with unknown health, and revokes old runtime/chat grants. This also applies to export because its consistent snapshot requires stopping writers before resuming a fresh service generation. A claimed recovery lease carries its checkpoint ID. Database generation and token revocation fence gateway access and stale lifecycle work; the reconciler must still stop/fence local or remote writers, run the corresponding runtime helper, rotate/deliver new access and verify readiness. Intent acceptance makes no provider call and is not successful completion, physical fencing, an export artifact, or a healthy recovery result. Existing owner-scoped 30-day minimum retry retention applies. Runtime/provider adapters and HTTP wiring remain separate required work.
+An accepted maintenance intent atomically advances generation, persists the operation/checkpoint and retry response, sets phase `restarting` with unknown health, and revokes old runtime/chat grants. This also applies to export because its consistent snapshot requires stopping writers before resuming a fresh service generation. A claimed recovery lease carries its checkpoint ID. Database generation and token revocation fence gateway access and stale lifecycle work; the reconciler must still stop/fence local or remote writers, run the corresponding runtime helper, rotate/deliver new access and verify readiness. Intent acceptance makes no provider call and is not successful completion, physical fencing, an export artifact, or a healthy recovery result. Existing owner-scoped 30-day minimum retry retention applies. Runtime/provider adapters remain separate required work.
 
 Lifecycle mutation HTTP v1 exposes account-authenticated `POST /agent-instances`, `DELETE /agent-instances/{id}` and `POST /agent-instances/{id}/{restart,export,recover}` through the existing durable intent functions. Each request requires exactly one validated `Idempotency-Key`; auth supplies ownership and no additional OAuth scope is required. Create and recover use the shared strict JSON request DTOs. Restart/export/delete accept no body or an empty JSON object only; reject ignored fields, malformed bodies, query parameters and ambiguous duplicate headers. Bound request bodies to 16 KiB and return static errors without echoing input. All handler responses are `Cache-Control: no-store`; accepted intent returns HTTP 202 with the shared stable instance/operation/status URL response, including retries. A 202 records requested work only and never reports provider, runtime, export, recovery or deletion completion.
 
@@ -291,7 +291,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owner instance/operation reads and atomic checkpoint metadata registration pushed; quotes, mutation routes and actual reconciliation pending | `879b3a1ad`; 71 real PostgreSQL and 795 API unit tests, schema checks and scoped Clippy passed; CI 35323743823 pending; prior CI 35322295185 green |
+| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owned reads, atomic checkpoint metadata registration and five lifecycle mutation routes pushed; quotes and actual reconciliation pending | `67ba2c0bc`; 80 real PostgreSQL and 797 API unit tests, schema checks, generated OpenAPI and scoped Clippy passed; CI 35326738439 pending; prior CI 35323743823 green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -1291,8 +1291,8 @@ unchanged. The diff was self-reviewed; no independent subagent review ran.
 Gitleaks 8.30.1 scanned all 28 backend branch commits against freshly fetched main
 with no leaks before push.
 [Hosted CI 35323743823](https://github.com/one-covenant/basilica-backend/actions/runs/35323743823)
-is dispatched for the exact pushed head and remains pending. The preceding instance
-read commit's hosted CI is confirmed successful above, and the LC ledger is updated.
+completed successfully for the exact pushed head. The preceding instance read
+commit's hosted CI is also confirmed successful above, and the LC ledger is updated.
 
 This completes the database registration boundary, not runtime-to-checkpoint
 integration or physical recovery acceptance. Actual artifact verification/storage/
@@ -1303,3 +1303,63 @@ required. The runtime helpers still do not infer healthy checkpoints from captur
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Lifecycle reconciliation/API wiring, gateway accounting/conformance,
 chat, product UI, CLI, current required CI, and G0–G4 remain incomplete.
+
+
+Backend `67ba2c0bc6a0ba893ae054cbc9f308ac493c96b2` implements lifecycle
+mutation HTTP v1, frozen in plan commit `91f3103d`. The protected account router
+now exposes create, delete, restart, export and recover through the existing
+transactional intent functions. Ownership comes only from verified account context.
+Exactly one validated idempotency key is required; strict shared create/recover
+DTOs and empty-object/absent action bodies are bounded to 16 KiB. Query parameters,
+duplicate key/content-type headers, malformed paths and rejected JSON values return
+static errors without echoing input. All handler responses are no-store. Accepted
+or replayed intent returns the shared three-field HTTP 202 response and durable
+operation status URL; it does not claim successful runtime work or cleanup.
+
+Nine new real PostgreSQL HTTP cases cover concurrent creation/deletion retries,
+replay after quote expiry and later deletion, changed-request conflicts, pending
+operation read-back, all three maintenance actions, generation advancement and
+access revocation, delete preemption of a live create lease, foreign/missing target
+isolation, request validation and streamed body bounds without writes, compatible
+checkpoint selection and canonical UUID retries, capability denial, and full
+rollback after a triggered retry-record write failure. Empty and JSON action
+bodies use the same operation. Quotes, verified account contexts and runtime
+health/checkpoints are explicit fixtures; no provider allocation, model call,
+physical fencing, export or recovery execution is represented by these tests.
+
+The first database run caught Serde accepting `[]` as an empty struct. An explicit
+object-shape check fixes the actual handler boundary; the full database rerun
+passed. Generated-schema review also caught `Option<EmptyAgentAction>` advertising
+JSON null. Optional non-null object references now match the handlers, with an
+exact assertion in both OpenAPI contract tests. The existing SDK already sends
+the corresponding shared bodies and idempotency header; no dependency or SDK
+change was needed. Scope/inventory tests prove all five mutations are protected
+and unsupported methods/nested actions remain unavailable.
+
+Validation used the unchanged locked Rust 1.97.1 graph, two jobs, explicit Mac
+compiler/SDK paths and `NO_K8S_TESTS=1`. The disposable PostgreSQL runner passed
+58 lifecycle/read/worker/HTTP tests (1.45s), ten connection tests (0.17s) and 12
+runtime-identity tests (0.73s), with successful cleanup; build 1m25s. The final
+API library suite passed 797 tests with nine existing ignored tests (4.57s;
+build 1m18s), including the tightened schema checks. One final local launch waited
+in macOS `_dyld_start` before running normally; it was observed, not restarted.
+Scoped Clippy passed (33.14s). All 16 schema tests passed (2.682s). Formatting,
+68 maintained instruction contracts, relative documentation links and diff checks
+passed. Both generated specs were checked: public 73 paths/150 schemas, private
+84 paths/167 schemas, adding three paths/five methods/four schemas while preserving
+all prior operations and schemas. The last annotation-only correction did not
+change runtime behavior; the full library, generator and Clippy were rerun.
+
+The diff was self-reviewed; no independent subagent review ran. Gitleaks 8.30.1
+scanned all 29 backend branch commits against freshly fetched main with no leaks
+before push. [Hosted CI 35326738439](https://github.com/one-covenant/basilica-backend/actions/runs/35326738439)
+is dispatched for this exact head and pending. The preceding checkpoint
+registration head's CI 35323743823 is confirmed green above.
+
+This completes HTTP intent submission, not lifecycle execution. Inspection of the
+existing CPU rental route confirms a direct deploy followed by billing registration;
+calling it blindly after a worker timeout would not satisfy stable-instance
+reconciliation. Verified catalog/quote issuance, provider/runtime adapters,
+reconciliation, physical fencing, artifact retrieval/retention, gateway accounting
+and real model conformance, chat, frontend/CLI completion and G0–G4 acceptance
+remain required. No paid model call, cloud operation or hosted acceptance ran.
