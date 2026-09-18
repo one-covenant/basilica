@@ -2646,3 +2646,77 @@ execution boundaries rather than enabling launch without protected delivery.
 Backend commit `b2c4ab400` is pushed and existing PR 1872 reflects this scope.
 Exact-head [CI 35376253486](https://github.com/one-covenant/basilica-backend/actions/runs/35376253486)
 is queued; instruction-contract workflow 35376253261 passed.
+
+
+### Protected platform SSH identity — implementation reservation
+
+CO reserves API migration 042, `agents/lifecycle/allocation/host_keys`, and the
+managed allocator's SSH lookup/registration boundary. Each physical allocation
+gets a separate Ed25519 client key. The private key is encrypted under a dedicated
+control-plane keyring with authenticated owner/instance/key identity; it never
+enters a rental journal, provider registration, guest, or customer SSH endpoint.
+Creation/replay requires current create authority before and after writes.
+Customer SSH keys and their single-key-per-account constraint remain independent.
+Managed registration retains the exact allocation/key/provider/region binding,
+with no customer-key fallback. Hyperstack registration must verify the exact
+public key on replay and must not delete a possibly shared registration after an
+ambiguous response. Host-key trust, protected runtime delivery and the actual
+controller remain required follow-on integration, not evidence of a running host.
+
+
+### Protected platform SSH identity — implementation and validation
+
+Backend commit `ded6d84c78bd78b57e7c95be113666b4037cb567` adds API migration 042 and a dedicated encrypted
+Ed25519 client key for each physical allocation. `AgentAllocationGuard::prepare_request`
+creates/replays the key under current create authority, verifies contextual
+decryption and public/private agreement, and returns only the accepted request
+with its key ID. Owner/instance/key/purpose binding prevents ciphertext copying.
+Missing encryption keys or corrupt records fail closed. Generation/replay is
+serialized by the owner lock and checked again after writes; it neither binds a
+rental nor makes provider calls. Existing journals cannot acquire replacement
+private keys. Records remain immutable and retained across deletion/archival.
+
+Managed allocation now reads the exact platform key record, independently of
+customer `ssh_keys` and their per-account uniqueness constraint. Journal replay
+checks the original public key. Provider registration uses the configured resource
+prefix, native region and selected environment and stores a separate immutable
+handle. Hyperstack verifies complete exact-name search results against the public
+key, imports only if absent, and requires a fresh verified read after success or
+conflict. Ambiguous responses are repaired by lookup without rollback deletion;
+collisions, malformed/truncated responses and mismatched keys fail closed. The
+managed HTTP client rejects redirects and bounds bodies and elapsed I/O. Other
+providers default to unsupported. Ordinary customer SSH paths are unchanged.
+
+All 1,085 unit tests passed: 808 API and 277 aggregator. Nine existing API
+environment-dependent cases remain ignored; all 24 allocator database cases
+ignored in the ordinary unit lane passed in the owned runner. The final full
+runner passed 205 integration/transport cases: 151 API (101 lifecycle, 12 catalog,
+16 chat including actual Node/Rust transport, 10 model connections and 12 runtime
+identities), 24 allocator, eight billing-client transport and 22 billing DB/RPC.
+The six new host-key lifecycle cases also passed independently, including two
+instances owned by one account and rejection of copied ciphertext. Provider
+loopback tests cover retained registration, success/conflict verification, unsafe
+listings and lost-response recovery. The old allocator service fixture was
+updated for the new platform-key contract while retaining full-hostname and
+single-purchase retry assertions.
+
+All 20 schema checks, strict API library/lifecycle-test and aggregator library/
+all-test Clippy, formatting, changed-document links and 68 instruction contracts
+passed. Owned PostgreSQL fixtures were removed. Logs use
+`/tmp/basilica-exo-host-keys-`: `unit-final.log`, `db-final.log`, `focused.log`,
+`schema.log`, `api-clippy.log`, `aggregator-clippy.log` and `instructions.log`.
+Decision 0016 and the runtime runbook document migration order, retained keyring
+requirements and rollback. Public dependencies remain locked to `f0e1c972`, with
+no lockfile change. The diff was self-reviewed; no independent agent review ran.
+
+This completes the isolated platform client-key and provider-registration
+increment. Host-key authentication/pinning, protected runtime-grant delivery,
+actual controller coordination, physical fencing, preservation/export/retention,
+model usage, frontend/CLI completion and hosted G0–G4 acceptance remain required.
+No host SSH connection, background launch worker, live migration, paid resource,
+registry publication or model request ran. The full goal remains active.
+
+Prior purchase-admission commit `b2c4ab400` passed exact-head CI 35376253486.
+
+Gitleaks 8.30.1 scanned all 44 backend commits against freshly fetched main with
+no findings before push.

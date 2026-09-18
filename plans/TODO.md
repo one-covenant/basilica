@@ -92,3 +92,6 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Require a distinct balance-checked guard for provider submission while keeping preparation/reconciliation independent.
 - [x] Verify actual billing admission, expired evidence, stale authority, term changes and no purchase on failure.
 - [x] Publish validation and remaining controller requirements.
+
+- [x] Add durable encrypted per-allocation platform SSH keys and isolated provider registration.
+- [ ] Establish authenticated host-key pinning and deliver protected runtime inputs.
