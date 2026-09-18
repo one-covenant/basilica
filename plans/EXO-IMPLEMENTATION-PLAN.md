@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority, durable billing, strict provider cleanup and settled rental archival; API migrations 035–041; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intent/catalog/allocation, provider cleanup, billing delivery and atomic archival implemented; background controller, unpaid-tail policy and host/runtime integration pending | `b8b2786e3`; 806 API unit, 190 owned integration/transport and 18 schema cases passed; strict API Clippy and 42-commit secret scan passed; prior cleanup CI 35370797461 green; exact-head CI 35373783587 queued; instruction-contract workflow green |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority, fresh purchase admission, durable billing, strict cleanup and settled archival; API migrations 035–041; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives and balance-checked submission implemented; background controller, unpaid-tail policy and protected host/runtime integration pending | `b2c4ab400`; 1,079 unit and 198 owned integration/transport cases passed, plus focused expiry checks; strict API/aggregator Clippy and 43-commit secret scan passed; prior CI revocation-test failure corrected; exact-head CI 35376253486 queued; instruction-contract workflow green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -2555,3 +2555,94 @@ agent review. Previous cleanup CI 35370797461 is green.
 Exact-head [CI 35373783587](https://github.com/one-covenant/basilica-backend/actions/runs/35373783587)
 is queued; instruction-contract workflow 35373782938 passed. Existing PR 1872
 now includes the archival, generic-teardown boundary and post-write lease checks.
+
+### 2026-09-18 — fresh purchase balance contract (CO reservation)
+
+CO owns API lifecycle allocation/funding, the aggregator managed submission
+interface and their owned fixtures. No migration or public protocol change is
+reserved. Preparation may persist without checking funds; provider dispatch must
+require a distinct guard obtained from a fresh one-hour balance check over exact
+accepted, marked-up CPU/RAM/storage rates. The existing billing client performs
+that bounded read outside database locks. The permit binds the entire request and
+current lifecycle lease, expires 30 seconds after a pre-read database timestamp,
+and is checked after locks and after writes. It is private, process-local and not
+serializable. A plain preparation guard cannot satisfy submission.
+
+Stale/deleted authority, changed terms, insufficient balance, billing uncertainty
+and expired evidence cannot purchase. Already submitted/observed allocations use
+reconciliation independently of current funds; they never repeat purchase. This
+is admission, not a fund/capacity reservation: concurrent spending can still
+exhaust an account and requires the existing metering/cleanup policy. No background
+controller or paid launch is enabled by this increment.
+
+The previous archival commit's hosted CI 35373783587 completed with one failure
+in `revocation_cancels_idle_and_backpressured_provider_connections`; its managed
+archival/schema/owned database lanes passed. The old assertion required at least
+three authority checks, although the successful checks before revocation depend
+on scheduling. CO also owns this bounded test correction: require an observed
+revoked authority check, provider-connection cancellation and an authentication
+error. It does not weaken or change gateway runtime behavior. The funding commit
+will carry this correction and receive its own complete CI run.
+
+### 2026-09-18 — fresh purchase admission implementation and validation
+
+`submit_managed_cpu` now requires `ManagedCpuDispatchGuard`, distinct from the
+preparation guard. The production API creates its private `AgentDispatchGuard`
+only through `AgentAllocationGuard::fund_dispatch`, which validates the current
+create lease, accepted quote, connection, stable resource and exact prepared
+request before and after a bounded billing read. No database locks span that RPC.
+The existing billing client checks one hour of CPU/RAM/storage at the shared exact
+marked-up rates. The whole request and original lease are bound to a database-time
+deadline 30 seconds after preflight; the 10-second billing timeout and later lock
+waits/writes consume that same window. Submission checks freshness after writes,
+so expired evidence cannot commit a dispatch marker or send a purchase.
+
+Preparation still purchases nothing. Already-submitted/observed allocations remain
+reconcilable without fresh balance and never repeat purchase. Insufficient credit,
+unavailable billing and expired evidence have distinct static internal errors.
+This is admission, not a credit reservation or provider-side fencing: concurrent
+spend and already-dispatched calls still require lifecycle reconciliation. Decision
+0015 documents the contract and rollback. No migration/public wire change or
+background worker is added.
+
+Validation passed all 1,079 unit tests (806 API and 273 aggregator) and 198 owned
+integration/transport cases: 145 API (95 lifecycle, 12 catalog, 16 chat including
+the actual Node/Rust adapter, 10 model connections and 12 runtime identities), 23
+allocator, eight billing-client transport and 22 billing database/RPC. The 23
+allocator DB cases ignored in the ordinary unit lane ran in the owned runner;
+nine existing API environment-dependent unit cases remain ignored.
+
+Seven new API funding cases exercise real billing at one microcredit below and
+exactly at the accepted hour, complete request/lease binding, no balance read for
+stale/mismatched/uncertain work, unlocked deletion and journal changes during the
+RPC, bounded stalls and post-write expiry rollback. The final focused rerun of all
+seven also proves the deadline includes time spent waiting for billing: five
+seconds in the read plus 26 seconds in a write expires the original 30-second
+window. A new allocator case rejects each funding error before/after dispatch
+writes with zero provider purchases and a retained prepared journal.
+
+The corrected gateway revocation test passed in the final API unit run. Its former
+CI failure depended on a count of successful periodic checks; it now requires the
+actual revoked check, connection cancellation and authentication error. Strict API
+library/lifecycle-test and aggregator library/all-test Clippy, formatting, changed
+document links and 68 instruction contracts passed. Logs use
+`/tmp/basilica-exo-funding-`: `db.log`, `focused.log`, `unit-final.log`,
+`api-clippy-final.log` and `aggregator-clippy.log`. Owned PostgreSQL fixtures were
+removed after the runs. Native test binaries briefly paused at macOS's loader;
+the confirmed live processes were allowed to finish without restart.
+
+Backend commit `b2c4ab400162fe199c5af7e9a86938084ff4a260` contains this increment.
+Gitleaks 8.30.1 scanned all 43 committed changes against freshly fetched main with
+no findings. Locked public dependencies remain at `f0e1c972`, with no lockfile
+change. The diff was self-reviewed; no independent agent review ran.
+
+The full G0–G4 goal remains active. Actual background coordination, protected
+platform SSH/host identity and runtime delivery, physical fencing, preservation/
+export and retention policy, model usage, frontend/CLI completion and hosted
+acceptance remain required. No paid resource, live migration, registry publication
+or model request ran. The next lifecycle increment must integrate these prepared
+execution boundaries rather than enabling launch without protected delivery.
+
+Backend commit `b2c4ab400` is pushed and existing PR 1872 reflects this scope.
+Exact-head [CI 35376253486](https://github.com/one-covenant/basilica-backend/actions/runs/35376253486)
+is queued; instruction-contract workflow 35376253261 passed.

@@ -86,3 +86,9 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Atomically archive the owned managed rental with verified cleanup and retain allocation/billing tombstones.
 - [x] Verify settled and never-dispatched cleanup, identity conflicts, retries and rollback under expired authority.
 - [x] Record validation and remaining controller work.
+
+## Fresh purchase balance increment
+
+- [x] Require a distinct balance-checked guard for provider submission while keeping preparation/reconciliation independent.
+- [x] Verify actual billing admission, expired evidence, stale authority, term changes and no purchase on failure.
+- [x] Publish validation and remaining controller requirements.
