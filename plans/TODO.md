@@ -56,3 +56,10 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Add atomic cumulative metering and retained settlement identity over existing rental/credit ledgers.
 - [x] Fence generic billing writers and verify concurrency, interruption, drift, retention and ordinary compatibility on owned PostgreSQL.
 - [ ] Wire a versioned internal RPC/client and lifecycle metering/cleanup; resolve insufficient-credit settlement policy before launch.
+
+
+## Managed metering transport increment
+
+- [x] Add the backend-private versioned RPC, production billing server registration and strict shared-client acknowledgment checks.
+- [x] Verify actual RPC/storage behavior, lost acknowledgment/restart, malformed input/response and bounded single-attempt transport.
+- [ ] Record private routing assumptions and wire metering/settlement into durable lifecycle reconciliation.

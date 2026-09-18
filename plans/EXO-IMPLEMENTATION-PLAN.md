@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority; API migrations 035–039; billing registration/client/pricing/metering and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intents/status/checkpoints, catalog/quotes, guarded allocation, registration/admission and atomic cumulative metering storage implemented; versioned metering RPC/controller, unpaid-tail policy and runtime/cleanup integration pending | `191746490`; 62 billing unit tests, 19 owned database cases, five client transport tests and strict billing all-test Clippy passed; preceding CI 35359251111 green; exact-head CI 35361352158 queued; instruction contracts passed |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority; API migrations 035–039; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intent/catalog/allocation, registration/admission, atomic metering and versioned RPC/client implemented; durable controller/ticking, unpaid-tail policy and runtime/cleanup integration pending | `c61ba302e`; 79 billing/private-protocol unit tests, 22 owned database/RPC cases, eight client transport tests and strict billing/protocol all-test Clippy passed; preceding CI 35361352158 green; exact-head CI 35363037034 queued; instruction contracts passed |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -2207,7 +2207,7 @@ branch changes against freshly fetched main with no findings. Logs use
 `/tmp/basilica-exo-metering-`. The diff was self-reviewed; no independent agent
 review ran. Unchanged API/allocator/runtime-image/schema suites were not rerun
 for this billing-only increment. Exact-head [CI 35361352158](https://github.com/one-covenant/basilica-backend/actions/runs/35361352158)
-is queued; its instruction-contract workflow passed.
+has passed, as has its instruction-contract workflow.
 
 Next, expose this contract through a versioned backend-only metering RPC/client,
 then wire durable lifecycle ticking and confirmed-cleanup settlement. Inspection
@@ -2220,3 +2220,87 @@ identity and delivery, fencing/cleanup, model accounting/conformance, product
 surfaces and real hosted acceptance remain required. No live database, cloud
 purchase, registry publication or paid model request was used. The original
 G0–G4 goal remains active and no acceptance gate is newly complete.
+
+### 2026-09-18 — managed metering RPC contract
+
+CO extends LC ownership to a backend-private `managed_billing.v1` protocol,
+billing gRPC server registration and the shared billing client. `MeterRental`
+requires explicit contract version 1, rental/owner identity, a precise microsecond
+coverage boundary and an explicit tick/settle action. Only trusted internal
+reconciliation can call it; settlement still requires independently proven
+physical cleanup. No new public gateway route or public validator protocol is
+introduced. Existing billing transport/deadline policy and connection are reused.
+
+The response explicitly identifies contract version, rental/owner, committed
+coverage, exact decimal total and optional retained settlement event UUID. The
+client accepts only matching identity/version, valid unrounded credit precision,
+coverage at least as new as a tick, and exact requested coverage plus a settlement
+receipt for settlement. Old-server/unimplemented, malformed acknowledgments and
+transport failures never downgrade to generic finalization or trigger automatic
+mutation retry. Only a durable controller may retry the same request. Errors are
+static: malformed input, conflicting/unavailable coverage, insufficient credits
+and storage failure are distinct without exposing SQL/provider details.
+
+
+### 2026-09-18 — managed metering RPC and client implemented
+
+The previous goal turn made concrete progress by publishing atomic metering and
+settlement storage. Its exact-head CI 35361352158 is now green. Backend commit
+`c61ba302e75cad57a8b7d96f8183ecf816d3642a` implements the private transport
+contract above. The production billing server registers and health-reports the
+new service, with 16 KiB message limits. The existing shared client uses the same
+lazy channel and bounded transport for plain/TLS configuration. Public validator
+protocols, dependency revisions, Cargo.lock, infrastructure and migrations are
+unchanged; the private protocol manifest description was updated.
+
+Request validation precedes storage and requires version 1, a non-nil rental ID,
+bounded owner, exact microsecond timestamp in protobuf range, and explicit action.
+Static gRPC statuses distinguish invalid input, state/ownership conflict,
+insufficient credits and storage failure without returning SQL or request text.
+The client verifies identity/version, precise decimal credit bounds, sufficient
+tick coverage, and exact settlement coverage plus a retained non-nil receipt.
+Old servers and malformed acknowledgments fail closed. No automatic mutation
+retry or legacy-finalization fallback is introduced. Durable reconciliation must
+retain the identity and exact verified cleanup timestamp across explicit retries.
+
+Source inspection confirms the maintained external billing ALB forwards only
+`/basilica.billing.v1.BillingService/*`; it does not route the new managed path.
+Use private service discovery under the existing internal billing trust boundary.
+This is configuration evidence, not a live network-isolation test. No public
+user/guest route or caller authentication mechanism is added. Hosted acceptance
+must verify actual access restrictions before launch.
+
+Review also found that the generic processor delegates telemetry completion to
+the handler. Simply ignoring a historical managed frame would leave it pending
+forever. The handler now marks that frame processed without charging, and a real
+stored-event regression proves it leaves the pending queue.
+
+Final validation passed: 17 backend-protocol and 62 billing unit tests (79 total,
+0.00s each after a 32.32s build), eight hermetic loopback transport cases (4.01s
+after a 1m10s build), and 22 owned PostgreSQL/RPC cases (2.90s after a 29.88s build).
+Three new transport cases reject default/wrong version, identity, timestamp,
+precision and receipt acknowledgments; reject an old server; and prove one
+attempt with a propagated deadline. Three new database/RPC cases exercise the
+production billing server/typed client, service restart and terminal replay,
+malformed/oversized input and wrong owner without writes, insufficient credits,
+sanitized storage errors, and a response lost after a real commit with exactly
+one debit across explicit retry. Fixtures are explicit fault injectors, not
+provider/model acceptance evidence. The owned runner cleaned up its cluster.
+
+Strict billing/private-protocol library/all-test Clippy passed (4.39s final run),
+formatting, diff checks, changed-document links and 68 instruction contracts
+passed. Initial Clippy findings were oversized synchronous Status results and an
+unused test import; static parser errors and the stored-event assertion resolved
+them. Gitleaks 8.30.1 scanned all 39 committed branch changes against freshly
+fetched main with no findings. Logs use `/tmp/basilica-exo-metering-rpc-`.
+The diff was self-reviewed; no independent agent review ran. Unchanged
+API/allocator/runtime-image/schema suites were not rerun. Exact-head hosted
+[CI 35363037034](https://github.com/one-covenant/basilica-backend/actions/runs/35363037034)
+is queued; its instruction-contract workflow passed.
+
+The lifecycle controller still must call registration and this RPC, tick from
+dispatch durably, prove cleanup and preserve the settlement boundary. Outstanding
+credit-tail policy, protected host identity/delivery, fencing, model accounting,
+product surfaces and hosted G0–G4 acceptance remain required. No existing database,
+cloud purchase, registry publication or paid model request was used. The full
+goal remains active; no acceptance gate is newly complete.
