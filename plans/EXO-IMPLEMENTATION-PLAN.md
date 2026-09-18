@@ -262,7 +262,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup v1; LC delivery and CT pairing for final wiring | Pinned image, atomic source seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery and grant rotation implemented; lifecycle, interrupted scheduling, export and healthy checkpoints pending | `ff8e6e16`; 11 baseline + 6 entrypoint tests and real Linux container replacement passed; hosted CI pending; prior component evidence below |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup and interrupted scheduling v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery, grant rotation and interrupted-task holds implemented; lifecycle, export and healthy checkpoints pending | `80876011`; 43 native scheduler + 3 real process tests, final Linux image interruption/replacement tests passed; CI 35310209617 pending; prior image CI 35308537209 green |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
@@ -878,13 +878,67 @@ Act validates the graph; the Docker smoke supplies actual local Linux execution.
 The diff was self-reviewed; no independent subagent review ran. Pinned Gitleaks
 8.30.1 scanned all 21 backend branch commits with no leaks. Backend `ff8e6e16`
 is pushed; [hosted CI 35308537209](https://github.com/one-covenant/basilica-backend/actions/runs/35308537209)
-has been dispatched for that exact head and remains pending. The new required
-image job repeats build and replacement on CI Linux; no image publication occurs.
+completed successfully for that exact head, including both required Exo jobs
+and the full workflow. The new image job built and verified replacement on CI
+Linux; no image publication occurred.
 
 These tests do not prove real model/tool turns, chat readiness, scheduled side
 effects, export, healthy-checkpoint registration, hosting filesystem suitability,
 lifecycle generation fencing or G1 acceptance. Interrupted-task handling and
-export remain the next runtime work; LC/MG/CT/FE/SDK integration remains required.
+export remain open at that revision; LC/MG/CT/FE/SDK integration remains required.
+Backend `808760119d323b59d47632610159fc1b36bfcb17` implements interrupted
+scheduling v1, frozen in plan commit `c0de74f9`. The seventh upstream patch migrates
+task schemas 0–2 to schema 3 without discarding retained leases. Expiry never
+permits a second claim. Startup, under the runner OS lock, records the original
+lease, due slot and detection time in a single durable task update before new
+work or pending wakeups. Interrupted tasks remain visible even when already
+disabled, without changing the enabled flag, command, results or schedule. Review
+and explicit removal/recreation are required before new work; the existing bounded
+Once/Skip/All policy still governs never-claimed missed slots. Private temporary
+records are fsynced before rename and parent-directory sync; directory creation
+is synced before claims authorize execution. The operating guide and decision
+`0006-managed-exo-interrupted-schedules.md` document these boundaries.
+
+Validation passed: 43 native scheduler tests (1.00s), both runner lock/key-selection
+tests, and three actual CLI/scheduler process tests (7.959s) on the Mac host.
+The process test executes a local command until a durable side effect is observed,
+proves a competing runner cannot mutate its claim, kills the owned process group,
+and starts replacement twice without command replay. It also checks an expired
+schema-2 claim and refusal of unsupported schema before other due work is claimed.
+Native cases cover live/expired leases, preserved result metadata, repeated startup,
+default visibility/owner filtering, private atomic publication, failed replacement,
+and unchanged missed policies. Source preparation's three tests passed, and the
+prepared seven-patch Git diff exactly matched the tested source. Rust 1.97.1 locked
+CLI/scheduler builds and scoped executor/runner Clippy with `-D warnings` passed.
+TypeScript typechecking and scheduler-tool Oxlint passed. Regressions passed:
+12 service, 16 rebuild and six entrypoint tests. Python compilation, rustfmt checks,
+Actionlint, selected runtime-job Act dry-run, document links, instruction contracts
+and diff checks passed. The diff was self-reviewed; no independent subagent review
+ran. Gitleaks 8.30.1 scanned all 22 backend branch commits with no leaks.
+
+The final local Linux/arm64 image is
+`sha256:40a3ea7a9fab5e4ba9644cef5cb9a3de80c0259a54ff959d282c205802a7d983`,
+size 4,902,259,436 bytes, baseline manifest SHA-256
+`66994d3fc1a599bc0d6dec612d356535759527ed95886b1887bd38df11978b01`.
+Its delivered patch and process-test hashes matched the final source. Frozen pnpm
+install, TypeScript checking, six guardian tests and release executable compilation
+passed during build. Under UID/GID 10001, read-only root, dropped capabilities,
+no privilege escalation and no external networking, all three interruption tests
+passed (0.265s), followed by both real renewal/service/container replacement cycles
+(46.705s and 2.992s, including checks and shutdown). State/source/key/configuration
+preservation and graceful exit 143 passed. All owned smoke containers and volume
+were removed. No registry image was published.
+
+Backend `80876011` is pushed;
+[hosted CI 35310209617](https://github.com/one-covenant/basilica-backend/actions/runs/35310209617)
+is dispatched for the exact head and remains pending. The required native runtime
+job now includes scheduler and process tests; the image job also exercises the
+interruption test before replacement. Previous image head `ff8e6e16` completed
+full hosted CI successfully. These are local/component interruption guarantees,
+not hosted generation fencing, normal schedule-to-conversation/model delivery or
+exactly-once wakeups. Export and healthy-checkpoint/lifecycle integration remain
+open; no G0–G4 gate is claimed.
+
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Lifecycle reconciliation/API wiring, gateway accounting/conformance,
 chat, product UI, CLI, current required CI, and G0–G4 remain incomplete.
