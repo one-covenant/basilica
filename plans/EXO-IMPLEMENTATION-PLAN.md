@@ -1166,14 +1166,80 @@ contracts, relative document links and diff checks passed. The diff was self-rev
 no independent subagent review ran. Gitleaks 8.30.1 scanned all 26 backend branch
 commits against freshly fetched main with no leaks before push.
 [Hosted CI 35319809436](https://github.com/one-covenant/basilica-backend/actions/runs/35319809436)
-is dispatched for the exact pushed head and remains pending. The preceding
-operation-status commit's hosted CI is now confirmed successful above.
+completed successfully for the exact pushed head. The preceding operation-status
+commit's hosted CI is also confirmed successful above.
 
 This increment provides durable worker writes; the actual reconciler still must
 verify external resource ownership, fence writers, run runtime helpers, deliver
 grants, validate artifacts and obtain health/billing evidence. Healthy-checkpoint
 registration, provider/runtime adapters, quote/allocation/accounting, the remaining
 API surfaces, chat, product UI, CLI and hosted acceptance remain required.
+
+Backend `3d2a27c6c354b57e5f3953311a38ae38455ca354` implements instance reads v1,
+frozen in plan commit `d82694e7`. `GET /agent-instances` and
+`GET /agent-instances/{id}` are now registered in the account-protected route group,
+with owner checks and no additional OAuth scope. They require only the database
+and return the existing shared page/instance DTOs with `Cache-Control: no-store`.
+Lists include deletion still in progress and omit completed deletions; owned
+deletion tombstones remain addressable by ID even after connection deletion.
+Descending timestamp/UUID keyset pagination defaults to 50 and allows 1–100.
+Cursor payloads are bounded and reject malformed/extended-year timestamps before
+PostgreSQL. Unknown/duplicate query fields, invalid UUIDs and invalid UTF-8 paths
+produce static errors without echoing caller input.
+
+Each read uses one SQL snapshot for owned instance metadata, safe model label,
+recorded costs/persistence, quote lifetime and the newest 20 registered checkpoint
+choices. Until-deleted instances have no expiry; quote expiry is not reused as a
+lifetime. Checkpoint compatibility requires a known exact schema match and does
+not imply availability or enable recovery. Typed projection excludes backing
+resource IDs, credentials, grants, leases and private artifact fields. Corrupt
+stored typed metadata yields a static internal error only for the owner; foreign
+and missing IDs remain indistinguishable. Reads do not mutate operations, retries,
+grants, health or capability state. Existing Rust SDK `list_agents`/`get_agent`
+methods were inspected and match these routes and DTOs; no public SDK change or
+new dependency revision was needed.
+
+Seven new actual PostgreSQL/HTTP-handler tests cover shared response decoding,
+safe field projection, unchanged runtime state, owner isolation, missing/foreign
+errors, query override rejection, empty/default/bounded pages, same-timestamp
+ordering, cursor-row deletion with concurrent newer insertion, malformed cursors,
+path/extractor errors, deletion/tombstone behavior, connection deletion, checkpoint
+ownership/bounds/order/schema compatibility and corrupt metadata. Account identity,
+prices, persistence, registered checkpoints and cleanup observations are explicit
+fixtures, not hosted authentication, live quotes, verified runtime artifacts or
+billing settlement. The initial run exposed a test's incorrect timestamp-normalization
+location and confirmed that extended cursor dates need pre-database rejection;
+the corrected final suite passed.
+
+Final validation used Rust 1.97.1, the unchanged locked graph, two build jobs,
+explicit Mac compiler/SDK paths and `NO_K8S_TESTS=1`. The database runner passed
+41 lifecycle/status/worker/read tests (2.30s), ten connection tests (0.38s) and 12
+runtime-identity tests (0.82s), with successful owned-cluster cleanup; its final
+build took 2m13s. The full API unit suite passed 795 tests with nine existing
+ignored tests (5.59s; build 3m28s), including new scope/inventory and OpenAPI
+contract tests. Scoped Clippy with `-D warnings` passed (1m37s). All 16 schema
+checks passed (2.572s). Commands were `python3 scripts/exo/tests/run_lifecycle_db.py`,
+`cargo test --locked -p basilica-api --lib`, `cargo clippy --locked -p basilica-api
+--lib --test agent_lifecycle_db --test model_connections_db --test runtime_identities_db
+-- -D warnings`, and `python3 scripts/exo/tests/test_schema.py`.
+
+`cargo run --locked -p basilica-api --bin gen-openapi` regenerated both tracked
+schemas (3m37s build). A structural comparison confirmed exactly two added paths
+and eleven added schemas, with every previous path, schema and other metadata
+unchanged. Utoipa inlines the page item schema; it was checked equal to the named
+`AgentInstance` schema. Public/private output now contains 70/81 paths and 146/163
+schemas respectively. Formatting, instruction contracts, relative documentation
+links and diff checks passed. The diff was self-reviewed; no independent subagent
+review ran. Gitleaks 8.30.1 scanned all 27 backend branch commits against freshly
+fetched main with no leaks before push.
+[Hosted CI 35322295185](https://github.com/one-covenant/basilica-backend/actions/runs/35322295185)
+is dispatched for the exact pushed head and remains pending. The preceding worker
+persistence commit's hosted CI is confirmed successful above.
+
+The owner read surface is implemented; lifecycle mutation/quote/template/log
+surfaces, actual reconciliation and runtime adapters, healthy-checkpoint
+registration, model accounting/conformance, chat, frontend/CLI integration and
+hosted acceptance remain required. No deployment or provider operation ran.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Lifecycle reconciliation/API wiring, gateway accounting/conformance,
