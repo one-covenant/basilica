@@ -932,9 +932,10 @@ mod tests {
         );
         // A non-terminal poll carries neither field: they stay absent (the
         // Python fallback keys off that), and re-serializing omits them.
-        let live: RlRevisionResponse =
-            serde_json::from_str(r#"{"revision":"anchor-0008","state":"Loading","submittedAt":"t"}"#)
-                .unwrap();
+        let live: RlRevisionResponse = serde_json::from_str(
+            r#"{"revision":"anchor-0008","state":"Loading","submittedAt":"t"}"#,
+        )
+        .unwrap();
         assert!(live.rejected_reason.is_none());
         assert!(live.rejected_detail.is_none());
         let v = serde_json::to_value(&live).unwrap();
