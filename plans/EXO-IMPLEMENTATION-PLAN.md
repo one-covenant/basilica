@@ -145,7 +145,7 @@ Service execution v1 wraps image-owned `services.py` with `runtime_identity.py` 
 
 Managed rebuild v1 is opt-in until image assembly supplies the pinned build tools. In managed mode the existing rebuild tool publishes a private, fsynced guardian update and never launches a detached guardian. The foreground owner serializes queued requests, records phases durably, runs locked Rust build/tests and TypeScript checking with bounded cancellation, and copies the executable pair into a unique immutable-by-convention candidate directory. Build failure preserves running services. Successful validation requests graceful drain with a bounded deadline; failed or interrupted drain fails the service generation rather than restarting over uncertain in-flight work. After both runners exit successfully, the owner atomically selects a digest-checked binary pair and starts it with unchanged canonical state. Selection and process survival do not establish model/chat readiness or a healthy recovery checkpoint. Nonterminal claimed requests found after supervisor restart fail as interrupted and are never automatically replayed. The selected candidate persists across ordinary supervisor restarts; immutable baseline and compatible code/dependency checkpoints remain separate required recovery work. No detached restart loop, lock-inode deletion or process-name matching is permitted.
 
-Code checkpoint/recovery v1 captures source, installed source-tree dependencies and the selected executable pair; it excludes canonical `.exo`, Git administration and the rebuild `target` cache. Internal relative symlinks are preserved; external/special files fail capture. A versioned file-integrity manifest is encrypted with the payload using a checkpoint-specific derived key and authenticated instance/source/baseline/state-schema context. Authentication completes before extraction. LC must supply its authoritative current state-schema label and only register health-verified checkpoints; the artifact helper does not infer schema changes made by arbitrary user code or turn a capture into a healthy checkpoint. Recovery requires the same instance/key/source and compatible declared schema. It holds the service/bootstrap lock, stages verified code beside the source, retains the replaced checkout, selects the verified binary pair and journals each transition under the durable operation ID. Services refuse startup while recovery is pending. Same-operation retries resume interrupted renames or return the completed result; changed checkpoint IDs conflict. Canonical history, schedules, artifacts, binding and master key are never restored from a code checkpoint. Stable private parent directories with local rename/fsync semantics, lifecycle fencing and post-restore readiness remain required; packaging and hosted acceptance are separate gates.
+Code checkpoint/recovery v1 captures source, installed source-tree dependencies and the selected executable pair; it excludes canonical `.exo`, Git administration and the rebuild `target` cache. Internal relative symlinks are preserved; external/special files fail capture. A versioned file-integrity manifest is encrypted with the payload using a checkpoint-specific derived key and authenticated instance/source/baseline/state-schema/OS/architecture context. Authentication completes before extraction. LC must supply its authoritative current state-schema label and only register health-verified checkpoints; the artifact helper does not infer schema changes made by arbitrary user code or turn a capture into a healthy checkpoint. Recovery requires the same instance/key/source and compatible declared schema. It holds the service/bootstrap and both runner locks, stages verified code beside the source, retains the replaced checkout (including a root replaced by a file or symlink), recreates missing source without resetting state, selects the verified binary pair and journals each transition under the durable operation ID. Services refuse startup while recovery is pending. Same-operation retries resume interrupted renames or return the completed result; changed checkpoint IDs conflict. Canonical history, schedules, artifacts, binding and master key are never restored from a code checkpoint. Stable private parent directories with local rename/fsync semantics, lifecycle fencing and post-restore readiness remain required; packaging and hosted acceptance are separate gates.
 
 MG fixes request protocol, owner/runtime identity, destination/model allowlist, issuance/revocation, rotation and usage semantics. CT fixes message IDs/acknowledgments, session roles/expiry, reconnect, channel identity, origins and transport schema. A URL alone is not an adequate contract. FE/SDK obtain chat access only through owner-authorized operations.
 
@@ -256,7 +256,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap/service/rebuild v1 for final wiring | Pinned source, canonical bootstrap, identity renewal, foreground supervision and opt-in managed rebuilds pushed; image/checkpoint/recovery integration pending | `8c9b70fdb`; 16 rebuild tests, 12 service tests, 6 guardian tests, real locked build/68 CLI/2 scheduler pipeline; earlier bootstrap/adapter/source/renewal evidence below |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Bootstrap/service/rebuild/recovery v1 for final wiring | Pinned source, bootstrap, renewal, foreground supervision, managed rebuilds and encrypted code recovery pushed; image/lifecycle/healthy-checkpoint integration pending | `d2489a38`; 24 recovery tests, 17 bootstrap/12 services/16 rebuild regressions; earlier native build and runtime evidence below |
 | LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migration 035 | G0; G1 for runtime adapter | Durable create/delete intent and leases pushed; reconciler pending | `29109f046`, `fec2645fc`; 6 real PostgreSQL lifecycle tests |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | Unassigned | Section 4 proposed paths; CO confirms at G0 | G0; RT pairing integration | Not started | None |
@@ -722,13 +722,60 @@ the subsequent complete pipeline passed. Scoped scheduler Clippy passed with
 Pinned Gitleaks found no leaks across all 18 backend commits. Required CI now adds
 the managed TypeScript and rebuild suites. Hosted CI
 [35288390276](https://github.com/one-covenant/basilica-backend/actions/runs/35288390276)
-is running for the exact pushed head; its result remains pending.
+completed successfully for that exact pushed head.
 
 Source and installed node dependencies remain writable; binary selection is not
 an atomic source/dependency snapshot. Image assembly/seeding and scoped identity
 delivery/rotation, immutable baseline and compatible healthy code/dependency
 checkpoints, out-of-band recovery, interrupted-task policy, storage sizing/retention
 and export remain required runtime work. No paid model or cloud acceptance ran.
+
+Backend `d2489a38ca1df429eca675327d83d90ba3d5920f` implements the frozen
+code checkpoint/recovery v1 artifact contract from plan commit `9310f9ce`.
+Trusted image-owned helpers encrypt source, installed dependencies and the selected
+binary pair with a bounded, authenticated integrity manifest. Canonical state and
+the key remain separate. Recovery holds bootstrap and both runner locks, verifies
+instance/baseline/schema/platform binding, and journals durable staging, source
+replacement and binary selection. A startup barrier prevents services from running
+through an incomplete transition. Missing or damaged source roots and incorrect
+state links can be repaired without following or modifying their old targets;
+replaced source is retained. Repeated completed operations preserve later edits.
+
+Validation used actual patched Exo bootstrap records and 24 recovery tests,
+including an actual compiled CLI/scheduler round trip with service restart.
+Tests cover ciphertext/context tampering, schema/platform/instance mismatch,
+missing/replaced keys, unsafe paths and chained symlinks, corrupt staged source
+and selection journals, active/direct-runner exclusion, every durable journal
+boundary, interruption immediately after both renames, source-parent fsync failure,
+idempotency/conflicts and preservation of newer canonical data. Small executable
+fixtures isolate archive failure cases; they do not claim guest compilation or
+model/tool acceptance. Regressions passed: 17 bootstrap, 12 foreground-service and
+16 rebuild tests. Commands use `EXO_SOURCE=/tmp/basilica-exo-upstream`; recovery
+runs in the owned Python environment installed from the hash-locked
+`scripts/exo/requirements-runtime.txt`. Final recovery suite: 24 tests in 17.116s.
+
+The cryptography dependency is pinned to 50.0.1 with complete transitive hashes;
+`uvx pip-audit --no-deps --disable-pip -r scripts/exo/requirements-runtime.txt`
+reported no known vulnerabilities. Earlier pins were rejected after the audit.
+Python compilation, changed-document relative links, `just instructions-check`,
+Actionlint and the selected reusable-workflow Act dry-run passed. The exact Act
+command was `act workflow_call -W .github/workflows/rust-build-test.yml -j
+managed-exo-bootstrap --input rust_selected=true -n`; this validates the graph,
+not Linux execution. The required job now installs the locked Python environment
+and runs recovery tests after the existing compiled runtime suites. No Rust source
+changed in this increment; existing native evidence and hosted CI remain distinct.
+The diff was self-reviewed; no independent subagent review ran. Pinned Gitleaks
+8.30.1 scanned all 19 backend branch commits with no leaks.
+Hosted CI [35304940178](https://github.com/one-covenant/basilica-backend/actions/runs/35304940178)
+is running for this exact pushed head; its Linux/runtime and full branch checks
+remain pending.
+
+Checkpoint creation is not healthy-checkpoint registration. The lifecycle owner
+still must fence detached/remote writers, supply an authoritative schema label,
+renew scoped access and verify application readiness. Immutable baseline/image
+assembly, lifecycle integration, export, interrupted-schedule policy, storage
+retention/accounting and real hosted recovery remain incomplete. No G0–G4 gate
+is claimed by these component tests.
 
 No paid model call, cloud resource, or hosted authenticated acceptance has been
 performed. Runtime image/service integration, lifecycle reconciliation/API wiring,
