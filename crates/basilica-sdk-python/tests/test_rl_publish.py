@@ -159,14 +159,53 @@ def test_wait_until_active_maps_terminal_states(handle):
     assert rec["state"] == "Active"
 
     core.revision_states["bad"] = [
-        {"state": "Rejected", "rejectedReason": "RevisionStateMismatch"}
+        {
+            "state": "Rejected",
+            "rejectedReason": "RevisionStateMismatch",
+            "rejectedDetail": "state digest mismatch on replica 2",
+        }
     ]
-    with pytest.raises(RevisionRejected, match="RevisionStateMismatch"):
+    with pytest.raises(RevisionRejected) as ei:
         handle.wait_until_active("bad", poll_interval=0.01)
+    # Both the class token and the human detail pass through verbatim.
+    assert "RevisionStateMismatch" in str(ei.value)
+    assert "state digest mismatch on replica 2" in str(ei.value)
 
     core.revision_states["old"] = [{"state": "Superseded"}]
     with pytest.raises(RevisionSuperseded):
         handle.wait_until_active("old", poll_interval=0.01)
+
+
+def test_non_integrity_rejection_is_not_reported_as_digest_mismatch(handle):
+    # The incident (P4): a shim 502 is classified RevisionApplyFailed by the
+    # operator, which has nothing to do with digests. The old code defaulted
+    # the message to "digest mismatch", sending debugging at the integrity
+    # gate instead of the engine. The reason and detail must pass through and
+    # the wording must NOT claim a digest mismatch.
+    core = handle._test_core
+    core.revision_states["shim"] = [
+        {"state": "Loading"},
+        {
+            "state": "Rejected",
+            "rejectedReason": "RevisionApplyFailed",
+            "rejectedDetail": "consumer shim returned HTTP 502",
+        },
+    ]
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("shim", poll_interval=0.01)
+    msg = str(ei.value)
+    assert "RevisionApplyFailed" in msg
+    assert "consumer shim returned HTTP 502" in msg
+    assert "digest mismatch" not in msg
+
+    # No reason reported: fall back to a neutral message, still never a
+    # digest mismatch.
+    core.revision_states["mystery"] = [{"state": "Rejected"}]
+    with pytest.raises(RevisionRejected) as ei2:
+        handle.wait_until_active("mystery", poll_interval=0.01)
+    msg2 = str(ei2.value)
+    assert "was rejected by the fleet" in msg2
+    assert "digest mismatch" not in msg2
 
 
 def test_revision_grammar_is_validated_before_any_work(handle):
@@ -275,3 +314,28 @@ def test_create_policy_validates_credential_exclusivity_client_side():
         ns.create_policy("p", access_key_id="AK", **common)
     with pytest.raises(ValueError, match="credentials are required"):
         ns.create_policy("p", **common)
+
+
+def test_s3_client_disables_default_checksums_for_r2_compat(handle, monkeypatch):
+    # #1866: boto3 >= 1.36 attaches integrity checksums by default
+    # (request_checksum_calculation="when_supported"), which R2 and other
+    # S3-compatible stores reject on multipart completion (InvalidPart). The
+    # upload client must build with a botocore Config that only adds checksums
+    # when the operation requires them. Fake boto3 so the test needs no
+    # network and no real credentials; botocore is still needed for Config.
+    pytest.importorskip("botocore")
+    captured = {}
+
+    class _FakeBoto3:
+        def client(self, *args, **kwargs):
+            captured["kwargs"] = kwargs
+            return object()
+
+    monkeypatch.setattr("basilica.publisher._boto3", lambda: _FakeBoto3())
+    handle._s3 = None  # force a rebuild through the fake
+    handle._s3_client()
+
+    cfg = captured["kwargs"].get("config")
+    assert cfg is not None, "the client must be built with an explicit botocore Config"
+    assert cfg.request_checksum_calculation == "when_required"
+    assert cfg.response_checksum_validation == "when_required"

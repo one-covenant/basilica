@@ -542,6 +542,18 @@ pub struct RlRevisionResponse {
     /// `Validated` | `Loading` | `Active` | `Rejected` | `Superseded`.
     pub state: String,
     pub submitted_at: String,
+    /// Set only when `state` is `Rejected`: the operator's failure class
+    /// token (`RevisionApplyFailed`, `RevisionStateMismatch`,
+    /// `RevisionArtifactMismatch`, or a manifest-refused class). A
+    /// non-integrity reject (for example a shim 502 from an unreachable
+    /// serving endpoint) is `RevisionApplyFailed`, so this must reach the
+    /// caller verbatim rather than being flattened into "digest mismatch".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejected_reason: Option<String>,
+    /// Set only when `state` is `Rejected`: the human-readable detail behind
+    /// `rejected_reason` (for example the shim's 502 body).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejected_detail: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -897,6 +909,37 @@ mod tests {
         .unwrap();
         assert_eq!(rec.parent_revision.as_deref(), Some("step-0000"));
         assert_eq!(rec.state, "Validated");
+    }
+
+    #[test]
+    fn rejected_revision_carries_reason_and_detail() {
+        // A non-integrity reject (a shim 502 from an unreachable serving
+        // endpoint) is classified RevisionApplyFailed, not a digest mismatch.
+        // The reason token and detail must survive the deserialize so the SDK
+        // reports the failing subsystem instead of always the integrity gate.
+        let rec: RlRevisionResponse = serde_json::from_str(
+            r#"{"revision":"anchor-0007","state":"Rejected",
+                "submittedAt":"2026-09-07T16:00:00Z",
+                "rejectedReason":"RevisionApplyFailed",
+                "rejectedDetail":"consumer shim returned HTTP 502"}"#,
+        )
+        .unwrap();
+        assert_eq!(rec.state, "Rejected");
+        assert_eq!(rec.rejected_reason.as_deref(), Some("RevisionApplyFailed"));
+        assert_eq!(
+            rec.rejected_detail.as_deref(),
+            Some("consumer shim returned HTTP 502")
+        );
+        // A non-terminal poll carries neither field: they stay absent (the
+        // Python fallback keys off that), and re-serializing omits them.
+        let live: RlRevisionResponse =
+            serde_json::from_str(r#"{"revision":"anchor-0008","state":"Loading","submittedAt":"t"}"#)
+                .unwrap();
+        assert!(live.rejected_reason.is_none());
+        assert!(live.rejected_detail.is_none());
+        let v = serde_json::to_value(&live).unwrap();
+        assert!(v.get("rejectedReason").is_none());
+        assert!(v.get("rejectedDetail").is_none());
     }
 
     #[test]

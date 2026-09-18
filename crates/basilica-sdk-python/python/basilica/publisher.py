@@ -49,11 +49,19 @@ DEFAULT_ANCHOR_EVERY = 30
 
 
 class RevisionRejected(BasilicaError):
-    """The fleet refused this revision (digest mismatch on some replica).
+    """The fleet refused this revision.
+
+    The platform records why on the revision status as a class token
+    (``rejectedReason``) plus human text (``rejectedDetail``): an integrity
+    failure (a state or artifact digest mismatch) or an apply failure with no
+    integrity implication (for example an unreachable serving endpoint). This
+    exception surfaces that reason and detail verbatim, so the report points
+    at the subsystem that actually failed rather than always at the integrity
+    gate.
 
     The previous revision keeps serving everywhere; the artifact and manifest
     remain for post-mortem. Publishing a corrected revision is the way
-    forward — a Rejected record is terminal.
+    forward: a Rejected record is terminal.
     """
 
 
@@ -215,12 +223,27 @@ class RlPolicyHandle:
         (every training step in the tightest loop) and rebuilding the client
         re-resolves credentials and discards the connection pool."""
         if self._s3 is None:
+            from botocore.config import Config  # noqa: PLC0415
+
             self._s3 = _boto3().client(
                 "s3",
                 endpoint_url=self._storage.endpoint,
                 region_name=self._storage.region,
                 aws_access_key_id=self._storage.access_key_id,
                 aws_secret_access_key=self._storage.secret_access_key,
+                # boto3 >= 1.36 attaches integrity checksums by default
+                # (request_checksum_calculation="when_supported"), which R2
+                # and other S3-compatible stores reject on multipart
+                # completion with InvalidPart — the anchor upload is always
+                # multipart at model scale. Only add checksums when the
+                # operation requires them: correct against AWS S3, compatible
+                # with R2. These Config keys exist in the botocore versions
+                # (>= 1.36) that have the default, so no version guard is
+                # needed for the publisher extra's pinned boto3.
+                config=Config(
+                    request_checksum_calculation="when_required",
+                    response_checksum_validation="when_required",
+                ),
             )
         return self._s3
 
@@ -377,7 +400,8 @@ class RlPolicyHandle:
     ) -> dict:
         """Block until the fleet confirms the revision (state ``Active``).
 
-        Raises :class:`RevisionRejected` on a fleet digest mismatch and
+        Raises :class:`RevisionRejected` when the fleet refuses the revision
+        (for the reason the platform reported) and
         :class:`RevisionSuperseded` when a newer revision won the race
         (newest-wins is the platform contract). Times out with
         :class:`BasilicaError` — the revision may still activate later.
@@ -390,9 +414,18 @@ class RlPolicyHandle:
             if state == "Active":
                 return rec
             if state == "Rejected":
+                # Surface the platform's own classification verbatim. The
+                # operator records a reason class token (RevisionApplyFailed,
+                # RevisionStateMismatch, RevisionArtifactMismatch, ...) plus a
+                # human detail. A non-integrity reject (e.g. a shim 502) is
+                # RevisionApplyFailed, NOT a digest mismatch, so never assume
+                # one: fall back to a neutral message when neither is present.
+                reason = rec.get("rejectedReason")
+                detail = rec.get("rejectedDetail")
+                why = ": ".join(p for p in (reason, detail) if p)
                 raise RevisionRejected(
-                    f"revision {rev!r} was rejected by the fleet: "
-                    f"{rec.get('rejectedReason') or 'digest mismatch'}"
+                    f"revision {rev!r} was rejected by the fleet"
+                    + (f": {why}" if why else "")
                 )
             if state == "Superseded":
                 raise RevisionSuperseded(
