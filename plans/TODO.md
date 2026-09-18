@@ -62,4 +62,12 @@ This file tracks planning; it is not an additional specification. No application
 
 - [x] Add the backend-private versioned RPC, production billing server registration and strict shared-client acknowledgment checks.
 - [x] Verify actual RPC/storage behavior, lost acknowledgment/restart, malformed input/response and bounded single-attempt transport.
-- [ ] Record private routing assumptions and wire metering/settlement into durable lifecycle reconciliation.
+- [x] Record private routing assumptions and add durable lifecycle billing delivery/reconciliation functions; background controller integration remains below.
+
+
+## Lifecycle billing delivery increment
+
+- [x] Freeze registration from observed allocation/accepted quote and persist exact pending calls under a separate billing lease.
+- [x] Preserve cleanup time independently of payment and require retained billing coverage/settlement for readiness/cleanup.
+- [x] Verify delivery across lease expiry, lost acknowledgment, completed launch, pending ticks and funding; publish evidence and rollout contract.
+- [ ] Integrate the background lifecycle controller, trusted provider absence proof and retention/export policy before paid launch.

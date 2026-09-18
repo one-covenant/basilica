@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority; API migrations 035–039; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intent/catalog/allocation, registration/admission, atomic metering and versioned RPC/client implemented; durable controller/ticking, unpaid-tail policy and runtime/cleanup integration pending | `c61ba302e`; 79 billing/private-protocol unit tests, 22 owned database/RPC cases, eight client transport tests and strict billing/protocol all-test Clippy passed; preceding CI 35361352158 green; exact-head CI 35363037034 queued; instruction contracts passed |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority and durable billing delivery; API migrations 035–040; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intent/catalog/allocation, registration/admission, atomic metering, RPC/client and billing delivery journal implemented; background controller, unpaid-tail policy and runtime/provider-cleanup integration pending | `bc7260844`; 806 API unit, 174 owned integration/transport and 18 schema cases passed; strict API Clippy and full-range secret scan passed; preceding CI 35363037034 green; exact-head CI 35366731627 queued; instruction-contract workflow green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -2304,3 +2304,84 @@ credit-tail policy, protected host identity/delivery, fencing, model accounting,
 product surfaces and hosted G0–G4 acceptance remain required. No existing database,
 cloud purchase, registry publication or paid model request was used. The full
 goal remains active; no acceptance gate is newly complete.
+
+### 2026-09-18 — durable lifecycle billing delivery contract
+
+CO reserves API migration 040 and `agents/lifecycle/billing` for a durable billing
+call journal. Billing still owns all balances/costs. Enrollment derives immutable
+registration terms from the bound, observed allocation and consumed quote; no
+public request or guest can submit terms. A separate billing lease is necessary
+because paid usage continues after the launch operation becomes terminal.
+
+Each pending register/tick/settle call and timestamp persists before RPC dispatch.
+Lease loss/restart retries the identical call; it never chooses a newer timestamp
+to get past an uncertain result. Responses and retry scheduling require the live
+billing lease. Verified absence is recorded separately under current create/delete
+lifecycle authority, before settlement; database time freezes its first observed
+boundary, prevents new ticks, and preserves it through billing outage/insufficient
+credit and later operation generations. It does not claim billing finalized.
+Only a matching retained settlement acknowledgment permits lifecycle cleanup
+completion. This journal stores coverage/receipts, not cost or a second ledger.
+
+Physical cleanup must still be established by a trusted provider reconciler. This
+increment supplies callable delivery/reconciliation functions but does not enable
+paid launch or a background worker before host/cleanup integration is ready.
+The user's retention preference on insufficient credit is being requested; no
+state-destroying cleanup or debt write-off policy is inferred in this increment.
+
+### 2026-09-18 — lifecycle billing delivery implementation
+
+API migration 040 and `agents/lifecycle/billing` implement the delivery contract
+above. Enrollment checks the observed provider/request/owner against the accepted
+quote and freezes registration, dispatch and provider identity. Independent
+60-second billing leases retain exact pending calls across restart and lost
+acknowledgment, with 30-second error retry. RPCs execute outside locks. Local
+acknowledgment/retry and absence observation recheck authority after writes, so
+expiry during a database trigger cannot commit stale state.
+
+Current create/delete authority can freeze the first database-time absence
+boundary, revoke scoped access and mark cleanup pending independently of payment.
+Already pending ticks resolve before settlement at that boundary. The receipt is
+immutable; cleanup completion cannot rely on a supplied boolean. Every managed
+allocation, including prepared allocations, requires confirmed billing coverage
+before readiness. Billing delivery continues after launch reaches `succeeded`.
+No background worker or provider absence proof is introduced by these functions.
+Decision 0013 and the runtime runbook specify migration order and preservation of
+pending calls/boundaries/receipts through rollback.
+
+Review tightened the SQL settlement constraint to reject NULL coverage and closed
+a prepared-allocation readiness bypass. The first test run used an earlier-built
+library for the new readiness case; the final rebuild includes the fix. Its
+insufficient-credit fixture also initially had no credit account, correctly
+receiving a storage error rather than the insufficient-balance status. The final
+fixture creates a real account with one microcredit before accruing the hour.
+
+Final validation passed: 806 API unit tests (nine existing environment-dependent
+cases ignored), 174 owned integration/transport cases and 18 schema cases. The
+integration total comprises 124 API cases, including all nine new delivery cases
+and actual Node worker/Rust relay, 20 allocator cases, eight client transport
+cases and 22 billing database/RPC cases. Tests prove enrollment/term drift,
+concurrent claims, unavailable service/replaced leases, expiry during acknowledgment
+and absence writes, lost local acknowledgment after actual remote registration and
+debit, pending tick ordering, readiness and continued metering after launch,
+cleanup boundary retention across generations, and settlement after funding.
+Allocator/runtime observations remain explicit fixtures, not provider or model
+acceptance. The full runner completed and removed its owned PostgreSQL cluster.
+
+Strict API library/lifecycle-test Clippy, formatting, diff checks, changed-document
+links and 68 instruction contracts passed. Public dependencies remain locked to
+`f0e1c972` with no lockfile change. Gitleaks 8.30.1 scanned all 40 committed branch
+changes against freshly fetched main with no findings. The diff was self-reviewed;
+no independent agent review ran. Logs use `/tmp/basilica-exo-billing-delivery-`.
+Backend commit `bc7260844537001f5aaa481989dc12d10031b2fd` is pushed. The preceding
+RPC commit's CI 35363037034 is green.
+
+Protected host/runtime delivery, provider absence proof and cleanup integration,
+background reconciliation, insufficient-credit state retention/export policy,
+model accounting, frontend/CLI completion and hosted G0–G4 acceptance remain
+required. No live database, cloud purchase, image publication or paid model call
+was used. No acceptance gate is newly complete; the full goal remains active.
+
+Exact-head hosted [CI 35366731627](https://github.com/one-covenant/basilica-backend/actions/runs/35366731627)
+is queued; its instruction-contract workflow passed. Existing backend PR 1872 now
+reflects durable delivery, validation and remaining integration work.
