@@ -15,3 +15,9 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Add explicit managed-agent CLI routing, quoted launch, operations and safe model-connection input.
 - [x] Verify parsing, resource isolation, replay inputs, terminal outcomes and redaction; run CLI/SDK checks.
 - [x] Record tested CLI scope and remaining integration requirements in the unified plan.
+
+## Chat service increment
+
+- [ ] Implement scoped sessions/runtime pairing and durable, fenced text delivery.
+- [ ] Wire first-frame authenticated WebSockets, owner session issuance, configuration and OpenAPI.
+- [ ] Verify PostgreSQL concurrency/revocation/reconnect and actual local WebSocket behavior; record limits and CI.

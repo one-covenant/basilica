@@ -187,6 +187,30 @@ Chat messages have caller-generated UUIDs and text bounded to 16 KiB UTF-8. Brow
 
 A database-owned runtime connection slot fences older sockets across API replicas. Each user message is claimed durably for one connection before delivery. Transport acknowledgment means that the runtime adapter received the message, never that a model/tool action succeeded. A lost connection after dispatch creates visible uncertain delivery; it never silently replays an action on reconnect. Accepted work that has not been dispatched may be delivered to a replacement socket in the same generation. A lifecycle generation change interrupts old pending work instead of replaying it. Runtime outbound messages may safely retry the same ID because persistence deduplicates them before acknowledgment. Backend replicas consume the shared durable queue/events; process-local socket state is not delivery authority. This is at-most-once inbound dispatch with explicit uncertainty, not an exactly-once model/tool guarantee. The managed runtime adapter must use this protocol and bounded reconnect, preserve outbound IDs, and never print access URLs or acknowledge a send before the service persists it. Real adapter/browser round trips, generation/revocation tests and interrupted-delivery tests are required before chat readiness can be asserted.
 
+The concrete WebSocket path is `/agent-chat`. Authentication is the first JSON
+object `{type:"authenticate",instance_id,access_token,cursor?}`; cursor defaults
+to decimal `"0"`. Thereafter `user` and `assistant` frames contain `message_id`
+(UUID) and `text`; `receipt` contains a user `message_id`; `renew` has no fields
+and is runtime-only. The server emits `authenticated`, durable `event`, mutation
+`ack`, inbound `delivery`, `renewed`, or static `error` frames. Unknown fields,
+roles, oversized frames and noncanonical cursors are rejected. Tokens never occur
+in server event/ack/delivery/error frames. Browser sessions expire in 900 seconds;
+runtime pairing lasts 3600 seconds and may renew only while its existing identity
+and exclusive runtime connection remain valid. Renewal keeps the runtime token
+stable and cannot resurrect an expired/revoked generation. Browser renewal instead
+obtains a fresh account-authorized session.
+
+Events retain decimal sequence cursors and message states `accepted`, `dispatched`,
+`delivered`, `uncertain`, or `interrupted` (legacy `completed`/`failed` history is
+read-only). New message events contain role/text; later state events omit text.
+At most 128 user messages may await dispatch per instance. Runtime connection
+slots use a 15-second database lease, refreshed on transport checks. Expired or
+replaced connection claims become uncertain, never queued again. Generation or
+deletion transitions interrupt old queued/dispatched work transactionally.
+Owner locks serialize event allocation/commit for each instance so cursors cannot
+skip late commits. HTTP upgrades and frames are bounded; first authentication and
+socket writes time out. Periodic database checks propagate revocation while idle.
+
 CO reserves migration 037 for chat session audiences/retries, runtime connection ownership and delivery/event metadata. CT owns new `agents/chat/**`, `api/routes/agent_chat/**` and focused integration tests; CO owns migration, configuration, route/security/OpenAPI and CI wiring; RT owns managed adapter/bootstrap patch integration. Existing worker revocation must revoke both browser and runtime chat audiences. Session/transport implementation, runtime integration and real model/tool acceptance are separate evidence and must be labeled as such.
 
 MG fixes request protocol, owner/runtime identity, destination/model allowlist, issuance/revocation, rotation and usage semantics. CT fixes message IDs/acknowledgments, session roles/expiry, reconnect, channel identity, origins and transport schema. A URL alone is not an adequate contract. FE/SDK obtain chat access only through owner-authorized operations.
