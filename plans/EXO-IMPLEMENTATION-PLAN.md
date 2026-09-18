@@ -52,7 +52,7 @@ No runtime deployment, build, paid model call, or recovery test was performed du
 
 ## 3. Architecture decisions
 
-1. Test local-process Exo inside an existing Basilica CPU deployment first. Choose a dedicated CPU VM if that environment fails the required isolation, self-rebuild, or persistence contract. Docker remains optional.
+1. Test local-process Exo inside an existing Basilica CPU deployment first. Choose a dedicated CPU VM if that environment fails the required isolation, self-rebuild, or persistence contract. Docker remains optional. The 2026-09-18 storage review found missing directory-fsync support and loss of private UID/mode metadata after FUSE hydration. Decision 0010 selects the planned CPU-VM fallback with private local disk; hosted host/runtime acceptance remains required. The unprivileged Exo image runs on that rental; no shared node socket or weakened deployment security is introduced.
 2. One durable managed-agent record links owner, template/version, runtime resource, operation, connection, and persistent state. Reuse the current allocator and billing. A backend worker owns provisioning; browser/CLI closure cannot interrupt it.
 3. Prebuild and pin the baseline/toolchain. Seed a writable per-instance source checkout once. Preserve source changes; do not fetch `main`, reset evolved source, or rebuild the baseline at every launch.
 4. Keep provisioning authority, provider keys, billing and management outside the editable guest. A secret stub is not authentication. Use scoped revocable runtime identity, never a general Basilica account token.
@@ -122,6 +122,42 @@ CO verifies existing naming/casing/auth conventions and produces the exact OpenA
 | Chat access | `POST /agent-instances/{id}/chat-sessions` | Short-lived scoped access, expiry, approved transport URL and revocation; separate from general instance JSON |
 
 Derive ownership from verified auth context, not supplied owner IDs. Freeze request/response casing, HTTP/error envelope, pagination and event types at G0. Proposed create response is HTTP 202 with `instance_id`, `operation_id`, `status_url`. An expired quote requires requoting, not silent repricing.
+
+Catalog/quote v1 uses account-authenticated `GET /agent-templates` (SDK array)
+and `POST /agent-instances/quote` (HTTP 201). An optional approved catalog pins a
+runtime image digest, template revision, recommended size and exact CPU offering
+IDs/dimensions; it enables no guessed default. Models come from the existing
+conformance-approved model catalog. Current offerings must be available, at most
+five minutes old, dimension-matched and resolvable through the public AZ registry.
+Regions use full Basilica AZ codenames; native provider region and raw metadata
+stay private. If the recommended profile is unavailable, the service advertises
+no template rather than recommending an untested substitute.
+
+The initial resource kind is `cpu_rental`, selected using the plan's VM fallback
+after the FUSE incompatibility review. Persistent local `/data` retains source,
+canonical state/key, home and temporary files across container restart/replacement
+on that rental. Host loss, credit exhaustion and rental termination can lose this
+disk. No automatic cross-host restore, process-memory restore, or persistent OS
+package changes are promised. Export before deletion or funding exhaustion.
+Runtime acceptance must still demonstrate these declared guarantees on a real host.
+
+Quotes use current aggregator decimal CPU/RAM/storage rates and existing
+secure-cloud markup. Compute includes CPU/RAM; storage is separate; model usage
+is billed by the connected provider. Existing billing validates one hour of
+resource cost. A quote reserves neither funds nor capacity. Its private versioned
+snapshot records accepted offer, resource dimensions, image and rates without raw
+metadata. Allocation must recheck balance/capacity and exact offer/price binding,
+rejecting change instead of silently repricing. Quote expiry is at most 120 seconds
+and never extends inventory freshness, using database time after ownership locks.
+
+Quote requests use the existing global owner-scoped idempotency namespace, strict
+bounded JSON and no-store responses. Retry preserves original quote and expiry,
+even after expiry or connection deletion; new keys obtain new quotes. Connection
+ownership and active approved model are checked before external reads and again
+before persistence. Migration 038 adds an owned quote reference to retry records;
+consuming launch binds that retry to the instance for lifetime/deletion retention.
+Absent catalog returns 503; configured catalog requires billing, model connections
+and scoped chat. Configuration is not evidence of runtime or provider readiness.
 
 Minimum safe instance fields: stable ID, server-stored name, template/version, phase, desired state, current operation, connection ID/safe model label, cost basis, optional expiry, persistence description, capability flags, and actionable safe error. Runtime resource IDs are implementation metadata with appropriate visibility. Clients must not infer kind from image names or store authoritative identity only in localStorage.
 
@@ -362,9 +398,9 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Section 4 paths confirmed; migrations 035–036 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owned reads, atomic checkpoint metadata registration and five lifecycle mutation routes pushed; quotes and actual reconciliation pending | `67ba2c0bc`; 80 real PostgreSQL and 797 API unit tests, schema checks, generated OpenAPI and scoped Clippy passed; CI 35326738439 green; prior CI 35323743823 green |
+| LC | CO / `basilica-backend-exo` | Section 4 lifecycle/catalog paths confirmed; migrations 035–038 | G0; G1 for runtime adapter | Durable intents/leases, worker outcomes, owned reads, checkpoints, approved CPU catalog and durable quotes pushed; actual allocation/reconciliation pending | `859a3f536`; 106 PostgreSQL/socket tests, 805 API unit tests, 17 schema checks, generated OpenAPI and strict Clippy passed; CI 35346217769 queued; preceding runtime CI 35342366206 green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
-| CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 running |
+| CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTO/SDK and CLI quoted launch, lifecycle, logs and model connections pushed; browser open, export download and hosted parity pending | `f566ee0e`; 349 tests/doctests passed, two existing doctests ignored; strict all-target/all-feature Clippy passed; CI 35334088788 green |
 
@@ -1652,7 +1688,7 @@ graceful shutdown, and encrypted full-state export/restore: 43,840 entries,
 1,158,992,436 ciphertext bytes, 105.885s for the export check. All owned containers
 and volumes were removed. Gitleaks 8.30.1 scanned all 31 branch commits against
 freshly fetched main with no findings before push. Exact-head hosted CI [35342366206](https://github.com/one-covenant/basilica-backend/actions/runs/35342366206)
-is running; its separate instruction-contract workflow already passed. Formatting, 68 instruction contracts, changed-document links,
+completed successfully for the exact pushed commit; its separate instruction-contract workflow also passed. Formatting, 68 instruction contracts, changed-document links,
 Actionlint and Act dry-runs for both changed jobs passed. Act is graph validation,
 not evidence of hosted CI execution. This diff was self-reviewed; no independent
 agent review ran.
@@ -1670,3 +1706,73 @@ reconciliation, verified quotes/catalog and accounting, real model/tool and
 scheduler-during-chat acceptance, passive readiness, frontend and remaining CLI
 flows, retention policy, public ingress and G0–G4 hosted acceptance. The full goal
 remains active with its original scope.
+
+
+### 2026-09-18 — approved CPU catalog and durable quote implementation
+
+This increment implements `/agent-templates` and `/agent-instances/quote` using
+the shared SDK DTOs, account authentication, bounded requests and no-store replies.
+Exact approved profiles select fresh available CPU inventory through the existing
+public AZ registry and secure-cloud pricing markup. Compute/RAM and storage prices
+are separate decimal strings; the existing billing client checks one hour without
+reserving money. Quotes retain a private offer/image/rate snapshot and original
+expiry across owner-scoped retries, with no provider purchase or silent repricing.
+Models come only from the existing conformance-approved catalog. No image,
+profile, price or model is enabled by default.
+
+Decision 0010 records why ordinary deployment storage cannot currently satisfy
+the runtime: the pinned fuser 0.14.0 default does not implement directory fsync,
+and FUSE hydration recreates files with mode 0644 and UID/GID 1000. This conflicts
+with durable directory publication and private UID/GID 10001 state. The planned
+CPU-VM fallback therefore becomes the initial launch contract; existing deployment
+security/storage is unchanged. Local disk persists across managed container
+replacement on that rental. Host loss, termination and credit exhaustion can lose
+it; exports, process-memory limitations and funding/deletion effects are explicit.
+This source review is not a hosted benchmark or runtime acceptance result.
+
+Migration 038 adds owned quote references to retry records. Consuming launch
+attaches the quote retry to the instance for lifetime/deletion retention. Launch
+also rechecks quote expiry after final writes, rolling back the instance,
+operation and retry binding if expiry occurs during the transaction. Quote issuance
+checks current connection ownership/model compatibility on both sides of external
+inventory/billing reads, and checks database-time expiry before commit. Failed
+writes and connection deletion cannot leave a partial quote.
+
+The complete API unit suite passed 805 tests with nine existing ignored tests
+(4.92s). An intervening run exposed an existing race between two environment
+configuration tests writing the same resource-prefix variable; a shared test mutex
+fixes the race without changing production configuration behavior. All 17 schema
+checks passed (2.641s), including quote ownership, uniqueness and retention links.
+The final real PostgreSQL/transport run passed all 106 tests: ten catalog/quote,
+16 chat (including the actual Node worker/Rust relay), 58 lifecycle, ten model
+connection and 12 runtime identity tests. Inventory, balance and account-auth
+inputs in catalog tests are explicit fixtures; the HTTP routes and database writes
+are real. They do not prove provider allocation or a paid model turn.
+
+Strict Clippy passed for the API library and catalog/lifecycle integration targets
+(1m30s). Generated public and private OpenAPI documents contain the authenticated
+SDK array/quote contracts, omit private configuration/offer schemas, and resolve
+all 299 and 333 local references respectively. Formatting, 68 instruction contracts,
+changed-document links and diff checks passed. The backend dependency source remains
+locked to public revision `f0e1c972`; no local dependency override was enabled.
+This increment was self-reviewed; no independent agent review ran.
+
+Backend commit `859a3f536dff2bff783b5a6cc4e2cf65f3987c52` is pushed to
+`feat/exo`. Gitleaks 8.30.1 scanned all 32 branch commits against freshly fetched
+main and found no leaks before push. Exact-head hosted
+[CI 35346217769](https://github.com/one-covenant/basilica-backend/actions/runs/35346217769)
+and its instruction-contract workflow are queued; queued CI is not a passing
+result. Local logs use `/tmp/basilica-exo-catalog-`.
+
+Apply additive migrations 035–038 before the new API, even while catalog is
+disabled. The optional catalog has no enabled default and requires configured
+model connections, billing and chat. Enable offers only after approved image/profile
+acceptance and a deployed reconciler. The runbook documents catalog withdrawal,
+quote expiry before API rollback, and preservation of quote/retry records.
+
+Actual allocation/reconciliation, protected runtime delivery/fencing, model usage
+accounting/conformance, real model/tool and hosted filesystem/runtime acceptance,
+frontend/remaining CLI flows, retention policy and G0–G4 remain required. This is
+concrete implementation progress within the original goal; it does not make a
+configured catalog evidence of a ready production service. No cloud allocation,
+live migration, registry publication or paid model call was performed.

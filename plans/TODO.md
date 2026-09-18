@@ -27,3 +27,9 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Implement strict scoped transport, durable inbound identity, bounded reconnect/renewal and persisted outbound acknowledgements.
 - [x] Add protected chat input and repeat-safe canonical adapter registration; preserve edited/deleted state.
 - [x] Verify worker, actual compiled setup, local transport integration and pinned patch/image checks; update evidence.
+
+## Managed catalog and quote increment
+
+- [x] Record the FUSE incompatibility and CPU-VM fallback contract without weakening runtime persistence checks.
+- [x] Implement approved offers/catalog and owner-scoped repeat-safe quotes using existing CPU pricing and balance checks.
+- [x] Verify quote expiry, catalog changes, ownership, retries, wire contracts and fresh offering checks; record remaining allocation work.
