@@ -49,3 +49,10 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Implement atomic managed secure-rental billing registration and preserve original dispatch time, with immutable retry receipts and versioned client acknowledgment.
 - [x] Align catalog/allocation admission with marked-up billing rate precision and the stored markup range before provider dispatch.
 - [ ] Connect durable managed metering from dispatch through verified cleanup to existing credit operations, and make finalization atomic/retry-safe before accepting settlement.
+
+
+## Durable managed billing increment
+
+- [x] Add atomic cumulative metering and retained settlement identity over existing rental/credit ledgers.
+- [x] Fence generic billing writers and verify concurrency, interruption, drift, retention and ordinary compatibility on owned PostgreSQL.
+- [ ] Wire a versioned internal RPC/client and lifecycle metering/cleanup; resolve insufficient-credit settlement policy before launch.

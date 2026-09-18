@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator and authority; API migrations 035–039; billing registration/client/pricing and billing migration 048 | G0; G1 for runtime adapter | Durable intents/status/checkpoints, catalog/quotes, guarded CPU allocator, atomic managed billing registration and exact billing-compatible admission implemented; launch/controller, durable metering/settlement and runtime reconciliation pending | `437e1f6ff`; 1,136 unit tests, 145 owned database/runtime cases, five client transport tests and strict API/aggregator/billing Clippy passed; preceding CI 35355566807 green; exact-head CI 35359251111 queued; instruction contracts passed |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority; API migrations 035–039; billing registration/client/pricing/metering and billing migrations 048–049 | G0; G1 for runtime adapter | Durable intents/status/checkpoints, catalog/quotes, guarded allocation, registration/admission and atomic cumulative metering storage implemented; versioned metering RPC/controller, unpaid-tail policy and runtime/cleanup integration pending | `191746490`; 62 billing unit tests, 19 owned database cases, five client transport tests and strict billing all-test Clippy passed; preceding CI 35359251111 green; exact-head CI 35361352158 queued; instruction contracts passed |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -2121,10 +2121,102 @@ fetched main with no findings. Logs use
 `/tmp/basilica-exo-billing-admission-`. The diff was self-reviewed; no independent
 agent review ran. Unchanged runtime-image and API-schema suites were not rerun.
 Exact-head hosted [CI 35359251111](https://github.com/one-covenant/basilica-backend/actions/runs/35359251111)
-is queued; its instruction-contract workflow passed.
+has passed, as has its instruction-contract workflow.
 
 Durable metering and atomic settlement remain the next integration boundary,
 followed by the remaining controller, host delivery/fencing/cleanup, model
 accounting/conformance, product surfaces and hosted acceptance work. No existing
 database, cloud purchase, registry publication or paid model request was used.
 The original G0–G4 goal remains active; no acceptance gate is newly complete.
+
+
+### 2026-09-18 — durable managed metering contract
+
+CO reserves billing migration 049, billing-owned managed metering storage/domain
+code, regression tests and generic billing-writer exclusions. This is a cursor
+and settlement receipt over the existing rental and credit ledger, not a second
+balance or cost ledger. Registration terms and the original dispatch timestamp
+remain authoritative. Cumulative cost uses the existing additive calculator and
+six-decimal CreditBalance convention, with one cumulative rounding boundary;
+each tick deducts only the difference from the already charged cumulative cost.
+
+A rental-row lock serializes ticks and settlement. Credit debit/audit, usage
+event, rental total/state, coverage cursor and terminal receipt must commit in
+one transaction. Failed or insufficient debits leave coverage and settlement
+unchanged for retry. Zero-cost coverage is still durable. Out-of-order ticks
+return durable coverage; settlement cannot move it backwards, and conflicting
+terminal timestamps fail closed. Retained terminal identity survives usage-event
+retention. Only trusted backend reconciliation may supply verified cleanup time;
+this billing primitive cannot prove physical absence. Its eventual RPC must
+acknowledge this contract explicitly before the controller accepts settlement.
+
+Generic telemetry, status/finalization, stale-pending cleanup and aggregation
+writers must not change these managed rentals. The first storage increment does
+not enable a controller or expose a new RPC. Existing managed registrations may
+initialize coverage only from pristine pending/zero-cost state with unchanged
+immutable terms. Insufficient-credit cleanup/settlement policy, transport wiring
+and physical-cleanup integration remain explicit follow-up requirements.
+
+
+### 2026-09-18 — durable metering and settlement storage implemented
+
+The previous goal turn made concrete progress by pushing billing-compatible
+admission and updating the plan. Its exact-head CI 35359251111 is now green.
+Backend commit `19174649020645e9bf18cbfa57e6d41809b2a599` is pushed to
+`feat/exo` and implements the storage contract above with decision 0012 and
+additive billing migration 049. It does not enable a launch controller or a
+metering RPC, and does not replace physical-cleanup evidence.
+
+`ManagedMetering::advance` locks the owner-matched registered rental, verifies
+immutable terms and raw stored total, and serializes ticks/settlement. It computes
+cumulative cost from dispatch using the existing additive hourly calculator and
+six-decimal CreditBalance semantics. Checked integer division handles exact
+half-microcredit ties without interval-dependent rounding. The difference from
+prior cumulative coverage goes through existing credit operations; rental total,
+credit debit/audit, processed usage event, cursor and settlement identity commit
+atomically. No duplicate cost or balance ledger is introduced.
+
+Older ticks return current coverage. Settlement cannot move it backwards; exact
+terminal replay returns the retained receipt, even after usage-event retention,
+and changed settlement timestamps conflict. Zero-cost coverage persists without
+a credit account. Insufficient credit leaves all accounting/coverage unchanged,
+allowing an identical retry after funding; unresolved debt/cleanup policy is not
+silently converted into successful settlement. Only pristine pending zero-cost
+registrations can initialize missing coverage. Generic telemetry/event handlers,
+rental updates/finalization, pending cleanup and aggregation writers exclude
+managed registrations; write queries enforce the mutation boundary.
+
+Final validation passed: all 62 billing unit tests (0.00s after a 31.72s build),
+19 owned PostgreSQL cases (3.25s after a 7.91s build) and five loopback client
+transport tests (4.01s after a 14.75s build). The nine new database cases cover
+startup/outage intervals, cadence-independent totals, concurrent tick/settlement
+replays, terminal retention, zero-cost settlement, insufficient balance, raw term
+and submicrocredit drift, generic-writer exclusions and ordinary rental behavior.
+Balance, lifetime spend, audit debits and rental totals agree. Failure injection
+covers usage/debit/billing-event/rental/cursor writes and deferred commit. A real
+PostgreSQL lock pauses execution after debit, then cancellation proves rollback
+and safe retry. The runner completed and removed its owned disposable cluster.
+
+Strict billing library/all-test Clippy passed (34.06s; final rerun after the last
+accounting assertion 4.50s). Formatting, diff checks, changed-document links and
+68 instruction contracts passed. Initial test issues were a nullable pre-metering
+cost assertion and a unit fixture using protocol fields instead of domain fields;
+both were corrected before final validation. The first Clippy check also required
+the standard integer multiple predicate. Gitleaks 8.30.1 scanned all 38 committed
+branch changes against freshly fetched main with no findings. Logs use
+`/tmp/basilica-exo-metering-`. The diff was self-reviewed; no independent agent
+review ran. Unchanged API/allocator/runtime-image/schema suites were not rerun
+for this billing-only increment. Exact-head [CI 35361352158](https://github.com/one-covenant/basilica-backend/actions/runs/35361352158)
+is queued; its instruction-contract workflow passed.
+
+Next, expose this contract through a versioned backend-only metering RPC/client,
+then wire durable lifecycle ticking and confirmed-cleanup settlement. Inspection
+confirms `basilica-backend-protocol` already owns private service protos and the
+billing crate already depends on it; a new private service can avoid changing
+locked public validator protocols. The existing shared transport policy provides
+bounded deadlines/reconnection. This is a next-boundary finding, not implemented
+transport or an acknowledgment contract. Unpaid-tail handling, controller/host
+identity and delivery, fencing/cleanup, model accounting/conformance, product
+surfaces and real hosted acceptance remain required. No live database, cloud
+purchase, registry publication or paid model request was used. The original
+G0–G4 goal remains active and no acceptance gate is newly complete.
