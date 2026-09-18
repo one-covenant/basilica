@@ -47,4 +47,5 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Bind the stable rental to the owned instance and recheck lease, generation, quote and connection before commit.
 - [x] Verify stale/deleted workers, lock waits and rollback; record billing registration gaps and remaining controller work.
 - [x] Implement atomic managed secure-rental billing registration and preserve original dispatch time, with immutable retry receipts and versioned client acknowledgment.
-- [ ] Align catalog/allocation admission with marked-up billing rate precision and the stored markup range before provider dispatch.
+- [x] Align catalog/allocation admission with marked-up billing rate precision and the stored markup range before provider dispatch.
+- [ ] Connect durable managed metering from dispatch through verified cleanup to existing credit operations, and make finalization atomic/retry-safe before accepting settlement.

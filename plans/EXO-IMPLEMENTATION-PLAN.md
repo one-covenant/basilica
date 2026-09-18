@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator and authority; API migrations 035–039; billing registration/client and billing migration 048 | G0; G1 for runtime adapter | Durable intents/status/checkpoints, catalog/quotes, guarded CPU allocator and atomic managed billing registration implemented; launch/controller, billing activation/settlement and runtime reconciliation pending | `05a842d97`; 805 API + 57 billing unit tests, 142 owned database/runtime cases, five client transport tests and strict billing Clippy passed; preceding CI 35351974825 green; exact-head CI 35355566807 queued |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator and authority; API migrations 035–039; billing registration/client/pricing and billing migration 048 | G0; G1 for runtime adapter | Durable intents/status/checkpoints, catalog/quotes, guarded CPU allocator, atomic managed billing registration and exact billing-compatible admission implemented; launch/controller, durable metering/settlement and runtime reconciliation pending | `437e1f6ff`; 1,136 unit tests, 145 owned database/runtime cases, five client transport tests and strict API/aggregator/billing Clippy passed; preceding CI 35355566807 green; exact-head CI 35359251111 queued; instruction contracts passed |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -1994,7 +1994,7 @@ now green. Pushed backend commit `05a842d9747fb12ca5416f885ebdc5abce00fba2`
 implements registration v1 and decision 0011 without enabling the launch controller.
 Existing PR 1872 contains the current scope and evidence; exact-head
 [CI 35355566807](https://github.com/one-covenant/basilica-backend/actions/runs/35355566807)
-is queued and its instruction-contract workflow has passed.
+has passed, as has its instruction-contract workflow.
 
 The real billing RPC validates CPU dimensions, provider binding, supplied dispatch
 time and prices, then transactionally inserts the ordinary rental, start usage
@@ -2046,3 +2046,85 @@ accounting/conformance, frontend and remaining CLI/export flows, retention polic
 and real hosted acceptance remain required. No existing database, cloud purchase,
 registry publication or paid model request was used. The original G0–G4 goal
 remains active and no acceptance gate is marked complete.
+
+### 2026-09-18 — billing-compatible admission contract
+
+CO extends LC ownership to a shared managed pricing validator in billing, its
+existing registration parser, catalog selection/cost calculation and allocator
+preparation/dispatch validation. Managed prices are admitted only when applying
+the accepted markup produces exact customer rates representable in the existing
+six-decimal billing columns and round-trippable through the current RPC. Markup
+must fit the existing 0–100 percent, two-decimal storage contract. No accepted
+quote may be rounded or repriced. The catalog uses those same per-resource
+customer rates to compute costs, while retaining original provider rates/markup
+in its consumed snapshot. An older prepared allocation is revalidated immediately
+before dispatch; already-submitted allocations remain observable for cleanup even
+if their old terms would now fail admission. Ordinary pricing paths are unchanged.
+
+Inspection of the next integration boundary confirms that generic billing RPC
+acknowledgments cannot prove managed settlement. `finalize_rental_core` updates
+the rental and appends its end event separately, returning previously accumulated
+`actual_cost`; it does not bill the tail through a verified cleanup timestamp.
+Generic telemetry starts with a fixed 60-second interval and clamps subsequent
+intervals to 1–300 seconds, so it cannot recover the full dispatch/startup gap or
+an extended controller outage. Managed metering therefore needs durable, retry-safe
+coverage from original dispatch through verified cleanup using existing credit
+operations, and an atomic finalization acknowledgment. Blind heartbeat replay or
+`FinalizeRental.success` is not settlement evidence. No billing finalization or
+telemetry behavior is changed by this admission increment.
+
+
+### 2026-09-18 — exact billing-compatible admission implemented
+
+The previous goal turn made concrete progress by publishing atomic billing
+registration and its evidence; its exact-head CI 35355566807 is now green.
+Backend commit `437e1f6ff2681e020d62866c88181c4fa13a595c` is pushed to
+`feat/exo`. This increment implements the admission contract above without
+enabling the launch controller or changing accepted quote snapshots.
+
+Billing owns the shared validator used by the registration parser, catalog and
+allocator. Exact integer arithmetic applies accepted markup once, rejecting
+negative, overflowing or fractional-microdollar customer prices rather than
+rounding them. The current RPC must round-trip each customer rate exactly;
+nonzero float underflow and hidden precision tails are rejected. Markup fits the
+existing 0–100 percent, two-decimal column. A submicrodollar provider rate remains
+valid when markup produces an exactly representable customer rate. Catalog costs
+use the validated per-resource customer rates and retain original provider rates
+and markup in the frozen offer.
+
+Allocator preparation rejects invalid terms before writes, and dispatch validates
+the locked authoritative journal again before any provider call. This also covers
+older prepared journals. Already-submitted and read-only reconciliation paths
+remain observable even when historical pricing would fail new admission, so
+cleanup is not stranded. Ordinary pricing paths are unchanged. No migration,
+protocol, dependency or workflow changed in this increment.
+
+Final validation passed: 806 API unit tests (nine existing ignored, 4.72s), 270
+aggregator unit tests (20 database cases run separately, 0.65s) and 60 billing
+unit tests (0.00s), totaling 1,136. Strict billing, aggregator and API Clippy
+passed in 29.25s, 1m06s and 3m13s. The combined unit build took 10m29s after
+Cargo feature changes; the live process was observed through completion.
+
+The complete owned lifecycle runner passed 145 database/runtime cases: catalog
+11 (0.40s), chat 16 (2.36s, including the actual Node worker/Rust relay), lifecycle
+66 (2.05s), model connections ten (0.19s), runtime identities 12 (0.73s), allocator
+20 (1.63s) and billing registration ten (2.12s). Five loopback billing client
+transport cases passed in 4.01s, for 150 integration cases total. New cases cover
+all three price dimensions, no quote/balance/provider side effects for invalid
+terms, equality of quoted and billed costs, old prepared-journal rejection and
+continued observation of already-submitted allocations. The runner completed
+successfully and removed its owned disposable PostgreSQL cluster.
+
+Formatting, diff checks, changed-document links and 68 instruction contracts
+passed. Gitleaks 8.30.1 scanned all 37 committed branch changes against freshly
+fetched main with no findings. Logs use
+`/tmp/basilica-exo-billing-admission-`. The diff was self-reviewed; no independent
+agent review ran. Unchanged runtime-image and API-schema suites were not rerun.
+Exact-head hosted [CI 35359251111](https://github.com/one-covenant/basilica-backend/actions/runs/35359251111)
+is queued; its instruction-contract workflow passed.
+
+Durable metering and atomic settlement remain the next integration boundary,
+followed by the remaining controller, host delivery/fencing/cleanup, model
+accounting/conformance, product surfaces and hosted acceptance work. No existing
+database, cloud purchase, registry publication or paid model request was used.
+The original G0–G4 goal remains active; no acceptance gate is newly complete.
