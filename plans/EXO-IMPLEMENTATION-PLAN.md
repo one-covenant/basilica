@@ -2928,3 +2928,14 @@ The previously documented billing/preservation/retention/UI/CLI/model and hosted
 G0–G4 gates remain open. No live VM, registry publication, model request or launch
 worker was enabled. This is a verified component increment, not completion of
 protected delivery or the overall goal.
+
+Host follow-up `b9e2c441247706e8a79760703a2f2632346ff662` fixes the newly
+introduced fixture's repository-wide PCRE2 contract: its Bookworm Dockerfile is
+included in the affected-image census and CD path selection, and explicitly
+installs `libpcre2-8-0`. The 21-image package contract and rebuilt real Linux
+ownership/packet fixture passed locally. The complete backend review-range scan
+now covers 47 commits with no findings. In CI run 35420789470, the new host job
+passed; CD-scripts reported the missing fixture census entry. The correction is
+pushed for a new exact-head run; the prior run is not a successful full-CI result.
+Instruction workflow 35420789218 passed for the original host commit. No runtime
+code, Rust source or dependency lock changed in this follow-up.
