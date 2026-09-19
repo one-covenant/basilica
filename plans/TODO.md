@@ -94,4 +94,7 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Publish validation and remaining controller requirements.
 
 - [x] Add durable encrypted per-allocation platform SSH keys and isolated provider registration.
-- [ ] Establish authenticated host-key pinning and deliver protected runtime inputs.
+- [x] Implement retained server bootstrap, protected single-create payload and pinned host authentication.
+- [x] Finish bootstrap validation and resolve the generated-schema conflict with current main.
+- [x] Finish post-merge integration validation and repair the transient CI dependency-download failure.
+- [ ] Deliver protected runtime inputs with physical generation/lease fencing.

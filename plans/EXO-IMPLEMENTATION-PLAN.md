@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocator/authority, fresh purchase admission, durable billing, strict cleanup and settled archival; API migrations 035–041; billing registration/pricing/metering, private RPC/client and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives and balance-checked submission implemented; background controller, unpaid-tail policy and protected host/runtime integration pending | `b2c4ab400`; 1,079 unit and 198 owned integration/transport cases passed, plus focused expiry checks; strict API/aggregator Clippy and 43-commit secret scan passed; prior CI revocation-test failure corrected; exact-head CI 35376253486 queued; instruction-contract workflow green |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival and protected platform host identities; API migrations 035–043 and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives, trusted bootstrap and pinned SSH probe implemented; protected runtime delivery, physical fencing, controller coordination and unpaid-tail/preservation policy pending | `9544c375f`; current validation and CI are recorded in the trusted-host-bootstrap evidence below |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
@@ -2720,3 +2720,122 @@ Prior purchase-admission commit `b2c4ab400` passed exact-head CI 35376253486.
 
 Gitleaks 8.30.1 scanned all 44 backend commits against freshly fetched main with
 no findings before push.
+
+
+### Trusted host bootstrap v1 — implementation reservation
+
+CO reserves API migration 043, the allocation host-key/bootstrap modules, the
+managed allocator dispatch boundary and the strict Hyperstack managed-create
+adapter. The platform generates a separate Ed25519 SSH server identity before
+purchase and retains its encrypted private key under a distinct authenticated
+purpose. The server public key is the SSH pin; it is not learned from an IP or
+an unauthenticated first connection. The client private key remains exclusively
+in the control plane. Only the server key is installed through the trusted
+provider's cloud-init creation channel. This trusts the cloud provider and its
+instance metadata delivery, as VM root is already inside that boundary.
+
+An immutable public bootstrap manifest binds instance/client identity, server
+public key, payload digest, explicit approved provider OS image and management
+IPv4 CIDRs. New managed preparation requires this manifest. Dispatch requires a
+non-serializable protected payload matching that retained manifest; plaintext
+user-data never enters allocation journals, public DTOs, logs or provider errors.
+Old prepared journals without bootstrap cannot purchase; submitted/observed
+identities remain reconcilable. The strict managed create path sends one bounded
+request, never follows redirects, opens only SSH from configured management
+networks, and does not log request/response bodies. Lost responses remain
+uncertain under the existing single-purchase contract.
+
+Cloud-init installs only the designated server key, disables password/root login
+and automatic host-key publication, and uses no runtime/account/provider grants.
+The exact manifest and payload must replay across process restarts. Subsequent
+SSH authenticates the retained server key before any protected runtime delivery.
+Runtime container setup must protect host metadata/key files from untrusted
+workloads and fence commands by operation generation and monotonically increasing
+lease attempt. Actual runtime delivery/controller coordination and hosted trust/
+filesystem/isolation acceptance remain part of the full goal.
+
+CO also reserves the API dev-dependency declaration and lockfile package edge
+for the already-locked russh 0.62.2. It supplies an owned loopback SSH server to
+verify the actual pinned client handshake; no dependency version upgrade or
+production dependency is intended. The create-time host probe revalidates its
+lease and immutable observed target after the handshake, executes no command,
+and is not runtime-health or protected-delivery evidence.
+
+The strict purchase body also reserves an aggregator dependency edge to the
+already-locked futures-util stream library. The stream cannot be cloned for
+reqwest's implicit HTTP/2 retry path. No package version upgrade is intended.
+
+
+### Trusted host bootstrap and pinned SSH — local validation
+
+Backend commit `23d61bb4a` implements API migration 043, immutable encrypted
+server identity and the protected managed-create boundary reserved above. The
+public manifest includes the exact cloud-init digest, approved OS image and
+explicit management IPv4 networks. The client private key remains in the control
+plane. The strict Hyperstack adapter receives the protected server bootstrap
+separately, strips provider metadata, rejects redirects/mismatched responses and
+uses a non-replayable streaming body so implicit HTTP/2 retries cannot resend a
+purchase. Submitted uncertainty remains under the original allocator journal.
+
+The pinned SSH probe validates current create authority, observed allocation,
+owned active rental, exact provider/key/bootstrap and instance binding. It checks
+the server pin before client authentication and revalidates authority/target after
+the handshake. It executes no command or runtime grant and proves no runtime
+health. The actual loopback SSH test accepts only the correct server/client pair,
+rejects a wrong server before signed client authentication and rejects a wrong
+client. Database tests cover missing observation and stale authority; a complete
+hosted rental-to-SSH integration remains pending.
+
+Before merging main, 1,091 unit cases passed (809 API, 282 aggregator), including
+the final non-replayable provider body. Nine existing API environment-dependent
+cases remain ignored. All 25 allocator database cases ignored in the unit lane
+passed in the owned runner. The full runner passed 212 integration/transport
+cases: 157 API (107 lifecycle, 12 catalog, 16 chat including actual Node/Rust
+transport, 10 model connections, 12 runtime identities), 25 allocator, eight
+billing-client and 22 billing DB/RPC. This includes six new bootstrap lifecycle
+cases and the allocator missing/mismatched-bootstrap dispatch test. Owned
+PostgreSQL fixtures were removed after the run.
+
+All 22 schema tests, strict API library/lifecycle-test and aggregator library/
+all-test Clippy, formatting, changed-document links and 68 instruction contracts
+passed. The lockfile adds only dependency edges to existing russh and futures-util
+packages; public crates remain locked to `f0e1c972`. The initial stream-body build
+failed on a missing direct dependency; that was corrected and affected checks
+passed. No package upgrade was used. The diff was self-reviewed without an
+independent agent review. Decision 0017 and the runtime runbook record the provider/
+metadata/root trust boundary, migration sequence and retained-key rollback.
+
+Evidence prefix: `/tmp/basilica-exo-host-bootstrap-`; final pre-merge logs are
+`unit.log` (API), `aggregator-unit-verified.log`, `db.log`, `schema.log`,
+`api-clippy-final.log`, `aggregator-clippy-final.log` and `instructions-final.log`.
+
+Main advanced to `f7f2f6948` while validation ran. Only generated OpenAPI files
+conflicted; their semantic merge preserves all routes/schemas from both branches.
+Regeneration exactly matches the semantic merge (82 public and 93 private
+paths). Merge commit `9544c375f` is pushed and PR #1872 is mergeable. All 835
+post-merge API unit tests passed, with nine existing environment cases ignored.
+Post-merge strict API library/lifecycle-test Clippy also passed. The full owned
+integration rerun also passed all 212 cases, and its temporary PostgreSQL
+fixtures were removed. No hosted
+cloud-init execution, real host access, runtime delivery, background launch,
+live migration, paid resource, registry publication or model request ran.
+Protected runtime files, metadata isolation, generation/lease-attempt fencing,
+controller coordination, preservation/retention/export, product completion and
+hosted G0–G4 acceptance remain required. The full goal remains active.
+
+
+Gitleaks 8.30.1 scanned all 45 committed backend changes against freshly fetched
+main without findings. Exact-head instruction workflow 35417682242 passed. CI
+35417682398 passed on attempt 2 at `9544c375f`. The first attempt failed only
+while Terraform fetched the 1Password provider signature from github.com
+(HTTP 500); retrying the failed checks after completion succeeded. No
+infrastructure source change or relaxed validation was needed.
+
+
+Final post-merge evidence uses `merged-openapi.log`, `merged-api-unit.log`,
+`merged-api-clippy.log`, `merged-db.log`, `merged-instructions.log` and
+`ci-final.json` under the same temporary log prefix. The two regenerated OpenAPI
+files were compared structurally against the independent semantic merge and
+matched exactly. PR #1872 is updated and mergeable at `9544c375f`; both backend
+commits are pushed. This completes the trusted bootstrap/pinned-probe increment,
+not protected runtime delivery or any remaining G0–G4 acceptance gate.
