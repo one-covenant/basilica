@@ -98,3 +98,12 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Finish bootstrap validation and resolve the generated-schema conflict with current main.
 - [x] Finish post-merge integration validation and repair the transient CI dependency-download failure.
 - [ ] Deliver protected runtime inputs with physical generation/lease fencing.
+
+## Protected host execution increment
+
+- [x] Implement durable root-owned host fencing and exact protected input replay.
+- [x] Implement strict container identity, stop/absence and isolated startup policy; verify owned store/Engine-fault/packet cases.
+- [ ] Verify the complete root-helper/real-Engine runtime startup, restart, identity rotation and replacement path.
+- [ ] Deliver through pinned SSH under current lifecycle authority; verify owned failure/retry cases.
+- [x] Publish the host-control component evidence and remaining hosted/controller requirements.
+- [ ] Finish protected issuance/SSH integration evidence and hosted acceptance before launch.

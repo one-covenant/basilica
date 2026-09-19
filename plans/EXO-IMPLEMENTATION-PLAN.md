@@ -2839,3 +2839,92 @@ files were compared structurally against the independent semantic merge and
 matched exactly. PR #1872 is updated and mergeable at `9544c375f`; both backend
 commits are pushed. This completes the trusted bootstrap/pinned-probe increment,
 not protected runtime delivery or any remaining G0–G4 acceptance gate.
+
+### Protected host execution v1 — implementation reservation
+
+CO reserves `scripts/exo/host/`, its owned tests, decision 0018 and the API pinned
+SSH delivery boundary. Implement a root-owned per-instance journal which records
+the latest generation/operation/lease attempt before container/input effects.
+Lower generations/attempts and changed same-attempt input fail closed. Image and
+resource identity remain immutable. Lease timing is checked after lock waits;
+protected input and transport must not enter command arguments or diagnostics.
+
+Container reconciliation must bind exact owned IDs/configuration, use no automatic
+restart and distinguish an accepted stop/removal from verified absence. New input
+must not be installed over a still-running prior generation. Local filesystem,
+network/metadata isolation, protected grant issuance, actual runtime startup and
+controller coordination remain necessary parts of this work; a journal by itself
+does not establish physical fencing or readiness. Owned Docker/process/filesystem
+fixtures are permitted; no live VM or registry operation is authorized by this
+reservation.
+
+### Protected host execution v1 — component evidence
+
+Backend commit `19728c13ced78f3550cc605c496fe86b6fcdc9f3` adds the root-only
+stdin protocol, durable per-instance generation/attempt journal, exact protected
+input replay, immutable resources and preserved data. Root admission/fencing is
+published before effects; expired lock waiters and stale/changed retries cannot
+proceed. Input replay verifies exact bytes and metadata even after lost create
+responses. Higher attempts within a generation require the identical protected
+bundle, including credentials. Retire is terminal and can preempt apply at the
+same fence. The filesystem gate selects the open descriptor's actual mount ID.
+
+The Docker adapter uses bounded one-attempt Unix HTTP, strict native identity and
+sandbox/mount verification. Intent precedes create; the native ID precedes start.
+Unknown create is reconciled without repeating the POST, uncertain start is never
+replayed, and prior execution requires verified stop/removal/direct absence before
+new inputs/start. Unknown delayed creates retain bounded tombstones and are
+revisited on retirement replay; they cannot auto-start. `retired` does not prove
+provider absence. `container_running` is not runtime `Ready`.
+
+A verified owned bridge and exact iptables policy isolate private/metadata/host
+traffic; IPv6, capabilities, automatic restart, live restore, published ports and
+host sockets are excluded. The helper requires an already cached immutable image,
+Linux root, local ext4/XFS/Btrfs and the Engine's DOCKER-USER integration. One
+instance per host is the supported contract. It is not yet installed by bootstrap
+or invoked by the API/controller. Decision 0018 and the runtime runbook document
+these constraints and retained-state rollback.
+
+Validation for this component:
+
+- `python3 -m unittest discover -s scripts/exo/tests -p 'test_host_*.py'`:
+  **25 passed**, covering real POSIX journal/process/lock behavior, actual Unix
+  HTTP transport faults/slow responses, explicit Engine lifecycle faults and
+  bounded firewall subprocesses. Manager Engine fixtures are not physical process
+  evidence.
+- `docker build -f scripts/exo/tests/host-network.Dockerfile -t
+  basilica-exo-host-net:owned scripts/exo/tests` and
+  `python3 scripts/exo/tests/run_host_network.py --image basilica-exo-host-net:owned`:
+  **passed** in an owned network-disabled container with nested namespaces and an
+  anonymous local volume. All metadata/private endpoints were first reachable;
+  policy then blocked those packets and host INPUT while allowing the isolated
+  public-address fixture. Exact replay and an earlier-ACCEPT bypass check passed.
+  Real Linux root/UID 10001 input ownership/access, journal denial and unsupported
+  overmount rejection passed. No host networking/socket was mounted. The exact
+  owned container and anonymous volume were removed.
+- Actual Docker create/inspect/remove sandbox check passed using the cached Exo
+  image and explicit `none` fixture network; **the container was never started**.
+  All rendered inspect fields matched, and removal was followed by direct 404.
+- `actionlint`, Act dry runs for the host job and required success gate, **29 local
+  documentation links**, **68 instruction contracts** and diff whitespace passed.
+  The reusable-workflow graph was dry-run only; the owned test commands ran for
+  real locally. The new job is wired into the required CI success result.
+- Gitleaks 8.30.1 scanned the complete **46-commit** backend review range against
+  freshly fetched main with no findings. No Rust files or dependency locks changed;
+  the preceding exact-head Rust/DB evidence remains associated with `9544c375f`,
+  not claimed as a rerun for this new commit. The diff was self-reviewed; no
+  independent agent review was performed.
+
+Logs use `/tmp/basilica-exo-host-`: `all-tests.log`, `network-tests.log`,
+`net-pinned-build.log`, `actionlint.log`, `act.log`, `act-gate.log`,
+`instructions.log` and `secret-scan.log`. CI at the new head is pending when this
+entry is written.
+
+Remaining work includes durable encrypted bundle issuance atomically with scoped
+runtime/chat grants, pinned SSH delivery with current lease/target revalidation,
+trusted helper/image installation, the complete real-Engine root execution path,
+identity rotation/restart/replacement/export/recovery and controller coordination.
+The previously documented billing/preservation/retention/UI/CLI/model and hosted
+G0–G4 gates remain open. No live VM, registry publication, model request or launch
+worker was enabled. This is a verified component increment, not completion of
+protected delivery or the overall goal.
