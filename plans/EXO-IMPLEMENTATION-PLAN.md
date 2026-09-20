@@ -398,10 +398,10 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival and protected platform host identities; API migrations 035–043 and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives, trusted bootstrap and pinned SSH probe implemented; protected runtime delivery, physical fencing, controller coordination and unpaid-tail/preservation policy pending | `9544c375f`; current validation and CI are recorded in the trusted-host-bootstrap evidence below |
-| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
-| CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
-| FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Authenticated list/create/workspace, scoped chat and capability-controlled operations pushed; artifact download, rotation UI and hosted acceptance pending | `bfcfac0a`; 15 contract/navigation and 12 owned browser cases, clean install, lint and production build; draft site PR 22 |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected host delivery and execution ownership; API migrations 035–044 and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives, complete owned SSH/Engine delivery, physical fencing and bounded lease-owned execution implemented; controller/readiness coordination, long host deadlines and unpaid-tail/preservation policy pending | `18c533a4`; 9 execution unit and 120 owned lifecycle database cases, strict Clippy and full secret scan pass; CI 35522682791 green with all 248 owned cases and complete delivery |
+| MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh, guest renewal and protected bundle delivery implemented; model accounting and controller/hosted integration pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
+| CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; controller/readiness wiring and hosted acceptance pending | `0ae5d63a`; 24 owned chat cases including passive authority observation and actual Node/Rust transport; CI 35518201732 green; earlier runtime adapter evidence below |
+| FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Authenticated list/create/workspace, scoped chat, lifecycle management and model-key rotation pushed; artifact download and hosted acceptance pending | `fd1c1f1a`; 16 contract/navigation and 17 owned browser cases, lint and production build; CI 35522531903 green on draft site PR 22 |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTO/SDK and CLI quoted launch, lifecycle, logs and model connections pushed; browser open, export download and hosted parity pending | `f566ee0e`; 349 tests/doctests passed, two existing doctests ignored; strict all-target/all-feature Clippy passed; CI 35334088788 green |
 
 Every handoff includes owned files, contract version, commit/image digest, exact checks/results, redacted evidence location, unresolved failures, outstanding resources, and consumers now unblocked. Worker code completion is not a passed product gate. CO serializes migrations/shared edits, integrates commits, updates consumers and records final component versions.
@@ -3607,3 +3607,85 @@ managed agents. No manual deployment, paid host/model, live migration or externa
 registry publication was requested by this increment. The repository's existing
 Vercel integration automatically started a PR preview build; that is not hosted
 Exo acceptance and its environment was not reconfigured.
+
+
+### Owned lifecycle execution and model-key update follow-through
+
+Backend `18c533a432ae695cc94c74557d33aadef76e328a` strengthens renewal to
+match the complete owner/operation/instance/kind/checkpoint/generation/attempt/
+token identity under owner and row locks. It reads the stored database deadline,
+checks expiry after lock waits and again after the write, and rolls back a slow
+renewal that crosses the old expiry. The caller's cached deadline is not authority.
+
+`execution::run_claimed` constructs one reconciliation future only after that
+fresh renewal. It renews every 15 seconds with a five-second RPC bound and a
+conservative 55-second local authority window measured before the request. It
+keeps polling work during renewal and drops owned work/pending renewal on
+shutdown, authority loss, uncertainty, caller cancellation or the finite step
+deadline. It neither spawns detached effects nor automatically replays work,
+releases a lease or declares readiness/cleanup. Adapters must still journal
+external effects and revalidate authority immediately before mutation.
+
+Nine paused-clock unit cases and all 120 owned lifecycle database cases passed
+(the latter in 111.39 seconds), including eight forged identity fields, a
+nontransactional trigger witness proving slow-write rollback, blocked initial
+renewal without constructing work, real delete preemption, takeover and no
+terminal-state inference. The owned PostgreSQL fixture was removed. Strict API
+Clippy with every target/feature passed after replacing a redundant test closure;
+all nine final-source unit cases passed again after that test-only cleanup.
+Formatting, 68 instruction contracts, 34 documentation links and the full
+60-commit Gitleaks 8.30.1 range against
+main `f1dcfc4059e92c44ddb42fd882118537dd76cb4c` passed. No lockfile, schema,
+migration, runtime wire or enabled controller changed. The head is pushed to
+[backend PR 1872](https://github.com/one-covenant/basilica-backend/pull/1872).
+[Current-head CI 35522682791](https://github.com/one-covenant/basilica-backend/actions/runs/35522682791)
+passed on this exact head, testing merge
+`9a494855e67582db3baaf170676d9732fd50217c` against main `f1dcfc405`.
+The API lane passed 906 cases (203 skipped), and workspace coverage passed
+4,345 cases (50 skipped). All 248 separate owned cases
+passed, including all 120 lifecycle cases in 89.52 seconds and all 24 chat cases
+in 7.65 seconds. The complete retained-issuance/OpenSSH/Engine test passed in
+41.07 seconds; image/replacement, pinning, host isolation, strict Clippy and
+every other required check passed. Instruction CI 35522682678 also passed.
+The PR remains mergeable. Logs use `/tmp/basilica-exo-execution-*.log`.
+
+The coordinator remains required. In particular, database heartbeats cannot
+extend the fixed deadline already sent to a host helper. Ordinary leases grant
+60 seconds and the host wire permits at most five minutes; long cold pulls or
+host steps need a deliberately bounded authority policy or verified resumption
+before launch. Container-running and passive chat presence remain insufficient
+for actual runtime/model/schema readiness.
+
+Frontend `fd1c1f1a15e4d6283b792e6bd24b8a5621f63824` is pushed to draft
+[site PR 22](https://github.com/one-covenant/basilica-site/pull/22). The workspace
+management panel updates a saved model connection even when runtime/chat is
+unavailable. It explains that all agents sharing the connection are affected and
+keeps provider/model identity fixed without rebuilding or changing reported
+health. The password input is cleared before awaiting PATCH and on form close.
+Only owner/connection-scoped retry identity with an empty request envelope is
+stored; no secret or secret-derived fingerprint is retained. After a lost
+response or refresh the user must re-enter the original key. Changed-payload
+replay conflicts rather than silently rotating again. Unreadable storage blocks
+mutation until explicit recovery, and a response after navigation cannot clear
+a newly mounted form's saved intent.
+
+All 16 Node cases and all 17 Chromium cases passed (58.2 seconds), including
+five new update/retry/conflict/navigation/mobile cases. The first attempts found
+a wrong fixture route and an unscoped error selector matching Next.js's route
+announcer; both were corrected without weakening assertions. The mobile form
+was visually inspected. Lint, formatting, production build with mock disabled,
+diff checks, staged scanning and the full three-commit Gitleaks 8.30.1 range
+passed. Existing lint/build warnings remain and no application dependency or
+lockfile changed. [Current frontend CI 35522531903](https://github.com/one-covenant/basilica-site/actions/runs/35522531903)
+passed in 2m53s, including all 16 contract cases and 17 browser cases (1.2
+minutes on Linux), lint and production build. Tested merge `cee52163846dfee93ee42391641833ebc6ef172b` uses
+main `5854e17d952a62906206ee60d8a64a4cb9cf8a95`. The automatic Vercel
+preview also passed and the PR remains draft/mergeable. Logs use
+`/tmp/basilica-exo-key-*.log`. Both increments were
+self-reviewed without independent agents.
+
+These are owned-fixture implementation increments. Real Auth0, model/provider-key
+validation, hosted rotation, artifact download, complete controller/maintenance/
+cleanup coordination, unpaid retention, model accounting and the remaining
+G0–G4 acceptance requirements stay open. No paid host/model, live migration,
+manual deployment or external registry publication was performed.

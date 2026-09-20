@@ -174,4 +174,13 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Build the persistent workspace, scoped text chat and capability-controlled lifecycle management.
 - [x] Verify local contracts, replay/reconnect, accessible responsive states and preserved navigation; publish production-build evidence separately from hosted acceptance.
 - [x] Publish exact-head frontend CI and preview-build status.
-- [ ] Complete artifact download/connection rotation integration and hosted web/CLI/OpenClaw acceptance.
+- [x] Add model-key rotation UI with exact non-secret retry identity and owned browser verification.
+- [ ] Complete artifact download and hosted rotation/web/CLI/OpenClaw acceptance.
+
+## Lifecycle execution ownership
+
+- [x] Match the complete operation identity during heartbeat renewal, with fresh expiry after lock waits and before commit.
+- [x] Own reconciliation futures inside a bounded heartbeat/cancellation runner; cancel work on authority loss, database uncertainty, shutdown or deadline.
+- [x] Verify real database deletion/takeover/lock-wait cases and cancellation/drop behavior without live provider calls.
+- [ ] Integrate the runner with complete launch/maintenance/cleanup coordination and runtime/model readiness; keep hosted gates open.
+- [ ] Reconcile long host-command budgets with the fixed authority deadline already sent to the host; database renewal alone cannot extend it.
