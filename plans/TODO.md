@@ -198,7 +198,7 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Probe the actual owned scheduler and adapter processes with fresh challenges and bounded typed state validation.
 - [x] Expose observations through the trusted supervisor; invalidate evidence on replacement, exit, drain or probe failure.
 - [x] Verify real compiled runners, stale/replayed responses, incompatible state, cancellation and preserved canonical data.
-- [ ] Integrate trusted host observations, model access and passive chat into complete controller readiness.
+- [x] Integrate trusted host observations, model access and passive chat into the guarded controller Ready transition.
 
 
 ## Trusted host runtime observation
@@ -206,4 +206,11 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Observe only the exact existing journal/container under current protected delivery authority, without replaying apply or changing runtime state.
 - [x] Bound fixed unprivileged Engine exec output and verify exit, container incarnation, declared schema and complete response identity.
 - [x] Verify wire/SSH authority, lost replies, malformed frames, drift and actual owned Engine execution.
-- [ ] Compose the observation with model/chat/billing checks in full controller readiness.
+- [x] Compose host observation with model/chat/billing checks and an atomic Ready update.
+
+## Guarded controller readiness
+
+- [x] Compose retained host authority, fresh model metadata access, exact passive chat presence and recent billing coverage.
+- [x] Complete Ready atomically with final locked evidence, frozen freshness deadlines and complete attempt fencing; keep unsupported maintenance/recovery capabilities disabled.
+- [x] Verify actual metadata transport and owned PostgreSQL/SSH races, cancellation, expiry, credential rotation and write rollback.
+- [ ] Integrate this transition with complete service dispatch, verified checkpoints and remaining maintenance/launch gates.

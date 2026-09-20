@@ -3870,3 +3870,67 @@ This is guest-domain operational evidence bound to trusted host authority, not
 independent attestation of hostile guest code. Complete model/chat/billing and
 compatible-checkpoint composition, service worker dispatch, maintenance, retention
 and remaining G0–G4 hosted acceptance remain open; managed launch remains disabled.
+
+### 2026-09-21 guarded controller readiness contract
+
+An internal controller coordinator now composes retained runtime authority,
+context-bound model metadata access, fresh trusted host observation, exact passive
+chat presence and recent acknowledged billing coverage. It runs within the existing
+heartbeat/cancellation owner and bounds one readiness attempt to 30 seconds. Model
+validation uses the configured conformance-approved catalog and a maximum 15-second
+metadata request; it does not generate model tokens. Billing coverage must be no
+older than 60 seconds, not future dated, and free of a recorded delivery error.
+
+The final Ready write shares the owner transaction with retained bundle/resource/
+target checks, exact credential version/ciphertext comparison and locked runtime
+chat session/connection evidence. Its earliest frozen lease, grant, chat, billing
+or observation deadline is rechecked after all writes. Expiry during a slow write
+rolls back the entire transition. Worker updates additionally match the attempt
+number. Pending observations preserve the attempt and retained grants.
+
+This path enables chat only. The existing optional-checkpoint Ready contract is
+preserved; recovery requires a separately verified compatible checkpoint. It does
+not enable service dispatch, maintenance, artifact capture or hosted launch.
+Backend ADR 0027 records the contract. Implementation commit
+`1f4e58ffa42075391f0f92dd7c616f3921828c89` passed all 269 owned integration cases:
+12 catalog, 24 chat (including the actual Node worker/relay), 131 lifecycle,
+10 model-connection, 12 runtime-identity, 25 delivery/readiness, 25 allocator,
+8 billing transport and 22 billing database cases. Lifecycle ran in 114.26 seconds;
+chat in 11.70 seconds; delivery/readiness in 23.84 seconds. Eight new readiness
+cases include successful completion, credential rotation, metadata rejection,
+absent/expired chat, stale/future/error billing, cancelled/forged authority, retained
+grant revocation and expiry rollback during the Ready write. All owned database
+fixtures cleaned up. Host health and billing acknowledgements are explicit
+fixtures in those readiness cases, not physical end-to-end readiness evidence.
+The pre-merge API library passed 886 tests with 35 expected ignores; strict API
+Clippy for all targets/features passed. Formatting, instruction/documentation
+links, staged Gitleaks and the full 64-commit review-range scan passed.
+
+Backend `ccd051b130c8468915fb82065456eaad5b2503f3` merges main
+`eca54885db36428278f00dffe03ffa02aa58f4d0`. The only conflicts were generated OpenAPI
+files. Regeneration from merged Rust preserves every route and schema from both
+branches: 88 public routes / 183 schemas and 101 private routes / 204 schemas.
+All five public Basilica dependencies remain locked to
+`f0e1c972930da5a8317ed9c70fc6bd3e7131d0f1`. The merge does not change managed-agent
+lifecycle/database source. Local merged API tests passed 889 cases with 35 expected
+ignores. Real pinned OpenSSH/root-helper/Engine delivery passed in 140.67 seconds,
+including fresh observations, successor rejection before physical fencing,
+replacement, retirement and preserved data. All owned host/database fixtures
+cleaned up. Strict merged API Clippy for all targets/features passed in 3m 19s.
+
+[CI 35536609842](https://github.com/one-covenant/basilica-backend/actions/runs/35536609842)
+and [instruction CI 35536609687](https://github.com/one-covenant/basilica-backend/actions/runs/35536609687)
+passed for the merged head. The tested merge is
+`a6d64c18bcbbe64e70e27acf60f7d3964ddbf40e` against the same main above. API passed
+910 tests (224 skipped); workspace passed 4,355 (60 skipped), plus all 269 owned
+cases. Lifecycle ran in 91.91 seconds, chat in 8.96 seconds and protected
+delivery/readiness in 10.01 seconds. Complete Linux OpenSSH/Engine delivery passed
+in 42.12 seconds. Pinned runtime, runtime image, fresh runner probes, standalone
+Engine replacement/observations, packet isolation, strict lint, schema drift and
+all other required lanes passed. PR 1872 is mergeable. The diff was self-reviewed
+without independent agents. Local logs use `/tmp/basilica-exo-readiness-*.log`.
+
+No paid host/model request, live migration, manual deployment or external registry
+publication was performed. Complete service dispatch, launch/maintenance
+coordination, verified checkpoints, retention, artifact retrieval, model accounting
+and remaining G0–G4 hosted acceptance stay open. Managed launch remains disabled.
