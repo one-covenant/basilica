@@ -163,6 +163,12 @@ This file tracks planning; it is not an additional specification. No application
 
 ## Passive chat readiness increment
 
-- [ ] Add a controller-only observation of the exact existing runtime chat session under current operation/generation authority.
-- [ ] Verify that observation never replaces or renews sockets, grants or worker leases, including expiry/revocation and actual transport cases.
+- [x] Add a controller-only observation of the exact existing runtime chat session under current operation/generation authority.
+- [x] Verify that observation never replaces or renews sockets, grants or worker leases, including expiry/revocation and actual transport cases.
 - [ ] Publish validation and integrate the observation into the remaining controller readiness work.
+
+## Frontend managed-agent product increment
+
+- [ ] Build authenticated instance list, quoted Exo creation and inline saved model connections in the existing shell.
+- [ ] Build the persistent workspace, scoped text chat and capability-controlled lifecycle management.
+- [ ] Verify contracts, replay/reconnect, accessible responsive states and OpenClaw navigation; publish production-build evidence separately from hosted acceptance.

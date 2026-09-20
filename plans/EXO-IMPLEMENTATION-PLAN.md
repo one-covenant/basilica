@@ -3480,3 +3480,42 @@ Controller and maintenance/rotation/export/recovery coordination, retention
 policy, product completion and remaining hosted G0–G4 gates remain open. Managed
 launch remains disabled; no paid resource, live migration, model call or external
 registry publication occurred.
+
+### Passive observation of runtime chat pairing
+
+Backend `0ae5d63adde9797e17a5bbb12e3236332e83b10d` adds
+`ChatService::observe_runtime` for the controller's current operation lease and
+exact retained session ID. It observes the existing exclusive runtime connection
+without opening another socket or changing any credential, worker/socket lease,
+message, receipt or event. Owner, operation, generation, attempt, kind/checkpoint,
+current instance state and active model connection are checked under the owner
+lock and row locks. Wall-clock expiry is evaluated after lock waits; the returned
+observation deadline is the earliest worker, session or connection expiry. Lost
+worker authority fails; absent/revoked/expired pairing returns no presence.
+
+This is immediate transport evidence, not model/tool or application readiness.
+Disconnect/revocation can invalidate it immediately; the eventual controller must
+combine it with the remaining runtime/model evidence under current authority.
+No public route or background worker is enabled and no capability is inferred.
+No migration, runtime wire, dependency-lock or architectural contract changed.
+
+All 24 owned chat tests passed on final source (11.27 seconds), including eight
+new presence cases, actual WebSocket continuation and the actual managed Node
+adapter through the Rust relay and owned TLS proxy. Read-only snapshots verify
+that observation leaves pending receipts and persisted authority unchanged; cases
+cover all lease identity fields, takeover, cross-owner/session/audience rejection,
+revocation, every deadline and expiry during a confirmed row-lock wait. The first
+full run passed the new cases but exposed an existing raw-SQL generation fixture
+deadlock against a live socket. Generation fixtures now take the same owner
+advisory lock as lifecycle mutations; the complete final-source run passed.
+All owned database/process fixtures were removed.
+
+Locked compilation, strict API Clippy with all features/targets, formatting,
+68 instruction contracts, 34 local documentation links and the full 59-commit
+Gitleaks 8.30.1 review-range scan passed against main `89720094c`. Evidence is
+`/tmp/basilica-exo-chat-presence-{compile,tests-verified,clippy,secret-scan}.log`.
+The diff was self-reviewed without an independent agent review. The head is
+pushed. [Instruction CI 35518201551](https://github.com/one-covenant/basilica-backend/actions/runs/35518201551)
+passed; [full CI 35518201732](https://github.com/one-covenant/basilica-backend/actions/runs/35518201732)
+is running. Its result remains separate from the previous green OpenSSH head. Controller integration and
+all remaining G0–G4 acceptance requirements remain open.
