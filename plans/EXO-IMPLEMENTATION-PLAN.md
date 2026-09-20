@@ -3061,3 +3061,59 @@ PR 1872 retains the disabled-launch contract. Protected SSH delivery, complete
 request/response digest interoperability, trusted helper/image installation,
 physical runtime coordination, state-preservation and all remaining G0–G4 gates
 are still open. No paid VM, model request or managed launch was performed.
+
+
+### Exact protected host wire contract
+
+Backend `9547f3271a102d41bd33356b60c3c3601e6dbdb9` implements decision 0020.
+Version 2 apply envelopes carry exact retained input JSON inside a stable body;
+length-framed, domain-separated SHA-256 digests bind the body and, separately,
+the lease attempt. Timing refresh does not change either identity. Neither v2
+authority digest re-encodes parsed floating-point prices. The owned offering verified during
+bundle preparation supplies image/CPU/RAM through a private in-memory descriptor;
+no caller-supplied resource override or encrypted-bundle/migration change occurs.
+
+The response verifier requires successful exit, bounded strict JSON, version,
+canonical instance/operation identity, generation, attempt, request digest and
+native container ID. It accepts only apply's `container_running` acknowledgement,
+which is not runtime readiness. Request debug output omits credentials; exact
+wire bytes are exposed only through the protected stdin accessor. The root
+helper retains v1 parsing/journals, creates explicit v2 journals and rejects
+cross-version admission before effects, even for higher fences or retirement.
+Host files retain deterministic Python encoding and exact-file replay checks;
+these file bytes are not misrepresented as identical to the retained Rust wire.
+
+Passed locally: five Rust bundle/wire tests, using the actual Python parser and
+response and checking exact float bits across signed zero, exponent thresholds,
+subnormal values and the largest finite double; 29 Python host tests including
+version conflicts and actual POSIX replay; the owned Linux root/UID 10001 fixture
+for both versions and actual packet isolation; 68 instruction contracts; 32 local
+documentation links; full review-range Gitleaks (49 commits, no findings). The
+actual retained-bundle database fixture now constructs the production wire from
+its owned offering and verifies Python's response in Rust. Local strict all-targets
+API Clippy and formatting passed as well.
+
+Full [CI 35502470125](https://github.com/one-covenant/basilica-backend/actions/runs/35502470125)
+and instruction run
+[35502470000](https://github.com/one-covenant/basilica-backend/actions/runs/35502470000)
+passed for branch head `9547f3271`. CI checked PR merge `3f2a45e` against main
+`6db481b00`; the branch itself retains the previously merged `0e341e9e` baseline.
+API: 888 passed/174 skipped. Workspace library/binary tests: 4,155 passed/34
+skipped. The separate owned database/runtime-chat harness passed all 220 cases,
+including the updated retained-bundle concurrency/takeover test with real
+Rust/Python request/response verification (115 lifecycle, 12 catalog, 16 chat,
+10 model-connection, 12 runtime-identity, 25 allocation, eight billing-client,
+22 billing-database). Hosted strict Clippy, host/packet, pinned runtime/bootstrap,
+image/replacement, schema and other required gates also passed. Configured skipped
+jobs and test targets are not counted as executions. No separate local database
+rerun is claimed; the owned database evidence is from CI. GitHub reports the
+current PR clean and mergeable. Logs use `/tmp/basilica-exo-wire-*`, including
+full CI job logs and `ci-result.json`. The diff was self-reviewed without an
+independent agent review.
+
+This is a serialization/storage boundary, not current worker authority or host
+delivery. Fresh lease/grant/target checks around pinned SSH, helper/image
+installation, authority-checked cleanup transport, full real-Engine runtime
+execution, rotation/restart/export/recovery, controller coordination and remaining
+G0–G4 gates remain open. Managed launch remains disabled; no paid host or model
+call was performed.

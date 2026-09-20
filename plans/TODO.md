@@ -116,3 +116,12 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Publish bundle/issuance evidence.
 - [x] Resolve the current-main schema conflict and verify the combined tree through exact-head full CI.
 - [ ] Finish pinned delivery, complete request/response digest interoperability, real host execution and controller integration.
+
+
+## Protected host wire increment
+
+- [x] Bind version 2 apply request digests to exact retained bytes and resources from the verified owned offering.
+- [x] Verify real Rust/Python digest and price-bit interoperability, strict acknowledgements and retained protocol fences.
+- [x] Verify Linux root/runtime-UID storage for both versions and preserve packet isolation.
+- [x] Finish exact-head Clippy and owned database replay validation; publish the final evidence.
+- [ ] Connect the contract to pinned SSH, trusted helper/image installation and authority-checked apply/cleanup delivery.
