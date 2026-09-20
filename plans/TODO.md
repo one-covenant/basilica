@@ -199,3 +199,11 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Expose observations through the trusted supervisor; invalidate evidence on replacement, exit, drain or probe failure.
 - [x] Verify real compiled runners, stale/replayed responses, incompatible state, cancellation and preserved canonical data.
 - [ ] Integrate trusted host observations, model access and passive chat into complete controller readiness.
+
+
+## Trusted host runtime observation
+
+- [x] Observe only the exact existing journal/container under current protected delivery authority, without replaying apply or changing runtime state.
+- [x] Bound fixed unprivileged Engine exec output and verify exit, container incarnation, declared schema and complete response identity.
+- [x] Verify wire/SSH authority, lost replies, malformed frames, drift and actual owned Engine execution.
+- [ ] Compose the observation with model/chat/billing checks in full controller readiness.

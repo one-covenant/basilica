@@ -205,6 +205,8 @@ Service execution v1 wraps image-owned `services.py` with `runtime_identity.py` 
 
 Managed runner observation v1 supplies fresh local runtime evidence. The image-owned supervisor owns one anonymous inherited Unix channel per actual scheduler/adapter process. Hidden descriptor options are consumed before harness initialization and marked close-on-exec. After runner initialization/lock/recovery, each fresh challenge re-reads the managed agent/chat configuration and typed scheduler/adapter state, with bounded validation and response time. Both roles must match the current challenge and declared `exo-managed-scheduler-v3` compatibility label. The private supervisor socket lives in container-local `/tmp`, outside exported state; old replies cannot satisfy a new probe and channels are discarded on replacement or exit. Observation does not execute a task/model turn, rewrite state, restart services or declare a healthy checkpoint. Its guest-domain evidence is not independent attestation: the trusted host/controller must still bind the exact container/generation and combine independent model/chat/billing checks. No owner/runtime HTTP readiness assertion is accepted.
 
+Trusted host observation v1 uses a separate fixed `observe` helper mode with the current protected apply request and a fresh nonnil UUID nonce in a strict version-1 outer envelope. The echoed nonce and exact response identity bind each result to this invocation. It locks only existing root-owned journal state and requires exact operation/generation/attempt/resource/input identity and one running container. It never admits a new fence, pulls images, changes networking, repairs inputs or restarts/replaces a workload. The local Engine runs only the image-owned observer as UID/GID 10001 with no stdin, TTY, privilege or caller-selected command. Bounded multiplexed output, completed exec identity/exit and unchanged container incarnation must all agree before returning a separately typed observation under fresh database authority. The result is runtime evidence only; model/chat/billing, schema compatibility and checkpoint verification remain controller responsibilities.
+
 Managed rebuild v1 is opt-in until image assembly supplies the pinned build tools. In managed mode the existing rebuild tool publishes a private, fsynced guardian update and never launches a detached guardian. The foreground owner serializes queued requests, records phases durably, runs locked Rust build/tests and TypeScript checking with bounded cancellation, and copies the executable pair into a unique immutable-by-convention candidate directory. Build failure preserves running services. Successful validation requests graceful drain with a bounded deadline; failed or interrupted drain fails the service generation rather than restarting over uncertain in-flight work. After both runners exit successfully, the owner atomically selects a digest-checked binary pair and starts it with unchanged canonical state. Selection and process survival do not establish model/chat readiness or a healthy recovery checkpoint. Nonterminal claimed requests found after supervisor restart fail as interrupted and are never automatically replayed. The selected candidate persists across ordinary supervisor restarts; immutable baseline and compatible code/dependency checkpoints remain separate required recovery work. No detached restart loop, lock-inode deletion or process-name matching is permitted.
 
 Code checkpoint/recovery v1 captures source, installed source-tree dependencies and the selected executable pair; it excludes canonical `.exo`, Git administration and the rebuild `target` cache. Internal relative symlinks are preserved; external/special files fail capture. A versioned file-integrity manifest is encrypted with the payload using a checkpoint-specific derived key and authenticated instance/source/baseline/state-schema/OS/architecture context. Authentication completes before extraction. LC must supply its authoritative current state-schema label and only register health-verified checkpoints; the artifact helper does not infer schema changes made by arbitrary user code or turn a capture into a healthy checkpoint. Recovery requires the same instance/key/source and compatible declared schema. It holds the service/bootstrap and both runner locks, stages verified code beside the source, retains the replaced checkout (including a root replaced by a file or symlink), recreates missing source without resetting state, selects the verified binary pair and journals each transition under the durable operation ID. Services refuse startup while recovery is pending. Same-operation retries resume interrupted renames or return the completed result; changed checkpoint IDs conflict. Canonical history, schedules, artifacts, binding and master key are never restored from a code checkpoint. Stable private parent directories with local rename/fsync semantics, lifecycle fencing and post-restore readiness remain required; packaging and hosted acceptance are separate gates.
@@ -3816,3 +3818,55 @@ model/chat/billing readiness, long host-command authority, artifact retrieval,
 unpaid retention, model accounting and remaining G0–G4 hosted acceptance stay
 open. Managed launch remains disabled. No paid host/model, live migration, manual
 deployment or external registry publication was performed.
+
+### 2026-09-20 trusted host runtime observation
+
+Backend `c3ce931fce0eabaddd0c2b08a595dcbbd4926f1e` implements the fixed passive host
+observation contract (ADR 0026). Rust passes a fresh nonnil UUID challenge and the
+current protected apply request in a strict outer envelope. Python opens only
+existing trusted journal state, requires the exact running operation/generation/
+attempt and retained input bytes, and inspects the same native container before
+and after the fixed unprivileged observer. No fence admission, image acquisition,
+network change, input repair or runtime replacement occurs in this mode.
+
+The Engine exec must match its exact container and fixed process configuration
+before start and after completion. The pre-start exit code is explicitly null;
+completion requires integer zero/true/current schema or one/false/null. Stream
+framing, stderr, byte bounds, deadlines and container incarnation are checked.
+The Rust result is separately typed and accepted only under fresh pinned-host and
+database authority. The helper package is 74,484 raw bytes / 99,312 encoded bytes;
+raw capacity rises from 72 to 75 KiB while the eight-file whitelist and encoded/
+complete-command limits remain 100/120 KiB. Existing apply/retire wire is unchanged.
+
+Local checks: 60 Python host cases; 886 API library cases with 27 expected ignores;
+17 owned PostgreSQL/SSH delivery cases, including all observation authority
+boundaries; 5 Rust/Python wire, 2 artifact and 5 transport cases; strict Clippy,
+rustfmt, instruction/link checks, staged scan and full 63-commit Gitleaks range.
+The current runtime image `1fb9f64c0649a9f920e794f11051a1086d19db03d96759df05ba9e81c85c5e05`
+and actual nested Engine passed passive observations before/after replacement,
+stale/retired rejection and unchanged journal/persistent data. The first physical
+run exposed the incorrect pre-start integer-exit assumption; it was corrected
+against pinned Engine behavior and the full sequential Engine run passed. Earlier
+parallel reruns expired/rejected startup authority and are not successful evidence.
+
+The full real OpenSSH path passed in 135.54 seconds, including fresh observations,
+rejection of a successor before its physical fence is applied, replacement,
+retirement and unchanged persistent state. All owned resources cleaned up. The
+instruction workflow and full exact-head CI passed:
+[CI 35532802019](https://github.com/one-covenant/basilica-backend/actions/runs/35532802019)
+and [instruction CI 35532801647](https://github.com/one-covenant/basilica-backend/actions/runs/35532801647).
+The tested merge is `e3b761996ab1f8af13e6d5a158e9105aebc26fca` against main
+`1b76cfa5d8323d8d830b286b763caf0fb4231ed9`. API passed 907 tests (215 skipped),
+workspace passed 4,346 (52 skipped), and all 260 owned integration cases passed,
+including 130 lifecycle cases in 91.49 seconds, 24 chat cases in 8.57 seconds and
+17 protected-delivery cases. The complete Linux OpenSSH/Engine case passed in
+40.87 seconds. The pinned runtime and runtime-image suites also passed, including
+fresh runner probes and both physical container observations.
+The backend diff was self-reviewed without independent agents. No dependencies,
+public DTOs or migrations changed in this increment. No paid resources, live
+migrations, external hosted SSH, registry publication or model calls were used.
+
+This is guest-domain operational evidence bound to trusted host authority, not
+independent attestation of hostile guest code. Complete model/chat/billing and
+compatible-checkpoint composition, service worker dispatch, maintenance, retention
+and remaining G0–G4 hosted acceptance remain open; managed launch remains disabled.
