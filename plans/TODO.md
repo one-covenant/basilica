@@ -153,4 +153,10 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Add bounded digest-only Engine image acquisition under current host authority, with exact post-pull inspection and no retirement dependency.
 - [x] Verify cached/missing/error/timeout image paths, fencing order and embedded artifact limits on owned fixtures.
 - [x] Exercise image acquisition and complete privileged helper execution against an owned real Engine.
-- [ ] Publish validation and remaining controller/hosted gates.
+- [x] Publish validation and remaining controller/hosted gates.
+
+## Complete owned protected-delivery integration
+
+- [ ] Connect actual retained bundle issuance and database authority to pinned OpenSSH, the root helper and a real Engine on an owned isolated host.
+- [ ] Verify exact replay, worker takeover, stale authority, physical replacement and terminal retirement with retained state.
+- [ ] Require the complete path in CI and publish its evidence without claiming hosted/model readiness.

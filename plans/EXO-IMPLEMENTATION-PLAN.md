@@ -3390,9 +3390,16 @@ contracts passed again, and the corrected full 57-commit secret scan passed.
 The superseded full run was cancelled; it is not a full CI pass.
 Corrected-head [instruction CI 35513809168](https://github.com/one-covenant/basilica-backend/actions/runs/35513809168)
 passed; [full CI 35513809342](https://github.com/one-covenant/basilica-backend/actions/runs/35513809342)
-is pending. The runtime-image job now includes the complete
-owned Engine harness and is a required aggregate dependency. Earlier retirement
-CI remains evidence for its earlier head, not a pass for this increment.
+passed on exact head `c6baadfe6`: 897 API tests passed/189 skipped, 4,165 workspace
+tests passed/49 skipped, all 235 separate owned cases passed, and strict
+all-features/all-targets Clippy and all required checks passed. CI tested merge
+`513aec5ba8aad2a4c9d0b7bb9704d37f2191e202` against main `89720094c`.
+The runtime-image job passed both its existing tools/replacement/full-state export
+suite and the complete new cold-pull/root-helper/Engine/retirement harness on
+Linux/x86_64. It is now a required aggregate dependency. The real-Engine step
+reported complete success and the expected helper digest
+`0232b3b238d3bf2ad1b7533d6d6aea5f9c102af55e3d53562f0ee0c03e7bae2e`.
+Hosted logs are `/tmp/basilica-exo-image-install-ci-{api,workspace,lint,image}.log`.
 Public dependencies remain locked to `f0e1c972`; no schema/migration or lockfile
 changed. Full issuance-to-SSH/root-helper integration, rotation/restart/export/
 recovery coordination, retention policy, controller and product completion, and
