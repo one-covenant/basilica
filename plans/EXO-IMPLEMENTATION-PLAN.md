@@ -3458,8 +3458,21 @@ The image job now runs it after the existing image and direct-host suites.
 
 Exact-head [instruction CI 35516456384](https://github.com/one-covenant/basilica-backend/actions/runs/35516456384)
 passed; [full CI 35516456718](https://github.com/one-covenant/basilica-backend/actions/runs/35516456718)
-is running. The earlier green image CI belongs
-to `c6baadfe6`, not this head. Provider/rental and acknowledged billing observations
+also passed on this exact head, testing merge
+`6ab28d39983ecaa5a4f27041232a01517b00ac57` against main
+`89720094c4baf9b821594dab780d5d31144ac85b`. All required checks passed,
+including 897 API cases (190 skipped), 4,165 workspace cases (50 skipped),
+all 235 separate owned cases, strict Clippy, API image, pinned runtime and host
+packet isolation. The new full issuance/OpenSSH/Engine case passed in 40.22 seconds
+on Linux/x86_64, with runner cleanup verified. Its additional ignored marker
+accounts for the one added ordinary-lane skip; the required image lane runs it.
+The existing image/replace/export and direct-helper cold-pull/retirement suites
+also passed. Full-state export covered 43,840 entries and 1,186,905,046 ciphertext
+bytes in 33.015 seconds. The CI source image was
+`sha256:73d8f67641f63ea3982dc3cc2b72d4a191f420170f8ea3a3df3c51b8ba8fcd68`;
+the embedded helper digest remains `0232b3b238d3bf2ad1b7533d6d6aea5f9c102af55e3d53562f0ee0c03e7bae2e`.
+Logs are `/tmp/basilica-exo-host-delivery-ci-{api,workspace,image,lint}.log`.
+Provider/rental and acknowledged billing observations
 are still explicit fixtures, as is TLS renewal; model/chat readiness, provider
 absence, settlement and completed user deletion are not claimed. No production
 controller, schema, migration, dependency lock or runtime contract changed.

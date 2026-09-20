@@ -159,4 +159,10 @@ This file tracks planning; it is not an additional specification. No application
 
 - [x] Connect actual retained bundle issuance and database authority to pinned OpenSSH, the root helper and a real Engine on an owned isolated host.
 - [x] Verify exact replay, worker takeover, stale authority, physical replacement and terminal retirement with retained state.
-- [ ] Require the complete path in CI and publish its evidence without claiming hosted/model readiness.
+- [x] Require the complete path in CI and publish its evidence without claiming hosted/model readiness.
+
+## Passive chat readiness increment
+
+- [ ] Add a controller-only observation of the exact existing runtime chat session under current operation/generation authority.
+- [ ] Verify that observation never replaces or renews sockets, grants or worker leases, including expiry/revocation and actual transport cases.
+- [ ] Publish validation and integrate the observation into the remaining controller readiness work.
