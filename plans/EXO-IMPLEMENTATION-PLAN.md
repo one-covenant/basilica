@@ -3405,3 +3405,65 @@ changed. Full issuance-to-SSH/root-helper integration, rotation/restart/export/
 recovery coordination, retention policy, controller and product completion, and
 all remaining G0–G4 gates stay open. Managed launch remains disabled. No paid
 resource, live migration, hosted SSH or external registry publication occurred.
+
+### Complete owned issuance-to-OpenSSH host execution
+
+Backend `73c8148cfe0e8c30e96a29fe3f6f72e2f72ff283` adds a complete owned
+integration path through the existing production boundaries. The Rust driver
+creates actual retained bundle/grant state and generated platform SSH identities
+in disposable PostgreSQL. An actual OpenSSH server uses the issued host key and
+authorized client key. The current apply and retirement guards authenticate that
+server and deliver their fixed commands and protected stdin. A non-root management
+user invokes sudo; acknowledgements come from the real root installer/helper and
+nested Docker Engine. No synthetic helper acknowledgement is used in this lane.
+
+The first apply cold-pulls the approved digest and starts the actual runtime.
+Observations verify tools, scoped TLS renewal, baseline ownership and persistent
+owner edits. Exact replay retains the same container. An expired worker lease is
+claimed by its successor; the old worker loses authority, the retained ciphertext
+stays byte-identical, and a new container physically replaces the old one. An
+actual delete intent then advances the instance generation and creates a new
+delete operation. Old-generation apply is rejected; retirement and replay stop
+the runtime and preserve canonical history, configuration, receipts, master key
+and owner files. Current runtime authentication is revoked. The database remains
+in `deleting` with cleanup pending and billing unsettled: host retirement does not
+invent provider absence or complete the lifecycle operation.
+
+`python3 scripts/exo/tests/run_host_delivery.py --image basilica-exo-host-engine:ssh-owned --runtime-image basilica-exo:chat-local`
+passed locally with the final delete-generation flow in 124.99 seconds for the
+Rust integration case, plus host preparation and verified cleanup. Its preceding
+same-generation cleanup run passed in 137.86 seconds; the final run is the stronger
+evidence. All owned PostgreSQL servers, containers, networks, anonymous volumes,
+temporary image archives and fixture credentials were removed. The source runtime
+remains the pinned Linux/aarch64 image recorded above; the new fixture image is
+`sha256:86bf1b1d55c7824d6c733df58eb5131b6bad69eb12fa47e3427f97f7e0b00911`.
+
+All 15 existing delivery-authority database cases passed after the shared fixture
+refactor, as did all 46 host tests. Final-source strict API Clippy with all features
+and targets, formatting, 68 instruction contracts, 34 documentation links,
+actionlint, the image-job Act dry run and the 22-Dockerfile PCRE2 contract passed.
+The full 58-commit Gitleaks 8.30.1 review-range scan passed against main `89720094c`.
+The diff was self-reviewed without an independent agent review. Evidence is in
+`/tmp/basilica-exo-host-delivery-*`, including the final
+`delete-generation.log` and `clippy-final.log`.
+
+The harness publishes only an ephemeral host-loopback SSH port. It removes the
+outer container's external default routes and restricts bridge output to replies
+before starting services; the runtime retains its production packet policy. No
+host Docker socket is mounted. A private temporary file exchange configures only
+the owned SSH/TLS fixtures and records assertions; production commands and input
+travel through real SSH. The ordinary database runner explicitly excludes this
+case because the required image CI job owns its PostgreSQL/OpenSSH/Engine setup.
+The image job now runs it after the existing image and direct-host suites.
+
+Exact-head [instruction CI 35516456384](https://github.com/one-covenant/basilica-backend/actions/runs/35516456384)
+passed; [full CI 35516456718](https://github.com/one-covenant/basilica-backend/actions/runs/35516456718)
+is running. The earlier green image CI belongs
+to `c6baadfe6`, not this head. Provider/rental and acknowledged billing observations
+are still explicit fixtures, as is TLS renewal; model/chat readiness, provider
+absence, settlement and completed user deletion are not claimed. No production
+controller, schema, migration, dependency lock or runtime contract changed.
+Controller and maintenance/rotation/export/recovery coordination, retention
+policy, product completion and remaining hosted G0–G4 gates remain open. Managed
+launch remains disabled; no paid resource, live migration, model call or external
+registry publication occurred.

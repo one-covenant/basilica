@@ -157,6 +157,6 @@ This file tracks planning; it is not an additional specification. No application
 
 ## Complete owned protected-delivery integration
 
-- [ ] Connect actual retained bundle issuance and database authority to pinned OpenSSH, the root helper and a real Engine on an owned isolated host.
-- [ ] Verify exact replay, worker takeover, stale authority, physical replacement and terminal retirement with retained state.
+- [x] Connect actual retained bundle issuance and database authority to pinned OpenSSH, the root helper and a real Engine on an owned isolated host.
+- [x] Verify exact replay, worker takeover, stale authority, physical replacement and terminal retirement with retained state.
 - [ ] Require the complete path in CI and publish its evidence without claiming hosted/model readiness.
