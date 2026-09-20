@@ -3382,8 +3382,14 @@ service were isolated owned fixtures; no host socket, external runtime network,
 model call or chat acceptance was involved. Logs are
 `/tmp/basilica-exo-image-install-*`; the complete real-Engine run exited zero.
 
-Exact-head [instruction CI 35513584330](https://github.com/one-covenant/basilica-backend/actions/runs/35513584330)
-passed; [full CI 35513584452](https://github.com/one-covenant/basilica-backend/actions/runs/35513584452)
+Initial CI identified a missing census entry and path-filter selector for the new
+fixture Dockerfile. Correction `c6baadfe6e09bf7b7ea400f8d2be2e0bf741b671`
+adds both without changing the runtime or weakening the package protection.
+The PCRE2 contract passed for all 22 affected Dockerfiles, the 68 instruction
+contracts passed again, and the corrected full 57-commit secret scan passed.
+The superseded full run was cancelled; it is not a full CI pass.
+Corrected-head [instruction CI 35513809168](https://github.com/one-covenant/basilica-backend/actions/runs/35513809168)
+passed; [full CI 35513809342](https://github.com/one-covenant/basilica-backend/actions/runs/35513809342)
 is pending. The runtime-image job now includes the complete
 owned Engine harness and is a required aggregate dependency. Earlier retirement
 CI remains evidence for its earlier head, not a pass for this increment.
