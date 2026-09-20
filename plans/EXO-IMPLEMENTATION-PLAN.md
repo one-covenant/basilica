@@ -4048,3 +4048,30 @@ This is execution of the exact generated bootstrap command on an owned host,
 not provider cloud-init acceptance. No paid host/model call, live migration,
 manual deployment or external registry publication was performed. The broader
 service/preservation/maintenance and G0–G4 gates remain open.
+
+### 2026-09-21 documentation security dependency alignment
+
+Documentation head `4edf009182ab3e1064f7143c3003178c61fc808f` passed its secret
+scan and quick checks, but required security CI found the public repository's
+existing Rustls 0.23.36 dependency affected by
+[RUSTSEC-2026-0285](https://rustsec.org/advisories/RUSTSEC-2026-0285). Both the
+documentation branch and public main retained that version; the Exo implementation
+branch already carried the patched dependency graph.
+
+The existing security commit `234a8de1120eaab50c80ae0450505b7028831723` is reused
+on the documentation branch as `a9f79601`. It locks Rustls 0.23.45 with its WebPKI
+and AWS-LC dependency updates and explicitly requests the Bookworm PCRE2 security
+update in the miner image. No advisory suppression or toolchain/manifest change
+was introduced. This is a required CI repair, not additional Exo application
+implementation. Backend head `dc2b07f9`, its locked public revision and its green
+CI are unchanged.
+
+Local validation passed: `cargo deny --locked check` (cargo-deny 0.19.9;
+advisories, bans, licenses and sources),
+`cargo check --locked -p basilica-cli -p basilica-sdk`, and
+`docker buildx build --check --platform linux/amd64 --file scripts/miner/Dockerfile .`.
+The Docker command validates the build definition; it is not a full image build.
+The lockfile is byte-identical to implementation head `f566ee0e` (Git blob
+`d11513afe2c18815cb8a53874a3052c5a061c464`). Required remote validation of this
+repair is recorded in [PR 570 checks](https://github.com/one-covenant/basilica/pull/570/checks)
+and its PR description, including the exact head and workflow result.

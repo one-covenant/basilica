@@ -10,6 +10,9 @@
 
 This file tracks planning; it is not an additional specification. No application implementation or paid resources were created by the planning work.
 
+The documentation branch also carries the existing implementation branch's
+security dependency fix so its required CI checks use the patched TLS graph.
+
 ## Active implementation increment
 
 - [x] Add explicit managed-agent CLI routing, quoted launch, operations and safe model-connection input.
@@ -228,3 +231,10 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Freeze an anonymous bounded image-cache command into new versioned host bootstraps, retaining exact legacy payload compatibility.
 - [x] Verify the generated command against an empty owned Engine, followed by current-authority protected delivery and preserved-state takeover/retirement.
 - [x] Publish final database, physical runtime and exact-head CI evidence; keep hosted cloud-init and remaining launch gates open.
+
+## Documentation security checks
+
+- [x] Identify the public repository's existing Rustls advisory in documentation CI.
+- [x] Reuse the implementation branch's security fix without changing toolchain files or backend dependency selection.
+- [x] Verify the patched dependency graph, CLI/SDK compilation and miner Dockerfile locally.
+- Track required remote security and build validation in [PR 570 checks](https://github.com/one-covenant/basilica/pull/570/checks) and its exact-head evidence in the PR description.
