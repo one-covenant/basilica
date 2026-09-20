@@ -179,11 +179,11 @@ Instance reads v1 implements account-authenticated `GET /agent-instances` and `G
 
 A single database statement reads each page/detail with safe connection model metadata, recorded instance cost/persistence, quote lifetime and the newest 20 registered code-checkpoint choices ordered by creation time/ID. The model label follows the existing connection DTO's model string. The supported `until_deleted` lifetime has no instance expiry; quote expiry must never be returned as instance expiry. Checkpoint compatibility means an exact match to the known authoritative instance schema, independent of action availability. Its fixed effect explains code/dependency restore while preserving canonical history and user files. General reads never expose resource IDs, account/connection credentials, grants, leases, private artifact IDs, digests or keys. Typed conversion rejects corrupt stored metadata with a static internal error; unknown/omitted capabilities remain unavailable. Reads do not allocate, claim/renew work, register checkpoints, alter capabilities or infer health. Registered checkpoint rows remain trusted-controller evidence, and real registration/runtime acceptance is separate required work.
 
-Worker persistence v1 accepts typed resource binding, progress, retry, export metadata, verified cleanup, ready, failed and deleted updates. Every update takes the owner lock and locks the current operation/instance, matching owner, instance, generation, kind, checkpoint and lease token. Database wall-clock expiry is checked after row-lock waits and again at the final operation write; loss of authority rolls back the entire update. A stale/expired lease returns false so the worker stops, while invalid transitions conflict. These are trusted reconciler observations, never guest/public assertions; storage functions make no provider/runtime call and cannot prove physical fencing, health, artifact integrity or billing settlement themselves.
+Worker persistence v1 accepts typed resource binding, progress, retained-attempt waiting, retry, export metadata, verified cleanup, ready, failed and deleted updates. Every update takes the owner lock and locks the current operation/instance, matching owner, instance, generation, kind, checkpoint, attempt and lease token. Database wall-clock expiry is checked after row-lock waits and again at the final operation write; loss of authority rolls back the entire update. A stale/expired lease returns false so the worker stops, while invalid transitions conflict. These are trusted reconciler observations, never guest/public assertions; storage functions make no provider/runtime call and cannot prove physical fencing, health, artifact integrity or billing settlement themselves.
 
 Bindings identify confirmed existing Basilica deployment/CPU-rental resources and cannot be replaced; identical binding retries are allowed, including discovery during delete. Create progresses monotonically from queued through provisioning/configuring/starting, and maintenance from restarting through configuring/starting; configuring/starting require a binding. Readiness is a separate completion requiring starting phase, a bound resource, observed schema, all three runtime/model/chat health checks healthy, no unresolved cleanup and no finalized resource billing. Unsupported pause/resume/terminal/files capabilities remain disabled. Recovery cannot change the authoritative schema. Export metadata uses the operation UUID, manifest version 1, a lowercase SHA-256, positive size and future expiry; retries preserve the original metadata. Export readiness additionally requires an unexpired recorded artifact. The reconciler must verify the artifact independently before recording it.
 
-Retries keep the same running operation, use bounded 1–3600-second database delays, release the lease, and publish only fixed safe failure codes/messages. Cleanup-pending is sticky across retries. Verified cleanup is a separate durable observation for create/delete requiring both all managed resources absent and resource billing finalized; it clears capabilities and revokes access while retaining the historical resource binding. A failed create can become terminal only after this cleanup observation, including verified absence for an unallocated request. Failed maintenance preserves the bound resource and ongoing costs, requires no unresolved cleanup, and revokes scoped access. Delete completes only after recorded cleanup and billing confirmation. All terminal updates clear worker leases atomically with instance phase/health/error changes. Repeated writes using a terminal lease are stale; clients replay the original durable operation and read its final status. Provider adapters must reconcile uncertain external responses by stable instance identity before issuing these observations, and lease loss never authorizes replay of an external action.
+Create waiting keeps the current attempt, lease, resource and scoped grants while publishing only fixed safe failure codes/messages; the execution owner must keep renewing and reconciling that same lease. Retries keep the same running operation, use bounded 1–3600-second database delays, release the lease, and publish only fixed safe failure codes/messages. Cleanup-pending is sticky across retries. Verified cleanup is a separate durable observation for create/delete requiring both all managed resources absent and resource billing finalized; it clears capabilities and revokes access while retaining the historical resource binding. A failed create can become terminal only after this cleanup observation, including verified absence for an unallocated request. Failed maintenance preserves the bound resource and ongoing costs, requires no unresolved cleanup, and revokes scoped access. Delete completes only after recorded cleanup and billing confirmation. All terminal updates clear worker leases atomically with instance phase/health/error changes. Repeated writes using a terminal lease are stale; clients replay the original durable operation and read its final status. Provider adapters must reconcile uncertain external responses by stable instance identity before issuing these observations, and lease loss never authorizes replay of an external action.
 
 Capabilities cover chat/restart/export/recover/pause/resume/terminal/files; unsupported or unknown is unavailable, not simulated success. At G0 settle quote units, model charges, retention/deletion/expiry policies and persistence scope. No timed trial silently destroys state; it needs verified preservation or a separately explicit, accepted deletion policy.
 
@@ -377,7 +377,7 @@ These are future required checks, not completed runs. Establish baselines and re
 
 | Owner | Required checks |
 | --- | --- |
-| RT | `bash -n scripts/exo/*.sh`; actual smoke runner with nonzero failure assertions. Pinned upstream builds use the compatible toolchain and locked dependencies; observed upstream scripts build `exo` and `exo/scheduler-runner/Cargo.toml`. `pnpm check` is upstream lint/typecheck/tests. Record actual commands/any necessary deviations. |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, fresh runner/schema observations, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, fresh runner/host probes, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; guarded readiness composed; export API and verified checkpoint integration pending | `dc2b07f9`; actual bootstrap cold cache fill plus short-authority SSH/Engine delivery, observations, replay, replacement, retirement and preserved state pass locally in 131.82s; prior runtime/export evidence below; CI 35543815454 green |
 | LC/MG/CT + CO | Targeted Rust tests per owned module and real integration cases; repository `just` checks after wiring. `actionlint` and required local CI validation for changed workflows. Record exact added test targets during implementation. |
 | FE | `npm ci`; `npm run build`; `CI=1 npm run lint`; chosen focused test runner; real browser acceptance. Lockfile and `.papi/descriptors/package.json` exist. Dependencies were not installed and ESLint config/dependency was not present at review: establish a noninteractive baseline, never count setup prompts as passing. Build runs sitemap postbuild; inspect generated changes. |
 | SDK | `cargo test -p basilica-cli`; `cargo test -p basilica-sdk`; `just fmt-check`; `cargo clippy -p basilica-cli -p basilica-sdk --all-targets -- -D warnings`; required public CI. |
@@ -401,10 +401,10 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, fresh runner/schema observations, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, fresh runner probes, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; trusted host/controller readiness, export API and verified checkpoint integration pending | `b6c0136b`; 16 real-runner supervision, 5 protocol, 3 Rust probe, 17 bootstrap, 3 scheduler-recovery, 16 rebuild and 3 patch-stack cases pass; CI 35526676541 green with actual Linux probes/replacement, 258 owned cases and complete delivery; earlier image/export evidence retained |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected host delivery, execution ownership and explicit-delete coordination; API migrations 035–044 and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives, complete owned SSH/Engine delivery, physical fencing, bounded lease-owned execution and explicit-delete coordinator implemented; service worker, launch/maintenance/readiness, long host deadlines and unpaid-tail/preservation policy pending | `24201f5b`; 130 owned lifecycle cases, strict Clippy and full 61-commit secret scan pass; CI 35524705728 green with 258 owned cases and complete SSH/Engine delivery |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, fresh runner/schema observations, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, fresh runner/host probes, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; guarded readiness composed; export API and verified checkpoint integration pending | `dc2b07f9`; actual bootstrap cold cache fill plus short-authority SSH/Engine delivery, observations, replay, replacement, retirement and preserved state pass locally in 131.82s; prior runtime/export evidence below; CI 35543815454 green |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected delivery and create/delete/readiness coordination; API migrations 035–044 and billing migrations 048–049 | G0; G1 for runtime adapter | Internal create/delete coordinators, guarded Ready, exact-VM refresh, physical fencing, short delivery authority and frozen bootstrap image caching implemented; service worker, maintenance/checkpoints and unpaid-tail/preservation policy pending | `dc2b07f9`; 281 owned cases, 890 API and 283 aggregator library cases, strict Clippy and full 68-commit secret scan pass; actual cold-cache/protected-host path passes; CI 35543815454 green |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh, guest renewal and protected bundle delivery implemented; model accounting and controller/hosted integration pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
-| CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; controller/readiness wiring and hosted acceptance pending | `0ae5d63a`; 24 owned chat cases including passive authority observation and actual Node/Rust transport; CI 35518201732 green; earlier runtime adapter evidence below |
+| CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; observation composed into guarded Ready; service dispatch and hosted acceptance pending | `dc2b07f9`; 24 owned chat cases including actual Node/Rust transport and passive authority observation pass; guarded create/readiness cases pass; CI 35543815454 green; earlier runtime adapter evidence below |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Authenticated list/create/workspace, scoped chat, lifecycle management and model-key rotation pushed; artifact download and hosted acceptance pending | `fd1c1f1a`; 16 contract/navigation and 17 owned browser cases, lint and production build; CI 35522531903 green on draft site PR 22 |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTO/SDK and CLI quoted launch, lifecycle, logs and model connections pushed; browser open, export download and hosted parity pending | `f566ee0e`; 349 tests/doctests passed, two existing doctests ignored; strict all-target/all-feature Clippy passed; CI 35334088788 green |
 
@@ -3934,3 +3934,117 @@ No paid host/model request, live migration, manual deployment or external regist
 publication was performed. Complete service dispatch, launch/maintenance
 coordination, verified checkpoints, retention, artifact retrieval, model accounting
 and remaining G0–G4 hosted acceptance stay open. Managed launch remains disabled.
+
+### 2026-09-21 create/launch coordinator
+
+Backend `49bc037cb4a16ce08d43aaf82bd02ba72f234b78` composes claimed creation from
+stable allocation and fresh balance admission through retained bootstrap, billing
+registration/coverage, protected apply, Starting and guarded Ready under one
+heartbeat/cancellation owner. Bounded reconciliation re-reads full current
+operation/attempt/lease authority and durable state between external actions.
+Waiting publishes fixed safe failures without releasing the lease, advancing the
+attempt, changing allocation or rotating grants; service dispatch must continue
+renewing and reconciling that same lease while waiting.
+
+Observed provider allocations now have an exact-target guarded refresh. A bounded
+GET must retain native VM ID, hostname, machine type and provider SSH-key identity.
+No database locks span provider I/O; current authority is checked again before and
+after updating the original rental's status/address. Missing/inconsistent results
+remain uncertain, never verified absence or permission to purchase again. A running
+provider response with an unusable address stays in provisioning for later refresh.
+Allocation authority additionally matches the worker attempt.
+
+Billing enrollment begins when allocation is observed, including before a host
+address is ready. Registration alone is insufficient: actual acknowledged recent
+coverage is required before delivery. Protected SSH delivery now freezes its
+expiry at the earliest lease/grant/coverage deadline, including coverage plus 60
+seconds. Neither heartbeat nor a later billing tick extends an already-sent host
+request. Same-attempt replay retains the protected body and physical fence. A
+model/chat wait in Starting does not repeat apply. Explicit deletion still uses
+the separate verified absence/settlement coordinator; a transient create failure
+never infers permission to destroy data. ADR 0028 records this contract.
+
+The six new owned coordinator cases exercise actual queued intents, retained
+pre-purchase encrypted keys, allocation/worker guards, real billing RPC and database
+migrations, metadata HTTP and pinned SSH wire. They cover progression to guarded
+Ready, insufficient funding followed by uncertain-purchase reconciliation, lost
+apply acknowledgement, deletion during apply, metadata rejection without repeated
+apply, and a placeholder address corrected by a later refresh. Provider lifecycle
+and guest execution remain explicit fixtures. The 32 delivery/readiness/launch
+cases passed in 34.55 seconds; 131 lifecycle, 24 chat (including the actual runtime
+worker/relay), 12 catalog, 10 model-connection and 12 identity cases also passed.
+The five new exact-target refresh cases passed within the 30-case allocator suite.
+Formatting, instruction contracts, ADR links, locked dependency verification,
+staged scanning and the full 66-commit Gitleaks 8.30.1 review range passed. The full
+281-case owned runner passed, including 8 billing transport and 22 billing
+database cases, with owned fixture cleanup. Ordinary library tests passed 889 API
+cases (42 expected ignores) and 282 aggregator cases (30 expected ignores). Strict
+Clippy passed for both changed crates across all targets/features. The final
+14-case readiness/create rerun passed in 15.39 seconds, including rejection of
+malformed, unspecified, broadcast and multicast addresses before host delivery.
+The initial short-authority physical delivery failed on cold image acquisition;
+the follow-up bootstrap-cache and final hosted CI validation are recorded below.
+
+Service dispatch, failed-create/state preservation, compatible checkpoints,
+maintenance, retention/export policy, artifact retrieval, model accounting and
+remaining G0–G4 hosted acceptance remain open. Managed launch is disabled. No paid
+host/model request, live migration, manual deployment or external registry
+publication was performed.
+
+### 2026-09-21 cold image acquisition under short delivery authority
+
+The new lease/billing deadline exposed a real cold-start failure: eight bounded
+same-attempt protected pulls returned `image unavailable`. The owned Engine had
+completed only two of ten layers when inspected. The runtime includes 1.19 GB and
+1.75 GB layers, so cancellation can discard substantial partial progress; repeated
+short requests cannot be treated as a reliable acquisition strategy.
+
+Backend `220d8097c0f483e3298e2da81d48de6362d8acab` adds a version-2 frozen host
+bootstrap that retains the accepted quote's immutable runtime digest and hashes its exact
+generated cloud-init command. That command performs one anonymous local-Engine
+cache fill with a clean environment, private empty Docker configuration and a
+600-second timeout. It receives no runtime grants and starts no containers.
+Legacy version-1 manifests retain their original SSH-only serialized payload;
+existing journals are never retrofitted. ADR 0029 records the provisioning scope,
+failure behavior, exact-source compatibility and rollback requirements.
+
+Actual generated command execution against the empty owned Engine and loopback
+registry passed, followed by protected delivery under the real short heartbeat
+lease, exact replay, current observations, takeover, physical replacement and
+retirement with preserved state. The Rust physical case passed in 131.82 seconds,
+including the cold fill; its first protected apply needed no retry. The expected
+successor observation conflict was rejected before physical fencing. All owned
+host/database resources cleaned up. Host Python tests passed 63 cases; ordinary
+compilation, formatting, instruction contracts and local ADR links passed. The
+full 281-case owned database/transport runner passed again: catalog 12, chat 24,
+lifecycle 131, model connections 10, identities 12, delivery/readiness/create 32,
+allocator 30, billing transport 8 and billing database 22. The 67-commit review
+range passed Gitleaks 8.30.1. Ordinary libraries passed 890 API cases (42 expected
+ignores) and 283 aggregator cases (30 expected ignores), including exact legacy
+bootstrap bytes and version/image compatibility. Strict Clippy passed for both
+crates across all targets/features in 1m 11s.
+
+The first hosted run exposed a missing build input: the API Dockerfile copied the
+existing trusted-host source but omitted the newly embedded bootstrap command.
+Backend `dc2b07f94dd87ba82b1089da8d4f76960f9fe434` includes that source in the
+API build context. Docker BuildKit checking passed without warnings, and the full
+68-commit secret scan passed. No Rust/runtime behavior changed in the packaging fix.
+
+[CI 35543815454](https://github.com/one-covenant/basilica-backend/actions/runs/35543815454)
+and [instruction CI 35543815323](https://github.com/one-covenant/basilica-backend/actions/runs/35543815323)
+passed for final head `dc2b07f94dd87ba82b1089da8d4f76960f9fe434`. The tested merge
+is `2a2aa020e093c9421383a10572f9ef4ee1c89f0d` against unchanged backend main
+`eca54885db36428278f00dffe03ffa02aa58f4d0`. API passed 911 tests (231 expected
+skips); workspace passed 4,357 (72 expected skips), and all 281 owned cases passed.
+The full Linux PostgreSQL/OpenSSH/Engine case passed in 40.89 seconds, including
+the generated cold-cache command and a single first protected apply under the
+real renewed lease. Runtime-image smoke/replacement, standalone cold acquisition,
+pinned runtime/patches, packet isolation, all API/container builds, strict lint,
+schema drift and the other required lanes passed. PR 1872 remains mergeable.
+The diff was self-reviewed without independent agents. Local evidence is under
+`/tmp/basilica-exo-bootstrap-cache-*.log`.
+
+This is execution of the exact generated bootstrap command on an owned host,
+not provider cloud-init acceptance. No paid host/model call, live migration,
+manual deployment or external registry publication was performed. The broader
+service/preservation/maintenance and G0–G4 gates remain open.

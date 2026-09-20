@@ -97,7 +97,7 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Implement retained server bootstrap, protected single-create payload and pinned host authentication.
 - [x] Finish bootstrap validation and resolve the generated-schema conflict with current main.
 - [x] Finish post-merge integration validation and repair the transient CI dependency-download failure.
-- [ ] Verify the complete protected-delivery path with real physical generation/lease fencing.
+- [x] Verify the complete protected-delivery path with real physical generation/lease fencing.
 
 ## Protected host execution increment
 
@@ -124,7 +124,7 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Verify real Rust/Python digest and price-bit interoperability, strict acknowledgements and retained protocol fences.
 - [x] Verify Linux root/runtime-UID storage for both versions and preserve packet isolation.
 - [x] Finish exact-head Clippy and owned database replay validation; publish the final evidence.
-- [ ] Finish trusted image installation and authority-checked cleanup delivery using the verified pinned apply contract.
+- [x] Finish trusted image installation and authority-checked cleanup delivery using the verified pinned apply contract.
 
 ## Trusted host helper increment
 
@@ -166,7 +166,7 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Add a controller-only observation of the exact existing runtime chat session under current operation/generation authority.
 - [x] Verify that observation never replaces or renews sockets, grants or worker leases, including expiry/revocation and actual transport cases.
 - [x] Publish exact-head validation and CI evidence.
-- [ ] Integrate passive observation into the remaining controller readiness work.
+- [x] Integrate passive observation into the remaining controller readiness work.
 
 ## Frontend managed-agent product increment
 
@@ -214,3 +214,17 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Complete Ready atomically with final locked evidence, frozen freshness deadlines and complete attempt fencing; keep unsupported maintenance/recovery capabilities disabled.
 - [x] Verify actual metadata transport and owned PostgreSQL/SSH races, cancellation, expiry, credential rotation and write rollback.
 - [ ] Integrate this transition with complete service dispatch, verified checkpoints and remaining maintenance/launch gates.
+
+## Create/launch coordinator
+
+- [x] Compose stable allocation, fresh funding, retained bootstrap, billing coverage, protected apply, Starting and guarded Ready under one owned reconciliation future.
+- [x] Preserve attempt/grant/resource identity across pending work and uncertainty, expose safe waiting status, and stop on deletion or lost authority.
+- [x] Verify the complete launch sequence and interruption/replay/authority cases with owned database, provider/billing and host/metadata fixtures.
+- [ ] Connect service dispatch, verified artifact preservation and remaining maintenance/hosted gates before enabling launch.
+
+## Cold images under short runtime authority
+
+- [x] Reproduce cold image failure under the actual lease/billing deadline and reject longer stale authority as a workaround.
+- [x] Freeze an anonymous bounded image-cache command into new versioned host bootstraps, retaining exact legacy payload compatibility.
+- [x] Verify the generated command against an empty owned Engine, followed by current-authority protected delivery and preserved-state takeover/retirement.
+- [x] Publish final database, physical runtime and exact-head CI evidence; keep hosted cloud-init and remaining launch gates open.
