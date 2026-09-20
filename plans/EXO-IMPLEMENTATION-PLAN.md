@@ -2939,3 +2939,78 @@ passed; CD-scripts reported the missing fixture census entry. The correction is
 pushed for a new exact-head run; the prior run is not a successful full-CI result.
 Instruction workflow 35420789218 passed for the original host commit. No runtime
 code, Rust source or dependency lock changed in this follow-up.
+
+### Protected runtime bundle — implementation reservation
+
+CO reserves API migration 044, `agents/lifecycle/runtime_bundle/`, transaction-aware
+internal runtime/chat issuance, owned lifecycle/schema tests and decision 0019.
+Persist exact protected inputs and their grant identities in one transaction under
+current operation/generation/lease authority. Lease takeover must recover the same
+bundle, not mint different tokens. Bind owner, connection, accepted resource and
+operation in the authenticated encrypted content and retained relational identity.
+Never expose provider credentials or plaintext bundle data through public journals,
+Debug, general serializers or diagnostics. Expired/revoked grants fail replay;
+ordinary runtime renewal can extend a still-live retained identity. Delivery and
+host retirement remain separate actions requiring current authority and pinning.
+
+Full host-control CI run 35421044622 completed successfully at exact backend head
+`b9e2c441247706e8a79760703a2f2632346ff662`; instruction workflow 35421044414 also
+passed. The required success gate was additionally executed locally over ten
+selected/skipped/success/failure/cancellation combinations. No failed check is
+being carried into the protected-bundle increment. Final CI evidence is in
+`/tmp/basilica-exo-host-ci-final.json`.
+
+### Protected runtime bundle — verified issuance component
+
+Backend commit `5c8844a21` adds migration 044 and controller-only atomic bundle
+preparation. The bundle binds owner, instance, operation/generation, connection,
+retained physical host bootstrap, observed resource/configuration and explicit
+runtime profile. Full current lease identity, phase, desired state, owned rental,
+accepted terms and registered billing coverage are required. Runtime/chat grants
+and encrypted input commit together; a failed insertion rolls back grant creation
+and prior chat revocation. The distinct encryption purpose binds the complete
+manifest and exact protected bytes; plaintext does not enter public journals or
+Debug. Old key IDs remain usable during active-key rotation.
+
+Concurrent/replayed preparation and higher lease attempts recover the same bundle
+and credentials. Changed profile/resource or expired/revoked grants fail closed;
+there is no silent token replacement. Live runtime/chat renewal preserves input
+identity. A new accepted generation receives a distinct bundle, and old access is
+rejected. Composite foreign keys retain the owner/generation/grant relationships;
+immutable bundle rows cannot be updated or deleted. API migration 044 must precede
+bundle consumers. Decision 0019 and the runtime runbook document rollback and
+controller obligations. The helper is still not installed or invoked by a worker.
+
+Validation passed:
+
+- **837 API unit cases**, nine existing environment-dependent cases ignored;
+  includes new encryption context/tamper/key rotation and profile validation.
+- **220 owned integration/transport cases**: 165 API (115 lifecycle including
+  eight new bundle cases, 12 catalog, 16 chat, ten connections, 12 identities),
+  25 allocator, eight billing-client and 22 billing DB/RPC. The actual Node/Rust
+  chat mode ran. Bundle fixtures explicitly seed rental/billing observations;
+  they do not claim provider or billing-RPC acceptance of those seeded rows.
+- Actual host Python parser accepted the Rust-produced input, passed over stdin.
+  Tests also cover concurrent issuance/takeover, real grant authentication,
+  failed writes, post-insert lease expiry, observed owner-lock wait/expiry,
+  revoked/expired grants, immutable relational identity and generation change.
+- **22 schema checks**, strict API library/lifecycle-test Clippy, formatting,
+  **30 local documentation links**, **68 instruction contracts** and diff checks.
+  One initial test compile missed a fixture import; one generation fixture lacked
+  its restart capability. Both were corrected without weakening production gates;
+  the complete owned harness passed afterwards.
+
+Logs: `/tmp/basilica-exo-bundle-{unit,db,schema,clippy-final,fmt-check,instructions}.log`.
+The full backend review-range secret scan is recorded separately in
+`/tmp/basilica-exo-bundle-secret-scan.log`. The diff was self-reviewed without an
+independent agent review. No dependency locks or generated API schemas changed;
+there is no new public endpoint. New-head CI remains to be checked after push.
+
+Remaining: the complete SSH request/response digest contract (Rust/Python float
+serialization differs, so input-parser acceptance is insufficient), fresh worker
+lease/target checks around pinned SSH, static trusted helper and immutable image
+installation, full real-Engine host execution, identity rotation/restart/export/
+recovery and controller coordination. Expired bootstrap grants require an explicit
+failure/new-generation recovery path, not erasure or resurrection. All previously
+open retention, billing policy, UI/CLI/model and hosted G0–G4 gates remain open.
+No paid VM, model request, registry publication or managed launch was performed.

@@ -107,3 +107,11 @@ This file tracks planning; it is not an additional specification. No application
 - [ ] Deliver through pinned SSH under current lifecycle authority; verify owned failure/retry cases.
 - [x] Publish the host-control component evidence and remaining hosted/controller requirements.
 - [ ] Finish protected issuance/SSH integration evidence and hosted acceptance before launch.
+
+## Protected runtime bundle increment
+
+- [x] Persist one immutable, context-bound encrypted bundle per operation/generation atomically with runtime and chat grants.
+- [x] Derive resource/model identity from owned current state, retain exact input on lease takeover and reject revoked/expired grants without silent replacement.
+- [x] Verify concurrency, failed writes, stale authority, tampering and real host input-parser compatibility on owned fixtures; complete request/response digest interoperability remains separate.
+- [x] Publish bundle/issuance evidence.
+- [ ] Finish pinned delivery, complete request/response digest interoperability, real host execution and controller integration.
