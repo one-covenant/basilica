@@ -146,4 +146,11 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Add a separate retained-cleanup authority snapshot without live runtime grants or model credentials.
 - [x] Deliver strict retirement requests over the shared pinned transport and verify terminal acknowledgements.
 - [x] Verify stale authority, identity drift, revoked grants, takeover/replay and actual host retirement fencing on owned fixtures.
-- [ ] Publish validation while keeping provider absence, billing settlement and remaining controller/hosted gates separate.
+- [x] Publish validation while keeping provider absence, billing settlement and remaining controller/hosted gates separate.
+
+## Immutable runtime image installation increment
+
+- [ ] Add bounded digest-only Engine image acquisition under current host authority, with exact post-pull inspection and no retirement dependency.
+- [ ] Verify cached/missing/error/timeout image paths, fencing order and embedded artifact limits on owned fixtures.
+- [ ] Exercise image acquisition and complete privileged helper execution against an owned real Engine.
+- [ ] Publish validation and remaining controller/hosted gates.

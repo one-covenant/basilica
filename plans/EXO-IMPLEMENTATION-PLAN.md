@@ -3322,7 +3322,12 @@ passed. The duplicate local Clippy queue was stopped after corrected-head CI pas
 all-features/all-targets check; no local Clippy pass is claimed. Instruction
 CI 35510323840 passed. Full CI 35510323989 has passed 897 API tests/189 skipped,
 strict lint, API image, pinned runtime, runtime image replacement and host/packet
-checks. The workspace lane remains pending; full CI is not yet complete.
+checks. [Full CI 35510323989](https://github.com/one-covenant/basilica-backend/actions/runs/35510323989)
+completed successfully: 4,165 workspace tests passed/49 skipped and all 235
+separate owned integration cases passed again. The tested merge was `748ea9e45`
+against main `39edb3a0` on exact head `8c06514d4`. [Instruction CI 35510323840](https://github.com/one-covenant/basilica-backend/actions/runs/35510323840)
+also passed. These results complete the retirement component's validation,
+without establishing full privileged-helper/Engine or hosted acceptance.
 
 Immutable image installation, complete real-host apply/retirement and Engine execution, controller coordination and all remaining
 G0–G4 gates remain open. No paid resource, model call, live migration or registry
