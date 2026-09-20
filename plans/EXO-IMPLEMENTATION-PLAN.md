@@ -203,6 +203,8 @@ Canonical-state bootstrap v1 takes the prepared writable source, patched CLI, ex
 
 Service execution v1 wraps image-owned `services.py` with `runtime_identity.py` after canonical bootstrap. The foreground supervisor holds the bootstrap OS lock, passes the canonical root/key and explicit model protocol to both scheduler and adapter runners, and inherits only tool/home/locale/TLS-trust environment fields. Each child has an owned process group; shutdown uses one shared three-second TERM grace plus bounded reaping after KILL. Any unexpected runner exit, including zero, stops its sibling and reports failure. Diagnostics identify actual child PIDs, never use persisted PID files as authority, and do not establish chat/model readiness. Both runners use OS-held locks and retain their lock inodes. Image-level orphan reaping/cleanup and lifecycle generation fencing remain required. Managed drain/rebuild control follows the contract below; image wiring, interrupted-schedule handling and healthy-code recovery remain pending. The upstream guardian must not run unchanged.
 
+Managed runner observation v1 supplies fresh local runtime evidence. The image-owned supervisor owns one anonymous inherited Unix channel per actual scheduler/adapter process. Hidden descriptor options are consumed before harness initialization and marked close-on-exec. After runner initialization/lock/recovery, each fresh challenge re-reads the managed agent/chat configuration and typed scheduler/adapter state, with bounded validation and response time. Both roles must match the current challenge and declared `exo-managed-scheduler-v3` compatibility label. The private supervisor socket lives in container-local `/tmp`, outside exported state; old replies cannot satisfy a new probe and channels are discarded on replacement or exit. Observation does not execute a task/model turn, rewrite state, restart services or declare a healthy checkpoint. Its guest-domain evidence is not independent attestation: the trusted host/controller must still bind the exact container/generation and combine independent model/chat/billing checks. No owner/runtime HTTP readiness assertion is accepted.
+
 Managed rebuild v1 is opt-in until image assembly supplies the pinned build tools. In managed mode the existing rebuild tool publishes a private, fsynced guardian update and never launches a detached guardian. The foreground owner serializes queued requests, records phases durably, runs locked Rust build/tests and TypeScript checking with bounded cancellation, and copies the executable pair into a unique immutable-by-convention candidate directory. Build failure preserves running services. Successful validation requests graceful drain with a bounded deadline; failed or interrupted drain fails the service generation rather than restarting over uncertain in-flight work. After both runners exit successfully, the owner atomically selects a digest-checked binary pair and starts it with unchanged canonical state. Selection and process survival do not establish model/chat readiness or a healthy recovery checkpoint. Nonterminal claimed requests found after supervisor restart fail as interrupted and are never automatically replayed. The selected candidate persists across ordinary supervisor restarts; immutable baseline and compatible code/dependency checkpoints remain separate required recovery work. No detached restart loop, lock-inode deletion or process-name matching is permitted.
 
 Code checkpoint/recovery v1 captures source, installed source-tree dependencies and the selected executable pair; it excludes canonical `.exo`, Git administration and the rebuild `target` cache. Internal relative symlinks are preserved; external/special files fail capture. A versioned file-integrity manifest is encrypted with the payload using a checkpoint-specific derived key and authenticated instance/source/baseline/state-schema/OS/architecture context. Authentication completes before extraction. LC must supply its authoritative current state-schema label and only register health-verified checkpoints; the artifact helper does not infer schema changes made by arbitrary user code or turn a capture into a healthy checkpoint. Recovery requires the same instance/key/source and compatible declared schema. It holds the service/bootstrap and both runner locks, stages verified code beside the source, retains the replaced checkout (including a root replaced by a file or symlink), recreates missing source without resetting state, selects the verified binary pair and journals each transition under the durable operation ID. Services refuse startup while recovery is pending. Same-operation retries resume interrupted renames or return the completed result; changed checkpoint IDs conflict. Canonical history, schedules, artifacts, binding and master key are never restored from a code checkpoint. Stable private parent directories with local rename/fsync semantics, lifecycle fencing and post-restore readiness remain required; packaging and hosted acceptance are separate gates.
@@ -397,7 +399,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, fresh runner/schema observations, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, fresh runner probes, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; trusted host/controller readiness, export API and verified checkpoint integration pending | `b6c0136b`; 16 real-runner supervision, 5 protocol, 3 Rust probe, 17 bootstrap, 3 scheduler-recovery, 16 rebuild and 3 patch-stack cases pass; CI 35526676541 green with actual Linux probes/replacement, 258 owned cases and complete delivery; earlier image/export evidence retained |
 | LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected host delivery, execution ownership and explicit-delete coordination; API migrations 035–044 and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives, complete owned SSH/Engine delivery, physical fencing, bounded lease-owned execution and explicit-delete coordinator implemented; service worker, launch/maintenance/readiness, long host deadlines and unpaid-tail/preservation policy pending | `24201f5b`; 130 owned lifecycle cases, strict Clippy and full 61-commit secret scan pass; CI 35524705728 green with 258 owned cases and complete SSH/Engine delivery |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh, guest renewal and protected bundle delivery implemented; model accounting and controller/hosted integration pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; controller/readiness wiring and hosted acceptance pending | `0ae5d63a`; 24 owned chat cases including passive authority observation and actual Node/Rust transport; CI 35518201732 green; earlier runtime adapter evidence below |
@@ -3750,3 +3752,67 @@ extend an already-issued host-command deadline. Artifact retrieval, unpaid
 retention, model accounting and remaining G0–G4 hosted acceptance remain open.
 No paid host/model, live migration, manual deployment or external registry
 publication was performed.
+
+
+### 2026-09-20 — fresh managed runner and declared-schema observations
+
+Backend `b6c0136b081ecb83bc472356a8c8431da4b9701b` adds patch 0009 and the
+image-owned `service_probe.py`. The supervisor owns fresh channels to the actual
+compiled runners rather than treating process creation or saved PID files as
+readiness. Both runners re-read canonical managed agent/chat configuration and
+their typed scheduler/adapter records on every challenge. Incompatible/corrupt
+state, paused/exited runners, duplicate/oversized/malformed replies, stale nonces
+and mismatched roles/schema do not pass. Reads never create missing records,
+execute model/tasks or reset canonical state. The declared schema is tied to the
+compiled scheduler version with a compile-time assertion.
+
+The supervisor checks its owned children before and after the two bounded probes,
+and its two-second request budget includes slow/trickled I/O. It drops channels
+on replacement and closes the private listener during shutdown; managed rebuild
+work owns the foreground loop, so observation is unavailable while that work
+runs. The Unix socket is in a UID-owned mode-0700 directory under container-local
+`/tmp`, avoiding exported state and Unix pathname limits. Existing regular files
+or symlinks are not replaced. The descriptor is passed only through a hidden CLI
+option and made close-on-exec before harness startup; no environment variable or
+public listener carries runner authority. Fixed observer output contains only
+version, `services_ready` and the declared schema. Decision 0025 records scope
+and trust limits.
+
+Final-source locked Exo/runner builds passed. All 16 actual supervision cases
+passed in 16.21 seconds, including four new replacement/current-state/paused-runner
+cases; all five Python protocol cases and three Rust channel cases passed.
+The existing 17 bootstrap, three interrupted-scheduler and 16 rebuild cases
+passed (the rebuild suite in 44.30 seconds). Three source-preparation cases apply
+and unwind all nine patches against the pinned upstream. The initial native run
+exposed the Unix socket pathname limit; moving the endpoint to the short hashed
+tmpfs path fixed it. A test-thread cleanup error and patch-context whitespace
+were corrected before final validation. Owned local process/socket fixtures were
+cleaned up, with no model/provider request.
+
+Actionlint, the actual `managed-exo-bootstrap` Act dry run, 68 instruction
+contracts, 35 documentation links, Python compilation, diff/staged checks and
+the full 62-commit Gitleaks 8.30.1 range against main `f1dcfc405` passed. No Cargo
+dependency, migration, API DTO or host-wire shape changed. The increment was
+self-reviewed without independent agents and is pushed to backend PR 1872.
+[Full CI 35526676541](https://github.com/one-covenant/basilica-backend/actions/runs/35526676541)
+and [instruction CI 35526676381](https://github.com/one-covenant/basilica-backend/actions/runs/35526676381)
+passed on this exact head, testing merge
+`331569f2da50415f7f57c66fefafeb8a3ab114a7` against main `f1dcfc405`.
+Linux passed all three Rust probe tests, five protocol tests and 16 real-runner
+supervision cases (6.35 seconds). The runtime image independently passed all
+five protocol and 16 supervision cases (5.54 seconds), and both actual container
+replacements required fresh readiness observations. Existing patched-runtime
+rebuild/recovery/rotation/export suites passed. Complete retained-issuance/OpenSSH/
+root-helper/Engine delivery passed in 41.63 seconds. The API lane passed 906
+cases (213 skipped); workspace coverage passed 4,345 (50 skipped). All 258
+separate owned cases passed, including 130 lifecycle cases in 91.27 seconds
+and 24 chat cases in 9.55 seconds. Strict Clippy and every other required check
+passed. The PR remains mergeable. Local logs use `/tmp/basilica-exo-probe-*.log`.
+
+This guest-domain observation is not independent attestation of arbitrary
+self-modified code, complete application conformance or a healthy checkpoint.
+Trusted host observation, complete lifecycle/maintenance/worker coordination,
+model/chat/billing readiness, long host-command authority, artifact retrieval,
+unpaid retention, model accounting and remaining G0–G4 hosted acceptance stay
+open. Managed launch remains disabled. No paid host/model, live migration, manual
+deployment or external registry publication was performed.

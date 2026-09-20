@@ -191,3 +191,11 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Keep never-dispatched deletion local, preserve uncertain purchases, scope billing delivery to the target instance, and resume interruption without another purchase or changed settlement boundary.
 - [x] Verify the coordinator with owned PostgreSQL/provider/billing fixtures, including stale authority, lost replies, insufficient credit and terminal-write interruption.
 - [ ] Wire the completed coordinator into the service worker alongside launch/maintenance/readiness and the remaining preservation policy.
+
+
+## Managed runtime readiness
+
+- [x] Probe the actual owned scheduler and adapter processes with fresh challenges and bounded typed state validation.
+- [x] Expose observations through the trusted supervisor; invalidate evidence on replacement, exit, drain or probe failure.
+- [x] Verify real compiled runners, stale/replayed responses, incompatible state, cancellation and preserved canonical data.
+- [ ] Integrate trusted host observations, model access and passive chat into complete controller readiness.
