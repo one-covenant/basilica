@@ -3117,3 +3117,71 @@ installation, authority-checked cleanup transport, full real-Engine runtime
 execution, rotation/restart/export/recovery, controller coordination and remaining
 G0–G4 gates remain open. Managed launch remains disabled; no paid host or model
 call was performed.
+
+
+### Trusted host helper artifact installation
+
+Backend `6a0f1b03a04c005d41a1eb30a212986b4e51d9fc` implements decision 0021,
+with API image source packaging corrected in
+`3138c69f98db300aebecca5e4666ae9021d35821`.
+The compiled API embeds exactly seven host modules plus installer source, bound
+by a SHA-256 over the exact bounded package. Fixed install and run commands use
+absolute sudo/interpreter paths, a cleared environment and Python `-I -S -B`.
+They accept no caller-selected source, path, environment or interpreter. Public
+source is carried in the command; protected runtime inputs remain on stdin.
+
+Installation walks root-owned safe ancestry using no-follow directory FDs,
+serializes publication with a persistent flock, writes/fsyncs private staging
+and publishes a digest-addressed root-only directory atomically. Existing
+versions must match exact filenames, bytes, modes, ownership and single-link
+metadata; no in-place repair occurs. Effective directory mounts must be local
+ext4/XFS/Btrfs. Interrupted staging remains private and is bounded at eight
+entries. Execution verifies an existing version and execs the isolated helper
+with untouched stdin and close-on-exec installer FDs. It cannot install.
+
+Passed locally: two Rust tests through the real POSIX shell and actual installer
+parser, 35 owned Python host cases (six installer cases), and the actual disposable
+Linux sudo fixture with distinct management UID 10002/runtime UID 10001. Linux
+checks cover replay, root ownership/modes, poisoned cwd/Python environment,
+untouched v2 stdin, runtime-UID denial, unsupported overmount and changed-source
+rejection without repair. Existing v1/v2 storage and packet isolation checks also
+pass. The expired request reaches the real helper and produces no instance state;
+this is not an SSH or complete Engine/runtime startup claim.
+
+Formatting, 68 instruction contracts, 32 local documentation links, the PCRE2
+contract across 21 Dockerfiles and the full 51-commit review-range secret scan
+passed. Strict local all-targets API Clippy also passed.
+Logs use `/tmp/basilica-exo-installer-*`. The diff was self-reviewed without an
+independent agent review. The first Linux run exposed sudo hostname resolution
+in the network-disabled fixture; an entry for only its own hostname in its own
+`/etc/hosts` resolved it. Initial CI passed 890 API tests but found missing
+compile-time helper files in the API Docker build. The fix copies the seven
+modules and installer into the builder; an actual local Docker-context build
+verified all eight source digests. The complete API image build
+now passes on the corrected head. No production check was relaxed.
+
+Full [CI 35504818971](https://github.com/one-covenant/basilica-backend/actions/runs/35504818971)
+and [instruction CI 35504818622](https://github.com/one-covenant/basilica-backend/actions/runs/35504818622)
+passed on corrected branch head `3138c69f9`. CI checked PR merge `bddd75b01`
+against main `02f126d33`; the branch's merged baseline remains `0e341e9e`.
+API: 890 passed/174 skipped, including both artifact tests. Workspace library and
+binary tests: 4,158 passed/34 skipped. The separate owned PostgreSQL/runtime-chat
+harness passed all 220 cases: 115 lifecycle, 12 catalog, 16 chat, 10 model
+connection, 12 runtime identity, 25 allocation, eight billing-client and 22
+billing-database cases. Actual Node/Rust chat and the retained-bundle host-wire
+fixture ran. The database evidence is from CI; no separate local database rerun
+is claimed for this installer change. Strict hosted Clippy, API image build,
+35 host tests and actual Linux sudo/packet checks, pinned runtime/bootstrap,
+image replacement, schema and all other required gates passed. Configured skips
+are not counted as executed evidence. GitHub reports PR 1872 clean and mergeable.
+
+These builders perform no SSH or database access and grant no authority. The
+next delivery boundary must authenticate the retained host/client keys and
+revalidate current worker/owned target before installation, verify its exact
+acknowledgement, then derive fresh database request timing and recheck bundle
+grants/target before sending protected stdin. Bounded SSH output/deadlines and
+authority checks after effects remain required. Cleanup needs separate current
+retirement identity and must not depend on live runtime grants. Immutable image
+installation, full real-Engine execution, rotation/restart/export/recovery,
+controller integration and all remaining G0–G4 gates remain open. Managed launch
+remains disabled; no paid VM, model call or registry publication was performed.

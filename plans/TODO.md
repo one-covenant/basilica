@@ -125,3 +125,11 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Verify Linux root/runtime-UID storage for both versions and preserve packet isolation.
 - [x] Finish exact-head Clippy and owned database replay validation; publish the final evidence.
 - [ ] Connect the contract to pinned SSH, trusted helper/image installation and authority-checked apply/cleanup delivery.
+
+## Trusted host helper increment
+
+- [x] Embed exact bounded helper/installer source and fixed isolated install/run commands.
+- [x] Verify atomic root-owned publication, exact replay, interrupted staging, tamper rejection and actual Linux sudo/stdin/runtime-UID separation.
+- [x] Finish exact-head CI and publish the installer evidence.
+- [ ] Integrate pinned SSH with current lease/grant/target checks and bounded protected transport.
+- [ ] Complete immutable runtime image installation, real Engine execution and the remaining controller/G0–G4 gates.
