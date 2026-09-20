@@ -325,8 +325,8 @@ Use Next.js 14 JS/JSX, React 18, Tailwind 3, Zustand and `@/` imports. Reuse Aeo
 | Create | `app/(openclaw)/agents/new/page.jsx`; `components/agents/ExoCreateForm.jsx`, `ModelConnectionSelect.jsx` |
 | Workspace | `app/(openclaw)/agents/instances/[id]/page.jsx`; `components/agents/ExoWorkspace.jsx`, `ExoChatPanel.jsx` |
 | Shared shell/auth | `app/(openclaw)/layout.js`; existing `components/openclaw/OpenClawShell.jsx`, `Sidebar.jsx`, `TopBar.jsx`, `ChatRibbon.jsx`, `AuthGuard.jsx`; `lib/auth.js` |
-| API/metadata | `lib/api.js`; new `lib/agentApi.js`, `lib/modelConnections.js` if needed |
-| Tests/docs/tooling | `tests/exo-ux-test-plan.md`, focused test/runner files, necessary package/lock/lint config, `README.md` |
+| API/metadata | `lib/api.js`; new `lib/agentApi.js`, `lib/agentClient.mjs`, `lib/agentChat.mjs`, `lib/agentIntent.mjs`, `lib/modelConnections.js` if needed; shared `components/agents/AgentUI.jsx`, `useAgentResource.js` |
+| Tests/docs/tooling | `tests/exo-ux-test-plan.md`, focused test/runner files, necessary package/lock/lint config, `.github/workflows/managed-agents.yml`, `README.md` |
 
 Preserve `/openclaw` chat/logs/settings/funding and exact `/agents/...` documentation/install redirects in `next.config.mjs`. No catch-all agent route. Add appropriate Exo/Agents metadata; link existing funding initially. Leave the OpenClaw chat protocol/component intact.
 
@@ -386,7 +386,7 @@ Only format owned paths; broad checks run on the integration branch after shared
 | G0 — contracts/baseline | CO | Wire/runtime/chat schemas and errors frozen; ownership/migrations/dependency mode fixed; test/hosting/persistence policies recorded | In progress |
 | G1 — runtime selection | RT + CO | Local-process rebuild/scheduling/declared persistence/export/bad-rebuild recovery demonstrated; deployment versus VM chosen with evidence | In progress; acceptance incomplete |
 | G2 — services | LC + MG + CT + CO | Durable launch, scoped model access and real chat integrated; auth/revocation/retry/cleanup cases pass | In progress; acceptance incomplete |
-| G3 — product | FE + SDK + CO | Real web/CLI parity, fresh-device access, operations/redaction and OpenClaw regression pass | Not started |
+| G3 — product | FE + SDK + CO | Real web/CLI parity, fresh-device access, operations/redaction and OpenClaw regression pass | In progress; local frontend/CLI implementation, hosted parity incomplete |
 | G4 — release readiness | CO | Required CI passes, actual hosting configuration/cost/persistence disclosure ready, rollback documented, staging resources cleaned | Not started |
 
 Cloud tests require implementation/test authorization, scoped budget/lifetime and teardown records; consolidating this plan creates none. Once authorized, coordinate shared test infrastructure or clearly separate labeled resources to prevent duplicate purchases. Report resources intentionally left running and continuing costs. Publishing follows the user's current authorization, not an automatic effect of reading this plan.
@@ -401,7 +401,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival and protected platform host identities; API migrations 035–043 and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives, trusted bootstrap and pinned SSH probe implemented; protected runtime delivery, physical fencing, controller coordination and unpaid-tail/preservation policy pending | `9544c375f`; current validation and CI are recorded in the trusted-host-bootstrap evidence below |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh and guest renewal launcher pushed; accounting and protected bootstrap wiring pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker and protected canonical pairing implemented; lifecycle wiring and hosted acceptance pending | `5d6c59666`; 96 PostgreSQL/socket tests including actual Node/Rust relay, 13 TS, 69 CLI and 32 executor adapter tests passed; prior CI 35338466216 green; CI 35342366206 green |
-| FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Build/lint/auth baseline pushed; product UI pending | `51f53f8`; 4 navigation tests, production build |
+| FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Authenticated list/create/workspace, scoped chat and capability-controlled operations pushed; artifact download, rotation UI and hosted acceptance pending | `bfcfac0a`; 15 contract/navigation and 12 owned browser cases, clean install, lint and production build; draft site PR 22 |
 | SDK | CO / `basilica-exo` | Section 9 | G0; G2 for final acceptance | Shared DTO/SDK and CLI quoted launch, lifecycle, logs and model connections pushed; browser open, export download and hosted parity pending | `f566ee0e`; 349 tests/doctests passed, two existing doctests ignored; strict all-target/all-feature Clippy passed; CI 35334088788 green |
 
 Every handoff includes owned files, contract version, commit/image digest, exact checks/results, redacted evidence location, unresolved failures, outstanding resources, and consumers now unblocked. Worker code completion is not a passed product gate. CO serializes migrations/shared edits, integrates commits, updates consumers and records final component versions.
@@ -3527,3 +3527,83 @@ Engine case passed again in 40.56 seconds. The additional eight API ignored
 markers are executed by the required owned database lane. Logs are
 `/tmp/basilica-exo-chat-presence-ci-{api,workspace,image,lint}.log`. Controller integration and
 all remaining G0–G4 acceptance requirements remain open.
+
+
+### Managed Exo frontend product increment
+
+Frontend `bfcfac0ad9519d6262abde08e651cf1b70797802` is pushed against main
+`5854e17d952a62906206ee60d8a64a4cb9cf8a95` in
+[draft site PR 22](https://github.com/one-covenant/basilica-site/pull/22).
+The existing Next.js/Auth0 shell now serves `/agents`, `/agents/new`, and
+`/agents/instances/[id]`. The list/detail views read owner-authorized backend
+records. Creation uses the published catalogue and connection metadata,
+server-recommended compute, valid region, an explicit matching unexpired quote,
+and its compute/storage/model billing and persistence/deletion disclosure.
+The existing exact documentation redirects and OpenClaw routes remain intact.
+CO extends FE's shared helper and test workflow paths above; no API/runtime
+schema, deployment host, production flag or backend dependency changes.
+
+Exo provider input is transient and cleared before awaiting submission. Its API
+calls require the shared Auth0 credential and suppress raw upstream error bodies.
+Only non-secret create/restart/export/recover/delete request intent is retained
+in owner-scoped session storage before mutation. A lost response can be retried
+with its exact key/body after refresh, without buying again or silently requoting;
+unreadable saved intent blocks a new mutation until explicitly reviewed/cleared.
+Connection creation clears its key and asks the user to refresh saved connections
+before repeating an uncertain submission. No Exo key uses the OpenClaw provider
+store.
+
+The workspace separates runtime/model health, operation outcome and scoped chat
+connection state. Text chat authenticates in its first WebSocket frame, validates
+the approved API host/protocol/expiry, retains full-precision cursor and draft
+on reconnect, reconciles messages by durable ID and never automatically resends
+an uncertain user action. Cursor-bearing history outranks late acknowledgements.
+Capability-gated restart/export/recovery, compatible checkpoint selection, logs,
+cost and persistence remain outside chat. Delete presents the recorded data-loss
+policy and does not report finalized resource billing while cleanup is pending.
+Export currently exposes operation/artifact metadata; authenticated download and
+connection-rotation UI still need integration.
+
+Clean `npm ci` passed on Node.js 22.22.0. All 15 Node contract/navigation cases
+and 12 Chromium browser cases passed; the final browser run took 48.4 seconds.
+The browser suite uses a synthetic Auth0 SDK cache and owned API/WebSocket
+fixtures, aborts unexpected external browser requests, and fails on page errors.
+Coverage includes lost create/maintenance response replay after refresh, quote
+expiry, provider input handling, draft retention, uncertain-message no-resend,
+capability restrictions, checkpoint selection, logs, cleanup disclosure,
+unreadable saved intent, list pagination/errors/empty state, keyboard focus,
+mobile/dark layouts and exact redirects. The initial failures exposed ambiguous
+wrapped-control labels and cold development route compilation; explicit accessible
+names and a documented dev assertion timeout fixed them. Desktop/light,
+desktop/dark and 390px mobile screenshots were visually reviewed, including the
+quote panel and management controls below the conversation.
+
+`CI=1 npm run lint`, `NEXT_PUBLIC_MOCK=false npm run build`, `actionlint`,
+diff checks, the staged Gitleaks 8.30.1 scan and full two-commit branch secret
+scan all passed. Sitemap postbuild outputs remained ignored with no instance IDs
+or credentials. Four existing lint warnings and existing build warnings remain;
+`npm ci` reports 22 dependency advisories, with existing application dependency
+versions preserved. The diff was self-reviewed without an independent agent.
+The new frontend CI repeats clean install, contract, lint, owned browser and
+production-build checks without live credentials. [Frontend CI 35520196728](https://github.com/one-covenant/basilica-site/actions/runs/35520196728)
+passed in 2m41s on this head, testing merge
+`d2cb867786fd39dada8019745a5c467e96fc6daf` against main `5854e17d9`.
+All 15 contract/navigation and 12 browser cases passed on Linux (browser 50.7s),
+along with clean install, lint, production build and artifact upload. The existing
+Vercel preview status also passed; PR 22 is clean/mergeable and remains draft.
+The run notes existing v4 action Node-runtime deprecation and the forthcoming
+`ubuntu-latest` image migration; neither failed validation.
+The CI log is `/tmp/basilica-exo-frontend-ci.log`. Other logs are `/tmp/basilica-exo-frontend-{ci-install,contract-tests-final,
+product-lint-final,browser-tests-final,product-build-final,secret-scan}.log`;
+reviewed fixture screenshots are under frontend `test-results/` and are ignored.
+All owned Next.js/browser fixtures were stopped; port 4319 is no longer listening.
+
+This advances G3 implementation, not integrated product acceptance. Real Auth0
+login/expiry, backend/CSP/origin hosting, model/tool calls, web/CLI parity,
+artifact download, connection rotation, actual OpenClaw/funding regression,
+controller/maintenance coordination, unpaid retention policy and remaining
+G0–G4 release/hosted requirements stay open. Preview mock mode fails closed for
+managed agents. No manual deployment, paid host/model, live migration or external
+registry publication was requested by this increment. The repository's existing
+Vercel integration automatically started a PR preview build; that is not hosted
+Exo acceptance and its environment was not reconfigured.
