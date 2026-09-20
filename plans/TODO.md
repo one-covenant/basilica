@@ -114,4 +114,5 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Derive resource/model identity from owned current state, retain exact input on lease takeover and reject revoked/expired grants without silent replacement.
 - [x] Verify concurrency, failed writes, stale authority, tampering and real host input-parser compatibility on owned fixtures; complete request/response digest interoperability remains separate.
 - [x] Publish bundle/issuance evidence.
+- [x] Resolve the current-main schema conflict and verify the combined tree through exact-head full CI.
 - [ ] Finish pinned delivery, complete request/response digest interoperability, real host execution and controller integration.

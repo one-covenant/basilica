@@ -3014,3 +3014,50 @@ recovery and controller coordination. Expired bootstrap grants require an explic
 failure/new-generation recovery path, not erasure or resurrection. All previously
 open retention, billing policy, UI/CLI/model and hosted G0–G4 gates remain open.
 No paid VM, model request, registry publication or managed launch was performed.
+
+### Current-main integration after bundle issuance
+
+Merge `dce8b96666c379483ddf3c69fa2752e936515fa8` is pushed and integrates
+main `0e341e9e887d68d2977663e3a9b6ffd955af2ee1` with bundle commit
+`5c8844a21`. Source merged automatically. Actual OpenAPI generation matched the
+independent semantic merge exactly: 87 public paths/182 schemas and 100 private
+paths/203 schemas. Both generated files are committed and GitHub reports the
+branch conflict-free. Existing external package versions and the public
+`f0e1c972` dependency revision are unchanged.
+
+Profile-origin validation now rejects port zero and DNS labels with underscores
+or leading/trailing hyphens before issuing protected inputs, matching the host
+parser. Regression inputs cover these cases. No managed migration, runtime
+identity format or host protocol version changed in this merge.
+
+Exact-head CI [35500938256](https://github.com/one-covenant/basilica-backend/actions/runs/35500938256)
+passed in full; instruction run
+[35500938043](https://github.com/one-covenant/basilica-backend/actions/runs/35500938043)
+also passed. The combined-tree evidence is:
+
+- The API job passed 885 tests with 174 skips, explicitly including both runtime
+  bundle unit cases and profile-origin validation.
+- The workspace library/binary run passed 4,144 tests with 34 skips. The required
+  owned PostgreSQL/runtime-chat harness separately passed all 220 cases: 115
+  lifecycle (including all eight bundle cases), 12 catalog, 16 chat with the
+  actual Node/Rust path, 10 model-connection, 12 runtime-identity, 25 allocation,
+  eight billing-client and 22 billing-database cases. These actual executions
+  provide database evidence independently of the API job's skipped targets.
+- Strict all-targets API Clippy and the Rust quality gate passed, as did generated
+  OpenAPI drift, pinned runtime/bootstrap, host fencing/packet isolation and the
+  runtime image/container-replacement job. CI's other required gates passed;
+  configured staging/artifact/notification skips are not execution claims.
+- Local generation/comparison, 22 schema tests, formatting, 68 instruction
+  contracts, nine actual Gitleaks regression fixtures and the full 48-commit
+  backend review-range scan passed. The duplicate local Rust build was stopped
+  during API test compilation after full exact-head CI completed. Its queued
+  Clippy/database commands were not run locally; they are not recorded as local
+  passes. No owned local database had been started by that cancelled runner.
+
+Logs and the explicit local-cancellation record are under
+`/tmp/basilica-exo-bundle-merged-*`, including the completed CI job logs and
+`ci-result.json`. The diff was self-reviewed without an independent agent review.
+PR 1872 retains the disabled-launch contract. Protected SSH delivery, complete
+request/response digest interoperability, trusted helper/image installation,
+physical runtime coordination, state-preservation and all remaining G0–G4 gates
+are still open. No paid VM, model request or managed launch was performed.
