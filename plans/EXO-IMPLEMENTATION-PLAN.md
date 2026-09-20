@@ -3269,3 +3269,61 @@ installation, complete real-Engine execution, rotation/restart/export/recovery,
 controller integration and all remaining G0–G4 gates remain open. Managed launch
 remains disabled. No paid host, live migration, model call or registry publication
 was performed.
+
+
+### Protected terminal host retirement
+
+Backend `8b4b1ec0edaa97263d0d138daec78c76ee56f750` implements decision 0023;
+`8c06514d40737260e5a087103ac8228deb282b85` corrects owned fixtures without
+changing production retirement behavior.
+`AgentHostRetireGuard` uses separate current cleanup authority and the existing
+bounded pinned SSH workflow. A committed immutable cleanup intent, exact current
+worker attempt and owned provider/resource/bootstrap/key identity are required.
+Cleanup preparation now also compares the exact worker attempt. A recorded
+provider absence or settlement prevents further host delivery.
+
+Retirement does not depend on live runtime/chat grants, model credentials, bundle
+decryption, current credit or acknowledged billing registration. It reads only
+public bundle identity when one exists and verifies that identity against the
+accepted owned resources. The version 2 body contains exactly empty inputs; a
+successful response requires terminal `retired` status, explicit null container
+ID and exact operation/generation/attempt/digest binding. Current database time
+bounds authority across all transport stages, with no locks held over network I/O.
+
+The shared apply path preserves its complete live bundle/grant checks and exact
+identity comparison. Retirement never prepares cleanup intent, issues credentials,
+advances the worker or freezes billing. Provider absence and settlement retain
+their separate existing proofs. The caller must satisfy export/retention policy
+before irreversibly preparing cleanup; no background controller is enabled.
+
+The production library check and all 11 scoped Rust tests passed locally. The new
+Rust/Python test drives the real parser, manager and durable host journal with an
+explicit Engine fault fixture: retirement is recorded before a failed stop,
+retries and takeovers preserve terminal state, stale/apply requests are rejected,
+strict acknowledgements are checked and user data survives. This is not a real
+Docker Engine or privileged-host acceptance claim. All 68 instruction contracts,
+35 local documentation links and the full 54-commit review-range secret scan passed.
+The diff was self-reviewed without an independent agent review.
+
+The initial database run passed 165 existing API cases and 12 of 15 delivery
+cases. Three new fixture setups failed because they tried to reverse acknowledged
+billing coverage or mutate immutable cleanup/bundle rows. Corrected fixtures start
+with unacknowledged billing, prove the original bundle cannot be decrypted by a
+replacement-only keyring, and assert immutable rewrite attempts are rejected.
+No trigger or production protection was weakened. The corrected full 55-commit
+secret scan passed against current main `39edb3a0`. Prior-head CI was superseded
+and cancelled; it is not a full retirement CI pass.
+
+On corrected head `8c06514d4`, all 11 scoped Rust tests and all 235 separately
+executed owned cases passed locally: 165 API database/runtime-chat, 15 protected
+apply/retirement authority, 25 allocator, eight billing-client and 22
+billing-database cases. The owned PostgreSQL runner completed cleanup. Formatting
+passed. The duplicate local Clippy queue was stopped after corrected-head CI passed the stronger strict
+all-features/all-targets check; no local Clippy pass is claimed. Instruction
+CI 35510323840 passed. Full CI 35510323989 has passed 897 API tests/189 skipped,
+strict lint, API image, pinned runtime, runtime image replacement and host/packet
+checks. The workspace lane remains pending; full CI is not yet complete.
+
+Immutable image installation, complete real-host apply/retirement and Engine execution, controller coordination and all remaining
+G0–G4 gates remain open. No paid resource, model call, live migration or registry
+publication was performed.

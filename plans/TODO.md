@@ -140,3 +140,10 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Deliver fixed install/run commands over bounded pinned SSH, preserving stdin and cancellation cleanup.
 - [x] Verify real loopback transport and owned database authority/failure/replay boundaries.
 - [x] Publish verification, including the mandatory SSH-log exclusion; keep controller launch and remaining physical/hosted gates closed.
+
+## Protected host retirement increment
+
+- [x] Add a separate retained-cleanup authority snapshot without live runtime grants or model credentials.
+- [x] Deliver strict retirement requests over the shared pinned transport and verify terminal acknowledgements.
+- [x] Verify stale authority, identity drift, revoked grants, takeover/replay and actual host retirement fencing on owned fixtures.
+- [ ] Publish validation while keeping provider absence, billing settlement and remaining controller/hosted gates separate.
