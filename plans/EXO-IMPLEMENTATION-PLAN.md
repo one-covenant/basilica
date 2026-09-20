@@ -3332,3 +3332,63 @@ without establishing full privileged-helper/Engine or hosted acceptance.
 Immutable image installation, complete real-host apply/retirement and Engine execution, controller coordination and all remaining
 G0–G4 gates remain open. No paid resource, model call, live migration or registry
 publication was performed.
+
+### Immutable runtime image acquisition and real Engine execution
+
+Backend `33d57c7d2182cbe45640128c74f6d4ac563af29a` implements decision 0024.
+After durable host admission and physical fencing, a missing approved registry
+digest permits one local Engine pull. Current authority bounds headers and
+streaming to at most 180 seconds, retaining the final 30 seconds; progress is
+bounded to 64 KiB per line and 8 MiB total. Truncated/chunked/error/duplicate-key
+streams fail closed. Fresh exact digest and sandbox-configuration inspection
+precedes input staging. Cached conflicts are never repaired silently. Tags,
+imports and registry credentials are not accepted; retirement does not pull.
+The embedded raw package limit rises from 64 to 72 KiB in Rust and Python;
+the 100 KiB encoded and 120 KiB complete-command bounds remain unchanged.
+
+All 46 host tests passed on native Python 3.14 and isolated Linux Python 3.11.
+Two artifact and 11 runtime-bundle Rust tests passed on the final production
+source, along with all 235 separate owned database/runtime-chat cases: 165 API,
+15 delivery, 25 allocator, eight billing-client and 22 billing-database cases.
+Actual Linux sudo/installer/packet checks, formatting, 68 instruction contracts,
+37 documentation links, actionlint and Act image/aggregate dry runs passed.
+Act validates only the workflow graph. Gitleaks 8.30.1 passed the full 56-commit
+review range against main `89720094c4baf9b821594dab780d5d31144ac85b`.
+The diff was self-reviewed without an independent agent review.
+
+The owned real-Engine harness passed cold digest acquisition from an empty image
+store, exact image inspection, actual non-root management sudo/installer/helper
+execution, protected runtime mounts, real Node/Rust tools and TLS identity renewal.
+Exact replay retained the same container. A successor attempt physically replaced
+it and proved the old container absent; stale requests were rejected. Terminal
+retirement and replay proved container absence, denied renewed apply and preserved
+canonical state and owner files. The outer container and its anonymous volumes
+were removed, as was the owned 4.99 GB temporary runtime archive.
+
+An initial replacement assertion exposed the pinned adapter runner's documented
+`adapter_runner_started` append. Captured before/after records proved that was the
+only new event and its matching conversation-head change. The corrected fixture
+allows exactly that append while requiring every prior event, agent configuration,
+receipt, master key and owner file to retain its bytes. Four regression cases
+reject history deletion/rewrites, identity changes, invalid heads, unexpected
+events and extra records. The original no-adapter image suite retains its strict
+whole-snapshot comparison. No runtime persistence behavior was weakened.
+
+The runtime source image was
+`sha256:4635b76a51aba1203889b130c545a9739053318035759863f6b3ad885ce57653`,
+with pinned upstream `b2769b6295e3cf23b24aad2794230fca6c09149c` on Linux/aarch64.
+The derivative added only generated fixture trust. Its registry and TLS renewal
+service were isolated owned fixtures; no host socket, external runtime network,
+model call or chat acceptance was involved. Logs are
+`/tmp/basilica-exo-image-install-*`; the complete real-Engine run exited zero.
+
+Exact-head [instruction CI 35513584330](https://github.com/one-covenant/basilica-backend/actions/runs/35513584330)
+passed; [full CI 35513584452](https://github.com/one-covenant/basilica-backend/actions/runs/35513584452)
+is pending. The runtime-image job now includes the complete
+owned Engine harness and is a required aggregate dependency. Earlier retirement
+CI remains evidence for its earlier head, not a pass for this increment.
+Public dependencies remain locked to `f0e1c972`; no schema/migration or lockfile
+changed. Full issuance-to-SSH/root-helper integration, rotation/restart/export/
+recovery coordination, retention policy, controller and product completion, and
+all remaining G0–G4 gates stay open. Managed launch remains disabled. No paid
+resource, live migration, hosted SSH or external registry publication occurred.

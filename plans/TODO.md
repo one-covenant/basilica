@@ -150,7 +150,7 @@ This file tracks planning; it is not an additional specification. No application
 
 ## Immutable runtime image installation increment
 
-- [ ] Add bounded digest-only Engine image acquisition under current host authority, with exact post-pull inspection and no retirement dependency.
-- [ ] Verify cached/missing/error/timeout image paths, fencing order and embedded artifact limits on owned fixtures.
-- [ ] Exercise image acquisition and complete privileged helper execution against an owned real Engine.
+- [x] Add bounded digest-only Engine image acquisition under current host authority, with exact post-pull inspection and no retirement dependency.
+- [x] Verify cached/missing/error/timeout image paths, fencing order and embedded artifact limits on owned fixtures.
+- [x] Exercise image acquisition and complete privileged helper execution against an owned real Engine.
 - [ ] Publish validation and remaining controller/hosted gates.
