@@ -97,16 +97,16 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Implement retained server bootstrap, protected single-create payload and pinned host authentication.
 - [x] Finish bootstrap validation and resolve the generated-schema conflict with current main.
 - [x] Finish post-merge integration validation and repair the transient CI dependency-download failure.
-- [ ] Deliver protected runtime inputs with physical generation/lease fencing.
+- [ ] Verify the complete protected-delivery path with real physical generation/lease fencing.
 
 ## Protected host execution increment
 
 - [x] Implement durable root-owned host fencing and exact protected input replay.
 - [x] Implement strict container identity, stop/absence and isolated startup policy; verify owned store/Engine-fault/packet cases.
 - [ ] Verify the complete root-helper/real-Engine runtime startup, restart, identity rotation and replacement path.
-- [ ] Deliver through pinned SSH under current lifecycle authority; verify owned failure/retry cases.
+- [x] Deliver through pinned SSH under current lifecycle authority; verify owned failure/retry cases.
 - [x] Publish the host-control component evidence and remaining hosted/controller requirements.
-- [ ] Finish protected issuance/SSH integration evidence and hosted acceptance before launch.
+- [ ] Verify complete issuance/SSH/root-helper execution and hosted acceptance before launch.
 
 ## Protected runtime bundle increment
 
@@ -115,7 +115,7 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Verify concurrency, failed writes, stale authority, tampering and real host input-parser compatibility on owned fixtures; complete request/response digest interoperability remains separate.
 - [x] Publish bundle/issuance evidence.
 - [x] Resolve the current-main schema conflict and verify the combined tree through exact-head full CI.
-- [ ] Finish pinned delivery, complete request/response digest interoperability, real host execution and controller integration.
+- [ ] Finish real host execution and controller integration using the verified pinned delivery/wire contracts.
 
 
 ## Protected host wire increment
@@ -124,12 +124,19 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Verify real Rust/Python digest and price-bit interoperability, strict acknowledgements and retained protocol fences.
 - [x] Verify Linux root/runtime-UID storage for both versions and preserve packet isolation.
 - [x] Finish exact-head Clippy and owned database replay validation; publish the final evidence.
-- [ ] Connect the contract to pinned SSH, trusted helper/image installation and authority-checked apply/cleanup delivery.
+- [ ] Finish trusted image installation and authority-checked cleanup delivery using the verified pinned apply contract.
 
 ## Trusted host helper increment
 
 - [x] Embed exact bounded helper/installer source and fixed isolated install/run commands.
 - [x] Verify atomic root-owned publication, exact replay, interrupted staging, tamper rejection and actual Linux sudo/stdin/runtime-UID separation.
 - [x] Finish exact-head CI and publish the installer evidence.
-- [ ] Integrate pinned SSH with current lease/grant/target checks and bounded protected transport.
+- [x] Integrate pinned SSH with current lease/grant/target checks and bounded protected transport.
 - [ ] Complete immutable runtime image installation, real Engine execution and the remaining controller/G0–G4 gates.
+
+## Protected SSH delivery increment
+
+- [x] Add retained-only active worker snapshots with exact owned host identity and fresh database timing.
+- [x] Deliver fixed install/run commands over bounded pinned SSH, preserving stdin and cancellation cleanup.
+- [x] Verify real loopback transport and owned database authority/failure/replay boundaries.
+- [x] Publish verification, including the mandatory SSH-log exclusion; keep controller launch and remaining physical/hosted gates closed.

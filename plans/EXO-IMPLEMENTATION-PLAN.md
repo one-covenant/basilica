@@ -3185,3 +3185,87 @@ retirement identity and must not depend on live runtime grants. Immutable image
 installation, full real-Engine execution, rotation/restart/export/recovery,
 controller integration and all remaining G0–G4 gates remain open. Managed launch
 remains disabled; no paid VM, model call or registry publication was performed.
+
+
+### Current-authority protected SSH apply delivery
+
+Backend `83cfb75eb9f49711453c28178336b852011bd2b4` implements decision 0022.
+The active apply boundary now delivers only an already-retained runtime bundle.
+It reuses the complete bundle authority/resource checks, decrypts the exact owned
+host/client identity and checks both live grant rows. It does not issue, renew or
+replace credentials. A shared target decoder preserves the existing create-only
+host probe's separate authority policy.
+
+The guard authenticates both retained SSH identities and revalidates current
+worker, grant and owned-target state before installing the fixed helper, before
+opening its run command, after command acceptance but before protected stdin,
+and after verifying the exact response. The database clock and current stored
+lease deadline determine request timing, capped by both grant expiries and the
+protocol maximum. No database locks span SSH I/O, and copied lease deadlines
+provide no authority.
+
+The private direct-russh transport bounds commands, input, output, channel queues,
+connection/command time and total delivery lifetime. It explicitly sends EOF,
+including for empty installation input, concurrently drains output and requires
+one successful command acknowledgement plus an explicit exit and close. Stderr,
+oversized output, missing/duplicate status and unexpected messages fail without
+reflecting remote text. A separate socket owner shuts down connections on success,
+failure, timeout or cancellation, including a stalled SSH handshake.
+
+Local scoped Rust tests passed all ten cases, including five new real loopback
+transport tests. Seven new owned PostgreSQL/SSH tests passed through actual
+production authority/vault/wire code and the Python request parser/response
+builder. They cover missing bundles, forged/expired leases at delivery stages,
+revoked grants, target drift, both exact keys, current database timing, deletion
+after input, and lost acknowledgement followed by actual lease takeover. The
+stale worker makes no new SSH connection; the successor sends identical retained
+body bytes under a higher attempt without minting credentials. The 165 existing
+API database/runtime-chat cases, 25 allocator cases and eight billing-client cases
+also passed locally. After equivalent full CI passed, the remaining duplicate
+local runner was interrupted; its owned PostgreSQL cleaned up and no local run
+of the final 22 billing-database cases is claimed. The queued local Clippy did
+not run in that interrupted script. Standalone formatting passed.
+
+Full [CI 35507248186](https://github.com/one-covenant/basilica-backend/actions/runs/35507248186)
+and [instruction CI 35507248106](https://github.com/one-covenant/basilica-backend/actions/runs/35507248106)
+passed on `83cfb75eb`. CI tested merge `b0ce136` against main `02f126d33`: 895 API
+tests passed/181 skipped, 4,163 workspace tests passed/41 skipped, and all 227
+separate owned PostgreSQL/runtime-chat cases passed. Strict hosted Clippy, API
+image build, 35 host tests, actual Linux sudo/packet checks and pinned runtime
+checks passed. All 68 local instruction contracts, 35 documentation links and
+the full 52-commit review-range secret scan passed. Skips are not executed evidence.
+The diff was self-reviewed without an independent agent review.
+
+Further source review found that the locked SSH library can log buffered
+plaintext packet bytes at trace level. Correction
+`dc0d55bbf8e4236902a4e7b538776f861745641e` adds an API logging initializer that preserves common verbosity preferences but unconditionally
+excludes SSH-library records in its process-wide log bridge, including spawned
+session tasks. The explicit-trace/background-thread and direct-record regression
+passed locally and in corrected-head CI. Application and other dependency traces
+remain visible. Startup fails if a logger is already installed. Cargo.lock adds
+only direct references to already-locked logging dependencies; no package version
+changed. The final full 53-commit review-range secret scan is clean. The duplicate
+local Clippy queue was interrupted after the stronger hosted check passed, and
+no local Clippy pass is claimed for this increment.
+
+Corrected-head [full CI 35508099673](https://github.com/one-covenant/basilica-backend/actions/runs/35508099673)
+and [instruction CI 35508099529](https://github.com/one-covenant/basilica-backend/actions/runs/35508099529)
+passed on `dc0d55bbf`. CI tested merge `58632a0` against main `02f126d33`: 896 API
+tests passed/181 skipped, 4,164 workspace tests passed/41 skipped, and all 227
+separate owned database/runtime-chat cases passed again. The new binary logging
+regression ran, as did all seven delivery authority cases. Strict Clippy with all
+features and targets, API image build, pinned runtime/image replacement, host/packet
+and all other required checks passed. PR 1872 is clean and mergeable. Logs are
+`/tmp/basilica-exo-delivery-*`; local and hosted results remain distinguished above.
+
+These tests explicitly seed rental/billing observations and simulate helper
+execution acknowledgements. They are real SSH/database/wire evidence, not a
+complete privileged-helper/Engine execution or runtime-readiness claim. The
+private ephemeral-port override exists only in test builds; production still
+requires port 22. No controller invokes this boundary, and it never marks Ready.
+
+Separate current-retirement authority and host cleanup transport, immutable image
+installation, complete real-Engine execution, rotation/restart/export/recovery,
+controller integration and all remaining G0–G4 gates remain open. Managed launch
+remains disabled. No paid host, live migration, model call or registry publication
+was performed.
