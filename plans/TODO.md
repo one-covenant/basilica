@@ -184,3 +184,10 @@ This file tracks planning; it is not an additional specification. No application
 - [x] Verify real database deletion/takeover/lock-wait cases and cancellation/drop behavior without live provider calls.
 - [ ] Integrate the runner with complete launch/maintenance/cleanup coordination and runtime/model readiness; keep hosted gates open.
 - [ ] Reconcile long host-command budgets with the fixed authority deadline already sent to the host; database renewal alone cannot extend it.
+
+## Explicit delete coordinator
+
+- [x] Coordinate claimed delete intent through allocation reconciliation, direct provider absence, retained billing settlement and terminal archival under renewed lifecycle authority.
+- [x] Keep never-dispatched deletion local, preserve uncertain purchases, scope billing delivery to the target instance, and resume interruption without another purchase or changed settlement boundary.
+- [x] Verify the coordinator with owned PostgreSQL/provider/billing fixtures, including stale authority, lost replies, insufficient credit and terminal-write interruption.
+- [ ] Wire the completed coordinator into the service worker alongside launch/maintenance/readiness and the remaining preservation policy.

@@ -1,6 +1,6 @@
 # Exo on Basilica — unified implementation plan
 
-Updated: 2026-09-18. Status: implementation in progress; G0 contracts and baseline underway.
+Updated: 2026-09-20. Status: implementation in progress; G0 contracts and baseline underway.
 
 Planning branch: `docs/exo-implementation-plan`, created from freshly fetched `origin/main` at `f3749c7211e828c5c8ff34f6995f822cf83ccd2f`. Plan worktree: `/Users/samueldare/code/cc/basilica/basilica-exo-plan`. The original public checkout remains on its unrelated `docs/basilica-fly-school` branch and must not be used as the branch base for Exo implementation.
 
@@ -398,7 +398,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; export API, lifecycle and verified checkpoint integration pending | `34401b33`; 17 native and 17 Linux export tests, full 43,834-entry volume round trip and replacement tests passed; CI 35312976428 green; prior CI 35310209617 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected host delivery and execution ownership; API migrations 035–044 and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives, complete owned SSH/Engine delivery, physical fencing and bounded lease-owned execution implemented; controller/readiness coordination, long host deadlines and unpaid-tail/preservation policy pending | `18c533a4`; 9 execution unit and 120 owned lifecycle database cases, strict Clippy and full secret scan pass; CI 35522682791 green with all 248 owned cases and complete delivery |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected host delivery, execution ownership and explicit-delete coordination; API migrations 035–044 and billing migrations 048–049 | G0; G1 for runtime adapter | Durable primitives, complete owned SSH/Engine delivery, physical fencing, bounded lease-owned execution and explicit-delete coordinator implemented; service worker, launch/maintenance/readiness, long host deadlines and unpaid-tail/preservation policy pending | `24201f5b`; 130 owned lifecycle cases, strict Clippy and full 61-commit secret scan pass; CI 35524705728 green with 258 owned cases and complete SSH/Engine delivery |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh, guest renewal and protected bundle delivery implemented; model accounting and controller/hosted integration pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; controller/readiness wiring and hosted acceptance pending | `0ae5d63a`; 24 owned chat cases including passive authority observation and actual Node/Rust transport; CI 35518201732 green; earlier runtime adapter evidence below |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Authenticated list/create/workspace, scoped chat, lifecycle management and model-key rotation pushed; artifact download and hosted acceptance pending | `fd1c1f1a`; 16 contract/navigation and 17 owned browser cases, lint and production build; CI 35522531903 green on draft site PR 22 |
@@ -3689,3 +3689,64 @@ validation, hosted rotation, artifact download, complete controller/maintenance/
 cleanup coordination, unpaid retention, model accounting and the remaining
 G0–G4 acceptance requirements stay open. No paid host/model, live migration,
 manual deployment or external registry publication was performed.
+
+
+### 2026-09-20 — explicit delete coordinator
+
+Backend `24201f5bc0a4bc04233b7fdc8f61672cdbaf7f6e` adds the production
+explicit-delete coordinator under the bounded lease-owned execution runner.
+Every step rereads the instance, complete operation identity and allocation
+journal under current authority. Never-dispatched allocations cancel and archive
+locally. A submitted purchase uses only read-only reconciliation of the original
+request; no purchase method is exposed to this coordinator. Empty inventory
+is uncertainty, not absence. An observed allocation uses exact provider cleanup;
+a DELETE acknowledgement still requires a subsequent direct absence observation.
+Explicit owner deletion can terminate the provider host even when SSH is broken;
+this does not infer deletion from credit exhaustion or a failed create.
+
+Verified provider absence freezes the existing database-clock billing boundary.
+The new scoped billing claim reuses retained registration/tick/settlement
+identities for only this owner and instance. Insufficient credit leaves an
+actionable pending status rather than writing off charges. Finalization requires
+settlement, then revalidates absence/rental/billing evidence during archival.
+Interruption after archival resumes the terminal write without another external
+call. Uncertain external responses retain intent and a bounded retry; stale or
+cancelled work cannot infer completion. No polling worker is enabled yet.
+
+All 130 owned lifecycle database cases passed on final compiled source in
+117.35 seconds, including ten new coordinator cases with actual loopback
+BillingService and strict provider HTTP. Cases cover unallocated/prepared
+cancellation, unresolved and later-observed purchases, DELETE acknowledgement
+versus direct absence, credit exhaustion and funding, exactly one debit after
+a lost settlement acknowledgement, interruption after archival, wrong owner/
+operation/resource authority, provider uncertainty and isolation from another
+instance's earlier-due billing delivery. All owned PostgreSQL, billing and HTTP
+fixtures were removed. These are controlled provider observations, not hosted
+provider acceptance.
+
+Locked compilation, strict API Clippy with all targets/features, formatting,
+68 instruction contracts, 34 documentation links, diff checks, staged scanning
+and the full 61-commit Gitleaks 8.30.1 range against main
+`f1dcfc4059e92c44ddb42fd882118537dd76cb4c` passed. Public dependencies remain
+locked to `f0e1c972`; no lockfile, migration, DTO or runtime-wire shape changed.
+The increment was self-reviewed without independent agents and pushed to
+[backend PR 1872](https://github.com/one-covenant/basilica-backend/pull/1872).
+[Instruction CI 35524705521](https://github.com/one-covenant/basilica-backend/actions/runs/35524705521)
+and [full current-head CI 35524705728](https://github.com/one-covenant/basilica-backend/actions/runs/35524705728)
+passed, testing merge `a6678dbe7ebfe1cbe1cc91b68bebbd71692201d6`
+against main `f1dcfc405`. The API lane passed 906 cases (213 skipped), and
+workspace coverage passed 4,345 cases (50 skipped). All 258 separate owned cases
+passed, including 130 lifecycle cases in 91.04 seconds and 24 chat cases in
+7.54 seconds. The complete retained-issuance/OpenSSH/root-helper/Engine path
+passed in 41.48 seconds. Strict Clippy, image/replacement, pinned runtime, host
+isolation and every other required check passed. The PR is mergeable.
+Local logs use `/tmp/basilica-exo-delete-*.log`.
+
+The next integration remains the full service worker and launch/maintenance/
+readiness path. Inspection of the pinned upstream CLI and trusted supervisor
+confirms that spawn, local binding verification and chat pairing do not supply
+a schema-aware application/model readiness probe. Database renewal also cannot
+extend an already-issued host-command deadline. Artifact retrieval, unpaid
+retention, model accounting and remaining G0–G4 hosted acceptance remain open.
+No paid host/model, live migration, manual deployment or external registry
+publication was performed.
