@@ -3517,5 +3517,13 @@ Gitleaks 8.30.1 review-range scan passed against main `89720094c`. Evidence is
 The diff was self-reviewed without an independent agent review. The head is
 pushed. [Instruction CI 35518201551](https://github.com/one-covenant/basilica-backend/actions/runs/35518201551)
 passed; [full CI 35518201732](https://github.com/one-covenant/basilica-backend/actions/runs/35518201732)
-is running. Its result remains separate from the previous green OpenSSH head. Controller integration and
+also passed on this exact head, testing merge
+`0ed779c4656b58ab2fba75befd5ca97a59da6ea0` against main `89720094c`.
+All required checks passed: 897 API cases (198 skipped), 4,165 workspace cases
+(50 skipped), all 243 separate owned cases, strict Clippy, images, pinned runtime
+and host packet isolation. The required owned chat suite passed all 24 cases in
+8.53 seconds, including the actual Node adapter; the complete issuance/OpenSSH/
+Engine case passed again in 40.56 seconds. The additional eight API ignored
+markers are executed by the required owned database lane. Logs are
+`/tmp/basilica-exo-chat-presence-ci-{api,workspace,image,lint}.log`. Controller integration and
 all remaining G0–G4 acceptance requirements remain open.

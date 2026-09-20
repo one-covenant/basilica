@@ -165,7 +165,8 @@ This file tracks planning; it is not an additional specification. No application
 
 - [x] Add a controller-only observation of the exact existing runtime chat session under current operation/generation authority.
 - [x] Verify that observation never replaces or renews sockets, grants or worker leases, including expiry/revocation and actual transport cases.
-- [ ] Publish validation and integrate the observation into the remaining controller readiness work.
+- [x] Publish exact-head validation and CI evidence.
+- [ ] Integrate passive observation into the remaining controller readiness work.
 
 ## Frontend managed-agent product increment
 
