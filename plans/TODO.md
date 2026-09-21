@@ -254,3 +254,12 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Verify stale access, exact old-container removal, replay stability and terminal retirement after restart.
 - [x] Record local physical/runtime evidence, retaining the separate hosted/model/chat/service-dispatch gates.
 - Required exact-head CI and final remote evidence are tracked in [backend PR 1872](https://github.com/one-covenant/basilica-backend/pull/1872) and [plan PR 570](https://github.com/one-covenant/basilica/pull/570).
+
+
+## Durable export key authority
+
+- [x] Retain one independent encrypted export key and immutable context per export operation; keep retries and takeovers stable.
+- [x] Enforce current owner/instance/generation/lease authority, frozen expiry and expired ciphertext erasure with retained tombstones; keep keys out of public metadata.
+- [x] Verify real PostgreSQL concurrency, expiry/rollback, ownership, bounded erasure and envelope isolation; record remaining integration.
+- [ ] Connect protected host capture/transfer, verified durable artifacts and authenticated retrieval; enable retention only with the declared customer policy.
+- Required exact-head validation is tracked in backend PR 1872 and plan PR 570.

@@ -402,7 +402,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
 | RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, fresh runner/schema observations, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned runtime, bootstrap, supervision, rebuild, encrypted recovery/export, grant rotation and explicit restart startup implemented; guarded readiness composed; export API and verified checkpoint integration pending | `375599f3a`; rebuilt image and actual owned OpenSSH/Engine new-generation restart/retirement pass in 142.68s with preserved state; 10 entrypoint / 18 rotation / 65 host Python cases pass; exact-head CI tracked in backend PR 1872 |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected delivery and create/delete/restart/readiness coordination; API migrations 035–045 and billing migrations 048–049 | G0; G1 for runtime adapter | Internal create/delete/restart coordinators, guarded Ready, exact-VM refresh, physical fencing, frozen image caching, apply receipts and explicit journaled startup rotation implemented; service worker, export/recovery, checkpoints and unpaid-tail/preservation policy pending | `375599f3a`; 292 owned cases, 890 API cases (53 ignores), 10 entrypoint / 18 rotation / 65 host cases, strict Clippy and full 70-commit secret scan pass; owned physical new-generation restart/retirement passes in 142.68s; required exact-head CI tracked in backend PR 1872 |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected delivery, create/delete/restart/readiness and private export-key authority; API migrations 035–046 and billing migrations 048–049 | G0; G1 for runtime adapter | Internal coordinators, guarded Ready, physical fencing, image caching, apply receipts, startup rotation and durable export keys implemented; service worker, artifact capture/storage/retrieval, export/recovery and unpaid-tail/preservation policy pending | `8418eede9`; 303 distinct owned integration cases, 893 API cases (53 ignores), 23 schema cases, strict Clippy and full 71-commit secret scan pass; previous physical restart CI passed in 51.15s; current exact-head CI tracked in backend PR 1872 |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh, guest renewal and protected bundle delivery implemented; model accounting and controller/hosted integration pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; observation composed into guarded Ready; service dispatch and hosted acceptance pending | `dc2b07f9`; 24 owned chat cases including actual Node/Rust transport and passive authority observation pass; guarded create/readiness cases pass; CI 35543815454 green; earlier runtime adapter evidence below |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Authenticated list/create/workspace, scoped chat, lifecycle management and model-key rotation pushed; artifact download and hosted acceptance pending | `fd1c1f1a`; 16 contract/navigation and 17 owned browser cases, lint and production build; CI 35522531903 green on draft site PR 22 |
@@ -4190,3 +4190,62 @@ instruction contracts passed. Final remote results are recorded in
 The preceding coordinator head `de997005a` remains the completed green CI evidence
 above. No paid resources/model calls, live migrations, manual deployments or
 external registry publications were performed. Remaining G0–G4 gates are open.
+
+
+### 2026-09-21 completed restart CI and durable export key authority
+
+Restart head `375599f3acc7e8731221c10d9049d55d2b80f80b` passed every job in
+[backend CI 35549980979](https://github.com/one-covenant/basilica-backend/actions/runs/35549980979),
+testing merge `9c1c3f21ca8948fca63ee6443467b22f699483ad` against
+`eca54885db36428278f00dffe03ffa02aa58f4d0`. API passed 911 / 242 expected
+skips, workspace 4,357 / 83 skips, all 292 owned cases passed, and the actual
+new-generation OpenSSH/Engine restart/retirement passed in 51.15 seconds.
+Runtime, image, network, schema, lint, coverage and service builds passed.
+Plan head `ee699b55ac6f73ae400e14a580556c6f3b710ca2` passed every job in
+[public CI 35550206705](https://github.com/one-covenant/basilica/actions/runs/35550206705),
+including 213 CLI, 20 miner and 757 validator cases (16 skips), Python SDK
+3.10–3.13, security/dependency checks and miner/validator images/vulnerability scans.
+
+Backend `8418eede94ca6c8a54a4417529f519a59fe636fc` adds controller-only
+`lifecycle::export_keys` and API migration 046. One independent random 32-byte
+export key is retained per owned operation. Its authenticated envelope binds the
+owner, instance, operation/generation, authoritative state schema, accepted image
+and frozen database timestamps. Concurrent calls and successor attempts recover
+the same key; stale authority, changed context, missing wrapping keys or expiry
+never mint replacement material. No host/model/billing/storage call occurs.
+
+The server selects retention within an internal 60-second–30-day bound; retries
+retain the original expiry even if configuration changes. This is not a deployed
+customer retention policy. Current lease and frozen key expiry are rechecked after
+lock waits and writes. The bounded retention primitive skips locked rows and clears
+at most 100 expired ciphertexts, retaining immutable context/expiry tombstones.
+Database constraints prevent early erasure, replacement, extension, tombstone
+delete or ciphertext restoration. Backup retention is separate; no cryptographic
+erasure of historical backups or downloaded copies is claimed. ADR 0032 records
+these boundaries and rollback requirements.
+
+Local validation passed **303 distinct owned integration cases**: the complete
+runner passed 302 cases, then all eleven focused export-key cases passed (ten
+overlap). API library passed **893 / 53 expected ignores**, and all **23 schema**
+cases passed with migration 046. Three encryption-envelope unit cases cover
+context/domain isolation, wrapping-key rotation, malformed input and redaction.
+The new database cases cover retry, takeover/forgery, deletion/context drift,
+expiry after observed lock waits, write-time expiry rollback, lost wrapping keys,
+independent exports, immutable records, owner/instance/generation foreign keys and
+bounded erasure. Review corrected the migration's calendar-day comparison to
+elapsed seconds; a final focused case passed across an Australia/Sydney DST change.
+Final strict Clippy, formatting, instruction/link checks, staged scan and the full
+**71-commit** Gitleaks range passed. Full locked dependencies/toolchain are unchanged.
+The diff was self-reviewed; no independent subagent review ran. Evidence logs use
+`/tmp/basilica-exo-export-keys-*.log`.
+
+Apply migration 046 before using the new module; older API code ignores its table.
+Keep wrapping keys, ciphertexts and retry tombstones on rollback. Required CI for
+exact head `8418eede94ca6c8a54a4417529f519a59fe636fc` is tracked in
+[backend PR 1872](https://github.com/one-covenant/basilica-backend/pull/1872);
+final remote evidence belongs in its PR description. No new physical export,
+artifact storage/download, checkpoint or hosted acceptance is claimed. Protected
+capture/transfer, durable verification/storage, authenticated retrieval, retention
+sweep scheduling/customer policy and remaining service/G0–G4 gates remain open.
+No paid resources/model requests, live migration, manual deployment or external
+registry publication occurred.
