@@ -261,7 +261,8 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Retain one independent encrypted export key and immutable context per export operation; keep retries and takeovers stable.
 - [x] Enforce current owner/instance/generation/lease authority, frozen expiry and expired ciphertext erasure with retained tombstones; keep keys out of public metadata.
 - [x] Verify real PostgreSQL concurrency, expiry/rollback, ownership, bounded erasure and envelope isolation; record remaining integration.
-- [ ] Connect protected host capture/transfer, verified durable artifacts and authenticated retrieval; enable retention only with the declared customer policy.
+- [x] Connect protected host capture and fixed authorized artifact transfer.
+- [ ] Connect verified durable artifacts and authenticated retrieval; enable retention only with the declared customer policy.
 - Required exact-head validation is tracked in backend PR 1872 and plan PR 570.
 
 
@@ -271,7 +272,8 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Consume protected key input, bound job lifetime, validate completed artifact hashes/context, and fence capture before rotated service resume.
 - [x] Verify host journal/installer regressions and real encrypted job behavior, including expiry and owner isolation.
 - [x] Complete final-image physical capture/resume acceptance, including consumed key inputs, and publish local evidence; required exact-head CI is tracked in backend PR 1872.
-- [ ] Connect controller capture authorization and transfer, verified durable object storage, account retrieval and the export coordinator before enabling export.
+- [x] Connect controller capture authorization and fixed artifact transfer.
+- [ ] Finish verified durable object storage, account retrieval and the export coordinator before enabling export.
 
 
 ## Protected controller export capture
@@ -279,5 +281,30 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Finish retained-only capture authority and typed receipts over fixed pinned SSH; preserve exact opaque account subjects.
 - [x] Verify lease takeover, model-grant independence, lost replies, billing/host changes and submitted-deadline expiry in owned PostgreSQL/SSH fixtures.
 - [x] Complete controller-to-real-Engine capture acceptance with actual retained keys, receipt hashes, consumed inputs, stable replay and deletion fencing.
-- [ ] Add bounded helper-package encoding and fixed artifact transfer; verify durable storage before artifact registration.
+- [x] Add bounded helper-package encoding, preserving exact source identity and independent command/decompression caps.
+- [x] Implement fixed authorized payload/metadata reads with bounded ranges and strict challenge/receipt/hash verification.
+- [x] Complete physical controller range-transfer acceptance with whole-object hash verification.
+- [ ] Verify durable storage before artifact registration.
 - [ ] Integrate export resume/coordinator, account retrieval, retention and service dispatch before enabling export; G0–G4 remain open.
+
+
+## Authorized export transfer
+
+- [x] Restrict reads to a successfully captured current journal and the two fixed operation-owned files; reject unsafe metadata and mutation during reads.
+- [x] Recheck owner, lease, retained key, billing and pinned host authority around each protected request; preserve ordinary acknowledgement limits.
+- [x] Verify strict wire bounds, exact ranges, canonical encoding, chunk hashes and EOF with owned tests.
+- [x] Complete owned PostgreSQL/SSH fault checks and actual controller-to-Engine full-object transfer/hash acceptance.
+- [ ] Persist verified private immutable objects, register only durable artifacts, and implement owner-authenticated retrieval and retention.
+
+
+The bounded transfer increment is backend `21d845053812adbd5faa9e414b03a1e9a45a658f`.
+The actual owned controller/OpenSSH/Engine test passed in 505.09 seconds,
+including all 1,159,167,648 encrypted payload bytes (261.65 seconds) and 839 metadata
+bytes (0.33 seconds), whole-stream hash matching, retirement and preserved state.
+Local API tests passed 898 cases with 65 expected integration ignores; 55 owned
+PostgreSQL/SSH delivery cases and 82 host cases passed. Strict Clippy, formatting,
+instruction contracts, links and the full 77-commit secret scan passed. Initial
+large-transfer runs exposed unoptimized development SHA-256; the scoped dependency
+profile override preserves production profiles, complete hash checks and all
+deadlines. Backend PR 1872 tracks the new exact-head CI; predecessor `8f6cd726`
+passed CI 35559655254. Durable publication, retrieval and G0–G4 remain open.
