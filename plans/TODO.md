@@ -278,5 +278,6 @@ security dependency fix so its required CI checks use the patched TLS graph.
 
 - [x] Finish retained-only capture authority and typed receipts over fixed pinned SSH; preserve exact opaque account subjects.
 - [x] Verify lease takeover, model-grant independence, lost replies, billing/host changes and submitted-deadline expiry in owned PostgreSQL/SSH fixtures.
-- [ ] Complete controller-to-real-Engine capture acceptance, then bounded verified transfer and durable storage before artifact registration.
+- [x] Complete controller-to-real-Engine capture acceptance with actual retained keys, receipt hashes, consumed inputs, stable replay and deletion fencing.
+- [ ] Add bounded helper-package encoding and fixed artifact transfer; verify durable storage before artifact registration.
 - [ ] Integrate export resume/coordinator, account retrieval, retention and service dispatch before enabling export; G0–G4 remain open.

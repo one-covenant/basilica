@@ -401,7 +401,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Pinned runtime, persistent state, physical restart, host capture and protected controller capture delivery; transfer/storage and checkpoint integration remain required | Private capture authority and typed receipts implemented; actual controller-to-Engine capture, complete export/recovery coordination and hosted acceptance pending | `ec2f0f396`; 312 owned lifecycle cases, 894 API cases / 62 expected ignores and strict Clippy pass; host predecessor `6df1b0915` passed CI35555036435, including physical host capture; current exact-head CI tracked in backend PR 1872 |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Pinned runtime, persistent state, physical restart and complete owned controller-to-host capture; transfer/storage and checkpoint integration remain required | Retained-key capture through actual OpenSSH/Engine verified; export resume/coordinator, durable artifacts and hosted acceptance pending | `6d54fefe5`; real retained-key capture, exact hashes, consumed inputs, same-key replay, deletion fencing and preserved state pass in 201.34s; predecessor `ec2f0f396` passed all CI35557234714 jobs, including 312 owned cases; current CI tracked in backend PR 1872 |
 | LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected delivery, create/delete/restart/readiness and private export-key authority; API migrations 035–046 and billing migrations 048–049 | G0; G1 for runtime adapter | Internal coordinators, guarded Ready, physical fencing, image caching, apply receipts, startup rotation and durable export keys implemented; service worker, artifact capture/storage/retrieval, export/recovery and unpaid-tail/preservation policy pending | `8418eede9`; 303 distinct owned integration cases, 893 API cases (53 ignores), 23 schema cases, strict Clippy and full 71-commit secret scan pass; previous physical restart CI passed in 51.15s; current exact-head CI tracked in backend PR 1872 |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh, guest renewal and protected bundle delivery implemented; model accounting and controller/hosted integration pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; observation composed into guarded Ready; service dispatch and hosted acceptance pending | `dc2b07f9`; 24 owned chat cases including actual Node/Rust transport and passive authority observation pass; guarded create/readiness cases pass; CI 35543815454 green; earlier runtime adapter evidence below |
@@ -4363,3 +4363,51 @@ coordination, retained healthy checkpoints, retention/staging cleanup, service a
 billing worker dispatch, model accounting and all hosted G0–G4 gates remain open.
 No public export capability was enabled. No paid host/model call, live migration,
 manual deployment or external registry publication was performed.
+
+
+## 2026-09-21 physical controller capture acceptance
+
+All required jobs passed for controller-guard head
+`ec2f0f3963c892a11627de35f2d6f81059f7aa43` in
+[CI 35557234714](https://github.com/one-covenant/basilica-backend/actions/runs/35557234714),
+testing merge `d4aaf5665fec120aa928849ada4d25d3c9b1c992` against
+`eca54885db36428278f00dffe03ffa02aa58f4d0`. API: 915 passed / 262 expected
+skips. Workspace: 4,361 passed / 92 skips. All 312 owned integration cases passed.
+Its earlier physical restart/retirement lane passed in 45.41 seconds; that version
+did not yet exercise the controller capture path. Plan head
+`8ee7c6012fab350482aa252b622383c37954df9d` passed every job in
+[CI 35557341986](https://github.com/one-covenant/basilica/actions/runs/35557341986).
+
+Backend `6d54fefe57a055531eda2111186a7bcddcdb06b4` extends the complete owned
+delivery runner with actual export intent, retained-key issuance and
+`AgentHostExportGuard` over pinned OpenSSH to the real root helper/Engine. The
+capture loop runs under production lease renewal and explicit fixture billing
+coverage. The peer verifies that old writers are gone, the capture job has no
+network/logs/restart policy, its key input is consumed, and successful completion
+produces exact payload/metadata hashes and byte counts. Same-key replay returns
+the same captured receipt without restarting. Export creates no replacement
+grants or registered artifact. Explicit deletion rejects the old capture guard,
+retires the capture container and preserves canonical state and owner files.
+
+The complete physical test passed locally in **201.34 seconds**, using runtime
+image `sha256:2407fb1ba3723d447002acd35562c1b01f6c5a985727f7231790aca2bd3a52e9`
+and outer fixture
+`sha256:86bf1b1d55c7824d6c733df58eb5131b6bad69eb12fa47e3427f97f7e0b00911`.
+Both were already locally built; no image publication was needed. The owned
+container, network, temporary PostgreSQL and private bridge were cleaned. Evidence:
+`/tmp/basilica-exo-physical-controller-capture.log`. Strict API Clippy, formatting,
+Python compilation, 68 instruction contracts, changed-document links, whitespace,
+staged scanning and the full 75-commit / 2.79 MB secret scan passed. Self-review
+completed; no independent subagent review ran. Required exact-head CI is tracked
+in backend PR 1872 and plan PR 570.
+
+Provider/billing/TLS renewal and model/chat readiness remain explicitly simulated
+in the surrounding fixture. Only export admission is overridden for this test;
+public capability remains disabled. Direct fixture reads verify captured object
+receipts; they do not implement production transfer or durable storage. The next
+transfer step must preserve command bounds: the current uncompressed helper package
+is already near its 120 KiB complete-command limit. Bounded package encoding and
+fixed authorized object reads are required before durable artifact registration.
+Export resume/recovery coordination, owner downloads, retention/cleanup, service
+worker dispatch, model accounting and hosted G0–G4 acceptance remain open. No paid
+host/model request, live migration or manual deployment was performed.
