@@ -272,3 +272,11 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Verify host journal/installer regressions and real encrypted job behavior, including expiry and owner isolation.
 - [x] Complete final-image physical capture/resume acceptance, including consumed key inputs, and publish local evidence; required exact-head CI is tracked in backend PR 1872.
 - [ ] Connect controller capture authorization and transfer, verified durable object storage, account retrieval and the export coordinator before enabling export.
+
+
+## Protected controller export capture
+
+- [x] Finish retained-only capture authority and typed receipts over fixed pinned SSH; preserve exact opaque account subjects.
+- [x] Verify lease takeover, model-grant independence, lost replies, billing/host changes and submitted-deadline expiry in owned PostgreSQL/SSH fixtures.
+- [ ] Complete controller-to-real-Engine capture acceptance, then bounded verified transfer and durable storage before artifact registration.
+- [ ] Integrate export resume/coordinator, account retrieval, retention and service dispatch before enabling export; G0–G4 remain open.

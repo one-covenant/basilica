@@ -401,7 +401,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Pinned runtime, persistent state, physical restart and fenced encrypted host capture; controller transfer/storage and checkpoint integration remain required | Local runtime/recovery/export helpers, startup rotation and private host capture/resume implemented; hosted acceptance and complete export/recovery coordination pending | `6df1b0915`; 73 host cases, 5 real encrypted-job/deadline cases and 2 embedded artifact checks pass; final-image actual Engine capture, consumed key input, object hashes, rotated resume and retirement pass in 457.81s; required CI tracked in backend PR 1872 |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Pinned runtime, persistent state, physical restart, host capture and protected controller capture delivery; transfer/storage and checkpoint integration remain required | Private capture authority and typed receipts implemented; actual controller-to-Engine capture, complete export/recovery coordination and hosted acceptance pending | `ec2f0f396`; 312 owned lifecycle cases, 894 API cases / 62 expected ignores and strict Clippy pass; host predecessor `6df1b0915` passed CI35555036435, including physical host capture; current exact-head CI tracked in backend PR 1872 |
 | LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected delivery, create/delete/restart/readiness and private export-key authority; API migrations 035–046 and billing migrations 048–049 | G0; G1 for runtime adapter | Internal coordinators, guarded Ready, physical fencing, image caching, apply receipts, startup rotation and durable export keys implemented; service worker, artifact capture/storage/retrieval, export/recovery and unpaid-tail/preservation policy pending | `8418eede9`; 303 distinct owned integration cases, 893 API cases (53 ignores), 23 schema cases, strict Clippy and full 71-commit secret scan pass; previous physical restart CI passed in 51.15s; current exact-head CI tracked in backend PR 1872 |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh, guest renewal and protected bundle delivery implemented; model accounting and controller/hosted integration pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; observation composed into guarded Ready; service dispatch and hosted acceptance pending | `dc2b07f9`; 24 owned chat cases including actual Node/Rust transport and passive authority observation pass; guarded create/readiness cases pass; CI 35543815454 green; earlier runtime adapter evidence below |
@@ -4312,3 +4312,54 @@ remain required. Public export remains disabled and no G0–G4 gate is closed by
 this host increment. Required exact-head CI is tracked in backend PR 1872 and
 plan PR 570. No paid host/model call, live migration, manual deployment or external
 registry publication was performed.
+
+
+## 2026-09-21 protected controller export capture delivery
+
+The preceding host-capture head `6df1b091573cf759250fc9ea367975cd16dae482`
+passed every required job in [CI 35555036435](https://github.com/one-covenant/basilica-backend/actions/runs/35555036435).
+It tested merge `a8519658f00013c4fe45fe2930e2eb23ac75c8d3` against backend base
+`eca54885db36428278f00dffe03ffa02aa58f4d0`: 914 API tests passed / 253 expected
+skips, all 19 runtime export tests and 5 export-job tests passed, and the existing
+issued-bundle/OpenSSH/Engine restart/retirement lane passed in 45.24 seconds.
+The separate direct-helper lane includes physical export. Plan head
+`5ddb6d9f6101bd1e9412bcde0af486fdeb5b9605` also passed
+[CI 35555167817](https://github.com/one-covenant/basilica/actions/runs/35555167817).
+These results belong to those exact heads, not subsequent controller changes.
+
+Backend `ec2f0f3963c892a11627de35f2d6f81059f7aa43` adds `AgentHostExportGuard`, a retained-only export-key
+snapshot and strict typed capture receipts. Each command requires the exact owner,
+current export lease/attempt, Restarting phase, accepted quote/observed compute,
+prior runtime resource manifest, pinned SSH identity, fresh billing coverage and
+unexpired retained key. No runtime/model/chat grants are issued or decrypted;
+capture remains possible after their revocation or model-connection deletion.
+Opaque account subjects preserve exact Unicode identity through ASCII JSON escapes.
+
+Authority is checked after SSH authentication, helper installation, command
+admission and response. Both snapshots must remain within their original deadlines;
+renewal cannot revive an already expired submitted response. Lost replies replay
+the same retained protected body. Captured receipts bind both object hashes/lengths
+to the exact request and native container, but never register artifacts or advance
+worker state. Resume phases and recorded artifacts reject capture replay.
+Decision 0034 documents the authority, deadline and storage boundary.
+
+All nine focused owned PostgreSQL/SSH tests passed in 8.81 seconds, including
+current-authority races at each command stage, lost replies, absent retained keys,
+revoked model grants, changed host/compute/billing, strict receipt bounds and
+submitted-deadline expiry after renewal. A fixture must confirm its mutation
+completed; an SSH test-server panic cannot substitute for a production rejection.
+The API library passed 894 tests with 62 expected ignores. Strict all-target,
+all-feature API Clippy, formatting, 68 instruction contracts, documentation links,
+9 contributor scanner tests and staged secret scanning passed. The full owned lifecycle runner passed all 312 cases, including all retained-key
+and delivery/create/restart/retirement regressions, with no fixture panics. The
+full review-range secret scan is recorded with the published follow-on.
+Self-review was performed; no independent subagent review ran.
+
+The SSH fixture exercises actual Rust/Python wire and retained database authority;
+its capture receipts are explicit simulated host observations. Actual controller-
+to-Engine capture remains a separate acceptance step. Bounded object transfer,
+verified durable storage, account artifact/key retrieval, export resume/recovery
+coordination, retained healthy checkpoints, retention/staging cleanup, service and
+billing worker dispatch, model accounting and all hosted G0–G4 gates remain open.
+No public export capability was enabled. No paid host/model call, live migration,
+manual deployment or external registry publication was performed.
