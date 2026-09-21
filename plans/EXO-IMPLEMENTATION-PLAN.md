@@ -1,6 +1,6 @@
 # Exo on Basilica — unified implementation plan
 
-Updated: 2026-09-20. Status: implementation in progress; G0 contracts and baseline underway.
+Updated: 2026-09-21. Status: implementation in progress; G0 contracts and baseline underway.
 
 Planning branch: `docs/exo-implementation-plan`, created from freshly fetched `origin/main` at `f3749c7211e828c5c8ff34f6995f822cf83ccd2f`. Plan worktree: `/Users/samueldare/code/cc/basilica/basilica-exo-plan`. The original public checkout remains on its unrelated `docs/basilica-fly-school` branch and must not be used as the branch base for Exo implementation.
 
@@ -377,7 +377,7 @@ These are future required checks, not completed runs. Establish baselines and re
 
 | Owner | Required checks |
 | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, fresh runner/schema observations, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, fresh runner/host probes, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; guarded readiness composed; export API and verified checkpoint integration pending | `dc2b07f9`; actual bootstrap cold cache fill plus short-authority SSH/Engine delivery, observations, replay, replacement, retirement and preserved state pass locally in 131.82s; prior runtime/export evidence below; CI 35543815454 green |
+| RT | `bash -n scripts/exo/*.sh`; actual smoke runner with nonzero failure assertions. Pinned upstream builds use the compatible toolchain and locked dependencies; observed upstream scripts build `exo` and `exo/scheduler-runner/Cargo.toml`. `pnpm check` is upstream lint/typecheck/tests. Record actual commands/any necessary deviations. |
 | LC/MG/CT + CO | Targeted Rust tests per owned module and real integration cases; repository `just` checks after wiring. `actionlint` and required local CI validation for changed workflows. Record exact added test targets during implementation. |
 | FE | `npm ci`; `npm run build`; `CI=1 npm run lint`; chosen focused test runner; real browser acceptance. Lockfile and `.papi/descriptors/package.json` exist. Dependencies were not installed and ESLint config/dependency was not present at review: establish a noninteractive baseline, never count setup prompts as passing. Build runs sitemap postbuild; inspect generated changes. |
 | SDK | `cargo test -p basilica-cli`; `cargo test -p basilica-sdk`; `just fmt-check`; `cargo clippy -p basilica-cli -p basilica-sdk --all-targets -- -D warnings`; required public CI. |
@@ -401,8 +401,8 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, fresh runner/schema observations, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned image, seeding, bootstrap, renewal, supervision, fresh runner/host probes, rebuild, encrypted recovery/export, grant rotation and interrupted-task holds implemented; guarded readiness composed; export API and verified checkpoint integration pending | `dc2b07f9`; actual bootstrap cold cache fill plus short-authority SSH/Engine delivery, observations, replay, replacement, retirement and preserved state pass locally in 131.82s; prior runtime/export evidence below; CI 35543815454 green |
-| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected delivery and create/delete/readiness coordination; API migrations 035–044 and billing migrations 048–049 | G0; G1 for runtime adapter | Internal create/delete coordinators, guarded Ready, exact-VM refresh, physical fencing, short delivery authority and frozen bootstrap image caching implemented; service worker, maintenance/checkpoints and unpaid-tail/preservation policy pending | `dc2b07f9`; 281 owned cases, 890 API and 283 aggregator library cases, strict Clippy and full 68-commit secret scan pass; actual cold-cache/protected-host path passes; CI 35543815454 green |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, fresh runner/schema observations, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned runtime, bootstrap, supervision, rebuild, encrypted recovery/export, grant rotation and explicit restart startup implemented; guarded readiness composed; export API and verified checkpoint integration pending | `375599f3a`; rebuilt image and actual owned OpenSSH/Engine new-generation restart/retirement pass in 142.68s with preserved state; 10 entrypoint / 18 rotation / 65 host Python cases pass; exact-head CI tracked in backend PR 1872 |
+| LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected delivery and create/delete/restart/readiness coordination; API migrations 035–045 and billing migrations 048–049 | G0; G1 for runtime adapter | Internal create/delete/restart coordinators, guarded Ready, exact-VM refresh, physical fencing, frozen image caching, apply receipts and explicit journaled startup rotation implemented; service worker, export/recovery, checkpoints and unpaid-tail/preservation policy pending | `375599f3a`; 292 owned cases, 890 API cases (53 ignores), 10 entrypoint / 18 rotation / 65 host cases, strict Clippy and full 70-commit secret scan pass; owned physical new-generation restart/retirement passes in 142.68s; required exact-head CI tracked in backend PR 1872 |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh, guest renewal and protected bundle delivery implemented; model accounting and controller/hosted integration pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; observation composed into guarded Ready; service dispatch and hosted acceptance pending | `dc2b07f9`; 24 owned chat cases including actual Node/Rust transport and passive authority observation pass; guarded create/readiness cases pass; CI 35543815454 green; earlier runtime adapter evidence below |
 | FE | CO / `basilica-site-exo` | Section 8 plus `lib/agentNavigation.mjs` | G0; G2 for final acceptance | Authenticated list/create/workspace, scoped chat, lifecycle management and model-key rotation pushed; artifact download and hosted acceptance pending | `fd1c1f1a`; 16 contract/navigation and 17 owned browser cases, lint and production build; CI 35522531903 green on draft site PR 22 |
@@ -4075,3 +4075,118 @@ The lockfile is byte-identical to implementation head `f566ee0e` (Git blob
 `d11513afe2c18815cb8a53874a3052c5a061c464`). Required remote validation of this
 repair is recorded in [PR 570 checks](https://github.com/one-covenant/basilica/pull/570/checks)
 and its PR description, including the exact head and workflow result.
+
+### 2026-09-21 explicit restart coordination and Starting takeover
+
+Backend `de997005aee986015c4a4196d91921b237962b07` adds a bounded internal
+`RestartCoordinator`. An explicit restart uses the same quote-bound, observed CPU
+rental and current billing. The coordinator has no purchase or provider-deletion
+method. It applies retained new-generation inputs through pinned delivery and
+requires guarded runtime/model/chat readiness. Waiting retains the attempt and
+grants; same-attempt Starting waits do not repeatedly replace the runtime.
+
+Takeover review found that inheriting Starting alone could leave a successor
+attempt unable to observe the predecessor's physical fence. API migration 045 adds
+a nullable positive `runtime_applied_attempt`, bounded by the operation's current
+attempt. Protected apply records it only after a verified host acknowledgement,
+under a fresh owner transaction matching the retained bundle, target and complete
+authority. The frozen request deadline and current authority are checked after
+writing; expiry rolls the receipt back. Create and restart reapply the same
+retained body when Starting has no receipt for their attempt. Neither the
+immutable bundle nor its grants are rewritten. ADR 0030 records the contract.
+
+All 292 owned integration cases passed, including 43 delivery/readiness/create/
+restart cases in 68.84 seconds. The eleven new cases cover restart generation and
+replay, failed billing, insufficient credit and retained backoff, lost apply
+acknowledgements, deletion during apply, resource drift, Configuring/Starting
+takeover, create Starting takeover, failed receipt writes and expiry during writes.
+These execute real PostgreSQL, billing RPC, metadata HTTP and pinned SSH transport;
+provider lifecycle, guest execution and chat presence are explicit fixtures.
+Initial new-test failures were corrected fixture mistakes (retry-key bounds,
+counting passive observations as applies, billing UUID mapping and immutable
+coverage/backoff setup), not suppressed production checks.
+
+The separate actual OpenSSH/Engine test passed in 133.36 seconds with frozen cold
+image bootstrap, short-authority delivery, replay, attempt replacement, retirement
+and preserved state. Its fixture resources were removed. This verifies the
+protected-delivery path with receipt persistence; full physical new-generation
+restart acceptance remains open. No paid host/model request was made.
+
+API library tests passed 890 cases with 53 expected ignores; all 23 schema cases
+passed. Strict all-target/all-feature Clippy, formatting, instruction contracts,
+relative ADR links, staged scanning and the complete 69-commit Gitleaks range
+passed. Full locked metadata still resolves all five public crates to `f0e1c972`.
+The diff was self-reviewed; no independent subagent review ran. Logs are under
+`/tmp/basilica-exo-restart-*.log`. Exact-head remote validation is tracked in
+[backend PR 1872 checks](https://github.com/one-covenant/basilica-backend/pull/1872/checks)
+and will be recorded below.
+
+Apply API migration 045 before the new binary. Older API code ignores the nullable
+column; rollback need not drop it. No live migration, manual deployment or registry
+publication ran. The service worker and public restart capability remain disabled
+until integration gates pass. Full physical restart, verified checkpoints, export/
+recovery coordination and storage, preservation policy, artifact retrieval, model
+accounting and remaining G0–G4 acceptance remain required.
+
+
+Remote restart-coordinator validation completed successfully: [CI 35548012661](https://github.com/one-covenant/basilica-backend/actions/runs/35548012661)
+passed for exact backend head `de997005aee986015c4a4196d91921b237962b07`,
+testing merge `2ee7245393d9ae4a984d39c275e86e59f506ef46` against
+`eca54885db36428278f00dffe03ffa02aa58f4d0`. The API lane passed 911 tests
+with 242 expected skips, all 292 owned cases passed, and the actual host fixture
+passed in 42.84 seconds. Strict lint, instruction contracts, schema, runtime/image/
+network lanes and service container builds passed. This result covers the committed
+coordinator and same-generation host fixture, not the subsequent physical
+new-generation restart extension under development.
+
+
+### 2026-09-21 physical restart and explicit startup rotation
+
+Backend `375599f3acc7e8731221c10d9049d55d2b80f80b` extends the real owned
+PostgreSQL/OpenSSH/root-helper/Engine fixture through the actual restart
+coordinator. The first extension timed out: the new container received a rotated
+grant, but entrypoint called strict bootstrap without invoking the existing
+identity-rotation primitive. Bootstrap correctly refused the changed token.
+
+Restart bundles now carry an explicit `identity_rotation_operation_id` bound to
+the lifecycle and host operation. Startup requires existing canonical state,
+verifies its identity/configuration, resumes the durable rotation journal, then
+runs strict bootstrap before services. Create and same-grant retry retain their
+existing behavior. Interrupted rotation, wrong-operation/malformed directives,
+changed configuration and missing-state refusal have focused regression coverage.
+ADR 0031 records compatibility and rollback: use a matching runtime image/helper/API;
+never change the accepted image or rewrite retained bundles to retrofit support.
+
+The rebuilt production image `sha256:5e54e323762fa91cd02e8cb26e96cd9c79cf8973e3938fd9816282dfe3a37ef9`
+passed the actual owned physical test in **142.68 seconds**. It exercises cold
+bootstrap cache fill, short-authority issuance/delivery, same-generation replay
+and takeover, new-generation credential replacement through RestartCoordinator,
+strict receipt verification, guarded Ready and subsequent terminal retirement.
+The fixture verifies old runtime access revocation, exact predecessor removal,
+new protected runtime/chat tokens and preservation of the master key, prior
+conversation records, source edits and owner files. Its allowed record changes
+are the verified token receipt and ordinary runner-start event append. Owned
+container, network, volumes and temporary PostgreSQL were removed; the unrelated
+foreign container and default PostgreSQL were untouched.
+
+Model metadata, current chat presence, provider/rental state, billing coverage
+and renewal are explicit local fixtures. This is not paid model behavior,
+production guest WebSocket connectivity, hosted provider/cloud-init acceptance
+or service-worker dispatch evidence. Public launch/restart remain disabled.
+
+All **292 owned integration cases** passed, including 43 delivery/readiness/create/
+restart cases (84.06s). API library tests passed **890 / 53 expected ignores**;
+actual-CLI entrypoint **10**, identity rotation **18** and host Python **65** cases
+passed. Strict all-target/all-feature Clippy, formatting, instruction/link checks,
+staged scan and the complete **70-commit** Gitleaks range passed. No dependency,
+toolchain, public DTO or schema migration change was needed. The diff was
+self-reviewed; no independent subagent review ran. Logs use
+`/tmp/basilica-exo-rotation-*.log` and `/tmp/basilica-exo-physical-restart-host2.log`.
+
+Required [CI 35549980979](https://github.com/one-covenant/basilica-backend/actions/runs/35549980979)
+for exact head `375599f3acc7e8731221c10d9049d55d2b80f80b` is running;
+instruction contracts passed. Final remote results are recorded in
+[backend PR 1872](https://github.com/one-covenant/basilica-backend/pull/1872).
+The preceding coordinator head `de997005a` remains the completed green CI evidence
+above. No paid resources/model calls, live migrations, manual deployments or
+external registry publications were performed. Remaining G0–G4 gates are open.

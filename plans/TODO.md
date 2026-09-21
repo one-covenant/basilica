@@ -106,7 +106,7 @@ security dependency fix so its required CI checks use the patched TLS graph.
 
 - [x] Implement durable root-owned host fencing and exact protected input replay.
 - [x] Implement strict container identity, stop/absence and isolated startup policy; verify owned store/Engine-fault/packet cases.
-- [ ] Verify the complete root-helper/real-Engine runtime startup, restart, identity rotation and replacement path.
+- [x] Verify the owned root-helper/real-Engine runtime startup, explicit restart, identity rotation and replacement path; hosted acceptance remains separate.
 - [x] Deliver through pinned SSH under current lifecycle authority; verify owned failure/retry cases.
 - [x] Publish the host-control component evidence and remaining hosted/controller requirements.
 - [ ] Verify complete issuance/SSH/root-helper execution and hosted acceptance before launch.
@@ -186,7 +186,7 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Own reconciliation futures inside a bounded heartbeat/cancellation runner; cancel work on authority loss, database uncertainty, shutdown or deadline.
 - [x] Verify real database deletion/takeover/lock-wait cases and cancellation/drop behavior without live provider calls.
 - [ ] Integrate the runner with complete launch/maintenance/cleanup coordination and runtime/model readiness; keep hosted gates open.
-- [ ] Reconcile long host-command budgets with the fixed authority deadline already sent to the host; database renewal alone cannot extend it.
+- [x] Reconcile cold-image work with fixed authority deadlines through frozen pre-delivery cache fill; verify actual protected delivery under its unchanged short deadline.
 
 ## Explicit delete coordinator
 
@@ -238,3 +238,19 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Reuse the implementation branch's security fix without changing toolchain files or backend dependency selection.
 - [x] Verify the patched dependency graph, CLI/SDK compilation and miner Dockerfile locally.
 - Track required remote security and build validation in [PR 570 checks](https://github.com/one-covenant/basilica/pull/570/checks) and its exact-head evidence in the PR description.
+
+## Restart coordinator
+
+- [x] Compose an owned restart through current billing, retained runtime replacement and guarded Ready on the existing host.
+- [x] Preserve retry identity and use the existing state-preserving delivery path; reject conflicting resources, expired authority and deletion without purchasing replacement compute.
+- [x] Add per-attempt protected apply receipts (API migration 045), so Starting takeover re-establishes its physical fence before readiness.
+- [x] Verify restart, lost acknowledgements, pending readiness and stale-worker cases with owned fixtures; record remaining maintenance and service-dispatch gates.
+- [x] Complete owned physical new-generation restart with explicit journaled credential rotation.
+- [ ] Integrate the service worker and hosted acceptance before enabling the public restart capability.
+
+## Physical restart acceptance
+
+- [x] Extend the owned host fixture through actual restart coordination, new-generation access rotation, preserved user state and guarded readiness.
+- [x] Verify stale access, exact old-container removal, replay stability and terminal retirement after restart.
+- [x] Record local physical/runtime evidence, retaining the separate hosted/model/chat/service-dispatch gates.
+- Required exact-head CI and final remote evidence are tracked in [backend PR 1872](https://github.com/one-covenant/basilica-backend/pull/1872) and [plan PR 570](https://github.com/one-covenant/basilica/pull/570).
