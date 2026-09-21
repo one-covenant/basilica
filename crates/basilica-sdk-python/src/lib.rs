@@ -146,6 +146,29 @@ impl BasilicaClient {
         serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Rotate a BYOT policy's storage credentials (the #1577 mechanism,
+    /// policy flavor). `request_json` must match
+    /// basilica_sdk::rl::RotateRelayCredentialsRequest.
+    fn rl_rotate_policy_credentials(
+        &self,
+        py: Python,
+        name: String,
+        request_json: String,
+    ) -> PyResult<String> {
+        let request: basilica_sdk::rl::RotateRelayCredentialsRequest =
+            serde_json::from_str(&request_json)
+                .map_err(|e| PyValueError::new_err(format!("invalid rotation request: {e}")))?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    client.rotate_rl_policy_credentials(&name, request).await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     /// Delete an RL cluster (refused with an actionable error while a job
     /// is active — delete the job first; that is the cancel path).
     fn rl_delete_cluster(&self, py: Python, name: String) -> PyResult<String> {
@@ -220,6 +243,157 @@ impl BasilicaClient {
             .detach(|| {
                 self.runtime
                     .block_on(async move { client.submit_rl_manifest(manifest).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    // ===== BYOT policy registry (#1666; server routes #1662) =====
+
+    /// Register a policy lineage. `request_json` must match
+    /// basilica_sdk::rl::CreateRlPolicyRequest (credentials write-only).
+    fn rl_create_policy(&self, py: Python, request_json: String) -> PyResult<String> {
+        let request: basilica_sdk::rl::CreateRlPolicyRequest = serde_json::from_str(&request_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid RL policy request: {e}")))?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.create_rl_policy(request).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Read one policy's registry view (effectivePrefix, pins, chain head).
+    fn rl_get_policy(&self, py: Python, name: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_rl_policy(&name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Delete a policy's registry record (artifact bytes stay the
+    /// customer's, untouched).
+    fn rl_delete_policy(&self, py: Python, name: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.delete_rl_policy(&name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Register a revision manifest against a policy. `request_json` must
+    /// match basilica_sdk::rl::CreateRlRevisionRequest.
+    fn rl_create_revision(
+        &self,
+        py: Python,
+        policy: String,
+        request_json: String,
+    ) -> PyResult<String> {
+        let request: basilica_sdk::rl::CreateRlRevisionRequest =
+            serde_json::from_str(&request_json)
+                .map_err(|e| PyValueError::new_err(format!("invalid RL revision request: {e}")))?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.create_rl_revision(&policy, request).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Start a rollout session. `request_json` must match
+    /// basilica_sdk::rl::CreateRlSessionRequest. NOT idempotent.
+    fn rl_create_session(&self, py: Python, request_json: String) -> PyResult<String> {
+        let request: basilica_sdk::rl::CreateRlSessionRequest = serde_json::from_str(&request_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid RL session request: {e}")))?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.create_rl_session(request).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Read a session's lifecycle state (never echoes the token).
+    fn rl_get_session(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_rl_session(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Delete a session (the policy + revisions stay in the customer's
+    /// bucket).
+    fn rl_delete_session(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.delete_rl_session(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Usage & cost for a session (interface doc step 7).
+    fn rl_get_session_usage(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_rl_session_usage(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Park a session: the fleet scales away, identity survives.
+    fn rl_park_session(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.park_rl_session(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Resume a parked session on the same lineage.
+    fn rl_resume_session(&self, py: Python, id: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.resume_rl_session(&id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Read one revision's registry state — the wait_until_active poll.
+    fn rl_get_revision(&self, py: Python, policy: String, revision: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_rl_revision(&policy, &revision).await })
             })
             .map_err(|e| self.map_error_to_python(e))?;
         serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
