@@ -263,3 +263,12 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Verify real PostgreSQL concurrency, expiry/rollback, ownership, bounded erasure and envelope isolation; record remaining integration.
 - [ ] Connect protected host capture/transfer, verified durable artifacts and authenticated retrieval; enable retention only with the declared customer policy.
 - Required exact-head validation is tracked in backend PR 1872 and plan PR 570.
+
+
+## Fenced host export capture
+
+- [x] Add a private v2 capture job that fences old writers, uses the immutable image helper without network access, and retains replay/takeover authority.
+- [x] Consume protected key input, bound job lifetime, validate completed artifact hashes/context, and fence capture before rotated service resume.
+- [x] Verify host journal/installer regressions and real encrypted job behavior, including expiry and owner isolation.
+- [x] Complete final-image physical capture/resume acceptance, including consumed key inputs, and publish local evidence; required exact-head CI is tracked in backend PR 1872.
+- [ ] Connect controller capture authorization and transfer, verified durable object storage, account retrieval and the export coordinator before enabling export.

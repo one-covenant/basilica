@@ -401,7 +401,7 @@ Only CO updates this ledger. Workers report evidence; they do not race to edit t
 
 | Workstream | Agent/worktree | Scope | Dependency | State | Evidence/revision |
 | --- | --- | --- | --- | --- | --- |
-| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Runtime image/startup, fresh runner/schema observations, interrupted scheduling and persistent-state export v1; LC delivery and CT pairing for final wiring | Pinned runtime, bootstrap, supervision, rebuild, encrypted recovery/export, grant rotation and explicit restart startup implemented; guarded readiness composed; export API and verified checkpoint integration pending | `375599f3a`; rebuilt image and actual owned OpenSSH/Engine new-generation restart/retirement pass in 142.68s with preserved state; 10 entrypoint / 18 rotation / 65 host Python cases pass; exact-head CI tracked in backend PR 1872 |
+| RT | CO / `basilica-backend-exo` | Section 4 runtime paths | Pinned runtime, persistent state, physical restart and fenced encrypted host capture; controller transfer/storage and checkpoint integration remain required | Local runtime/recovery/export helpers, startup rotation and private host capture/resume implemented; hosted acceptance and complete export/recovery coordination pending | `6df1b0915`; 73 host cases, 5 real encrypted-job/deadline cases and 2 embedded artifact checks pass; final-image actual Engine capture, consumed key input, object hashes, rotated resume and retirement pass in 457.81s; required CI tracked in backend PR 1872 |
 | LC | CO / `basilica-backend-exo` | Lifecycle/catalog, allocation/authority, billing/cleanup/archival, protected delivery, create/delete/restart/readiness and private export-key authority; API migrations 035–046 and billing migrations 048–049 | G0; G1 for runtime adapter | Internal coordinators, guarded Ready, physical fencing, image caching, apply receipts, startup rotation and durable export keys implemented; service worker, artifact capture/storage/retrieval, export/recovery and unpaid-tail/preservation policy pending | `8418eede9`; 303 distinct owned integration cases, 893 API cases (53 ignores), 23 schema cases, strict Clippy and full 71-commit secret scan pass; previous physical restart CI passed in 51.15s; current exact-head CI tracked in backend PR 1872 |
 | MG | CO / `basilica-backend-exo` | Section 4 paths confirmed | G0 | Connection API, runtime gateway HTTP, refresh, guest renewal and protected bundle delivery implemented; model accounting and controller/hosted integration pending | `53256bc7c`; 791 API unit + 28 lifecycle/connection/runtime database tests; private runtime OpenAPI generated |
 | CT | CO / `basilica-backend-exo` | Chat modules/routes, migration 037, shared configuration/security/OpenAPI | LC grant delivery and real model/tool turns for final acceptance | Scoped sessions, durable relay, managed runtime worker, protected pairing and passive runtime observation implemented; observation composed into guarded Ready; service dispatch and hosted acceptance pending | `dc2b07f9`; 24 owned chat cases including actual Node/Rust transport and passive authority observation pass; guarded create/readiness cases pass; CI 35543815454 green; earlier runtime adapter evidence below |
@@ -4249,3 +4249,66 @@ capture/transfer, durable verification/storage, authenticated retrieval, retenti
 sweep scheduling/customer policy and remaining service/G0–G4 gates remain open.
 No paid resources/model requests, live migration, manual deployment or external
 registry publication occurred.
+
+## 2026-09-21 fenced host export capture
+
+Backend `05192bfdce9e55adee5cc558afa72d78f250c553` corrected the export
+helper's UUID-only owner restriction to bind the exact opaque authenticated account
+subject. Existing UUID-owner artifacts remain readable. All jobs passed in
+[CI 35553034236](https://github.com/one-covenant/basilica-backend/actions/runs/35553034236),
+testing merge `548385227a9d665488891505ab752901b13b819e` against base
+`eca54885db36428278f00dffe03ffa02aa58f4d0`: API 914 passed / 253 expected skips,
+workspace 4,360 passed / 83 skips, 303 owned integration cases, 19 runtime export
+cases and physical restart/retirement in 47.26 seconds. Plan head
+`a10ae374b15efdde42d02879585174bcd53878ec` passed all jobs in public
+[CI 35552577019](https://github.com/one-covenant/basilica/actions/runs/35552577019).
+
+Backend `6df1b091573cf759250fc9ea367975cd16dae482` now implements the private
+host capture boundary. A v2 `export` request commits a newer host fence, stops old
+writers, and runs the pinned image's fixed export helper in a container with no
+network, logs, capabilities or restart policy. Existing canonical data is required.
+The account/instance/operation/schema, independent key and frozen key expiry arrive
+only in protected input. The trusted job consumes that key file before capture;
+the host clears unconsumed input after fencing or successful completion. Runtime
+input mounts remain read-only. Journal digests preserve replay identity after the
+key input has been consumed.
+
+Capture may run beyond the initiating SSH request as an owned container job; this
+does not extend the request's authority. Fresh authorization remains required for
+each later poll, transfer and resume. A hard deadline bounds the job to one hour or
+the initially remaining key lifetime, with a final expiry check before its receipt.
+Supersession/deletion stops it before replacement. The existing encrypted helper
+verifies the complete captured archive and preserves the original snapshot on
+retry. Successful container exit and a strict context-bound receipt are required
+for `export_captured`; the receipt supplies byte counts and SHA-256 hashes for both
+encrypted objects. A captured operation may then transition to `apply`, fencing the
+capture container before a runtime with rotated access starts.
+
+Local verification passed: 73 host protocol/journal/installer/Engine-fixture cases,
+5 export job cases using real encrypted state and a killed blocked job, both Rust
+embedded-artifact checks, strict API all-target/all-feature Clippy, formatting,
+instruction/link checks, actionlint and an Act dry run of the changed runtime job.
+The actual generated helper command is 119,987 bytes, within the unchanged 120 KiB
+cap; bounded package/base64 allowances are now 84/112 KiB. The first regression run
+exposed that package limit and was corrected; an initial new test attempted to
+rewrite its own mode-0400 fixture, which was repaired before the final job suite.
+
+The final owned physical runner passed in **457.81 seconds** using local image
+`sha256:2407fb1ba3723d447002acd35562c1b01f6c5a985727f7231790aca2bd3a52e9`.
+It exercised cold digest acquisition, real sudo/helper/Engine operation, quiesced
+encrypted capture, exact payload/metadata hashes, removal of the private key input,
+credential rotation, responsive resumed services, stale-request rejection and
+terminal retirement while preserving canonical data. Owned containers and volumes
+were cleaned. TLS renewal is an explicit fixture; this does not establish hosted
+model/chat behavior or controller-to-SSH export delivery.
+
+Decision 0033 in the backend records the lifecycle, key-consumption, job-deadline
+and rollback contract. Use a matching image/helper; older versions reject export
+actions. Retain journals, keys and canonical data during rollback. Controller
+authorization and typed capture delivery, bounded artifact transfer, verified
+durable storage, account artifact/key retrieval, export/recovery coordination,
+retention/staging cleanup, service/billing worker dispatch and model accounting
+remain required. Public export remains disabled and no G0–G4 gate is closed by
+this host increment. Required exact-head CI is tracked in backend PR 1872 and
+plan PR 570. No paid host/model call, live migration, manual deployment or external
+registry publication was performed.
