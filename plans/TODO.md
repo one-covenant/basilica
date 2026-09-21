@@ -284,7 +284,7 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Add bounded helper-package encoding, preserving exact source identity and independent command/decompression caps.
 - [x] Implement fixed authorized payload/metadata reads with bounded ranges and strict challenge/receipt/hash verification.
 - [x] Complete physical controller range-transfer acceptance with whole-object hash verification.
-- [ ] Verify durable storage before artifact registration.
+- [x] Verify durable storage before artifact registration.
 - [ ] Integrate export resume/coordinator, account retrieval, retention and service dispatch before enabling export; G0–G4 remain open.
 
 
@@ -294,7 +294,8 @@ security dependency fix so its required CI checks use the patched TLS graph.
 - [x] Recheck owner, lease, retained key, billing and pinned host authority around each protected request; preserve ordinary acknowledgement limits.
 - [x] Verify strict wire bounds, exact ranges, canonical encoding, chunk hashes and EOF with owned tests.
 - [x] Complete owned PostgreSQL/SSH fault checks and actual controller-to-Engine full-object transfer/hash acceptance.
-- [ ] Persist verified private immutable objects, register only durable artifacts, and implement owner-authenticated retrieval and retention.
+- [x] Persist verified private immutable objects and register only durable artifacts.
+- [ ] Implement owner-authenticated retrieval and retention.
 
 
 The bounded transfer increment is backend `21d845053812adbd5faa9e414b03a1e9a45a658f`.
@@ -308,3 +309,51 @@ large-transfer runs exposed unoptimized development SHA-256; the scoped dependen
 profile override preserves production profiles, complete hash checks and all
 deadlines. Backend PR 1872 tracks the new exact-head CI; predecessor `8f6cd726`
 passed CI 35559655254. Durable publication, retrieval and G0–G4 remain open.
+
+
+## Durable export publication
+
+- [x] Persist immutable per-attempt upload intents before object-store writes.
+- [x] Hash complete source streams and read both stored objects back before atomic registration.
+- [x] Reject metadata-only registration; test uncertain acknowledgements, corrupt storage and authority races.
+- [x] Verify the real storage adapter against an isolated durable S3-compatible store.
+- [ ] Add owner retrieval, retention cleanup, export resume and service dispatch; keep G0–G4 open.
+
+Plan CI 35564074796 passed at `dc8dbf8f`. Backend CI 35564011179 failed
+in the host-read mutation fixture: rapid same-size writes shared one Linux
+filesystem timestamp tick. Commit `cdafe23829cc74b34d6018d265a4865fee425dbb` explicitly advances the fixture
+mtime to test observable stat changes; the regression passed 50 consecutive Linux
+runs. Whole-object hashing remains required.
+
+
+The durable publication increment is backend `cdafe23829cc74b34d6018d265a4865fee425dbb`.
+It adds migration 047 and the existing locked AWS S3 SDK dependency edge. All five
+public crate revisions remain `f0e1c972`. Source streams and both stored objects
+must match their full hashes before private verification and public metadata commit
+atomically. Lost multipart creates retain uncertain intent; subsequent attempts use
+new keys. No public capability, automatic retention policy or dispatch is enabled.
+
+Validation: 899 API tests (76 expected integration ignores), 200 API integration
+cases, 65 owned delivery cases including 10 S3 fault cases, 26 schema cases,
+82 host cases and strict all-target/all-feature Clippy pass. The actual disk-backed
+S3 test passed in 7.02 seconds, recovering the 8,388,645-byte payload and 321-byte
+metadata fixture after a forced server restart and rejecting unsigned access.
+This storage fixture is separate from the previously recorded physical encrypted
+capture/transfer. The pinned native server source is MinIO `9e49d5e7a648`;
+no existing server, cloud bucket or live database was used. Full 79-commit / 2.92 MB
+secret scan, 68 instruction contracts and 48 changed-document local links pass.
+The broader run reproduced an existing allocator race: identical concurrent inserts
+could fail on the secondary hostname constraint despite primary-key conflict
+handling. Follow-up `6e8d80439d8232325a06a6f82af86bac48613605` handles all unique
+conflicts before comparing the exact owned request; a different allocation still
+cannot reuse the hostname. All 31 allocator database cases pass, including 32
+concurrent preparation/dispatch rounds and foreign-identity collision rejection.
+The separate billing run passed 8 transport and 22 database cases. API library
+tests passed again (899 / 76 expected ignores), and combined API/aggregator strict
+Clippy passed. The original full run was not reported as green; these component
+reruns resolved its failure and completed its remaining billing coverage.
+
+Storage head `cdafe238` passed all required CI in run 35567107848. Final backend
+head `6e8d8043` has CI 35568524093 queued; PR 1872 tracks its exact-head result.
+Owner artifact/key retrieval, retention/abandoned-upload cleanup, export/recovery
+coordination, service dispatch and G0–G4 acceptance remain open.
