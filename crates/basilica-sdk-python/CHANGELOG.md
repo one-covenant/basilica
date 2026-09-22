@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-09-22
+
 ### Added
 
 - **Policy credential rotation (#1661 follow-up; the #1577 twin).**
