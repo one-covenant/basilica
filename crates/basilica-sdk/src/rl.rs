@@ -648,6 +648,26 @@ pub struct RlSessionUsageResponse {
     pub effective_cost_per_m_tok: Option<f64>,
     /// Token counts and utilization cover exactly this many replicas.
     pub replicas_reporting: u32,
+    // The usage-ledger fields below are optional so an older API that does
+    // not send them stays ABSENT rather than reading as zero: a missing
+    // `unaccountedReplicaSeconds` must never pass for "no gap".
+    /// Generation requests counted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requests: Option<u64>,
+    /// Generations whose response carried no usage block (tokens unknown).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub responses_without_usage: Option<u64>,
+    /// Epoch seconds of the ledger's last replica read: how fresh the
+    /// token counts are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<i64>,
+    /// Replica-seconds whose counters were lost (a replica ended without a
+    /// final read); 0 means the counts are complete.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unaccounted_replica_seconds: Option<f64>,
+    /// Reporting replicas whose counters do not survive a restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub non_durable_replicas: Option<u32>,
 }
 
 /// Response of `POST /rl/rollout-sessions/{id}/park` (and `/resume`).
@@ -954,5 +974,34 @@ mod tests {
         assert_eq!(p.effective_prefix, "policies/u-1/");
         assert_eq!(p.total_revisions, 3);
         assert_eq!(p.latest_revision.as_deref(), Some("step-0002"));
+    }
+    // The Python SDK hands users this struct re-serialized, so a field the
+    // struct lacks is a field users never see: the ledger's freshness and
+    // completeness signals must survive the round trip.
+    #[test]
+    fn session_usage_keeps_the_ledger_fields_through_a_round_trip() {
+        let wire = serde_json::json!({
+            "gpuHours": 0.5, "promptTokens": 30, "completionTokens": 28,
+            "samplingUtilization": 0.1, "replicasReporting": 1,
+            "requests": 5, "responsesWithoutUsage": 0, "observedAt": 1790190000,
+            "unaccountedReplicaSeconds": 0.0, "nonDurableReplicas": 0
+        });
+        let u: RlSessionUsageResponse = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&u).unwrap(), wire);
+    }
+
+    #[test]
+    fn session_usage_from_an_older_api_leaves_ledger_fields_absent() {
+        let u: RlSessionUsageResponse = serde_json::from_value(serde_json::json!({
+            "gpuHours": 0.5, "promptTokens": 0, "completionTokens": 0,
+            "samplingUtilization": 0.0, "replicasReporting": 0
+        }))
+        .unwrap();
+        let out = serde_json::to_value(&u).unwrap();
+        assert!(
+            out.get("unaccountedReplicaSeconds").is_none(),
+            "absent, not a false 0"
+        );
+        assert!(out.get("observedAt").is_none());
     }
 }
