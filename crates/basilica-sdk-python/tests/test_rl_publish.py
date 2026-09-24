@@ -16,6 +16,7 @@ pytest.importorskip("zstandard")
 pytest.importorskip("safetensors")
 
 from basilica.publisher import (  # noqa: E402
+    NonFiniteWeights,
     PolicyStorage,
     PublishError,
     RevisionRejected,
@@ -150,6 +151,42 @@ def test_failed_upload_rolls_back_the_diff_base(handle, monkeypatch):
     handle.publish(_state(1.25).items(), revision="step-0001")
     body = handle._test_core.revisions[-1]
     assert body["parentRevision"] == "step-0000"
+
+
+def test_nan_anchor_is_refused_before_anything_is_uploaded(handle):
+    bad = _state()
+    bad["w.b"] = _t([1.5, float("nan"), 0.0])
+    with pytest.raises(NonFiniteWeights, match=r"'w\.b' has 1 NaN/Inf value\(s\) of 3"):
+        handle.publish_anchor(bad.items(), revision="step-0000")
+    assert handle._test_uploads == {} and handle._test_core.revisions == []
+    assert handle._snapshot is None and handle._step == 0
+
+
+def test_nan_patch_is_refused_and_the_diff_base_is_untouched(handle):
+    # One bad training step must not poison the lineage: the refusal leaves
+    # the handle exactly at the last PUBLISHED state, so the next clean
+    # publish is a valid patch over it.
+    handle.publish_anchor(_state(1.0).items(), revision="step-0000")
+    base_digest, uploads = handle._snapshot.digest(), dict(handle._test_uploads)
+    bad = _state(1.25)
+    bad["w.a"] = _t([[0.0, float("inf")], [2.0, 3.0]])
+    with pytest.raises(NonFiniteWeights, match="step-0001"):
+        handle.publish(bad.items(), revision="step-0001")
+    assert handle._snapshot.digest() == base_digest, "diff base must be untouched"
+    assert handle._test_uploads == uploads and handle._parent == "step-0000"
+    handle.publish(_state(1.25).items(), revision="step-0001")
+    body = handle._test_core.revisions[-1]
+    assert body["parentRevision"] == "step-0000"
+    assert body["artifact"]["uri"].endswith("/step-0001/patch.pulsept")
+
+
+def test_non_finite_is_refused_on_the_cadence_anchor_too(handle):
+    # publish() promoting to an anchor goes through the same guard.
+    bad = _state()
+    bad["w.a"] = _t([[float("-inf"), 1.0], [2.0, 3.0]])
+    with pytest.raises(NonFiniteWeights):
+        handle.publish(bad.items(), revision="r0")
+    assert handle._test_core.revisions == []
 
 
 def test_wait_until_active_maps_terminal_states(handle):

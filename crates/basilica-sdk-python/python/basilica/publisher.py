@@ -35,7 +35,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Optional, Tuple, Union
+from typing import Any, Iterable, Iterator, Optional, Tuple, Union
 
 from basilica.exceptions import BasilicaError
 
@@ -79,6 +79,55 @@ class PublishError(BasilicaError):
     The handle's diff base is rolled back to the last PUBLISHED state (H1),
     so simply retrying ``publish`` with the same tensors is safe.
     """
+
+
+class NonFiniteWeights(BasilicaError, ValueError):
+    """The state handed to ``publish`` contains NaN or Inf values.
+
+    Refused before anything is encoded or uploaded: the handle, its diff
+    base and the bucket are untouched. A fleet digest-verifies exactly what
+    was published, so non-finite weights would otherwise be accepted and
+    served by every replica. The cause is upstream, usually a training step
+    whose loss or gradients went non-finite; retrying with the same tensors
+    fails the same way.
+    """
+
+
+def _count_non_finite(tensor: Any) -> Tuple[int, int]:
+    """(non-finite count, element count) for a floating tensor or array;
+    (0, n) for anything that cannot hold NaN/Inf."""
+    try:
+        import torch  # noqa: PLC0415
+
+        if isinstance(tensor, torch.Tensor):
+            if not tensor.is_floating_point():
+                return 0, tensor.numel()
+            return int((~torch.isfinite(tensor)).sum()), tensor.numel()
+    except ImportError:
+        pass
+    import numpy as np  # noqa: PLC0415
+
+    arr = np.asarray(tensor)
+    if not np.issubdtype(arr.dtype, np.floating):
+        return 0, arr.size
+    return int((~np.isfinite(arr)).sum()), arr.size
+
+
+def _refuse_non_finite(
+    named: Iterable[Tuple[str, Any]], revision: str
+) -> Iterator[Tuple[str, Any]]:
+    """Pass tensors through, raising on the first one with NaN/Inf. It runs
+    inside the atomic encode, so a refusal leaves the handle unchanged."""
+    for name, tensor in named:
+        bad, total = _count_non_finite(tensor)
+        if bad:
+            raise NonFiniteWeights(
+                f"refusing to publish revision {revision!r}: tensor {name!r} has "
+                f"{bad} NaN/Inf value(s) of {total}. Nothing was uploaded and the "
+                "handle is unchanged; check the training step that produced it "
+                "(a non-finite loss or gradient norm)."
+            )
+        yield name, tensor
 
 
 def _validate_revision(revision: str) -> str:
@@ -368,28 +417,34 @@ class RlPolicyHandle:
     def publish_anchor(self, named_tensors: Iterable[Tuple[str, Any]], *, revision: str) -> dict:
         """Publish the FULL bf16 state as an anchor (chain root).
 
-        Returns the registry's revision record (state ``Validated``). The
-        anchor becomes the handle's diff base; the next ``publish`` diffs
-        against exactly these tensors. Thread-safe: publishes on one handle
-        serialize (the diff base is a single unit of state).
+        Returns the registry's revision record (state ``Validated``).
+        Raises :class:`NonFiniteWeights` (nothing uploaded) if any tensor
+        holds NaN or Inf. The anchor becomes the handle's diff base; the
+        next ``publish`` diffs against exactly these tensors. Thread-safe:
+        publishes on one handle serialize (the diff base is a single unit of
+        state).
         """
         rev = _validate_revision(revision)
         with self._lock:
-            return self._publish_anchor_locked(named_tensors, rev)
+            named = _refuse_non_finite(named_tensors, rev)
+            return self._publish_anchor_locked(named, rev)
 
     def publish(self, named_tensors: Iterable[Tuple[str, Any]], *, revision: str) -> dict:
         """Publish the state as a sparse patch over the last published revision.
 
         Transparently promotes to an anchor when the handle has no diff base
         yet, or when ``anchor_every`` patches have accumulated since the last
-        anchor (default 30 — the late-join replay bound). Thread-safe:
-        publishes on one handle serialize.
+        anchor (default 30 — the late-join replay bound). Raises
+        :class:`NonFiniteWeights` (nothing uploaded, handle unchanged) if any
+        tensor holds NaN or Inf. Thread-safe: publishes on one handle
+        serialize.
         """
         rev = _validate_revision(revision)
         with self._lock:
+            named = _refuse_non_finite(named_tensors, rev)
             if self._snapshot is None or self._patches_since_anchor >= self._anchor_every:
-                return self._publish_anchor_locked(named_tensors, rev)
-            return self._publish_patch_locked(named_tensors, rev)
+                return self._publish_anchor_locked(named, rev)
+            return self._publish_patch_locked(named, rev)
 
     def wait_until_active(
         self,
