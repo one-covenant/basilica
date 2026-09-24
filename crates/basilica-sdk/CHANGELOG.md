@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `create_rl_cluster` with an inline relay pair) refuse a plain-`http://`
   base URL unless it is loopback — live storage keys never travel cleartext.
 
+### Fixed
+
+- `RlSessionUsageResponse` carries the usage-ledger fields (`requests`,
+  `responses_without_usage`, `observed_at`, `unaccounted_replica_seconds`,
+  `non_durable_replicas`), all optional so an older API's omission stays
+  absent rather than reading as zero.
+
 ## [0.35.0] - 2026-08-31
 
 ### Added
