@@ -69,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reproducible without the SDK: one upload + one
   `POST /rl/policies/{name}/revisions`.
 
+### Fixed
+
+- **`session_usage()` keeps the usage-ledger fields.** `requests`,
+  `responsesWithoutUsage`, `observedAt`, `unaccountedReplicaSeconds` and
+  `nonDurableReplicas` were dropped on the way through the compiled core;
+  they are now returned as the API sends them, and stay ABSENT (never a
+  false zero) against an API that does not send them.
+
 ## [0.35.0] - 2026-08-31
 
 ### Added
