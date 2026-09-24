@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-09-24
+
 ### Fixed
 
 - **Publishing refuses NaN/Inf weights.** `publish()` and `publish_anchor()`
