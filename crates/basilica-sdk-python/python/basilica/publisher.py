@@ -84,8 +84,8 @@ class PublishError(BasilicaError):
 class NonFiniteWeights(BasilicaError, ValueError):
     """The state handed to ``publish`` contains NaN or Inf values.
 
-    Refused before anything is encoded or uploaded: the handle, its diff
-    base and the bucket are untouched. A fleet digest-verifies exactly what
+    Refused before anything is uploaded: the handle, its diff base and the
+    bucket are untouched. A fleet digest-verifies exactly what
     was published, so non-finite weights would otherwise be accepted and
     served by every replica. The cause is upstream, usually a training step
     whose loss or gradients went non-finite; retrying with the same tensors
@@ -94,13 +94,13 @@ class NonFiniteWeights(BasilicaError, ValueError):
 
 
 def _count_non_finite(tensor: Any) -> Tuple[int, int]:
-    """(non-finite count, element count) for a floating tensor or array;
-    (0, n) for anything that cannot hold NaN/Inf."""
+    """(non-finite count, element count) for a floating or complex tensor
+    or array; (0, n) for anything that cannot hold NaN/Inf."""
     try:
         import torch  # noqa: PLC0415
 
         if isinstance(tensor, torch.Tensor):
-            if not tensor.is_floating_point():
+            if not (tensor.is_floating_point() or tensor.is_complex()):
                 return 0, tensor.numel()
             return int((~torch.isfinite(tensor)).sum()), tensor.numel()
     except ImportError:
@@ -108,7 +108,7 @@ def _count_non_finite(tensor: Any) -> Tuple[int, int]:
     import numpy as np  # noqa: PLC0415
 
     arr = np.asarray(tensor)
-    if not np.issubdtype(arr.dtype, np.floating):
+    if not np.issubdtype(arr.dtype, np.inexact):
         return 0, arr.size
     return int((~np.isfinite(arr)).sum()), arr.size
 
@@ -116,8 +116,10 @@ def _count_non_finite(tensor: Any) -> Tuple[int, int]:
 def _refuse_non_finite(
     named: Iterable[Tuple[str, Any]], revision: str
 ) -> Iterator[Tuple[str, Any]]:
-    """Pass tensors through, raising on the first one with NaN/Inf. It runs
-    inside the atomic encode, so a refusal leaves the handle unchanged."""
+    """Pass tensors through, raising on the first one with NaN/Inf. It is
+    consumed lazily inside the atomic encode, so tensors before the bad one
+    may already be encoded; the refusal still uploads nothing and leaves
+    the handle and its diff base unchanged."""
     for name, tensor in named:
         bad, total = _count_non_finite(tensor)
         if bad:

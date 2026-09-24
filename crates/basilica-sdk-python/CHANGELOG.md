@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Publishing refuses NaN/Inf weights.** `publish()` and `publish_anchor()`
   raise `NonFiniteWeights` (naming the tensor and the count) before anything
-  is encoded or uploaded, and leave the handle and its diff base unchanged.
+  is uploaded, and leave the handle and its diff base unchanged.
   A fleet digest-verifies exactly what was published, so one non-finite
   training step used to be accepted and served by every replica. A later
   clean publish is a valid patch over the last published state.
