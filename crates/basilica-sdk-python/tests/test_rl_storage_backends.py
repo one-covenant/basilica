@@ -105,6 +105,19 @@ def test_s3_compatible_client_defaults_path_style_and_us_east_1(monkeypatch):
     assert kw["config"].s3 == {"addressing_style": "path"}
 
 
+def test_aws_s3_explicit_endpoint_is_passed_through(monkeypatch):
+    kw = _client_kwargs(
+        monkeypatch,
+        PolicyStorage(
+            bucket="my-weights",
+            endpoint="https://s3.eu-central-1.amazonaws.com",
+            backend="s3",
+            region="eu-central-1",
+        ),
+    )
+    assert kw["endpoint_url"] == "https://s3.eu-central-1.amazonaws.com"
+
+
 def test_policy_storage_validation():
     with pytest.raises(ValueError, match="backend must be one of"):
         PolicyStorage(bucket="b", endpoint="https://e.example", backend="gcs")
@@ -114,6 +127,15 @@ def test_policy_storage_validation():
         PolicyStorage(bucket="b")
     with pytest.raises(ValueError, match="endpoint is required"):
         PolicyStorage(bucket="b", backend="s3-compatible")
+    # The upload must sign for the region the policy was registered with.
+    with pytest.raises(ValueError, match="needs region"):
+        PolicyStorage(bucket="b", backend="s3")
+    # Signed uploads never go over cleartext, except to a local test store.
+    for plain in ("http://minio.example.com:9000", "http://10.0.0.7", "ftp://e.example"):
+        with pytest.raises(ValueError, match="https://"):
+            PolicyStorage(bucket="b", endpoint=plain, backend="s3-compatible")
+    for local in ("http://localhost:9000", "http://127.0.0.1:9000", "http://[::1]:9000"):
+        PolicyStorage(bucket="b", endpoint=local, backend="s3-compatible")
     # AWS needs no endpoint; repr never echoes key material.
     s = PolicyStorage(
         bucket="b", backend="s3", region="us-east-1",
@@ -146,6 +168,14 @@ def test_create_policy_r2_body_is_unchanged():
         "accessKeyId": "AK",
         "secretAccessKey": "SK",
     }
+
+
+def test_create_policy_r2_passes_explicit_addressing():
+    core = _PolicyCore()
+    RlNamespace(core).create_policy(
+        "p", endpoint="https://acc.r2.cloudflarestorage.com", addressing="path", **_COMMON
+    )
+    assert core.created[0]["storage"]["addressing"] == "path"
 
 
 def test_create_policy_s3_omits_endpoint_and_passes_region():
@@ -187,4 +217,8 @@ def test_create_policy_refuses_bad_storage_client_side():
     with pytest.raises(ValueError, match="addressing must be"):
         ns.create_policy(
             "p", endpoint="https://e.example", addressing="dns", **_COMMON
+        )
+    with pytest.raises(ValueError, match="https://"):
+        ns.create_policy(
+            "p", backend="s3-compatible", endpoint="http://minio.example.com", **_COMMON
         )

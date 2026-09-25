@@ -362,13 +362,9 @@ class RlNamespace:
         endpoint required, region defaults to ``us-east-1``, path-style
         addressing by default). ``addressing`` (``"virtual"`` or
         ``"path"``) overrides the backend's default style."""
-        from basilica.publisher import _check_storage_choice
+        from basilica.publisher import check_storage
 
-        _check_storage_choice(backend, addressing)
-        if backend == "s3" and not region:
-            raise ValueError("backend 's3' needs region, for example 'us-east-1'")
-        if backend != "s3" and not endpoint:
-            raise ValueError(f"endpoint is required for backend {backend!r}")
+        check_storage(backend, endpoint, region, addressing)
         # Same fail-fast standard as the revision grammar: the exactly-one
         # credential contract is checkable without a server round-trip.
         inline = access_key_id is not None or secret_access_key is not None

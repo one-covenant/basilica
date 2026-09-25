@@ -184,7 +184,26 @@ STORAGE_BACKENDS = ("r2", "s3", "s3-compatible")
 ADDRESSING_STYLES = ("virtual", "path")
 
 
-def _check_storage_choice(backend: str, addressing: Optional[str]) -> None:
+_LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "[::1]")
+
+
+def check_storage(
+    backend: str,
+    endpoint: Optional[str],
+    region: Optional[str],
+    addressing: Optional[str],
+) -> None:
+    """The storage rules shared by ``create_policy`` and ``PolicyStorage``,
+    so the policy and the upload client can never disagree.
+
+    - ``backend`` is one of ``STORAGE_BACKENDS``; ``addressing``, when set,
+      one of ``ADDRESSING_STYLES``.
+    - ``s3`` needs ``region`` (the upload must sign for the region the
+      policy was registered with); the others need ``endpoint``.
+    - ``endpoint`` must be ``https://``: uploads carry signed requests and
+      model weights. Plain ``http://`` is allowed only on loopback, for
+      local testing (the platform itself accepts only ``https://``).
+    """
     if backend not in STORAGE_BACKENDS:
         raise ValueError(
             f"backend must be one of {', '.join(STORAGE_BACKENDS)} (got {backend!r})"
@@ -193,6 +212,18 @@ def _check_storage_choice(backend: str, addressing: Optional[str]) -> None:
         raise ValueError(
             f"addressing must be 'virtual' or 'path' (got {addressing!r})"
         )
+    if backend == "s3" and not region:
+        raise ValueError("backend 's3' needs region, for example 'us-east-1'")
+    if backend != "s3" and not endpoint:
+        raise ValueError(f"endpoint is required for backend {backend!r}")
+    if endpoint and not endpoint.startswith("https://"):
+        host = endpoint.split("://", 1)[-1].split("/", 1)[0]
+        host = host.rsplit(":", 1)[0] if not host.endswith("]") else host
+        if not (endpoint.startswith("http://") and host in _LOOPBACK_HOSTS):
+            raise ValueError(
+                f"endpoint must be an https:// URL (got {endpoint!r}); "
+                "http:// is accepted only for localhost"
+            )
 
 
 @dataclass
@@ -204,8 +235,8 @@ class PolicyStorage:
     boto3's standard resolution chain (env, shared config, instance role)
     applies, which is the recommended shape on a trainer node.
 
-    ``backend`` mirrors the policy's: ``r2`` (default), ``s3`` (AWS; the
-    endpoint may be omitted and boto3 derives it from ``region``) or
+    ``backend`` mirrors the policy's: ``r2`` (default), ``s3`` (AWS;
+    ``region`` required, the endpoint may be omitted and boto3 derives it) or
     ``s3-compatible`` (endpoint required; region defaults to
     ``us-east-1``). ``addressing`` overrides the backend's addressing
     style: ``s3`` defaults to virtual-hosted, ``s3-compatible`` to path
@@ -221,9 +252,7 @@ class PolicyStorage:
     addressing: Optional[str] = None
 
     def __post_init__(self) -> None:
-        _check_storage_choice(self.backend, self.addressing)
-        if not self.endpoint and self.backend != "s3":
-            raise ValueError(f"endpoint is required for backend {self.backend!r}")
+        check_storage(self.backend, self.endpoint, self.region, self.addressing)
 
     def effective_region(self) -> Optional[str]:
         """Region for the upload client. ``None`` leaves boto3's own
