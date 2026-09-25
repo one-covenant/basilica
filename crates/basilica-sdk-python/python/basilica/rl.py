@@ -336,13 +336,14 @@ class RlNamespace:
         commit: str,
         tokenizer_digest: str,
         bucket: str,
-        endpoint: str,
+        endpoint: Optional[str] = None,
         region: Optional[str] = None,
         access_key_id: Optional[str] = None,
         secret_access_key: Optional[str] = None,
         credentials_secret: Optional[str] = None,
         update_format: str = "pulse-bf16-v1",
         backend: str = "r2",
+        addressing: Optional[str] = None,
     ) -> dict:
         """Register a model lineage against your OWN storage.
 
@@ -352,7 +353,18 @@ class RlNamespace:
         WRITE-ONLY platform-side (never echoed back); pass EITHER the inline
         pair OR ``credentials_secret``, exactly one. The response's
         ``effectivePrefix`` is where the lineage lives in your bucket —
-        scope a read-only IAM grant to it for the serving fleet."""
+        scope a read-only IAM grant to it for the serving fleet.
+
+        ``backend`` picks the storage provider: ``r2`` (default; endpoint
+        required), ``s3`` (AWS; ``region`` required, endpoint optional and
+        derived as ``https://s3.<region>.amazonaws.com``, virtual-hosted
+        addressing by default) or ``s3-compatible`` (for example MinIO;
+        endpoint required, region defaults to ``us-east-1``, path-style
+        addressing by default). ``addressing`` (``"virtual"`` or
+        ``"path"``) overrides the backend's default style."""
+        from basilica.publisher import check_storage
+
+        check_storage(backend, endpoint, region, addressing)
         # Same fail-fast standard as the revision grammar: the exactly-one
         # credential contract is checkable without a server round-trip.
         inline = access_key_id is not None or secret_access_key is not None
@@ -385,6 +397,7 @@ class RlNamespace:
                         "bucket": bucket,
                         "endpoint": endpoint,
                         "region": region,
+                        "addressing": addressing,
                         "credentialsSecret": credentials_secret,
                         "accessKeyId": access_key_id,
                         "secretAccessKey": secret_access_key,

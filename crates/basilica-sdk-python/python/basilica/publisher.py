@@ -175,6 +175,57 @@ def _boto3():
         ) from e
 
 
+#: Storage backends a policy can live on. ``r2`` is the default and keeps
+#: the original behaviour; ``s3`` is AWS S3; ``s3-compatible`` covers
+#: self-hosted or third-party stores such as MinIO.
+STORAGE_BACKENDS = ("r2", "s3", "s3-compatible")
+#: S3 addressing styles: ``virtual`` (``<bucket>.<host>``) or ``path``
+#: (``<host>/<bucket>``).
+ADDRESSING_STYLES = ("virtual", "path")
+
+
+_LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "[::1]")
+
+
+def check_storage(
+    backend: str,
+    endpoint: Optional[str],
+    region: Optional[str],
+    addressing: Optional[str],
+) -> None:
+    """The storage rules shared by ``create_policy`` and ``PolicyStorage``,
+    so the policy and the upload client can never disagree.
+
+    - ``backend`` is one of ``STORAGE_BACKENDS``; ``addressing``, when set,
+      one of ``ADDRESSING_STYLES``.
+    - ``s3`` needs ``region`` (the upload must sign for the region the
+      policy was registered with); the others need ``endpoint``.
+    - ``endpoint`` must be ``https://``: uploads carry signed requests and
+      model weights. Plain ``http://`` is allowed only on loopback, for
+      local testing (the platform itself accepts only ``https://``).
+    """
+    if backend not in STORAGE_BACKENDS:
+        raise ValueError(
+            f"backend must be one of {', '.join(STORAGE_BACKENDS)} (got {backend!r})"
+        )
+    if addressing is not None and addressing not in ADDRESSING_STYLES:
+        raise ValueError(
+            f"addressing must be 'virtual' or 'path' (got {addressing!r})"
+        )
+    if backend == "s3" and not region:
+        raise ValueError("backend 's3' needs region, for example 'us-east-1'")
+    if backend != "s3" and not endpoint:
+        raise ValueError(f"endpoint is required for backend {backend!r}")
+    if endpoint and not endpoint.startswith("https://"):
+        host = endpoint.split("://", 1)[-1].split("/", 1)[0]
+        host = host.rsplit(":", 1)[0] if not host.endswith("]") else host
+        if not (endpoint.startswith("http://") and host in _LOOPBACK_HOSTS):
+            raise ValueError(
+                f"endpoint must be an https:// URL (got {endpoint!r}); "
+                "http:// is accepted only for localhost"
+            )
+
+
 @dataclass
 class PolicyStorage:
     """The CUSTOMER's storage coordinates for direct artifact upload.
@@ -183,18 +234,45 @@ class PolicyStorage:
     only the artifact URI + digests. Credentials are optional: when omitted,
     boto3's standard resolution chain (env, shared config, instance role)
     applies, which is the recommended shape on a trainer node.
+
+    ``backend`` mirrors the policy's: ``r2`` (default), ``s3`` (AWS;
+    ``region`` required, the endpoint may be omitted and boto3 derives it) or
+    ``s3-compatible`` (endpoint required; region defaults to
+    ``us-east-1``). ``addressing`` overrides the backend's addressing
+    style: ``s3`` defaults to virtual-hosted, ``s3-compatible`` to path
+    style, and ``r2`` keeps boto3's own default.
     """
 
     bucket: str
-    endpoint: str
+    endpoint: Optional[str] = None
     region: Optional[str] = None
     access_key_id: Optional[str] = None
     secret_access_key: Optional[str] = None
+    backend: str = "r2"
+    addressing: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        check_storage(self.backend, self.endpoint, self.region, self.addressing)
+
+    def effective_region(self) -> Optional[str]:
+        """Region for the upload client. ``None`` leaves boto3's own
+        resolution (env, shared config) in charge."""
+        if self.region:
+            return self.region
+        return "us-east-1" if self.backend == "s3-compatible" else None
+
+    def effective_addressing(self) -> Optional[str]:
+        """Addressing style for the upload client. ``None`` (R2 without
+        an override) keeps boto3's default, exactly as before."""
+        if self.addressing:
+            return self.addressing
+        return {"s3": "virtual", "s3-compatible": "path"}.get(self.backend)
 
     def __repr__(self) -> str:  # never echo key material
         return (
             f"PolicyStorage(bucket={self.bucket!r}, endpoint={self.endpoint!r}, "
-            f"region={self.region!r}, credentials="
+            f"region={self.region!r}, backend={self.backend!r}, "
+            f"addressing={self.addressing!r}, credentials="
             f"{'<explicit>' if self.access_key_id else '<default chain>'})"
         )
 
@@ -276,10 +354,15 @@ class RlPolicyHandle:
         if self._s3 is None:
             from botocore.config import Config  # noqa: PLC0415
 
+            # Only set an addressing style when the backend (or the caller)
+            # names one: R2 without an override builds the same client as
+            # before this option existed.
+            addressing = self._storage.effective_addressing()
+            extra = {"s3": {"addressing_style": addressing}} if addressing else {}
             self._s3 = _boto3().client(
                 "s3",
-                endpoint_url=self._storage.endpoint,
-                region_name=self._storage.region,
+                endpoint_url=self._storage.endpoint or None,
+                region_name=self._storage.effective_region(),
                 aws_access_key_id=self._storage.access_key_id,
                 aws_secret_access_key=self._storage.secret_access_key,
                 # boto3 >= 1.36 attaches integrity checksums by default
@@ -294,6 +377,7 @@ class RlPolicyHandle:
                 config=Config(
                     request_checksum_calculation="when_required",
                     response_checksum_validation="when_required",
+                    **extra,
                 ),
             )
         return self._s3

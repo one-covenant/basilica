@@ -416,13 +416,25 @@ pub struct RlPolicyBaseModel {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RlPolicyStorage {
-    /// Storage backend. v1: `r2` (any S3-compatible endpoint).
+    /// Storage backend: `r2` (Cloudflare R2), `s3` (AWS S3) or
+    /// `s3-compatible` (e.g. MinIO).
     pub backend: String,
     pub bucket: String,
-    /// https + DNS hostname only (server-side §6.1 hygiene).
+    /// https + DNS hostname only (server-side §6.1 hygiene). Required for
+    /// `r2` and `s3-compatible`; may be left empty for `s3`, where the
+    /// server derives `https://s3.<region>.amazonaws.com`. Empty is omitted
+    /// from the wire.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub endpoint: String,
+    /// SigV4 region: required for `s3`, `s3-compatible` defaults to
+    /// `us-east-1`, `r2` signs with `auto` when absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
+    /// Upstream addressing override, `virtual` or `path`; None = the
+    /// backend default. Omitted when None so older servers, whose request
+    /// DTO denies unknown fields, see the same body as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub addressing: Option<String>,
     /// Referenced namespaced Secret (one credential form).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credentials_secret: Option<String>,
@@ -443,6 +455,7 @@ impl std::fmt::Debug for RlPolicyStorage {
             .field("bucket", &self.bucket)
             .field("endpoint", &self.endpoint)
             .field("region", &self.region)
+            .field("addressing", &self.addressing)
             .field("credentials_secret", &self.credentials_secret)
             .field(
                 "access_key_id",
@@ -878,6 +891,7 @@ mod tests {
                 bucket: "my-weights".into(),
                 endpoint: "https://acc.r2.cloudflarestorage.com".into(),
                 region: None,
+                addressing: None,
                 credentials_secret: None,
                 access_key_id: Some("AKIALIVEKEY".into()),
                 secret_access_key: Some("SECRETSECRET".into()),
@@ -902,6 +916,89 @@ mod tests {
         assert!(!dbg.contains("AKIALIVEKEY"), "{dbg}");
         assert!(!dbg.contains("SECRETSECRET"), "{dbg}");
         assert!(dbg.contains("<redacted>"), "{dbg}");
+    }
+
+    fn storage(backend: &str, endpoint: &str) -> RlPolicyStorage {
+        RlPolicyStorage {
+            backend: backend.into(),
+            bucket: "my-weights".into(),
+            endpoint: endpoint.into(),
+            region: None,
+            addressing: None,
+            credentials_secret: Some("my-secret".into()),
+            access_key_id: None,
+            secret_access_key: None,
+        }
+    }
+
+    /// R2 regression: without the new field the storage object has the
+    /// exact pre-change keys, so older servers see an identical body.
+    #[test]
+    fn policy_storage_r2_wire_shape_is_unchanged() {
+        let v =
+            serde_json::to_value(storage("r2", "https://acc.r2.cloudflarestorage.com")).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "backend": "r2",
+                "bucket": "my-weights",
+                "endpoint": "https://acc.r2.cloudflarestorage.com",
+                "credentialsSecret": "my-secret",
+            })
+        );
+    }
+
+    #[test]
+    fn policy_storage_s3_and_s3_compatible_wire_shapes() {
+        let mut aws = storage("s3", "");
+        aws.region = Some("eu-central-1".into());
+        let v = serde_json::to_value(&aws).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "backend": "s3",
+                "bucket": "my-weights",
+                "region": "eu-central-1",
+                "credentialsSecret": "my-secret",
+            }),
+            "an empty endpoint is omitted so the server derives it"
+        );
+
+        let mut minio = storage("s3-compatible", "https://minio.example.com:9000");
+        minio.addressing = Some("path".into());
+        let v = serde_json::to_value(&minio).unwrap();
+        assert_eq!(v["endpoint"], "https://minio.example.com:9000");
+        assert_eq!(v["addressing"], "path");
+        assert!(v.get("region").is_none());
+    }
+
+    /// The Python SDK hands the core JSON; both the new fields and a
+    /// missing endpoint must survive the round trip through this DTO
+    /// rather than being silently dropped.
+    #[test]
+    fn policy_storage_deserializes_python_shapes() {
+        let s: RlPolicyStorage = serde_json::from_value(serde_json::json!({
+            "backend": "s3",
+            "bucket": "my-weights",
+            "region": "us-east-1",
+            "addressing": "virtual",
+            "accessKeyId": "AK",
+            "secretAccessKey": "SK",
+        }))
+        .unwrap();
+        assert_eq!(s.endpoint, "");
+        assert_eq!(s.addressing.as_deref(), Some("virtual"));
+        let back = serde_json::to_value(&s).unwrap();
+        assert_eq!(back["addressing"], "virtual");
+        assert!(back.get("endpoint").is_none());
+        let old: RlPolicyStorage = serde_json::from_value(serde_json::json!({
+            "backend": "r2",
+            "bucket": "my-weights",
+            "endpoint": "https://acc.r2.cloudflarestorage.com",
+            "credentialsSecret": "s",
+        }))
+        .unwrap();
+        assert_eq!(old.addressing, None);
     }
 
     #[test]
