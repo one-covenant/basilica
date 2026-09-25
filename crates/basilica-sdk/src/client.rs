@@ -1998,6 +1998,7 @@ mod tests {
                 bucket: "b".into(),
                 endpoint: "https://e.example".into(),
                 region: None,
+                addressing: None,
                 credentials_secret: None,
                 access_key_id: Some("AK".into()),
                 secret_access_key: Some("SK".into()),
