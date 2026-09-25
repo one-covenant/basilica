@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **AWS S3 and S3-compatible policy storage.** `create_policy()` accepts
+  `backend="s3"` (AWS: `region` required, `endpoint` optional and derived
+  by the server, virtual-hosted addressing by default) and
+  `backend="s3-compatible"` (for example MinIO: `endpoint` required,
+  region defaults to `us-east-1`, path-style addressing by default), plus
+  an optional `addressing="virtual" | "path"` override. `PolicyStorage`
+  gains the matching `backend` and `addressing` fields, and the upload
+  client applies the region and addressing style with the same checksum
+  settings as before. R2 remains the default and is unchanged; `endpoint`
+  is now optional only for `backend="s3"`.
+
 ## [0.36.1] - 2026-09-24
 
 ### Fixed
