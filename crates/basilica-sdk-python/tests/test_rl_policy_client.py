@@ -236,7 +236,32 @@ def test_create_session_wire_shape(server):
         "fleet": {"replicas": 2, "gpu": {"model": "H100", "count": 4}},
     }
     assert "activation" not in r["body"], "default async = OMITTED, not sent"
+    assert "memoryGib" not in r["body"], "default sizing = OMITTED, not sent"
     assert out["token"] == "one-time-token"
+
+
+def test_create_session_memory_gib_wire_shape(server):
+    base, rec = server
+    rec.responses = [(200, _SESSION_RESP)]
+    rl(base).create_session(
+        "math-policy", gpu_model="H200", gpu_count=1, memory_gib=90
+    )
+    (r,) = rec.requests
+    assert r["body"] == {
+        "policy": "math-policy",
+        "fleet": {"replicas": 1, "gpu": {"model": "H200", "count": 1}},
+        "memoryGib": 90,
+    }
+
+
+@pytest.mark.parametrize("bad", [0, -1, 1025, 90.0, "90", True])
+def test_create_session_memory_gib_refused_client_side(server, bad):
+    base, rec = server
+    with pytest.raises(ValueError, match="memory_gib must be an int from 1 to 1024"):
+        rl(base).create_session(
+            "math-policy", gpu_model="H200", gpu_count=1, memory_gib=bad
+        )
+    assert rec.requests == [], "an invalid memory_gib never reaches the wire"
 
 
 def test_get_and_delete_session_paths(server):

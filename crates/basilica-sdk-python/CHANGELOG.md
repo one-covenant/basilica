@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Per-session memory for rollout sessions.**
+  `client.rl.create_session(..., memory_gib=90)` sets each replica pod's
+  memory in GiB (1 to 1024), sent as `memoryGib`, in place of the
+  platform's per-GPU default. Large models served on few GPUs (for example
+  a 30B MoE on one H200) need more host memory than the default gives.
+  Out-of-range values raise `ValueError` before any request; omitting
+  the argument leaves the request body unchanged. Needs a server that
+  accepts `memoryGib`; older servers refuse the field.
+
 ## [0.36.1] - 2026-09-24
 
 ### Fixed

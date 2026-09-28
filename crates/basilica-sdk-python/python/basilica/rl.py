@@ -51,6 +51,8 @@ _DEAD_CLUSTER_PHASES = frozenset({"Terminating"})
 # A single LB 502 or connection reset must not abort a multi-hour wait;
 # this many CONSECUTIVE poll failures (reset on any success) give up.
 _POLL_FAILURE_BUDGET = 5
+# Mirrors the server's session memory cap (SessionMemoryInvalid above it).
+_SESSION_MEMORY_GIB_MAX = 1024
 
 
 def _drop_none(d: dict) -> dict:
@@ -466,6 +468,7 @@ class RlNamespace:
         replicas: int = 1,
         min_gpu_memory_gb: Optional[int] = None,
         activation: Optional[str] = None,
+        memory_gib: Optional[int] = None,
     ) -> dict:
         """Start a rollout session: a PRIVATE, token-gated vLLM fleet
         serving one policy (POST /rl/rollout-sessions).
@@ -475,7 +478,21 @@ class RlNamespace:
         second fleet (bounded by the per-tenant cap); list your
         deployments before retrying. ``activation`` defaults to ``async``
         (the training idiom); v1 refuses ``sync`` until the activation
-        barrier ships."""
+        barrier ships.
+
+        ``memory_gib`` sets each replica pod's memory in GiB (1 to 1024),
+        in place of the platform's per-GPU default. Use it when the
+        model's host memory need doesn't track GPU count, e.g. a large
+        MoE served on one GPU. Omit it for the default sizing."""
+        if memory_gib is not None and (
+            isinstance(memory_gib, bool)
+            or not isinstance(memory_gib, int)
+            or not 1 <= memory_gib <= _SESSION_MEMORY_GIB_MAX
+        ):
+            raise ValueError(
+                f"memory_gib must be an int from 1 to {_SESSION_MEMORY_GIB_MAX} "
+                f"(GiB per replica pod), got {memory_gib!r}"
+            )
         body = _drop_none(
             {
                 "policy": policy,
@@ -490,6 +507,7 @@ class RlNamespace:
                     ),
                 },
                 "activation": activation,
+                "memoryGib": memory_gib,
             }
         )
         return json.loads(self._core.rl_create_session(json.dumps(body)))
