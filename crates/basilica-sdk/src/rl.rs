@@ -560,6 +560,11 @@ pub struct RlRevisionResponse {
 // BYOT rollout-session DTOs (#1666; server routes #1663)
 // ---------------------------------------------------------------------------
 
+/// Server-side cap on a session's `memoryGib` (the API's
+/// `SESSION_MEMORY_GIB_MAX`); larger values are refused with
+/// `SessionMemoryInvalid`.
+pub const RL_SESSION_MEMORY_GIB_MAX: u32 = 1024;
+
 /// Start a rollout session (`POST /rl/rollout-sessions`): a PRIVATE,
 /// token-gated vLLM fleet serving one policy. NOT idempotent — a retry
 /// after a lost response creates a second fleet (bounded by the
@@ -575,6 +580,12 @@ pub struct CreateRlSessionRequest {
     /// (SessionSyncUnavailable) until the activation barrier ships.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub activation: Option<String>,
+    /// Memory per replica pod in GiB (1 to [`RL_SESSION_MEMORY_GIB_MAX`]),
+    /// applied as the pod's memory request and limit. Omit for the
+    /// platform's per-GPU default sizing; omitted, the wire shape is
+    /// unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_gib: Option<u32>,
     /// Forward-compat catch-all (the cluster-request contract).
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -975,6 +986,36 @@ mod tests {
         assert_eq!(p.total_revisions, 3);
         assert_eq!(p.latest_revision.as_deref(), Some("step-0002"));
     }
+    #[test]
+    fn session_request_memory_gib_is_omitted_unless_set() {
+        let fleet = RlFleetRequest {
+            replicas: 1,
+            gpu: RlGpuRequest {
+                model: "H200".into(),
+                count: 1,
+                min_memory_gb: None,
+            },
+        };
+        let mut req = CreateRlSessionRequest {
+            policy: "math".into(),
+            fleet,
+            activation: None,
+            memory_gib: None,
+            extra: Default::default(),
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        // Absent: byte-identical to the pre-memoryGib wire shape.
+        assert!(v.get("memoryGib").is_none(), "{v}");
+        assert_eq!(v.as_object().unwrap().len(), 2, "{v}");
+        req.memory_gib = Some(90);
+        let v = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["memoryGib"], 90);
+        // The Python layer's JSON parses into the typed field, not `extra`.
+        let back: CreateRlSessionRequest = serde_json::from_value(v).unwrap();
+        assert_eq!(back.memory_gib, Some(90));
+        assert!(back.extra.is_empty());
+    }
+
     // The Python SDK hands users this struct re-serialized, so a field the
     // struct lacks is a field users never see: the ledger's freshness and
     // completeness signals must survive the round trip.
