@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Per-session CPU for rollout sessions.**
+  `client.rl.create_session(..., cpu_cores=32)` sets each replica pod's
+  CPU in whole cores (1 to 128), sent as `cpuCores`, in place of the
+  platform's per-GPU default (3 cores per GPU). Large models served on few
+  GPUs spend their load time hashing, exporting and reloading the anchor
+  on CPU, so a one-GPU session can be CPU bound for many minutes.
+  Out-of-range values raise `ValueError` before any request; omitting
+  the argument leaves the request body unchanged. Needs a server that
+  accepts `cpuCores`; older servers refuse the field.
+
 ## [0.36.2] - 2026-09-28
 
 ### Added

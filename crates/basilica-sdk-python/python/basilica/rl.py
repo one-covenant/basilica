@@ -53,6 +53,8 @@ _DEAD_CLUSTER_PHASES = frozenset({"Terminating"})
 _POLL_FAILURE_BUDGET = 5
 # Mirrors the server's session memory cap (SessionMemoryInvalid above it).
 _SESSION_MEMORY_GIB_MAX = 1024
+# Mirrors the server's session cpu cap (SessionCpuInvalid above it).
+_SESSION_CPU_CORES_MAX = 128
 
 
 def _drop_none(d: dict) -> dict:
@@ -469,6 +471,7 @@ class RlNamespace:
         min_gpu_memory_gb: Optional[int] = None,
         activation: Optional[str] = None,
         memory_gib: Optional[int] = None,
+        cpu_cores: Optional[int] = None,
     ) -> dict:
         """Start a rollout session: a PRIVATE, token-gated vLLM fleet
         serving one policy (POST /rl/rollout-sessions).
@@ -483,7 +486,13 @@ class RlNamespace:
         ``memory_gib`` sets each replica pod's memory in GiB (1 to 1024),
         in place of the platform's per-GPU default. Use it when the
         model's host memory need doesn't track GPU count, e.g. a large
-        MoE served on one GPU. Omit it for the default sizing."""
+        MoE served on one GPU. Omit it for the default sizing.
+
+        ``cpu_cores`` sets each replica pod's CPU in whole cores (1 to
+        128), in place of the platform's per-GPU default. Use it when
+        loading is CPU bound regardless of GPU count, e.g. hashing and
+        exporting a large anchor on one GPU. Omit it for the default
+        sizing."""
         if memory_gib is not None and (
             isinstance(memory_gib, bool)
             or not isinstance(memory_gib, int)
@@ -492,6 +501,15 @@ class RlNamespace:
             raise ValueError(
                 f"memory_gib must be an int from 1 to {_SESSION_MEMORY_GIB_MAX} "
                 f"(GiB per replica pod), got {memory_gib!r}"
+            )
+        if cpu_cores is not None and (
+            isinstance(cpu_cores, bool)
+            or not isinstance(cpu_cores, int)
+            or not 1 <= cpu_cores <= _SESSION_CPU_CORES_MAX
+        ):
+            raise ValueError(
+                f"cpu_cores must be an int from 1 to {_SESSION_CPU_CORES_MAX} "
+                f"(cores per replica pod), got {cpu_cores!r}"
             )
         body = _drop_none(
             {
@@ -508,6 +526,7 @@ class RlNamespace:
                 },
                 "activation": activation,
                 "memoryGib": memory_gib,
+                "cpuCores": cpu_cores,
             }
         )
         return json.loads(self._core.rl_create_session(json.dumps(body)))

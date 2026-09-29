@@ -237,6 +237,7 @@ def test_create_session_wire_shape(server):
     }
     assert "activation" not in r["body"], "default async = OMITTED, not sent"
     assert "memoryGib" not in r["body"], "default sizing = OMITTED, not sent"
+    assert "cpuCores" not in r["body"], "default sizing = OMITTED, not sent"
     assert out["token"] == "one-time-token"
 
 
@@ -262,6 +263,41 @@ def test_create_session_memory_gib_refused_client_side(server, bad):
             "math-policy", gpu_model="H200", gpu_count=1, memory_gib=bad
         )
     assert rec.requests == [], "an invalid memory_gib never reaches the wire"
+
+
+def test_create_session_cpu_cores_wire_shape(server):
+    base, rec = server
+    rec.responses = [(200, _SESSION_RESP)]
+    rl(base).create_session(
+        "math-policy", gpu_model="H200", gpu_count=1, cpu_cores=32
+    )
+    (r,) = rec.requests
+    assert r["body"] == {
+        "policy": "math-policy",
+        "fleet": {"replicas": 1, "gpu": {"model": "H200", "count": 1}},
+        "cpuCores": 32,
+    }
+
+
+def test_create_session_cpu_and_memory_together(server):
+    base, rec = server
+    rec.responses = [(200, _SESSION_RESP)]
+    rl(base).create_session(
+        "math-policy", gpu_model="H200", gpu_count=1, memory_gib=96, cpu_cores=1
+    )
+    (r,) = rec.requests
+    assert r["body"]["memoryGib"] == 96
+    assert r["body"]["cpuCores"] == 1
+
+
+@pytest.mark.parametrize("bad", [0, -1, 129, 32.0, "32", True])
+def test_create_session_cpu_cores_refused_client_side(server, bad):
+    base, rec = server
+    with pytest.raises(ValueError, match="cpu_cores must be an int from 1 to 128"):
+        rl(base).create_session(
+            "math-policy", gpu_model="H200", gpu_count=1, cpu_cores=bad
+        )
+    assert rec.requests == [], "an invalid cpu_cores never reaches the wire"
 
 
 def test_get_and_delete_session_paths(server):
