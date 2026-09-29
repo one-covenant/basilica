@@ -565,6 +565,11 @@ pub struct RlRevisionResponse {
 /// `SessionMemoryInvalid`.
 pub const RL_SESSION_MEMORY_GIB_MAX: u32 = 1024;
 
+/// Server-side cap on a session's `cpuCores` (the API's
+/// `SESSION_CPU_CORES_MAX`); larger values are refused with
+/// `SessionCpuInvalid`.
+pub const RL_SESSION_CPU_CORES_MAX: u32 = 128;
+
 /// Start a rollout session (`POST /rl/rollout-sessions`): a PRIVATE,
 /// token-gated vLLM fleet serving one policy. NOT idempotent — a retry
 /// after a lost response creates a second fleet (bounded by the
@@ -586,6 +591,12 @@ pub struct CreateRlSessionRequest {
     /// unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_gib: Option<u32>,
+    /// CPU per replica pod in whole cores (1 to
+    /// [`RL_SESSION_CPU_CORES_MAX`]), applied as the pod's cpu request and
+    /// limit. Omit for the platform's per-GPU default sizing; omitted, the
+    /// wire shape is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_cores: Option<u32>,
     /// Forward-compat catch-all (the cluster-request contract).
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -1001,6 +1012,7 @@ mod tests {
             fleet,
             activation: None,
             memory_gib: None,
+            cpu_cores: None,
             extra: Default::default(),
         };
         let v = serde_json::to_value(&req).unwrap();
@@ -1013,6 +1025,39 @@ mod tests {
         // The Python layer's JSON parses into the typed field, not `extra`.
         let back: CreateRlSessionRequest = serde_json::from_value(v).unwrap();
         assert_eq!(back.memory_gib, Some(90));
+        assert!(back.extra.is_empty());
+    }
+
+    #[test]
+    fn session_request_cpu_cores_is_omitted_unless_set() {
+        let fleet = RlFleetRequest {
+            replicas: 1,
+            gpu: RlGpuRequest {
+                model: "H200".into(),
+                count: 1,
+                min_memory_gb: None,
+            },
+        };
+        let mut req = CreateRlSessionRequest {
+            policy: "math".into(),
+            fleet,
+            activation: None,
+            memory_gib: None,
+            cpu_cores: None,
+            extra: Default::default(),
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        // Absent: byte-identical to the pre-cpuCores wire shape.
+        assert!(v.get("cpuCores").is_none(), "{v}");
+        assert_eq!(v.as_object().unwrap().len(), 2, "{v}");
+        req.cpu_cores = Some(RL_SESSION_CPU_CORES_MAX);
+        let v = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["cpuCores"], 128);
+        assert!(v.get("memoryGib").is_none(), "{v}");
+        // The Python layer's JSON parses into the typed field, not `extra`.
+        let back: CreateRlSessionRequest = serde_json::from_value(v).unwrap();
+        assert_eq!(back.cpu_cores, Some(128));
+        assert_eq!(back.memory_gib, None);
         assert!(back.extra.is_empty());
     }
 
