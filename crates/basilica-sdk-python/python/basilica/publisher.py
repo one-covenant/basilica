@@ -47,6 +47,14 @@ _REV_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789._-")
 #: parent-first, so unbounded patch chains make late-join cost unbounded.
 DEFAULT_ANCHOR_EVERY = 30
 
+#: Multipart part size for artifact uploads (see ``_upload``).
+UPLOAD_PART_SIZE = 64 * 2**20
+#: Read timeout for store calls: a large multipart completion can take
+#: minutes, and botocore's 60 s default retried completions that had landed.
+UPLOAD_READ_TIMEOUT_S = 900
+#: Slack when comparing the store's LastModified with the local clock.
+UPLOAD_CLOCK_SKEW_S = 300
+
 
 class RevisionRejected(BasilicaError):
     """The fleet refused this revision.
@@ -294,6 +302,10 @@ class RlPolicyHandle:
                 config=Config(
                     request_checksum_calculation="when_required",
                     response_checksum_validation="when_required",
+                    # Completing a multipart upload of a large anchor can
+                    # take the store over a minute; the 60 s default made
+                    # botocore retry a completion that had already landed.
+                    read_timeout=UPLOAD_READ_TIMEOUT_S,
                 ),
             )
         return self._s3
@@ -303,9 +315,46 @@ class RlPolicyHandle:
 
         boto3's managed transfer handles multipart automatically — anchors
         for 7B-class models are ~15 GB and must not go through a single PUT.
+        Parts are ``UPLOAD_PART_SIZE``: boto3's 8 MiB default splits a 61 GB
+        anchor into ~7,300 parts, and completing that many takes R2 over a
+        minute.
+
+        If the completion is retried after it already succeeded (a read
+        timeout on a slow completion), the store answers NoSuchUpload for an
+        object that is in fact there. That case counts as uploaded once a
+        HEAD shows the object with this file's size, written after the
+        upload started; anything else still raises.
         """
-        self._s3_client().upload_file(str(path), self._storage.bucket, key)
+        from boto3.s3.transfer import TransferConfig  # noqa: PLC0415
+
+        size = path.stat().st_size
+        started = time.time()
+        try:
+            self._s3_client().upload_file(
+                str(path),
+                self._storage.bucket,
+                key,
+                Config=TransferConfig(
+                    multipart_threshold=UPLOAD_PART_SIZE,
+                    multipart_chunksize=UPLOAD_PART_SIZE,
+                ),
+            )
+        except Exception as e:
+            if "NoSuchUpload" not in str(e) or not self._landed(key, size, started):
+                raise
         return f"s3://{self._storage.bucket}/{key}"
+
+    def _landed(self, key: str, size: int, started: float) -> bool:
+        """The object at ``key`` has ``size`` bytes and was written no
+        earlier than ``started`` (minus clock-skew slack)."""
+        try:
+            head = self._s3_client().head_object(Bucket=self._storage.bucket, Key=key)
+        except Exception:  # noqa: BLE001 — not there (or unreadable): not landed
+            return False
+        modified = head.get("LastModified")
+        return head.get("ContentLength") == size and (
+            modified is None or modified.timestamp() >= started - UPLOAD_CLOCK_SKEW_S
+        )
 
     def _delete_orphan(self, key: str) -> None:
         """Best-effort cleanup of an uploaded artifact whose manifest POST

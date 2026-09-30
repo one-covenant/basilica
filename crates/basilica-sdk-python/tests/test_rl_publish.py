@@ -376,3 +376,138 @@ def test_s3_client_disables_default_checksums_for_r2_compat(handle, monkeypatch)
     assert cfg is not None, "the client must be built with an explicit botocore Config"
     assert cfg.request_checksum_calculation == "when_required"
     assert cfg.response_checksum_validation == "when_required"
+
+
+# -- _upload: part size and a completion retried after it landed -------------
+
+import importlib.util  # noqa: E402
+
+needs_boto3 = pytest.mark.skipif(
+    importlib.util.find_spec("boto3") is None,
+    reason="publisher extra (boto3) not installed",
+)
+
+
+class FakeS3:
+    """upload_file / head_object with a scripted failure and object."""
+
+    def __init__(self, upload_error=None, head=None):
+        self.upload_error = upload_error
+        self.head = head
+        self.uploads = []
+
+    def upload_file(self, filename, bucket, key, Config=None):
+        self.uploads.append((filename, bucket, key, Config))
+        if self.upload_error is not None:
+            raise self.upload_error
+
+    def head_object(self, Bucket, Key):
+        if self.head is None:
+            raise RuntimeError("404")
+        return self.head
+
+
+def _real_handle(fake_s3):
+    h = RlPolicyHandle(
+        FakeCore(),
+        "math-policy",
+        storage=PolicyStorage(bucket="my-weights", endpoint="https://acc.example"),
+    )
+    h._s3 = fake_s3
+    return h
+
+
+def _no_such_upload():
+    from boto3.exceptions import S3UploadFailedError
+
+    return S3UploadFailedError(
+        "Failed to upload a to b: An error occurred (NoSuchUpload) when calling the "
+        "CompleteMultipartUpload operation: The specified multipart upload does not exist."
+    )
+
+
+def _head(size, when=None):
+    import datetime
+
+    when = when or datetime.datetime.now(datetime.timezone.utc)
+    return {"ContentLength": size, "LastModified": when}
+
+
+@needs_boto3
+def test_upload_uses_large_parts(tmp_path):
+    from basilica.publisher import UPLOAD_PART_SIZE
+
+    f = tmp_path / "anchor.safetensors"
+    f.write_bytes(b"x" * 10)
+    s3 = FakeS3()
+    assert (
+        _real_handle(s3)._upload("k/anchor.safetensors", f)
+        == "s3://my-weights/k/anchor.safetensors"
+    )
+    ((_, bucket, key, cfg),) = s3.uploads
+    assert (bucket, key) == ("my-weights", "k/anchor.safetensors")
+    assert cfg.multipart_chunksize == UPLOAD_PART_SIZE == 64 * 2**20
+    assert cfg.multipart_threshold == UPLOAD_PART_SIZE
+
+
+@needs_boto3
+def test_completion_retried_after_it_landed_counts_as_uploaded(tmp_path):
+    f = tmp_path / "anchor.safetensors"
+    f.write_bytes(b"x" * 10)
+    h = _real_handle(FakeS3(upload_error=_no_such_upload(), head=_head(10)))
+    assert (
+        h._upload("k/anchor.safetensors", f) == "s3://my-weights/k/anchor.safetensors"
+    )
+
+
+@needs_boto3
+@pytest.mark.parametrize(
+    "head",
+    [None, {"ContentLength": 9}, "stale"],
+    ids=["object-missing", "size-differs", "older-than-upload"],
+)
+def test_no_such_upload_still_raises_unless_the_object_landed(tmp_path, head):
+    import datetime
+
+    if head == "stale":
+        head = _head(
+            10,
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2),
+        )
+    elif head is not None:
+        head = {**_head(0), **head}
+    f = tmp_path / "anchor.safetensors"
+    f.write_bytes(b"x" * 10)
+    h = _real_handle(FakeS3(upload_error=_no_such_upload(), head=head))
+    with pytest.raises(Exception, match="NoSuchUpload"):
+        h._upload("k/anchor.safetensors", f)
+
+
+@needs_boto3
+def test_other_upload_errors_are_not_masked(tmp_path):
+    from boto3.exceptions import S3UploadFailedError
+
+    f = tmp_path / "anchor.safetensors"
+    f.write_bytes(b"x" * 10)
+    h = _real_handle(
+        FakeS3(upload_error=S3UploadFailedError("AccessDenied"), head=_head(10))
+    )
+    with pytest.raises(S3UploadFailedError, match="AccessDenied"):
+        h._upload("k/anchor.safetensors", f)
+
+
+@needs_boto3
+def test_client_read_timeout_covers_slow_completions():
+    from basilica.publisher import UPLOAD_READ_TIMEOUT_S
+
+    h = RlPolicyHandle(
+        FakeCore(),
+        "math-policy",
+        storage=PolicyStorage(
+            bucket="my-weights",
+            endpoint="https://acc.example",
+            access_key_id="a",
+            secret_access_key="b",
+        ),
+    )
+    assert h._s3_client().meta.config.read_timeout == UPLOAD_READ_TIMEOUT_S >= 600
