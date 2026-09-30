@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Faster patch encoding in the BYOT publisher.** `publish()` now diffs
+  tensors in numpy instead of torch, encodes tensors of 262,144 elements
+  or more on a small thread pool (diff, index encoding and digest release
+  the GIL), and runs the encode with torch's intra-op threads pinned to 1,
+  restoring the previous count when the encode returns or raises. Encoding
+  runs thousands of small per-tensor ops, and one pool thread per core made
+  each op's fan-out cost more than the op. On a 10-core laptop, 400 tensors
+  of 768x2048 with 1% of values changed encode 2.6x faster. Patch bytes and
+  digests are unchanged. Two environment variables tune it:
+  `BASILICA_PUBLISH_ENCODE_THREADS` (torch threads during the encode,
+  default 1; 0 leaves torch's setting alone) and
+  `BASILICA_PUBLISH_ENCODE_WORKERS` (encode workers, default 4; 1 encodes
+  serially). Invalid values warn and use the default. torch's thread count
+  is process-wide on most builds, so torch work on other threads of the
+  trainer also runs with the pinned count while a patch encodes; set
+  `BASILICA_PUBLISH_ENCODE_THREADS=0` if the trainer computes concurrently
+  with `publish()`.
+
 ### Fixed
 
 - **Large anchor uploads no longer fail after they succeeded.** Publishing

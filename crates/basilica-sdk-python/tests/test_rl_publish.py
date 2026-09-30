@@ -511,3 +511,148 @@ def test_client_read_timeout_covers_slow_completions():
         ),
     )
     assert h._s3_client().meta.config.read_timeout == UPLOAD_READ_TIMEOUT_S >= 600
+
+
+# --- encode-scoped torch threads and per-tensor workers ----------------------
+
+
+def _threads_seen(named, sink):
+    for name, t in named:
+        sink.append(torch.get_num_threads())
+        yield name, t
+
+
+@pytest.fixture()
+def torch_threads():
+    saved = torch.get_num_threads()
+    torch.set_num_threads(3)
+    yield 3
+    torch.set_num_threads(saved)
+
+
+@pytest.mark.parametrize("env, want", [(None, 1), ("2", 2), ("0", 3)])
+def test_encode_pins_torch_threads_and_restores_them(handle, monkeypatch, torch_threads, env, want):
+    if env is None:
+        monkeypatch.delenv("BASILICA_PUBLISH_ENCODE_THREADS", raising=False)
+    else:
+        monkeypatch.setenv("BASILICA_PUBLISH_ENCODE_THREADS", env)
+    handle.publish_anchor(_state(1.0).items(), revision="step-0000")
+    seen = []
+    handle.publish(_threads_seen(_state(1.25).items(), seen), revision="step-0001")
+    assert seen and set(seen) == {want}  # "0" leaves the trainer's 3 alone
+    assert torch.get_num_threads() == torch_threads
+
+
+def test_torch_threads_are_restored_when_encode_raises(handle, torch_threads):
+    handle.publish_anchor(_state(1.0).items(), revision="step-0000")
+    base_digest = handle._snapshot.digest()
+    seen = []
+    bad = _state(1.25)
+    bad["w.b"] = _t([1.5, float("nan"), 0.0])
+    with pytest.raises(NonFiniteWeights):
+        handle.publish(_threads_seen(bad.items(), seen), revision="step-0001")
+    assert seen and set(seen) == {1}  # raised inside the pinned scope
+    assert torch.get_num_threads() == torch_threads
+    assert handle._snapshot.digest() == base_digest
+
+
+def test_overlapping_thread_scopes_restore_the_outer_value(torch_threads):
+    from basilica.publisher import _torch_threads
+
+    with _torch_threads(1):
+        with _torch_threads(2):
+            assert torch.get_num_threads() == 2
+        assert torch.get_num_threads() == 2  # inner exit keeps the scope open
+    assert torch.get_num_threads() == torch_threads
+    with pytest.raises(RuntimeError), _torch_threads(1):
+        raise RuntimeError("boom")
+    assert torch.get_num_threads() == torch_threads
+
+
+def _publish_chain(monkeypatch, threads, workers):
+    """Anchor + two patches on a fresh handle; (patch sha256s, state digests)."""
+    for env, value in (
+        ("BASILICA_PUBLISH_ENCODE_THREADS", threads),
+        ("BASILICA_PUBLISH_ENCODE_WORKERS", workers),
+    ):
+        if value is None:
+            monkeypatch.delenv(env, raising=False)
+        else:
+            monkeypatch.setenv(env, value)
+    h = RlPolicyHandle(
+        FakeCore(),
+        "math-policy",
+        storage=PolicyStorage(bucket="my-weights", endpoint="https://acc.example"),
+        anchor_every=3,
+    )
+    uploads = {}
+
+    def fake_upload(key, path):
+        uploads[key] = hashlib.sha256(path.read_bytes()).hexdigest()
+        return f"s3://my-weights/{key}"
+
+    monkeypatch.setattr(h, "_upload", fake_upload)
+    h.publish_anchor(_state(1.0).items(), revision="step-0000")
+    h.publish(_state(1.25).items(), revision="step-0001")
+    h.publish(_state(-0.0).items(), revision="step-0002")  # sign-bit-only change
+    patches = {k: v for k, v in uploads.items() if k.endswith(".pulsept")}
+    assert len(patches) == 2
+    return patches, [r["expectedStateDigest"] for r in h._core.revisions]
+
+
+@pytest.mark.parametrize(
+    "threads, workers",
+    [(None, None), ("1", "1"), ("2", "3"), ("1", "8")],
+)
+def test_encode_knobs_do_not_change_patch_bytes(monkeypatch, threads, workers):
+    from basilica._pulse import codec
+
+    # Reference: serial encode with torch's thread count left alone.
+    want = _publish_chain(monkeypatch, "0", "1")
+    monkeypatch.setattr(codec, "POOL_MIN_NUMEL", 0)  # route tiny tensors through the pool
+    assert _publish_chain(monkeypatch, threads, workers) == want
+
+
+@pytest.mark.parametrize(
+    "raw, want, warns",
+    [
+        (None, 1, False),
+        ("", 1, False),
+        ("  ", 1, False),
+        ("0", 0, False),
+        (" 4 ", 4, False),
+        ("-1", 1, True),
+        ("two", 1, True),
+        ("1.5", 1, True),
+    ],
+)
+def test_encode_threads_knob_parsing(monkeypatch, raw, want, warns):
+    from basilica.publisher import _encode_threads
+
+    if raw is None:
+        monkeypatch.delenv("BASILICA_PUBLISH_ENCODE_THREADS", raising=False)
+    else:
+        monkeypatch.setenv("BASILICA_PUBLISH_ENCODE_THREADS", raw)
+    if warns:
+        with pytest.warns(RuntimeWarning, match="BASILICA_PUBLISH_ENCODE_THREADS"):
+            assert _encode_threads() == want
+    else:
+        assert _encode_threads() == want
+
+
+@pytest.mark.parametrize(
+    "raw, want, warns",
+    [(None, 4, False), ("1", 1, False), ("16", 16, False), ("0", 4, True), ("x", 4, True)],
+)
+def test_encode_workers_knob_parsing(monkeypatch, raw, want, warns):
+    from basilica.publisher import _encode_workers
+
+    if raw is None:
+        monkeypatch.delenv("BASILICA_PUBLISH_ENCODE_WORKERS", raising=False)
+    else:
+        monkeypatch.setenv("BASILICA_PUBLISH_ENCODE_WORKERS", raw)
+    if warns:
+        with pytest.warns(RuntimeWarning, match="BASILICA_PUBLISH_ENCODE_WORKERS"):
+            assert _encode_workers() == want
+    else:
+        assert _encode_workers() == want

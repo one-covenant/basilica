@@ -33,6 +33,8 @@ import os
 import tempfile
 import threading
 import time
+import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional, Tuple, Union
@@ -54,6 +56,18 @@ UPLOAD_PART_SIZE = 64 * 2**20
 UPLOAD_READ_TIMEOUT_S = 900
 #: Slack when comparing the store's LastModified with the local clock.
 UPLOAD_CLOCK_SKEW_S = 300
+
+#: Torch intra-op threads while a patch encodes. Encoding runs thousands of
+#: small per-tensor torch ops; with one pool thread per core, the fan-out of
+#: each op costs more than the op itself. The previous value is restored when
+#: the encode returns or raises. 0 leaves torch's setting alone.
+ENCODE_THREADS_ENV = "BASILICA_PUBLISH_ENCODE_THREADS"
+DEFAULT_ENCODE_THREADS = 1
+
+#: Per-tensor encode workers (diff, index encoding, digest release the GIL).
+#: 1 encodes serially on the calling thread.
+ENCODE_WORKERS_ENV = "BASILICA_PUBLISH_ENCODE_WORKERS"
+DEFAULT_ENCODE_WORKERS = 4
 
 
 class RevisionRejected(BasilicaError):
@@ -138,6 +152,69 @@ def _refuse_non_finite(
                 "(a non-finite loss or gradient norm)."
             )
         yield name, tensor
+
+
+def _env_int(name: str, default: int, minimum: int) -> int:
+    """Integer knob from the environment; unset or blank gives ``default``.
+    An invalid value warns and falls back rather than failing a publish."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        value = minimum - 1
+    if value < minimum:
+        warnings.warn(
+            f"{name}={raw!r} is not an integer >= {minimum}; using {default}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return default
+    return value
+
+
+def _encode_threads() -> int:
+    return _env_int(ENCODE_THREADS_ENV, DEFAULT_ENCODE_THREADS, 0)
+
+
+def _encode_workers() -> int:
+    return _env_int(ENCODE_WORKERS_ENV, DEFAULT_ENCODE_WORKERS, 1)
+
+
+# Overlapping scopes (two handles encoding at once) share one saved value:
+# the first to enter saves torch's count, the last to leave restores it.
+_threads_lock = threading.Lock()
+_threads_depth = 0
+_threads_saved = 0
+
+
+@contextmanager
+def _torch_threads(n: int) -> Iterator[None]:
+    """Run the body with ``torch.set_num_threads(n)``, restoring the previous
+    count afterwards, also on error. ``n == 0`` leaves the setting alone.
+
+    torch's count is process-wide on most builds, so torch work on other
+    threads of the trainer also runs with ``n`` threads until the scope ends.
+    """
+    global _threads_depth, _threads_saved
+    if n == 0:
+        yield
+        return
+    import torch  # noqa: PLC0415
+
+    with _threads_lock:
+        if _threads_depth == 0:
+            _threads_saved = torch.get_num_threads()
+        _threads_depth += 1
+        torch.set_num_threads(n)
+    try:
+        yield
+    finally:
+        with _threads_lock:
+            _threads_depth -= 1
+            if _threads_depth == 0:
+                torch.set_num_threads(_threads_saved)
 
 
 def _validate_revision(revision: str) -> str:
@@ -433,13 +510,15 @@ class RlPolicyHandle:
         # and stages the advance; commit/rollback below is the H1 contract
         # the vendored codec provides. `self._step` moves only on success —
         # symmetric with the anchor path.
-        patch_bytes, state_digest = self._snapshot.encode_step(
-            named,
-            step=step,
-            base_step=base_step,
-            model=model,
-            base_state_digest=self._snapshot.digest(),
-        )
+        with _torch_threads(_encode_threads()):
+            patch_bytes, state_digest = self._snapshot.encode_step(
+                named,
+                step=step,
+                base_step=base_step,
+                model=model,
+                base_state_digest=self._snapshot.digest(),
+                workers=_encode_workers(),
+            )
         key = self._artifact_key(revision, "patch.pulsept")
         uploaded = False
         try:
