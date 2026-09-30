@@ -89,3 +89,122 @@ def test_anchor_roundtrip_preserves_digest(tmp_path):
     loaded, step, loaded_digest = load_anchor(path)
     assert (step, loaded_digest) == (7, digest)
     assert loaded.digest() == digest
+
+
+# --- parallel encode (workers) must not change a single byte -----------------
+
+
+def _varied_state(seed):
+    # Unchanged, sparse, dense, escape-gap (>= 0xFFFF) and signed-zero cases.
+    g = torch.Generator().manual_seed(seed)
+    return {
+        "a.unchanged": torch.randn(64, 48, generator=g).bfloat16(),
+        "b.sparse": torch.randn(256, 300, generator=g).bfloat16(),
+        "c.dense": torch.randn(40, 40, generator=g).bfloat16(),
+        "d.escape": torch.zeros(3 * 0xFFFF, dtype=torch.bfloat16),
+        "e.zero": torch.zeros(10, dtype=torch.bfloat16),
+    }
+
+
+def _varied_update(base):
+    new = {k: v.clone() for k, v in base.items()}
+    new["b.sparse"].view(-1)[::97] += 1.0
+    new["c.dense"] += 0.5
+    new["d.escape"][[0, 0xFFFF + 5, 3 * 0xFFFF - 1]] = 1.0
+    new["e.zero"][3] = -0.0  # bitwise change, value-equal
+    return new
+
+
+def _encode(base, update, model_id="t@0", **kw):
+    from basilica._pulse.codec import ModelMeta, Snapshot
+
+    snap = Snapshot(dict(base))
+    meta = ModelMeta(id=model_id, digest=snap.digest(), param_count=snap.param_count())
+    patch, sdig = snap.encode_step(
+        # reversed: the update iterable's order must not matter either
+        reversed(list(update.items())),
+        step=1,
+        base_step=0,
+        model=meta,
+        base_state_digest=snap.digest(),
+        **kw,
+    )
+    return patch, sdig, snap
+
+
+@pytest.mark.parametrize("threads", [1, 3, None])
+@pytest.mark.parametrize("workers", [1, 2, 4])
+def test_workers_and_torch_threads_give_identical_patch_bytes(monkeypatch, workers, threads):
+    from basilica._pulse import codec
+
+    base = _varied_state(0)
+    update = _varied_update(base)
+    ref_patch, ref_sdig, _ = _encode(base, update)  # serial, torch default
+    # Force every tensor through the pool so the parallel path is exercised.
+    monkeypatch.setattr(codec, "POOL_MIN_NUMEL", 0)
+    saved = torch.get_num_threads()
+    try:
+        if threads is not None:
+            torch.set_num_threads(threads)
+        patch, sdig, snap = _encode(base, update, workers=workers)
+    finally:
+        torch.set_num_threads(saved)
+    assert (patch, sdig) == (ref_patch, ref_sdig)
+    assert snap.digest() == sdig
+    consumer = codec.Snapshot(dict(base))
+    assert consumer.apply_patch(codec.parse_patch(patch)) == sdig
+
+
+def test_golden_patch_is_reproduced_through_the_pool(monkeypatch):
+    from basilica._pulse import codec
+
+    monkeypatch.setattr(codec, "POOL_MIN_NUMEL", 0)
+    patch, sdig, _ = _encode(_base_state(), _new_state(), model_id="test@deadbeef", workers=3)
+    assert sdig == GOLDEN["stateDigest_after_patch"]
+    assert patch.hex() == GOLDEN["patch_hex"]
+
+
+def test_numpy_diff_matches_the_torch_formulation():
+    from basilica._pulse.codec import diff_tensor
+
+    base = _varied_state(1)
+    update = _varied_update(base)
+    for name in base:
+        c = update[name].reshape(-1).view(torch.int16)
+        p = base[name].reshape(-1).view(torch.int16)
+        want = (c != p).nonzero(as_tuple=True)[0]
+        idx, vals = diff_tensor(update[name], base[name])
+        assert idx.tolist() == want.tolist()
+        assert vals == c[want].numpy().tobytes()
+
+
+@pytest.mark.parametrize("workers", [1, 4])
+def test_parallel_encode_stays_atomic_when_the_update_raises(monkeypatch, workers):
+    from basilica._pulse import codec
+
+    monkeypatch.setattr(codec, "POOL_MIN_NUMEL", 0)
+    base = _varied_state(2)
+    update = _varied_update(base)
+    snap = codec.Snapshot(dict(base))
+    before = snap.digest()
+    meta = codec.ModelMeta(id="t@0", digest=before, param_count=snap.param_count())
+
+    def failing():
+        items = list(update.items())
+        yield from items[:3]
+        raise RuntimeError("trainer generator died")
+
+    with pytest.raises(RuntimeError, match="generator died"):
+        snap.encode_step(failing(), step=1, base_step=0, model=meta, workers=workers)
+    assert snap.digest() == before
+    with pytest.raises(codec.PatchFormatError, match="no un-committed"):
+        snap.rollback_last_encode()
+
+
+def test_workers_below_one_are_refused():
+    from basilica._pulse.codec import ModelMeta, Snapshot
+
+    snap = Snapshot(_base_state())
+    meta = ModelMeta(id="t@0", digest=snap.digest(), param_count=snap.param_count())
+    with pytest.raises(ValueError, match="workers"):
+        snap.encode_step(_new_state().items(), step=1, base_step=0, model=meta, workers=0)

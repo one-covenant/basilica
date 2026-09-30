@@ -15,6 +15,7 @@ Values are absolute BF16 cells — apply is a memory copy, never FP arithmetic (
 from __future__ import annotations
 
 import json
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Iterable, Iterator
 
@@ -30,6 +31,9 @@ FORMAT_VERSION = 1
 INDEX_ENCODING = "delta-u16-esc"
 MAX_NUMEL = 2**32  # v1 first-index is u32 (C2.4)
 ZSTD_LEVEL = 1  # paper: zstd-1
+# encode_step(workers>1) encodes smaller tensors inline: below this size the
+# pool's hand-off and GIL contention cost more than the parallel work saves.
+POOL_MIN_NUMEL = 2**18
 
 
 class PatchFormatError(ValueError):
@@ -102,6 +106,13 @@ def diff_tensor(cur: torch.Tensor, prev: torch.Tensor) -> tuple[np.ndarray, byte
     p = prev.detach().contiguous().reshape(-1).view(torch.int16)
     if c.device != p.device:
         raise PatchFormatError("diff requires tensors on the same device")
+    if c.device.type == "cpu":
+        # CPU path in numpy: single-threaded, releases the GIL, and never
+        # touches torch's intra-op pool, whose per-op fan-out dominated the
+        # cost on many-core hosts. Same indices (ascending) and value bytes.
+        cn, pn = c.numpy(), p.numpy()
+        nidx = np.flatnonzero(cn != pn)
+        return nidx.astype(np.uint64, copy=False), cn[nidx].tobytes()
     idx = (c != p).nonzero(as_tuple=True)[0]
     vals = c[idx].cpu().numpy().tobytes()
     return idx.cpu().numpy().astype(np.uint64, copy=False), vals
@@ -230,6 +241,14 @@ def _validate_tensor_headers(tensors: list[dict]) -> list[dict]:
     return tensors
 
 
+def _encode_entry(name: str, cur: torch.Tensor, prev: torch.Tensor) -> TensorEntry:
+    """One tensor's patch entry: diff against `prev`, encode indices, digest `cur`."""
+    idx, vals = diff_tensor(cur, prev)
+    return TensorEntry(
+        name, tuple(cur.shape), cur.numel(), int(idx.size), encode_indices(idx), vals, tensor_digest(cur)
+    )
+
+
 class Snapshot:
     """Mutable BF16 state: the producer's diff base and the consumer's reconstruction target.
 
@@ -281,6 +300,7 @@ class Snapshot:
         model: ModelMeta,
         base_state_digest: str | None = None,
         stats_out: list | None = None,
+        workers: int = 1,
     ) -> tuple[bytes, str]:
         """Diff `new_state` against this snapshot, advance the snapshot, return (patch, stateDigest).
 
@@ -296,24 +316,46 @@ class Snapshot:
         idx_bytes (encoded), val_bytes (raw bf16) — from the entries already
         built for the patch; measurement adds no extra tensor work. None (the
         default) is byte-and-behavior identical to before.
+
+        ``workers`` > 1 diffs, index-encodes and digests tensors of at least
+        ``POOL_MIN_NUMEL`` elements on a thread pool of that size; the update
+        iterable is still consumed, validated and copied on the calling
+        thread, in order. Patch bytes and digests are identical for every
+        value; 1 (the default) runs serially.
         """
-        entries, seen = [], set()
+        if workers < 1:
+            raise ValueError(f"workers must be >= 1, got {workers}")
+        pending: list[Future | TensorEntry] = []
+        seen: set[str] = set()
         staged: dict[str, torch.Tensor] = {}
-        for name, t in new_state:
-            prev = self._tensors.get(name)
-            if prev is None:
-                raise PatchFormatError(f"unknown tensor in update: {name}")
-            if name in seen:
-                raise PatchFormatError(f"duplicate tensor in update: {name}")
-            seen.add(name)
-            cur = t.detach().to(device="cpu", copy=True).contiguous()
-            if cur.dtype is not torch.bfloat16:
-                raise PatchFormatError(f"{name}: update tensors must be bf16, got {cur.dtype}")
-            idx, vals = diff_tensor(cur, prev)
-            entries.append(
-                TensorEntry(name, tuple(cur.shape), cur.numel(), int(idx.size), encode_indices(idx), vals, tensor_digest(cur))
-            )
-            staged[name] = cur
+        pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="pulse-encode") if workers > 1 else None
+        try:
+            # Validation and the copy stay on the calling thread, in update
+            # order: the iterable may be a lazy generator that reuses buffers,
+            # and errors must surface for the first offending tensor.
+            for name, t in new_state:
+                prev = self._tensors.get(name)
+                if prev is None:
+                    raise PatchFormatError(f"unknown tensor in update: {name}")
+                if name in seen:
+                    raise PatchFormatError(f"duplicate tensor in update: {name}")
+                seen.add(name)
+                cur = t.detach().to(device="cpu", copy=True).contiguous()
+                if cur.dtype is not torch.bfloat16:
+                    raise PatchFormatError(f"{name}: update tensors must be bf16, got {cur.dtype}")
+                if cur.shape != prev.shape:
+                    raise PatchFormatError(f"shape mismatch: {tuple(cur.shape)} vs {tuple(prev.shape)}")
+                staged[name] = cur
+                if pool is None or cur.numel() < POOL_MIN_NUMEL:
+                    pending.append(_encode_entry(name, cur, prev))
+                else:
+                    # Diff, index encoding and digest are numpy/xxhash work
+                    # that releases the GIL, so tensors encode in parallel.
+                    pending.append(pool.submit(_encode_entry, name, cur, prev))
+            entries = [p.result() if isinstance(p, Future) else p for p in pending]
+        finally:
+            if pool is not None:
+                pool.shutdown(wait=True, cancel_futures=True)
         if seen != set(self._tensors):
             raise PatchFormatError(f"update missing tensors: {sorted(set(self._tensors) - seen)}")
         if stats_out is not None:
