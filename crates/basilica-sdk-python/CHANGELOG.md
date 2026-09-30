@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Large anchor uploads no longer fail after they succeeded.** Publishing
+  a 61 GB anchor (Qwen3-30B-A3B) to R2 used boto3's 8 MiB default parts,
+  about 7,300 of them, and completing that many took the store over a
+  minute. botocore's 60 s read timeout then retried the completion, which
+  had already landed, and the store answered `NoSuchUpload`, so `publish`
+  raised `PublishError` for an object that was in the bucket. Uploads now
+  use 64 MiB parts and a 900 s read timeout, and a `NoSuchUpload` counts as
+  uploaded when a HEAD shows the object with the file's size, written
+  after the upload started. Any other upload error still raises.
+
 ## [0.36.3] - 2026-09-29
 
 ### Added
