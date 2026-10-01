@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.4] - 2026-10-01
+
 ### Changed
 
 - **Faster patch encoding in the BYOT publisher.** `publish()` now diffs
@@ -38,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use 64 MiB parts and a 900 s read timeout, and a `NoSuchUpload` counts as
   uploaded when a HEAD shows the object with the file's size, written
   after the upload started. Any other upload error still raises.
+
+### Security
+
+- **urllib3 2.8.0.** The locked urllib3 moves from 2.7.0 to 2.8.0 for
+  CVE-2026-97687, CVE-2026-97688 and CVE-2026-97689. urllib3 is a
+  transitive dependency (through `requests` and `botocore`); install
+  constraints are unchanged.
 
 ## [0.36.3] - 2026-09-29
 
