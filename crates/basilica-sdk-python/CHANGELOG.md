@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.5] - 2026-10-02
+
 ### Added
 
 - **AWS S3 and S3-compatible policy storage.** `create_policy()` accepts
