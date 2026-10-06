@@ -9,17 +9,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+from basilica import session as session_mod
 from basilica.session import (
     GenerateResult,
     RlSessionClient,
     SessionServingError,
+    SessionUnavailableError,
     StaleRevisionError,
 )
 
 
 class _FakeSession(BaseHTTPRequestHandler):
     requests: list = []
-    responses: list = []  # (status, dict) popped per request
+    responses: list = []  # (status, dict[, headers]) popped per request
 
     def do_POST(self):  # noqa: N802
         length = int(self.headers.get("Content-Length") or 0)
@@ -30,11 +32,13 @@ class _FakeSession(BaseHTTPRequestHandler):
                 "body": json.loads(self.rfile.read(length)),
             }
         )
-        status, resp = (
+        status, resp, *rest = (
             _FakeSession.responses.pop(0) if _FakeSession.responses else (200, {})
         )
         payload = json.dumps(resp).encode()
         self.send_response(status)
+        for name, value in (rest[0] if rest else {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
@@ -206,3 +210,89 @@ def test_platform_calls_delegate_to_the_rl_api():
     assert client.park()["state"] == "parked"
     assert client.resume()["state"] == "starting"
     assert api.calls == [("usage", "0b1c"), ("park", "0b1c"), ("resume", "0b1c")]
+
+
+# -- retryable 503s (#598) ---------------------------------------------------
+
+
+def _refusal(kind):
+    return (503, {"error": {"message": f"{kind}: retry the request", "type": kind, "code": kind}})
+
+
+_OK = (200, _t4_response())
+
+
+@pytest.fixture()
+def no_sleep(monkeypatch):
+    slept = []
+    monkeypatch.setattr(session_mod.time, "sleep", slept.append)
+    return slept
+
+
+def test_engine_fault_is_retried_until_it_clears(session, no_sleep):
+    client, fake = session
+    fake.responses = [_refusal("EngineFault"), _refusal("EngineFault"), _OK]
+    out = client.generate(token_ids=[[1]], revision="step-0042")
+    assert out.served_revision == "step-0042"
+    assert len(fake.requests) == 3
+    # The same request, revision assertion included, is resent each time.
+    assert all(r["body"] == fake.requests[0]["body"] for r in fake.requests)
+    assert len(no_sleep) == 2 and all(0 < s <= 15 for s in no_sleep)
+
+
+def test_a_draining_replica_is_retried(session, no_sleep):
+    client, fake = session
+    fake.responses = [_refusal("SessionDraining"), _OK]
+    assert client.generate(token_ids=[[1]]).served_revision == "step-0042"
+    assert len(fake.requests) == 2
+
+
+def test_retry_after_is_honoured(session, no_sleep):
+    client, fake = session
+    status, body = _refusal("EngineFault")
+    fake.responses = [(status, body, {"Retry-After": "3"}), _OK]
+    client.generate(token_ids=[[1]])
+    assert no_sleep == [3.0]
+
+
+def test_an_exhausted_budget_raises_a_typed_serving_error(session, no_sleep):
+    client, fake = session
+    client._retry_budget_s = 2.0
+    fake.responses = [_refusal("EngineFault")] * 10
+    with pytest.raises(SessionUnavailableError, match="EngineFault") as exc:
+        client.generate(token_ids=[[1]])
+    assert exc.value.error_type == "EngineFault"
+    assert isinstance(exc.value, SessionServingError)
+    assert 1 < len(fake.requests) < 10
+
+
+def test_a_zero_budget_raises_on_the_first_refusal(session, no_sleep):
+    client, fake = session
+    client._retry_budget_s = 0
+    fake.responses = [_refusal("SessionDraining"), _OK]
+    with pytest.raises(SessionUnavailableError, match="SessionDraining"):
+        client.generate(token_ids=[[1]])
+    assert len(fake.requests) == 1 and no_sleep == []
+
+
+def test_other_503s_are_not_retried(session, no_sleep):
+    client, fake = session
+    fake.responses = [
+        (503, {"error": {"message": "gateway overloaded", "type": "upstream_error"}}),
+        _OK,
+    ]
+    with pytest.raises(SessionServingError, match="HTTP 503") as exc:
+        client.generate(token_ids=[[1]])
+    assert not isinstance(exc.value, SessionUnavailableError)
+    assert len(fake.requests) == 1
+
+
+def test_a_stale_revision_is_still_raised_at_once(session, no_sleep):
+    client, fake = session
+    fake.responses = [
+        (409, {"error": {"message": "not served", "type": "StaleRevision"}}),
+        _OK,
+    ]
+    with pytest.raises(StaleRevisionError):
+        client.generate(token_ids=[[1]], revision="step-0009")
+    assert len(fake.requests) == 1

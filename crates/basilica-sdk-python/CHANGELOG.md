@@ -20,6 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settings as before. R2 remains the default and is unchanged; `endpoint`
   is now optional only for `backend="s3"`.
 
+### Fixed
+
+- **Sessions retry a draining replica or an engine fault instead of
+  raising.** `generate()` now retries an HTTP 503 whose error type is
+  `SessionDraining` (a replica shutting down) or `EngineFault` (a replica
+  whose weights match no revision until it reloads an anchor), with
+  jittered exponential backoff (about 1 to 15 s) and honouring
+  `Retry-After`. Retries stop after `retry_budget_s` (default 300 s, `0`
+  disables, settable on `open_session()`), then `SessionUnavailableError`
+  is raised; it subclasses `SessionServingError`, so existing handlers
+  keep working. Other errors, including `StaleRevisionError`, are raised
+  at once as before.
+
 ## [0.36.4] - 2026-10-01
 
 ### Changed
