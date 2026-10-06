@@ -2,10 +2,18 @@
 
 The SERVING half of the session surface: ``generate()`` speaks the T4
 training dialect against the session URL — token IDs in and out, the
-sampler's own logprobs, ``revision`` as an assertion, ``servedRevision``
-on every result. Pure stdlib (urllib): session traffic goes to the
-session's own host, not the platform API, and the base SDK stays
-zero-dependency.
+engine's logprobs on the sampled tokens, ``revision`` as an assertion,
+``servedRevision`` on every result. Pure stdlib (urllib): session traffic
+goes to the session's own host, not the platform API, and the base SDK
+stays zero-dependency.
+
+The logprobs are the engine's RAW logprobs unless the session says
+otherwise (``GenerateResult.logprobs_mode``): the model's log-softmax
+before temperature, top-k/top-p/min-p and penalties. They equal the
+distribution the tokens were sampled from only at temperature 1 with no
+top-k, top-p or min-p and no penalties; at any other setting a trainer
+must apply the same transform itself before using them as the behaviour
+policy.
 
 The doc's step-6 loop runs verbatim when a publisher handle is attached::
 
@@ -93,7 +101,12 @@ class GenerateResult:
 
     Lists are choice-aligned (``len == n × prompts``, prompt-major — the
     engine's own order): ``token_ids[i]`` are the sampled ids for choice
-    ``i``, ``logprobs[i]`` the sampler's logprobs on exactly those ids.
+    ``i``, ``logprobs[i]`` the engine's logprobs on exactly those ids (raw
+    by default, see the module docstring).
+
+    The opt-in fields stay empty (or None) unless the call asked for them
+    and the session's server returns them, so an older server yields the
+    same result as before.
     """
 
     served_revision: Optional[str]
@@ -103,8 +116,52 @@ class GenerateResult:
     finish_reasons: list = field(default_factory=list)
     texts: list = field(default_factory=list)
     usage: dict = field(default_factory=dict)
+    #: ``top_logprobs=k``: per choice, one row per sampled token of the k
+    #: most likely token ids, most likely first, with the sampled token
+    #: appended when it is outside the top k (so a row has k or k+1
+    #: entries). ``top_logprobs[i][t][j]`` is the logprob of
+    #: ``top_logprob_ids[i][t][j]``.
+    top_logprob_ids: list = field(default_factory=list)
+    top_logprobs: list = field(default_factory=list)
+    #: ``return_prompt_logprobs=True``: per choice, the logprob of each
+    #: prompt token given the tokens before it; the first entry is None.
+    #: Always raw, whatever the session's logprobs mode.
+    prompt_logprobs: list = field(default_factory=list)
+    #: ``"raw"`` or ``"processed"``: what ``logprobs`` and ``top_logprobs``
+    #: hold. Returned with any opt-in field or ``return_serving_info``.
+    logprobs_mode: Optional[str] = None
+    #: The replica (pod) that answered.
+    replica: Optional[str] = None
+    #: That replica's acked state digest for ``served_revision``, when it
+    #: has one (None between the steps of a multi-step activation).
+    served_state_digest: Optional[str] = None
     #: The full response body for anything the shaped fields omit.
     raw: dict = field(default_factory=dict)
+
+
+@dataclass
+class ScoreResult:
+    """Per-token logprobs of given sequences, from :meth:`RlSessionClient.score`.
+
+    ``logprobs[i][t]`` is the logprob of ``token_ids[i][t]`` given
+    ``token_ids[i][:t]`` under ``served_revision``; ``logprobs[i][0]`` is
+    None (the first token has no context). Raw log-softmax, whatever the
+    session's logprobs mode.
+    """
+
+    served_revision: Optional[str]
+    token_ids: list = field(default_factory=list)
+    logprobs: list = field(default_factory=list)
+    replica: Optional[str] = None
+    served_state_digest: Optional[str] = None
+    usage: dict = field(default_factory=dict)
+    raw: dict = field(default_factory=dict)
+
+
+def _is_flat_logprobs(value: Any) -> bool:
+    return isinstance(value, list) and all(
+        v is None or isinstance(v, (int, float)) for v in value
+    )
 
 
 class RlSessionClient:
@@ -145,6 +202,9 @@ class RlSessionClient:
         seed: Optional[int] = None,
         revision: Optional[str] = None,
         logprobs: int = 1,
+        top_logprobs: Optional[int] = None,
+        return_prompt_logprobs: bool = False,
+        return_serving_info: bool = False,
         **extra: Any,
     ) -> GenerateResult:
         """Sample from the session (interface doc step 5).
@@ -157,6 +217,15 @@ class RlSessionClient:
         ``result.served_revision`` says which. ``seed`` makes the batch
         replayable; ``n`` is the GRPO group (same prompt, same revision,
         prefix computed once).
+
+        Opt-in extras (each sent only when set): ``top_logprobs=k`` (0 to
+        20) fills ``top_logprob_ids`` / ``top_logprobs``;
+        ``return_prompt_logprobs=True`` fills ``prompt_logprobs``, at the
+        cost of a full prefill per prompt (the engine skips prefix-cache
+        reads for it), so ask once per GRPO group rather than per sample;
+        ``return_serving_info=True`` fills only ``logprobs_mode``,
+        ``replica`` and ``served_state_digest``, which the other two also
+        fill.
         """
         if (token_ids is None) == (prompt is None):
             raise ValueError("pass exactly one of token_ids= or prompt=")
@@ -178,17 +247,84 @@ class RlSessionClient:
             body["seed"] = seed
         if revision is not None:
             body["revision"] = revision
+        if top_logprobs is not None:
+            body["top_logprobs"] = top_logprobs
+        if return_prompt_logprobs:
+            body["return_prompt_logprobs"] = True
+        if return_serving_info:
+            body["return_serving_info"] = True
         body.update(extra)
 
         out = self._post_json("/v1/completions", body)
-        result = GenerateResult(served_revision=out.get("servedRevision"), raw=out, usage=out.get("usage") or {})
-        for choice in out.get("choices") or []:
+        result = GenerateResult(
+            served_revision=out.get("servedRevision"),
+            raw=out,
+            usage=out.get("usage") or {},
+            logprobs_mode=out.get("logprobsMode"),
+            replica=out.get("replica"),
+            served_state_digest=out.get("servedStateDigest"),
+        )
+        choices = out.get("choices") or []
+        for choice in choices:
             result.token_ids.append(choice.get("token_ids"))
             result.logprobs.append(choice.get("logprobs"))
             result.prompt_token_ids.append(choice.get("prompt_token_ids"))
             result.finish_reasons.append(choice.get("finish_reason"))
             result.texts.append(choice.get("text"))
+        # Opt-in columns: only when every choice carries them, so the
+        # lists stay choice-aligned or empty.
+        tops = [choice.get("top_logprobs") for choice in choices]
+        if choices and all(isinstance(t, dict) for t in tops):
+            result.top_logprob_ids = [t.get("ids") for t in tops]
+            result.top_logprobs = [t.get("logprobs") for t in tops]
+        prompt_lps = [choice.get("prompt_logprobs") for choice in choices]
+        # A flat list of numbers; vLLM's own per-token dicts (a caller
+        # passing ``prompt_logprobs`` straight through) stay in ``raw``.
+        if choices and all(_is_flat_logprobs(p) for p in prompt_lps):
+            result.prompt_logprobs = prompt_lps
         return result
+
+    def score(
+        self,
+        token_ids: Sequence,
+        *,
+        revision: Optional[str] = None,
+    ) -> ScoreResult:
+        """Per-token logprobs of the given sequences under the revision
+        the session serves (or ``revision``, asserted as in
+        :meth:`generate`).
+
+        ``token_ids`` is one sequence (``[int, ...]``) or a batch. Each
+        sequence is scored as a prompt with one throwaway sampled token
+        (the engine needs ``max_tokens >= 1``), so the cost is a full
+        prefill per sequence: prompt logprobs make the engine skip
+        prefix-cache reads, so nothing is reused from earlier requests.
+        The logprobs are raw log-softmax whatever the session's mode,
+        which makes them comparable with a trainer's own forward pass at
+        temperature 1.
+        """
+        out = self.generate(
+            token_ids=token_ids,
+            n=1,
+            max_tokens=1,
+            revision=revision,
+            logprobs=0,
+            return_prompt_logprobs=True,
+        )
+        if len(out.prompt_logprobs) != len(out.prompt_token_ids):
+            raise SessionServingError(
+                "the session returned no prompt logprobs; its server predates "
+                "return_prompt_logprobs"
+            )
+        return ScoreResult(
+            served_revision=out.served_revision,
+            token_ids=out.prompt_token_ids,
+            logprobs=out.prompt_logprobs,
+            replica=out.replica,
+            served_state_digest=out.served_state_digest,
+            usage=out.usage,
+            raw=out.raw,
+        )
 
     def _post_json(self, path: str, body: dict) -> dict:
         """POST with retries on the session's retryable 503s (a draining
@@ -245,6 +381,10 @@ class RlSessionClient:
         except urllib.error.URLError as e:
             raise SessionServingError(f"session unreachable: {e.reason}") from e
 
+    def trajectory(self, policy: str = "strict") -> "Trajectory":
+        """A :class:`Trajectory` over this session."""
+        return Trajectory(self, policy=policy)
+
     # -- publishing (delegates to the attached policy handle) --------------
 
     def _need_publisher(self) -> Any:
@@ -286,3 +426,95 @@ class RlSessionClient:
 
     def wait_until_active(self, revision: str, **kwargs: Any) -> dict:
         return self._need_publisher().wait_until_active(revision, **kwargs)
+
+
+@dataclass
+class TrajectoryTurn:
+    """One turn of a :class:`Trajectory`: the sampled tokens sit at
+    ``token_range`` (start inclusive, end exclusive) in the turn's full
+    sequence (its prompt followed by its completion), and
+    ``served_revision`` generated them."""
+
+    turn: int
+    token_range: tuple
+    served_revision: Optional[str]
+
+
+class Trajectory:
+    """Records which revision served each turn of one multi-turn rollout.
+
+    Each turn's prompt is the whole history so far (one sequence, ``n``
+    is 1), so ``token_range`` positions index the final sequence too.
+    ``policy`` decides what happens when the session moves to a new
+    revision between turns:
+
+    - ``"strict"``: every turn after the first asserts the first turn's
+      revision, so a switch raises :class:`StaleRevisionError` (restart
+      the trajectory, or keep what ``turns`` holds).
+    - ``"allow_switch"``: no assertion; the switch is recorded and
+      ``switches`` lists it.
+
+    Example::
+
+        traj = session.trajectory("strict")
+        out = traj.generate(token_ids=prompt, max_tokens=256)
+        ...
+        out = traj.generate(token_ids=prompt + reply + tool_output)
+    """
+
+    POLICIES = ("strict", "allow_switch")
+
+    def __init__(self, session: RlSessionClient, policy: str = "strict"):
+        if policy not in self.POLICIES:
+            raise ValueError(f"policy must be one of {self.POLICIES}, got {policy!r}")
+        self._session = session
+        self.policy = policy
+        self.turns: list = []
+
+    @property
+    def pinned_revision(self) -> Optional[str]:
+        """The first turn's revision (None before the first turn, or when
+        the base model served it)."""
+        return self.turns[0].served_revision if self.turns else None
+
+    @property
+    def switches(self) -> list:
+        """``(turn, from_revision, to_revision)`` for every turn served by
+        a different revision than the turn before it."""
+        return [
+            (cur.turn, prev.served_revision, cur.served_revision)
+            for prev, cur in zip(self.turns, self.turns[1:])
+            if cur.served_revision != prev.served_revision
+        ]
+
+    def generate(self, *, token_ids: Sequence, n: int = 1, **kwargs: Any) -> GenerateResult:
+        """One turn: :meth:`RlSessionClient.generate` on one sequence, with
+        the pinning policy applied and the turn recorded."""
+        ids = list(token_ids)
+        if not ids or not all(isinstance(t, int) for t in ids):
+            raise ValueError("a trajectory turn takes one sequence of token ids")
+        if n != 1:
+            raise ValueError("a trajectory is one sequence: n must be 1")
+        pinned = self.policy == "strict" and bool(self.turns)
+        if pinned:
+            want = self.pinned_revision
+            if kwargs.get("revision") not in (None, want):
+                raise ValueError(
+                    f"revision={kwargs['revision']!r} conflicts with the trajectory's "
+                    f"pinned revision {want!r}"
+                )
+            if want is not None:
+                kwargs["revision"] = want
+        out = self._session.generate(token_ids=ids, n=1, **kwargs)
+        if pinned and out.served_revision != self.pinned_revision:
+            # Only reachable when the first turn ran on the base model,
+            # which no assertion can name.
+            raise StaleRevisionError(
+                f"trajectory pinned to {self.pinned_revision!r} but turn "
+                f"{len(self.turns)} was served by {out.served_revision!r}"
+            )
+        completion = out.token_ids[0] if out.token_ids else None
+        start = len(ids)
+        end = start + len(completion or [])
+        self.turns.append(TrajectoryTurn(len(self.turns), (start, end), out.served_revision))
+        return out
