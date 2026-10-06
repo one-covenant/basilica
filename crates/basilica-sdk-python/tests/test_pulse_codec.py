@@ -77,6 +77,36 @@ def test_the_golden_patch_applies_and_verifies():
     assert consumer.digest() == GOLDEN["stateDigest_after_patch"]
 
 
+def test_v2_patch_bytes_match_the_normative_implementation():
+    # Format v2 (#2156): same inputs, format_version=2 -> pulse_verl's v2 bytes.
+    from basilica._pulse.codec import FORMAT_VERSION_V2, ModelMeta, Snapshot
+
+    snap = Snapshot(_base_state())
+    anchor_digest = snap.digest()
+    meta = ModelMeta(id="test@deadbeef", digest=anchor_digest, param_count=snap.param_count())
+    patch, sdig = snap.encode_step(
+        _new_state().items(),
+        step=1,
+        base_step=0,
+        model=meta,
+        base_state_digest=anchor_digest,
+        format_version=FORMAT_VERSION_V2,
+    )
+    assert sdig == GOLDEN["stateDigest_after_patch"]
+    assert hashlib.sha256(patch).hexdigest() == GOLDEN["patch_v2_sha256"]
+    assert patch.hex() == GOLDEN["patch_v2_hex"]
+
+
+def test_the_golden_v2_patch_applies_and_verifies():
+    from basilica._pulse.codec import Snapshot, parse_patch
+
+    consumer = Snapshot(_base_state())
+    parsed = parse_patch(bytes.fromhex(GOLDEN["patch_v2_hex"]))
+    assert parsed.format_version == 2
+    assert consumer.apply_patch(parsed) == GOLDEN["stateDigest_after_patch"]
+    assert consumer.digest() == GOLDEN["stateDigest_after_patch"]
+
+
 def test_anchor_roundtrip_preserves_digest(tmp_path):
     pytest.importorskip("safetensors")
     from basilica._pulse.anchor import load_anchor, save_anchor
