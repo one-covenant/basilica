@@ -658,12 +658,13 @@ def test_encode_workers_knob_parsing(monkeypatch, raw, want, warns):
         assert _encode_workers() == want
 
 
-def test_patch_format_knob_emits_v2_with_the_same_digests(monkeypatch):
+@pytest.mark.parametrize("version", [2, 3])
+def test_patch_format_knob_emits_v2_and_v3_with_the_same_digests(monkeypatch, version):
     from basilica._pulse import codec
 
     monkeypatch.delenv("BASILICA_PUBLISH_PATCH_FORMAT", raising=False)
     v1_patches, v1_digests = _publish_chain(monkeypatch, None, None)
-    monkeypatch.setenv("BASILICA_PUBLISH_PATCH_FORMAT", "2")
+    monkeypatch.setenv("BASILICA_PUBLISH_PATCH_FORMAT", str(version))
     seen = []
     real_build = codec.build_patch
 
@@ -673,14 +674,14 @@ def test_patch_format_knob_emits_v2_with_the_same_digests(monkeypatch):
 
     monkeypatch.setattr(codec, "build_patch", spy)
     v2_patches, v2_digests = _publish_chain(monkeypatch, None, None)
-    assert seen == [2, 2]
+    assert seen == [version, version]
     assert v2_digests == v1_digests  # same states, same evidence
     assert v2_patches != v1_patches  # but different bytes on the wire
 
 
 @pytest.mark.parametrize(
     "raw, want, warns",
-    [(None, 1, False), ("1", 1, False), ("2", 2, False), ("3", 1, True), ("0", 1, True), ("v2", 1, True)],
+    [(None, 1, False), ("1", 1, False), ("2", 2, False), ("3", 3, False), ("4", 1, True), ("0", 1, True), ("v2", 1, True)],
 )
 def test_patch_format_knob_parsing(monkeypatch, raw, want, warns):
     from basilica.publisher import _patch_format

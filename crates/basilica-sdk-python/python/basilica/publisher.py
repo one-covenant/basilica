@@ -69,9 +69,11 @@ DEFAULT_ENCODE_THREADS = 1
 ENCODE_WORKERS_ENV = "BASILICA_PUBLISH_ENCODE_WORKERS"
 DEFAULT_ENCODE_WORKERS = 4
 
-#: PULSE patch format the publisher emits (#2156): 1 (C2.4) or 2 (rice-gap
-#: indices and zigzag-delta values, about half the bytes). Set 2 only once
-#: every consumer of the policy decodes v2; anchors are unaffected.
+#: PULSE patch format the publisher emits: 1 (C2.4), 2 (#2156: rice-gap
+#: indices and zigzag-delta values, about half the bytes of v1) or 3 (v2 with
+#: indices coded per class of the old cell's exponent, about half again). Set
+#: 2 or 3 only once every consumer of the policy decodes it; anchors are
+#: unaffected.
 PATCH_FORMAT_ENV = "BASILICA_PUBLISH_PATCH_FORMAT"
 DEFAULT_PATCH_FORMAT = 1
 
@@ -190,9 +192,9 @@ def _encode_workers() -> int:
 
 def _patch_format() -> int:
     value = _env_int(PATCH_FORMAT_ENV, DEFAULT_PATCH_FORMAT, 1)
-    if value not in (1, 2):
+    if value not in (1, 2, 3):
         warnings.warn(
-            f"{PATCH_FORMAT_ENV}={value} is not 1 or 2; using {DEFAULT_PATCH_FORMAT}",
+            f"{PATCH_FORMAT_ENV}={value} is not 1, 2 or 3; using {DEFAULT_PATCH_FORMAT}",
             RuntimeWarning,
             stacklevel=2,
         )

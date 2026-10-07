@@ -379,7 +379,7 @@ def test_header_mismatches_are_format_errors():
         return lambda h: h.__setitem__("formatVersion", v)
 
     with pytest.raises(PatchFormatError, match="unsupported formatVersion"):
-        parse_patch(retag(p2, set_version(3)))
+        parse_patch(retag(p2, set_version(4)))
     with pytest.raises(PatchFormatError, match="idxEnc"):
         parse_patch(retag(p1, set_version(2)))  # v1 streams under a v2 header
     with pytest.raises(PatchFormatError, match="idxEnc"):
@@ -399,7 +399,7 @@ def test_header_mismatches_are_format_errors():
     with pytest.raises(PatchFormatError):
         parse_patch(p2[: len(p2) - 7])
     with pytest.raises(PatchFormatError):
-        encode(s0, s1, 3)
+        encode(s0, s1, 4)
 
 
 def test_build_patch_refuses_mixed_entries():

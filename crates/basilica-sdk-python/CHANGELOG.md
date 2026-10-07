@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PULSE patch format v3 (opt-in).** Format v2's values with the changed
+  indices coded per class of the old cell's BF16 exponent (contract
+  C2.4.2, `exp-class-rice`): on recorded Qwen3-8B patches about 0.19% of
+  the BF16 state against 0.34% for v2, with bit-identical results. The
+  index coder runs natively in the SDK's extension module (numpy fallback
+  with `BASILICA_PULSE_EXPCTX_NATIVE=0`). `publish()` emits v3 only with
+  `BASILICA_PUBLISH_PATCH_FORMAT=3`; set it only once the serving fleet
+  decodes v3.
+
 - **PULSE patch format v2 (opt-in).** The vendored codec can encode and
   decode format v2 patches (#2156): changed indices as Golomb-Rice coded
   gaps and new values as the zigzag difference of the BF16 bit patterns
