@@ -10,6 +10,19 @@ Normative format: docs/architecture/RL-TRAINING-API-CONTRACTS.md C2.4-C2.5.
 Envelope: magic "PULSEPT1" | u32 headerLen | header JSON | one zstd-1 frame.
 Payload: per tensor, in name-ascending header order, [indices][values].
 Values are absolute BF16 cells — apply is a memory copy, never FP arithmetic (I3).
+
+Format v2 (#2156, opt-in at encode time via ``format_version=2``) keeps the
+envelope, header and digests and changes only the two per-tensor streams:
+indices are ``rice-gap`` (indices.py) and values are ``zz-delta-u8esc``
+(values.py), the zigzag difference of the BF16 bit patterns against the old
+cell. Apply stays integer-only on bit patterns, so it is bit-exact (I3), but
+it reads the cells it overwrites. The header's ``formatVersion`` selects the
+decoder; v2 tensor headers also name ``valEnc``. v1 patches are unchanged.
+
+Format v3 keeps v2's values and codes the indices as ``exp-class-rice``
+(expctx.py): per class of the OLD cell's exponent byte, so the decoder also
+needs the whole old tensor, not only the cells it overwrites. Both ends hold
+it: the producer's diff base and the consumer's snapshot.
 """
 
 from __future__ import annotations
@@ -24,10 +37,17 @@ import torch
 import zstandard
 
 from .digest import format_digest, parse_digest, state_digest, tensor_digest
-from .indices import decode_indices, encode_indices
+from .expctx import IDX_ENC_EXPCTX, decode_indices_expctx, encode_indices_expctx
+from .indices import IDX_ENC_RICE, decode_indices, decode_indices_rice, encode_indices, encode_indices_rice
+from .values import VAL_ENC_ZZ, ValueFormatError, decode_values_zz, encode_values_zz
 
 MAGIC = b"PULSEPT1"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 1  # what encoders emit unless asked for another version
+FORMAT_VERSION_V2 = 2
+FORMAT_VERSION_V3 = 3
+SUPPORTED_FORMAT_VERSIONS = (FORMAT_VERSION, FORMAT_VERSION_V2, FORMAT_VERSION_V3)
+# Versions whose values are zz-delta against the old cell (decoded with the old cells).
+DELTA_VALUE_VERSIONS = (FORMAT_VERSION_V2, FORMAT_VERSION_V3)
 INDEX_ENCODING = "delta-u16-esc"
 MAX_NUMEL = 2**32  # v1 first-index is u32 (C2.4)
 ZSTD_LEVEL = 1  # paper: zstd-1
@@ -79,9 +99,10 @@ class TensorEntry:
     idx_bytes: bytes
     val_bytes: bytes
     digest: bytes  # full-tensor digest AFTER this patch applies
+    format_version: int = FORMAT_VERSION  # which encodings idx_bytes/val_bytes use
 
     def to_header(self) -> dict:
-        return {
+        h = {
             "name": self.name,
             "shape": list(self.shape),
             "numel": self.numel,
@@ -92,6 +113,10 @@ class TensorEntry:
             "valBytes": len(self.val_bytes),
             "tensorDigest": format_digest(self.digest),
         }
+        if self.format_version in DELTA_VALUE_VERSIONS:
+            h["idxEnc"] = IDX_ENC_EXPCTX if self.format_version == FORMAT_VERSION_V3 else IDX_ENC_RICE
+            h["valEnc"] = VAL_ENC_ZZ
+        return h
 
 
 def diff_tensor(cur: torch.Tensor, prev: torch.Tensor) -> tuple[np.ndarray, bytes]:
@@ -129,6 +154,11 @@ def apply_tensor_patch(t: torch.Tensor, idx: np.ndarray, values: bytes) -> None:
     flat[torch.from_numpy(idx.astype(np.int64, copy=False)).to(t.device)] = vals.to(t.device)
 
 
+def _check_format_version(format_version: int) -> None:
+    if format_version not in SUPPORTED_FORMAT_VERSIONS:
+        raise PatchFormatError(f"unsupported formatVersion {format_version}")
+
+
 def build_patch(
     *,
     step: int,
@@ -136,12 +166,19 @@ def build_patch(
     model: ModelMeta,
     entries: list[TensorEntry],
     base_state_digest: str | None = None,
+    format_version: int = FORMAT_VERSION,
 ) -> tuple[bytes, str]:
-    """Assemble a PULSEPT1 patch; returns (patch bytes, stateDigest string)."""
+    """Assemble a PULSEPT1 patch; returns (patch bytes, stateDigest string).
+
+    Every entry must be encoded for ``format_version`` (``TensorEntry.format_version``).
+    """
+    _check_format_version(format_version)
+    if any(e.format_version != format_version for e in entries):
+        raise PatchFormatError(f"entries are not all encoded for formatVersion {format_version}")
     entries = sorted(entries, key=lambda e: e.name)
     sdig = state_digest([e.digest for e in entries])
     header = {
-        "formatVersion": FORMAT_VERSION,
+        "formatVersion": format_version,
         "step": step,
         "baseStep": base_step,
         "model": model.to_header(),
@@ -172,10 +209,49 @@ class ParsedPatch:
     _payload: bytes
     _offsets: list[tuple[int, int, int]]  # (idx_start, val_start, end) per tensor
     base_state_digest: str | None = None  # C2.4 optional; None for legacy patches
+    format_version: int = FORMAT_VERSION
 
     def tensor_payload(self, i: int) -> tuple[bytes, bytes]:
         idx_start, val_start, end = self._offsets[i]
         return self._payload[idx_start:val_start], self._payload[val_start:end]
+
+    def tensor_indices(self, i: int, old: torch.Tensor | None = None, threads: int | None = None) -> np.ndarray:
+        """Decode tensor ``i``'s changed flat indices (int64), per the patch's format.
+
+        v3 decodes against the whole tensor before the apply (``old``, any
+        shape, bf16 or its int16 view); v1 and v2 ignore it. ``threads``
+        splits a v3 decode within the tensor (see ``expctx``).
+        """
+        th = self.tensors[i]
+        idx_b, _ = self.tensor_payload(i)
+        if self.format_version == FORMAT_VERSION_V3:
+            if old is None:
+                raise PatchFormatError("format v3 indices decode against the old tensor")
+            cells = old.reshape(-1).view(torch.int16).numpy()
+            if cells.size != th["numel"]:
+                raise PatchApplyError(f"{th['name']}: old tensor has {cells.size} cells, header says {th['numel']}")
+            return decode_indices_expctx(idx_b, th["changed"], cells, threads)
+        if self.format_version == FORMAT_VERSION_V2:
+            return decode_indices_rice(idx_b, th["changed"], th["numel"])
+        return decode_indices(idx_b, th["changed"])
+
+    def tensor_values(self, i: int, old: torch.Tensor) -> torch.Tensor:
+        """Tensor ``i``'s new cells as int16 bf16 bit patterns, in index order.
+
+        ``old`` holds the cells at the decoded indices before the apply
+        (int16 view); v1 ignores it (absolute values), v2 decodes against it.
+        """
+        th = self.tensors[i]
+        _, val_b = self.tensor_payload(i)
+        if self.format_version in DELTA_VALUE_VERSIONS:
+            try:
+                new = decode_values_zz(val_b, old.numpy(), th["changed"])
+            except ValueFormatError as e:
+                raise PatchApplyError(f"{th['name']}: {e}") from e
+            return torch.from_numpy(new)
+        if len(val_b) != 2 * th["changed"]:
+            raise PatchApplyError(f"value bytes {len(val_b)} != 2 x changed {th['changed']}")
+        return torch.from_numpy(np.frombuffer(val_b, dtype="<i2").copy())
 
 
 def parse_patch(data: bytes) -> ParsedPatch:
@@ -192,10 +268,11 @@ def parse_patch(data: bytes) -> ParsedPatch:
         header = json.loads(data[body : body + hlen])
     except ValueError as e:
         raise PatchFormatError(f"header is not valid JSON: {e}") from e
-    if header.get("formatVersion") != FORMAT_VERSION:
-        raise PatchFormatError(f"unsupported formatVersion {header.get('formatVersion')}")
+    version = header.get("formatVersion")
+    if version not in SUPPORTED_FORMAT_VERSIONS:
+        raise PatchFormatError(f"unsupported formatVersion {version}")
     try:
-        tensors = _validate_tensor_headers(header["tensors"])
+        tensors = _validate_tensor_headers(header["tensors"], version)
         expected = sum(t["idxBytes"] + t["valBytes"] for t in tensors)
     except (KeyError, TypeError) as e:
         raise PatchFormatError(f"malformed header: {e!r}") from e
@@ -220,32 +297,60 @@ def parse_patch(data: bytes) -> ParsedPatch:
             _payload=payload,
             _offsets=offsets,
             base_state_digest=header.get("baseStateDigest"),  # None when absent (legacy)
+            format_version=version,
         )
     except (KeyError, TypeError) as e:
         raise PatchFormatError(f"malformed header: {e!r}") from e
 
 
-def _validate_tensor_headers(tensors: list[dict]) -> list[dict]:
+def _validate_tensor_headers(tensors: list[dict], version: int = FORMAT_VERSION) -> list[dict]:
     names = [t["name"] for t in tensors]
     if names != sorted(names) or len(set(names)) != len(names):
         raise PatchFormatError("tensors[] must be unique and name-ascending")
+    v2 = version in DELTA_VALUE_VERSIONS
+    idx_enc = {FORMAT_VERSION_V2: IDX_ENC_RICE, FORMAT_VERSION_V3: IDX_ENC_EXPCTX}.get(version, INDEX_ENCODING)
     for t in tensors:
         if t["dtype"] != "bf16":
             raise PatchFormatError(f"{t['name']}: v1 admits dtype bf16 only")
-        if t["idxEnc"] != INDEX_ENCODING:
+        if t["idxEnc"] != idx_enc:
             raise PatchFormatError(f"{t['name']}: unknown idxEnc {t['idxEnc']!r}")
         if t["numel"] != int(np.prod(t["shape"], dtype=np.int64)) or t["numel"] >= MAX_NUMEL:
             raise PatchFormatError(f"{t['name']}: inconsistent or oversized numel")
-        if t["valBytes"] != 2 * t["changed"]:
+        if v2:
+            if t["valEnc"] != VAL_ENC_ZZ:
+                raise PatchFormatError(f"{t['name']}: unknown valEnc {t['valEnc']!r}")
+            # zz-delta-u8esc: one byte per cell plus two per escape, so
+            # changed <= valBytes <= 3 x changed.
+            if not t["changed"] <= t["valBytes"] <= 3 * t["changed"]:
+                raise PatchFormatError(f"{t['name']}: valBytes inconsistent with changed")
+        elif t["valBytes"] != 2 * t["changed"]:
             raise PatchFormatError(f"{t['name']}: valBytes != 2 x changed")
     return tensors
 
 
-def _encode_entry(name: str, cur: torch.Tensor, prev: torch.Tensor) -> TensorEntry:
-    """One tensor's patch entry: diff against `prev`, encode indices, digest `cur`."""
+def _encode_entry(
+    name: str, cur: torch.Tensor, prev: torch.Tensor, format_version: int = FORMAT_VERSION
+) -> TensorEntry:
+    """One tensor's patch entry: diff ``cur`` against ``prev``, encode, digest ``cur``.
+
+    v2 encodes the new cells against the ``prev`` cells they replace, which
+    the producer holds anyway: it is the diff base. v3 also codes the indices
+    against the whole ``prev`` tensor.
+    """
+    _check_format_version(format_version)
     idx, vals = diff_tensor(cur, prev)
+    if format_version in DELTA_VALUE_VERSIONS:
+        prev_cells = prev.reshape(-1).view(torch.int16).numpy()
+        old = prev_cells[idx.astype(np.int64, copy=False)]
+        if format_version == FORMAT_VERSION_V3:
+            idx_bytes = encode_indices_expctx(idx, prev_cells)
+        else:
+            idx_bytes = encode_indices_rice(idx)
+        vals = encode_values_zz(old, np.frombuffer(vals, dtype="<i2"))
+    else:
+        idx_bytes = encode_indices(idx)
     return TensorEntry(
-        name, tuple(cur.shape), cur.numel(), int(idx.size), encode_indices(idx), vals, tensor_digest(cur)
+        name, tuple(cur.shape), cur.numel(), int(idx.size), idx_bytes, vals, tensor_digest(cur), format_version
     )
 
 
@@ -301,6 +406,7 @@ class Snapshot:
         base_state_digest: str | None = None,
         stats_out: list | None = None,
         workers: int = 1,
+        format_version: int = FORMAT_VERSION,
     ) -> tuple[bytes, str]:
         """Diff `new_state` against this snapshot, advance the snapshot, return (patch, stateDigest).
 
@@ -313,18 +419,23 @@ class Snapshot:
 
         ``stats_out`` (issue #964 causal-chain instrumentation): when a list is
         passed, one dict per tensor is appended — name, numel, nnz, nnz_frac,
-        idx_bytes (encoded), val_bytes (raw bf16) — from the entries already
-        built for the patch; measurement adds no extra tensor work. None (the
-        default) is byte-and-behavior identical to before.
+        idx_bytes, val_bytes (both as encoded; v1 values are raw bf16), from
+        the entries already built for the patch; measurement adds no extra
+        tensor work. None (the default) is byte-and-behavior identical to before.
 
         ``workers`` > 1 diffs, index-encodes and digests tensors of at least
         ``POOL_MIN_NUMEL`` elements on a thread pool of that size; the update
         iterable is still consumed, validated and copied on the calling
         thread, in order. Patch bytes and digests are identical for every
         value; 1 (the default) runs serially.
+
+        ``format_version`` selects the patch encoding: 1 (the default, C2.4)
+        or 2 (#2156: rice-gap indices, zigzag-delta values). Both apply to
+        the same bytes and digests.
         """
         if workers < 1:
             raise ValueError(f"workers must be >= 1, got {workers}")
+        _check_format_version(format_version)
         pending: list[Future | TensorEntry] = []
         seen: set[str] = set()
         staged: dict[str, torch.Tensor] = {}
@@ -347,11 +458,11 @@ class Snapshot:
                     raise PatchFormatError(f"shape mismatch: {tuple(cur.shape)} vs {tuple(prev.shape)}")
                 staged[name] = cur
                 if pool is None or cur.numel() < POOL_MIN_NUMEL:
-                    pending.append(_encode_entry(name, cur, prev))
+                    pending.append(_encode_entry(name, cur, prev, format_version))
                 else:
                     # Diff, index encoding and digest are numpy/xxhash work
                     # that releases the GIL, so tensors encode in parallel.
-                    pending.append(pool.submit(_encode_entry, name, cur, prev))
+                    pending.append(pool.submit(_encode_entry, name, cur, prev, format_version))
             entries = [p.result() if isinstance(p, Future) else p for p in pending]
         finally:
             if pool is not None:
@@ -366,7 +477,8 @@ class Snapshot:
                     "idx_bytes": len(e.idx_bytes), "val_bytes": len(e.val_bytes),
                 })
         patch = build_patch(
-            step=step, base_step=base_step, model=model, entries=entries, base_state_digest=base_state_digest
+            step=step, base_step=base_step, model=model, entries=entries, base_state_digest=base_state_digest,
+            format_version=format_version,
         )
         self._prev_tensors = self._tensors
         # Reindex to the snapshot's canonical (sorted) key order: dict order is
@@ -400,11 +512,16 @@ class Snapshot:
             t = self._tensors[th["name"]]
             if list(t.shape) != th["shape"]:
                 raise PatchApplyError(f"{th['name']}: shape mismatch")
-            idx_b, val_b = patch.tensor_payload(i)
-            idx = decode_indices(idx_b, th["changed"])
+            idx = patch.tensor_indices(i, t)
             if idx.size and int(idx[-1]) >= t.numel():
                 raise PatchApplyError(f"{th['name']}: index out of range")
-            apply_tensor_patch(t, idx, val_b)
+            if patch.format_version == FORMAT_VERSION:
+                apply_tensor_patch(t, idx, patch.tensor_payload(i)[1])
+            else:
+                # v2 values decode against the cells they replace.
+                flat = t.reshape(-1).view(torch.int16)
+                tidx = torch.from_numpy(idx)
+                flat[tidx] = patch.tensor_values(i, flat[tidx])
             d = tensor_digest(t)
             if d != parse_digest(th["tensorDigest"]):
                 raise PatchApplyError(f"{th['name']}: tensor digest mismatch after apply (I3 violation)")
