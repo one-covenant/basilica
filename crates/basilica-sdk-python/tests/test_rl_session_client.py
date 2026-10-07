@@ -158,6 +158,8 @@ def test_publishing_without_a_publisher_is_refused():
     client = RlSessionClient("http://127.0.0.1:9", "t")
     with pytest.raises(Exception, match="no publisher attached"):
         client.publish({}, revision="r0")
+    with pytest.raises(Exception, match="no publisher attached"):
+        client.revision_probes("r0")
 
 
 def test_publishing_delegates_to_the_attached_handle():
@@ -173,11 +175,22 @@ def test_publishing_delegates_to_the_attached_handle():
             self.calls.append(("wait", revision))
             return {"revision": revision, "state": "Active"}
 
+        def revision_probes(self, revision):
+            self.calls.append(("probes", revision))
+            return {"status": "ok", "k3Max": 0.0001} if revision == "r1" else None
+
     pub = FakePublisher()
     client = RlSessionClient("http://127.0.0.1:9", "t", publisher=pub)
     assert client.publish({}, revision="r1")["state"] == "Validated"
     assert client.wait_until_active("r1")["state"] == "Active"
-    assert pub.calls == [("publish", "r1"), ("wait", "r1")]
+    assert client.revision_probes("r1") == {"status": "ok", "k3Max": 0.0001}
+    assert client.revision_probes("r2") is None
+    assert pub.calls == [
+        ("publish", "r1"),
+        ("wait", "r1"),
+        ("probes", "r1"),
+        ("probes", "r2"),
+    ]
 
 
 def test_platform_calls_without_identification_are_refused():

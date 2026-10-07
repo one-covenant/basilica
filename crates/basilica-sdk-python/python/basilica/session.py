@@ -425,7 +425,15 @@ class RlSessionClient:
         return self._need_publisher().publish_anchor(named_tensors, revision=revision)
 
     def wait_until_active(self, revision: str, **kwargs: Any) -> dict:
+        """Block until ``revision`` is ``Active`` and return its record. The
+        record may not carry ``probes`` yet; see :meth:`revision_probes`."""
         return self._need_publisher().wait_until_active(revision, **kwargs)
+
+    def revision_probes(self, revision: str) -> Optional[dict]:
+        """The report-only numerics probes (prefill vs decode k3 per
+        replica) for ``revision``, or ``None`` until the first arrives. See
+        :meth:`basilica.publisher.RlPolicyHandle.revision_probes`."""
+        return self._need_publisher().revision_probes(revision)
 
 
 @dataclass

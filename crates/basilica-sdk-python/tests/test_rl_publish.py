@@ -245,6 +245,54 @@ def test_non_integrity_rejection_is_not_reported_as_digest_mismatch(handle):
     assert "digest mismatch" not in msg2
 
 
+_PROBES = {
+    "status": "ok",
+    "k3Max": 0.0012,
+    "worstReplica": "pod-b",
+    "replicas": [
+        {
+            "replica": "pod-a",
+            "status": "ok",
+            "tokens": 512,
+            "k3": 0.0001,
+            "k1": -0.0004,
+            "maxAbs": 0.41,
+            "clipFrac": 0.004,
+            "observedAt": "2026-10-07T08:49:23Z",
+        }
+    ],
+}
+
+
+def test_wait_until_active_passes_probes_through(handle):
+    core = handle._test_core
+    core.revision_states["probed"] = [
+        {"state": "Loading"},
+        {"state": "Active", "probes": _PROBES},
+    ]
+    rec = handle.wait_until_active("probed", poll_interval=0.01)
+    assert rec["state"] == "Active"
+    assert rec["probes"] == _PROBES
+
+
+def test_revision_probes_returns_the_block_or_none(handle):
+    core = handle._test_core
+    # Active before any replica reported: no probes yet.
+    core.revision_states["early"] = [{"state": "Active"}]
+    assert handle.wait_until_active("early", poll_interval=0.01).get("probes") is None
+    assert handle.revision_probes("early") is None
+
+    # The probe lands shortly after; polling picks it up.
+    core.revision_states["early"] = [{"state": "Active", "probes": _PROBES}]
+    probes = handle.revision_probes("early")
+    assert probes["status"] == "ok"
+    assert probes["worstReplica"] == "pod-b"
+    assert probes["replicas"][0]["k3"] == 0.0001
+
+    with pytest.raises(ValueError, match="letter-or-digit edges"):
+        handle.revision_probes("-bad-")
+
+
 def test_revision_grammar_is_validated_before_any_work(handle):
     with pytest.raises(ValueError, match="letter-or-digit edges"):
         handle.publish_anchor(_state().items(), revision="-bad-")

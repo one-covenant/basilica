@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `token_range`. `policy="strict"` asserts the first turn's revision on
   later turns, so a switch raises `StaleRevisionError`;
   `policy="allow_switch"` records it in `switches`.
+- **Revision numerics probes.** `RlPolicyHandle.revision_probes(revision)`
+  and `RlSessionClient.revision_probes(revision)` return the `probes`
+  block of a revision (or `None` until the first probe arrives), and
+  `get_revision()` and `wait_until_active()` records carry it once it
+  exists. After each activation every session replica compares prefill
+  and decode logprobs on 8 fixed prompts and reports the token-mean k3
+  (`e^d - d - 1`); `status` is `ok` below 1e-3, `warn` up to 1.3e-2 (or
+  above 5x the session baseline) and `collapse` beyond. Probes are
+  report-only and usually land shortly after `Active`, so poll
+  `revision_probes()` rather than relying on `wait_until_active()`.
 
 ### Fixed
 

@@ -567,6 +567,67 @@ pub struct RlRevisionResponse {
     /// `rejected_reason` (for example the shim's 502 body).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rejected_detail: Option<String>,
+    /// Numerics probes the serving replicas reported for this revision.
+    /// Absent until the first probe arrives, which may be shortly after the
+    /// revision turns `Active`, and always absent from older servers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probes: Option<RlRevisionProbes>,
+}
+
+/// Numerics probes for one revision: after each activation every session
+/// replica scores 8 fixed prompts by prefill and by decode and compares the
+/// two logprob streams. `k3` is the token-mean of `e^d - d - 1` over the
+/// logprob differences `d`, a non-negative KL estimate that is near zero
+/// when prefill and decode agree. Report-only: probes never reject or roll
+/// back a revision.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlRevisionProbes {
+    /// The worst replica's band: `ok` (k3 below 1e-3), `warn` (1e-3 up to
+    /// 1.3e-2, or more than 5x the session baseline) or `collapse` (1.3e-2
+    /// or more); `error` only when every replica's probe failed.
+    #[serde(default)]
+    pub status: String,
+    /// Largest k3 across replicas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub k3_max: Option<f64>,
+    /// The replica that reported `k3_max`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worst_replica: Option<String>,
+    /// One entry per reporting replica.
+    #[serde(default)]
+    pub replicas: Vec<RlRevisionReplicaProbe>,
+}
+
+/// One replica's probe of a revision. Numeric fields are optional so an
+/// `error` report (or a server that omits a field) still parses.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlRevisionReplicaProbe {
+    #[serde(default)]
+    pub replica: String,
+    /// `ok` | `warn` | `collapse` | `error`.
+    #[serde(default)]
+    pub status: String,
+    /// Tokens compared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
+    /// Token-mean `e^d - d - 1`, where `d` is the prefill logprob minus the
+    /// decode logprob of each compared token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub k3: Option<f64>,
+    /// Token-mean `d` (signed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub k1: Option<f64>,
+    /// Largest `|d|` over the compared tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_abs: Option<f64>,
+    /// Fraction of compared tokens with `|d| > ln 1.2`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip_frac: Option<f64>,
+    /// RFC 3339 time the replica reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1080,6 +1141,66 @@ mod tests {
         let v = serde_json::to_value(&live).unwrap();
         assert!(v.get("rejectedReason").is_none());
         assert!(v.get("rejectedDetail").is_none());
+    }
+
+    #[test]
+    fn revision_probes_parse_and_round_trip() {
+        let rec: RlRevisionResponse = serde_json::from_str(
+            r#"{"revision":"step-0003","state":"Active","submittedAt":"t",
+                "probes":{"status":"warn","k3Max":0.0012,"worstReplica":"pod-b",
+                  "replicas":[
+                    {"replica":"pod-a","status":"ok","tokens":512,"k3":0.0001,
+                     "k1":-0.0004,"maxAbs":0.41,"clipFrac":0.004,
+                     "observedAt":"2026-10-07T08:49:23Z"},
+                    {"replica":"pod-b","status":"warn","tokens":512,"k3":0.0012},
+                    {"replica":"pod-c","status":"error"}]}}"#,
+        )
+        .unwrap();
+        let p = rec.probes.as_ref().expect("probes");
+        assert_eq!(p.status, "warn");
+        assert_eq!(p.k3_max, Some(0.0012));
+        assert_eq!(p.worst_replica.as_deref(), Some("pod-b"));
+        assert_eq!(p.replicas.len(), 3);
+        let a = &p.replicas[0];
+        assert_eq!(a.tokens, Some(512));
+        assert_eq!(a.k1, Some(-0.0004));
+        assert_eq!(a.max_abs, Some(0.41));
+        assert_eq!(a.clip_frac, Some(0.004));
+        assert_eq!(a.observed_at.as_deref(), Some("2026-10-07T08:49:23Z"));
+        // Missing numbers stay absent instead of failing the whole record.
+        assert_eq!(p.replicas[1].max_abs, None);
+        assert_eq!(p.replicas[2].k3, None);
+
+        // The Python binding re-serializes this struct: the camelCase shape
+        // must survive, and absent numbers must stay absent.
+        let v = serde_json::to_value(&rec).unwrap();
+        assert_eq!(v["probes"]["k3Max"], 0.0012);
+        assert_eq!(v["probes"]["worstReplica"], "pod-b");
+        assert_eq!(v["probes"]["replicas"][0]["clipFrac"], 0.004);
+        assert_eq!(
+            v["probes"]["replicas"][0]["observedAt"],
+            "2026-10-07T08:49:23Z"
+        );
+        assert!(v["probes"]["replicas"][2].get("k3").is_none());
+    }
+
+    #[test]
+    fn revision_without_probes_omits_them() {
+        // Before the first probe, and from servers that predate probes, the
+        // field is absent; it must stay absent when re-serialized.
+        let rec: RlRevisionResponse =
+            serde_json::from_str(r#"{"revision":"step-0004","state":"Active","submittedAt":"t"}"#)
+                .unwrap();
+        assert!(rec.probes.is_none());
+        let v = serde_json::to_value(&rec).unwrap();
+        assert!(v.get("probes").is_none());
+
+        // An explicit null is treated the same as absent.
+        let rec: RlRevisionResponse = serde_json::from_str(
+            r#"{"revision":"step-0004","state":"Loading","submittedAt":"t","probes":null}"#,
+        )
+        .unwrap();
+        assert!(rec.probes.is_none());
     }
 
     #[test]

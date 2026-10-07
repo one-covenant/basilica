@@ -674,6 +674,11 @@ class RlPolicyHandle:
         :class:`RevisionSuperseded` when a newer revision won the race
         (newest-wins is the platform contract). Times out with
         :class:`BasilicaError` — the revision may still activate later.
+
+        Returns the revision record. It may carry a ``probes`` block (see
+        :meth:`revision_probes`), but replicas report probes after they
+        activate, so the record returned here often has none yet; poll
+        :meth:`revision_probes` for them.
         """
         rev = _validate_revision(revision)
         deadline = time.monotonic() + timeout
@@ -715,3 +720,28 @@ class RlPolicyHandle:
                     f"(last state: {state!r})"
                 )
             time.sleep(poll_interval)
+
+    def revision_probes(self, revision: str) -> Optional[dict]:
+        """The numerics probes the serving replicas reported for
+        ``revision``, or ``None`` before the first one arrives (or from a
+        server without probes).
+
+        After each activation every session replica scores 8 fixed prompts
+        by prefill and by decode and compares the logprobs. ``k3`` is the
+        token-mean of ``e^d - d - 1`` over the logprob differences ``d``: a
+        non-negative KL estimate that is near zero when the two agree. The
+        dict carries ``status`` (the worst replica's band: ``ok`` below
+        1e-3, ``warn`` from 1e-3 to 1.3e-2 or above 5x the session
+        baseline, ``collapse`` at 1.3e-2 or more, ``error`` only when every
+        replica's probe failed), ``k3Max``, ``worstReplica`` and
+        ``replicas`` (each with ``replica``, ``status``, ``tokens``,
+        ``k3``, ``k1``, ``maxAbs``, ``clipFrac``, ``observedAt``; numbers
+        may be absent).
+
+        Probes are report-only: they never reject or roll back a revision.
+        They arrive shortly after ``Active``, so poll this after
+        :meth:`wait_until_active` returns.
+        """
+        rev = _validate_revision(revision)
+        rec = json.loads(self._core.rl_get_revision(self.name, rev))
+        return rec.get("probes")

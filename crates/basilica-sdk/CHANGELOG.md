@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Revision numerics probes.** `RlRevisionResponse` gains an optional
+  `probes: Option<RlRevisionProbes>` (fleet `status`, `k3_max`,
+  `worst_replica` and per-replica `RlRevisionReplicaProbe` entries), so
+  `get_rl_revision` and the Python binding keep the block the server
+  returns. It is absent until a probe arrives and from older servers.
+
 ## [0.36.0] - 2026-09-22
 
 ### Added

@@ -169,6 +169,45 @@ def test_get_revision_path_and_parse(server):
     assert out["parentRevision"] == "step-0000"
 
 
+def test_get_revision_keeps_probes_and_omits_them_when_absent(server):
+    # The compiled core deserializes into a typed struct and re-serializes
+    # it, so a field the struct lacks would be dropped before Python.
+    base, rec = server
+    probes = {
+        "status": "warn",
+        "k3Max": 0.0012,
+        "worstReplica": "pod-b",
+        "replicas": [
+            {
+                "replica": "pod-b",
+                "status": "warn",
+                "tokens": 512,
+                "k3": 0.0012,
+                "k1": -0.0004,
+                "maxAbs": 0.41,
+                "clipFrac": 0.004,
+                "observedAt": "2026-10-07T08:49:23Z",
+            }
+        ],
+    }
+    rec.responses = [
+        (
+            200,
+            {
+                "revision": "step-0002",
+                "state": "Active",
+                "submittedAt": "t",
+                "probes": probes,
+            },
+        ),
+        (200, {"revision": "step-0003", "state": "Active", "submittedAt": "t"}),
+    ]
+    out = rl(base).get_revision("math-policy", "step-0002")
+    assert out["probes"] == probes
+    out = rl(base).get_revision("math-policy", "step-0003")
+    assert "probes" not in out
+
+
 def test_revision_grammar_refused_client_side(server):
     base, rec = server
     client = basilica.BasilicaClient(base_url=base, api_key="test-key")
