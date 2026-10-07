@@ -442,7 +442,9 @@ class RlNamespace:
 
     def get_revision(self, policy: str, revision: str) -> dict:
         """One revision's registry state (Validated | Loading | Active |
-        Rejected | Superseded)."""
+        Rejected | Superseded). Once the serving replicas report numerics
+        probes the record also carries a ``probes`` block (see
+        :meth:`basilica.publisher.RlPolicyHandle.revision_probes`)."""
         return json.loads(self._core.rl_get_revision(policy, revision))
 
     def policy(
@@ -581,6 +583,7 @@ class RlNamespace:
         publisher: "Any" = None,
         session_uid: Optional[str] = None,
         timeout: float = 1800.0,
+        retry_budget_s: float = 300.0,
     ) -> "Any":
         """Open a serving client on a session (interface doc steps 5+6):
         ``generate()`` speaks the training dialect (token IDs both ways,
@@ -589,7 +592,8 @@ class RlNamespace:
         one object — generate / publish / wait_until_active. Pass
         ``session_uid`` and ``usage()`` / ``park()`` / ``resume()`` work
         on the same object too (they call the platform API, not the
-        session)."""
+        session). A draining replica or an engine fault (HTTP 503) is
+        retried for up to ``retry_budget_s`` seconds (0 disables)."""
         from basilica.session import RlSessionClient
 
         return RlSessionClient(
@@ -599,4 +603,5 @@ class RlNamespace:
             api=self if session_uid else None,
             session_uid=session_uid,
             timeout=timeout,
+            retry_budget_s=retry_budget_s,
         )

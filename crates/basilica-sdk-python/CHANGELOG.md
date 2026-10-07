@@ -19,6 +19,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client applies the region and addressing style with the same checksum
   settings as before. R2 remains the default and is unchanged; `endpoint`
   is now optional only for `backend="s3"`.
+- **Top-k and prompt logprobs from sessions.** `generate()` takes
+  `top_logprobs=k` (0 to 20), filling `GenerateResult.top_logprob_ids`
+  and `top_logprobs` (per sampled token, the k most likely token ids and
+  their logprobs, plus the sampled token when it is outside the top k),
+  and `return_prompt_logprobs=True`, filling `prompt_logprobs` (one
+  logprob per prompt token, the first `None`). Either one, or
+  `return_serving_info=True`, also fills `logprobs_mode`, `replica` and
+  `served_state_digest`. Nothing is sent unless asked for, the fields
+  stay empty against an older session server, and the requests and
+  results of existing calls are unchanged.
+- **`session.score(token_ids, revision=...)`** returns the per-token
+  logprobs of given sequences under the served revision (a
+  `ScoreResult`). Each call costs a full prefill per sequence: prompt
+  logprobs make the engine skip prefix-cache reads.
+- **`Trajectory`** (`session.trajectory(policy)`) records which revision
+  served each turn of a multi-turn rollout, with each turn's
+  `token_range`. `policy="strict"` asserts the first turn's revision on
+  later turns, so a switch raises `StaleRevisionError`;
+  `policy="allow_switch"` records it in `switches`.
+- **Revision numerics probes.** `RlPolicyHandle.revision_probes(revision)`
+  and `RlSessionClient.revision_probes(revision)` return the `probes`
+  block of a revision (or `None` until the first probe arrives), and
+  `get_revision()` and `wait_until_active()` records carry it once it
+  exists. After each activation every session replica compares prefill
+  and decode logprobs on 8 fixed prompts and reports the token-mean k3
+  (`e^d - d - 1`); `status` is `ok` below 1e-3, `warn` up to 1.3e-2 (or
+  above 5x the session baseline) and `collapse` beyond. Probes are
+  report-only and usually land shortly after `Active`, so poll
+  `revision_probes()` rather than relying on `wait_until_active()`.
+
+### Fixed
+
+- **Session logprob docs.** `generate()` returns the engine's raw
+  logprobs (before temperature, top-k/top-p/min-p and penalties) unless
+  the session's `logprobs_mode` says otherwise. They match the sampling
+  distribution only at temperature 1 with no top-k, top-p or min-p and no
+  penalties; the docstrings no longer call them the sampler's own.
+- **Sessions retry a draining replica or an engine fault instead of
+  raising.** `generate()` now retries an HTTP 503 whose error type is
+  `SessionDraining` (a replica shutting down) or `EngineFault` (a replica
+  whose weights match no revision until it reloads an anchor), with
+  jittered exponential backoff (about 1 to 15 s) and honouring
+  `Retry-After`. Retries stop after `retry_budget_s` (default 300 s, `0`
+  disables, settable on `open_session()`), then `SessionUnavailableError`
+  is raised; it subclasses `SessionServingError`, so existing handlers
+  keep working. Other errors, including `StaleRevisionError`, are raised
+  at once as before.
 
 ## [0.36.4] - 2026-10-01
 
