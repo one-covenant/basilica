@@ -245,6 +245,135 @@ def test_non_integrity_rejection_is_not_reported_as_digest_mismatch(handle):
     assert "digest mismatch" not in msg2
 
 
+def _is_anchor(body):
+    uri = body["artifact"]["uri"]
+    return "parentRevision" not in body and uri.endswith("/anchor.safetensors")
+
+
+def test_rejected_revision_makes_the_next_publish_an_anchor(handle):
+    # The fleet refused r1 after the registry accepted it: no replica holds
+    # r1's state, so a patch diffed against it would be rejected too (kind
+    # rig, Oct 8: every later patch on the handle was). The next publish
+    # must re-anchor, and the chain continues from that anchor.
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [
+        {"state": "Rejected", "rejectedReason": "RevisionApplyFailed"}
+    ]
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert _is_anchor(core.revisions[-1]), (
+        "the publish after a rejection must be an anchor"
+    )
+    handle.publish(_state(1.3).items(), revision="r3")
+    assert core.revisions[-1]["parentRevision"] == "r2", (
+        "the chain resumes from the new anchor"
+    )
+
+
+def test_reanchor_matches_a_fresh_anchor_of_the_same_state(handle):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    handle.publish(_state(1.2).items(), revision="r2")
+    fresh = RlPolicyHandle(
+        FakeCore(),
+        "math-policy",
+        storage=PolicyStorage(bucket="my-weights", endpoint="https://acc.example"),
+    )
+    fresh._upload = lambda key, path: f"s3://my-weights/{key}"
+    fresh.publish_anchor(_state(1.2).items(), revision="x")
+    assert (
+        core.revisions[-1]["expectedStateDigest"]
+        == fresh._core.revisions[-1]["expectedStateDigest"]
+    )
+
+
+def test_rejected_parent_is_detected_without_wait_until_active(handle):
+    # A trainer that never waits still must not chain on a refused revision:
+    # publish reads the parent's status once before encoding a patch.
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert _is_anchor(core.revisions[-1])
+
+
+def test_rejection_of_an_older_chain_does_not_reanchor(handle):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    handle.publish_anchor(_state(1.2).items(), revision="r2")
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    handle.publish(_state(1.3).items(), revision="r3")
+    assert core.revisions[-1]["parentRevision"] == "r2", (
+        "r1 belongs to a chain the handle already left; its rejection changes nothing"
+    )
+
+
+def test_superseded_parent_does_not_reanchor(handle):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [{"state": "Superseded"}]
+    with pytest.raises(RevisionSuperseded):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert core.revisions[-1]["parentRevision"] == "r1"
+
+
+def test_parent_seen_active_skips_the_status_read(handle, monkeypatch):
+    core = handle._test_core
+    reads = []
+    real = core.rl_get_revision
+
+    def counting(policy, revision):
+        reads.append(revision)
+        return real(policy, revision)
+
+    monkeypatch.setattr(core, "rl_get_revision", counting)
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.wait_until_active("r0", poll_interval=0.01)
+    reads.clear()
+    handle.publish(_state(1.1).items(), revision="r1")
+    assert reads == [], "a parent already seen Active needs no status read"
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert reads == ["r1"], "an unconfirmed parent is read exactly once"
+    handle.publish(_state(1.3).items(), revision="r3")
+    assert reads == ["r1", "r2"]
+
+
+def test_failed_parent_status_read_does_not_block_the_patch(handle, monkeypatch):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+
+    def broken(policy, revision):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(core, "rl_get_revision", broken)
+    handle.publish(_state(1.1).items(), revision="r1")
+    assert core.revisions[-1]["parentRevision"] == "r0"
+
+
+def test_explicit_anchor_clears_a_pending_reanchor(handle):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    core.revision_states["r0"] = [{"state": "Rejected"}]
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r0", poll_interval=0.01)
+    handle.publish_anchor(_state(1.1).items(), revision="r1")
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert core.revisions[-1]["parentRevision"] == "r1"
+
+
 def test_revision_grammar_is_validated_before_any_work(handle):
     with pytest.raises(ValueError, match="letter-or-digit edges"):
         handle.publish_anchor(_state().items(), revision="-bad-")

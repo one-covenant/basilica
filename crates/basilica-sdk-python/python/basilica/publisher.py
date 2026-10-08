@@ -82,8 +82,10 @@ class RevisionRejected(BasilicaError):
     gate.
 
     The previous revision keeps serving everywhere; the artifact and manifest
-    remain for post-mortem. Publishing a corrected revision is the way
-    forward: a Rejected record is terminal.
+    remain for post-mortem. A Rejected record is terminal, and no replica
+    holds its state, so the handle that published it (or any revision
+    chained on it) re-anchors on its next ``publish``: the next revision is a
+    full anchor rather than a patch diffed against state the fleet refused.
     """
 
 
@@ -384,6 +386,14 @@ class RlPolicyHandle:
     accumulated — late-join replay cost stays bounded without the trainer
     thinking about it. ``publish_anchor`` remains available for explicit
     checkpoint-style anchoring.
+
+    Fleet rejection: the registry accepting a revision does not mean the
+    fleet applied it. When a revision of the current chain (the last anchor
+    and the patches after it) is Rejected, no replica holds that state, so
+    every patch diffed against it would be rejected too. ``publish`` then
+    promotes to an anchor. The handle learns of the rejection from
+    ``wait_until_active``, or, before encoding a patch, from one status read
+    of the parent when the parent was not yet seen Active.
     """
 
     def __init__(
@@ -426,6 +436,13 @@ class RlPolicyHandle:
         self._anchor_digest: Optional[str] = None
         self._step = 0
         self._patches_since_anchor = 0
+        # The current chain (last anchor + the patches after it), the members
+        # seen Active, and whether one was Rejected. `wait_until_active` runs
+        # outside `self._lock` (a publish can hold it for minutes), so it only
+        # does GIL-atomic reads of `_chain` and plain attribute writes.
+        self._chain: set = set()
+        self._seen_active: set = set()
+        self._needs_anchor = False
 
     # -- internals ---------------------------------------------------------
 
@@ -579,6 +596,9 @@ class RlPolicyHandle:
         self._parent = revision
         self._anchor_digest = state_digest
         self._patches_since_anchor = 0
+        self._chain = {revision}
+        self._seen_active = set()
+        self._needs_anchor = False
         return resp
 
     def _publish_patch_locked(self, named: Iterable[Tuple[str, Any]], revision: str) -> dict:
@@ -624,7 +644,27 @@ class RlPolicyHandle:
         self._step = step
         self._parent = revision
         self._patches_since_anchor += 1
+        self._chain.add(revision)
         return resp
+
+    def _parent_rejected(self) -> bool:
+        """Whether the diff base's revision was Rejected by the fleet.
+
+        One status read, skipped when the parent was already seen Active.
+        Best effort: a failed read (network, or the parent aged out of the
+        window) returns False and the patch goes ahead, as it did before
+        this check existed.
+        """
+        if self._parent is None or self._parent in self._seen_active:
+            return False
+        try:
+            rec = json.loads(self._core.rl_get_revision(self.name, self._parent))
+        except Exception:  # noqa: BLE001 - advisory read, never blocks a publish
+            return False
+        state = rec.get("state")
+        if state == "Active":
+            self._seen_active.add(self._parent)
+        return state == "Rejected"
 
     # -- public surface ----------------------------------------------------
 
@@ -647,8 +687,9 @@ class RlPolicyHandle:
         """Publish the state as a sparse patch over the last published revision.
 
         Transparently promotes to an anchor when the handle has no diff base
-        yet, or when ``anchor_every`` patches have accumulated since the last
-        anchor (default 30 — the late-join replay bound). Raises
+        yet, when ``anchor_every`` patches have accumulated since the last
+        anchor (default 30, the late-join replay bound), or when a revision
+        of the current chain was Rejected by the fleet. Raises
         :class:`NonFiniteWeights` (nothing uploaded, handle unchanged) if any
         tensor holds NaN or Inf. Thread-safe: publishes on one handle
         serialize.
@@ -656,7 +697,12 @@ class RlPolicyHandle:
         rev = _validate_revision(revision)
         with self._lock:
             named = _refuse_non_finite(named_tensors, rev)
-            if self._snapshot is None or self._patches_since_anchor >= self._anchor_every:
+            if (
+                self._snapshot is None
+                or self._patches_since_anchor >= self._anchor_every
+                or self._needs_anchor
+                or self._parent_rejected()
+            ):
                 return self._publish_anchor_locked(named, rev)
             return self._publish_patch_locked(named, rev)
 
@@ -674,6 +720,8 @@ class RlPolicyHandle:
         :class:`RevisionSuperseded` when a newer revision won the race
         (newest-wins is the platform contract). Times out with
         :class:`BasilicaError` — the revision may still activate later.
+        After a rejection of the handle's current chain, the next
+        ``publish`` is an anchor.
         """
         rev = _validate_revision(revision)
         deadline = time.monotonic() + timeout
@@ -681,8 +729,14 @@ class RlPolicyHandle:
             rec = json.loads(self._core.rl_get_revision(self.name, rev))
             state = rec.get("state")
             if state == "Active":
+                if rev in self._chain:
+                    self._seen_active.add(rev)
                 return rec
             if state == "Rejected":
+                if rev in self._chain:
+                    # No replica holds this state: the next publish must not
+                    # diff against it (or against anything chained on it).
+                    self._needs_anchor = True
                 # Surface the platform's own classification verbatim. The
                 # operator records a reason class token (RevisionApplyFailed,
                 # RevisionStateMismatch, RevisionArtifactMismatch, ...) plus a
