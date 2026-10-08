@@ -363,6 +363,56 @@ def test_failed_parent_status_read_does_not_block_the_patch(handle, monkeypatch)
     assert core.revisions[-1]["parentRevision"] == "r0"
 
 
+def test_failed_reanchor_keeps_the_reanchor_pending(handle, monkeypatch):
+    # The parent read found r1 Rejected, but the anchor publish failed. A
+    # later publish whose status read also fails must still re-anchor, never
+    # patch against the refused r1.
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    good_upload = handle._upload
+
+    def broken_upload(key, path):
+        raise RuntimeError("upload failed")
+
+    monkeypatch.setattr(handle, "_upload", broken_upload)
+    with pytest.raises(PublishError):
+        handle.publish(_state(1.2).items(), revision="r2")
+    monkeypatch.setattr(handle, "_upload", good_upload)
+
+    def broken_read(policy, revision):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(core, "rl_get_revision", broken_read)
+    handle.publish(_state(1.2).items(), revision="r3")
+    assert _is_anchor(core.revisions[-1])
+
+
+def test_rejection_seen_after_the_chain_moved_on_does_not_reanchor(
+    handle, monkeypatch
+):
+    # A new anchor starts a new chain while wait_until_active is polling a
+    # revision of the old one; the late Rejected must not flag the new chain.
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    real = core.rl_get_revision
+
+    def read_then_reanchor(policy, revision):
+        if revision == "r1":
+            handle.publish_anchor(_state(1.2).items(), revision="r2")
+            return json.dumps({"revision": "r1", "state": "Rejected"})
+        return real(policy, revision)
+
+    monkeypatch.setattr(core, "rl_get_revision", read_then_reanchor)
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    monkeypatch.setattr(core, "rl_get_revision", real)
+    handle.publish(_state(1.3).items(), revision="r3")
+    assert core.revisions[-1]["parentRevision"] == "r2"
+
+
 def test_explicit_anchor_clears_a_pending_reanchor(handle):
     core = handle._test_core
     handle.publish(_state(1.0).items(), revision="r0")

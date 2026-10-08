@@ -438,8 +438,11 @@ class RlPolicyHandle:
         self._patches_since_anchor = 0
         # The current chain (last anchor + the patches after it), the members
         # seen Active, and whether one was Rejected. `wait_until_active` runs
-        # outside `self._lock` (a publish can hold it for minutes), so it only
-        # does GIL-atomic reads of `_chain` and plain attribute writes.
+        # outside `self._lock` (a publish can hold it for minutes), so these
+        # three move together under `_chain_lock`, held only for the update
+        # itself (never across a status read or an upload): a rejection seen
+        # for the old chain can then never land after a new anchor reset it.
+        self._chain_lock = threading.Lock()
         self._chain: set = set()
         self._seen_active: set = set()
         self._needs_anchor = False
@@ -596,9 +599,10 @@ class RlPolicyHandle:
         self._parent = revision
         self._anchor_digest = state_digest
         self._patches_since_anchor = 0
-        self._chain = {revision}
-        self._seen_active = set()
-        self._needs_anchor = False
+        with self._chain_lock:
+            self._chain = {revision}
+            self._seen_active = set()
+            self._needs_anchor = False
         return resp
 
     def _publish_patch_locked(self, named: Iterable[Tuple[str, Any]], revision: str) -> dict:
@@ -644,7 +648,8 @@ class RlPolicyHandle:
         self._step = step
         self._parent = revision
         self._patches_since_anchor += 1
-        self._chain.add(revision)
+        with self._chain_lock:
+            self._chain.add(revision)
         return resp
 
     def _parent_rejected(self) -> bool:
@@ -653,17 +658,25 @@ class RlPolicyHandle:
         One status read, skipped when the parent was already seen Active.
         Best effort: a failed read (network, or the parent aged out of the
         window) returns False and the patch goes ahead, as it did before
-        this check existed.
+        this check existed. A Rejected parent also sets `_needs_anchor`, so
+        the re-anchor stays pending until an anchor succeeds even if that
+        anchor fails and a later status read does too.
         """
-        if self._parent is None or self._parent in self._seen_active:
-            return False
+        parent = self._parent
+        with self._chain_lock:
+            if parent is None or parent in self._seen_active:
+                return False
         try:
-            rec = json.loads(self._core.rl_get_revision(self.name, self._parent))
+            rec = json.loads(self._core.rl_get_revision(self.name, parent))
         except Exception:  # noqa: BLE001 - advisory read, never blocks a publish
             return False
         state = rec.get("state")
-        if state == "Active":
-            self._seen_active.add(self._parent)
+        with self._chain_lock:
+            if parent in self._chain:
+                if state == "Active":
+                    self._seen_active.add(parent)
+                elif state == "Rejected":
+                    self._needs_anchor = True
         return state == "Rejected"
 
     # -- public surface ----------------------------------------------------
@@ -729,14 +742,16 @@ class RlPolicyHandle:
             rec = json.loads(self._core.rl_get_revision(self.name, rev))
             state = rec.get("state")
             if state == "Active":
-                if rev in self._chain:
-                    self._seen_active.add(rev)
+                with self._chain_lock:
+                    if rev in self._chain:
+                        self._seen_active.add(rev)
                 return rec
             if state == "Rejected":
-                if rev in self._chain:
-                    # No replica holds this state: the next publish must not
-                    # diff against it (or against anything chained on it).
-                    self._needs_anchor = True
+                with self._chain_lock:
+                    if rev in self._chain:
+                        # No replica holds this state: the next publish must
+                        # not diff against it (or anything chained on it).
+                        self._needs_anchor = True
                 # Surface the platform's own classification verbatim. The
                 # operator records a reason class token (RevisionApplyFailed,
                 # RevisionStateMismatch, RevisionArtifactMismatch, ...) plus a
