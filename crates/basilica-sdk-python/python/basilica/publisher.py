@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 import threading
 import time
@@ -73,13 +74,17 @@ DEFAULT_ENCODE_WORKERS = 4
 class RevisionRejected(BasilicaError):
     """The fleet refused this revision.
 
-    The platform records why on the revision status as a class token
-    (``rejectedReason``) plus human text (``rejectedDetail``): an integrity
-    failure (a state or artifact digest mismatch) or an apply failure with no
-    integrity implication (for example an unreachable serving endpoint). This
-    exception surfaces that reason and detail verbatim, so the report points
-    at the subsystem that actually failed rather than always at the integrity
-    gate.
+    The platform records why as a class token plus human text: an integrity
+    failure (``RevisionStateMismatch``, ``RevisionArtifactMismatch``) or an
+    apply failure with no integrity implication (``RevisionApplyFailed``, for
+    example an unreachable serving endpoint). ``reason`` and ``detail`` carry
+    them when known, and the message quotes them, so the report points at the
+    subsystem that actually failed rather than always at the integrity gate.
+
+    The public revision record does not carry the reason; the serving
+    session's ``Revision`` condition does. ``wait_until_active(...,
+    session=<uid>)`` reads it from there. Without a session, ``reason`` and
+    ``detail`` are None and the message says where to look.
 
     The previous revision keeps serving everywhere; the artifact and manifest
     remain for post-mortem. A Rejected record is terminal, and no replica
@@ -87,6 +92,42 @@ class RevisionRejected(BasilicaError):
     chained on it) re-anchors on its next ``publish``: the next revision is a
     full anchor rather than a patch diffed against state the fleet refused.
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: Optional[str] = None,
+        detail: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.reason = reason
+        self.detail = detail
+
+
+#: The session surface's ``Revision`` condition message for a rejection:
+#: ``revision "<rev>" was rejected (<Reason>[: <detail>]); the prior ...``.
+_REJECTED_CONDITION = re.compile(
+    r'^revision "(?P<rev>[^"]+)" was rejected \((?P<reason>[A-Za-z]+)'
+    r"(?:: (?P<detail>.*))?\); the prior revision keeps serving$",
+    re.DOTALL,
+)
+
+
+def _rejection_from_session(core: Any, session: str, revision: str):
+    """(reason, detail) for ``revision`` from the session's ``Revision``
+    condition, or None. Best effort: any read or parse failure is None."""
+    try:
+        conditions = json.loads(core.rl_get_session(session)).get("conditions") or []
+    except Exception:  # noqa: BLE001 - advisory read, the rejection still raises
+        return None
+    for c in conditions:
+        if c.get("type") != "Revision":
+            continue
+        m = _REJECTED_CONDITION.match(c.get("message") or "")
+        if m and m.group("rev") == revision:
+            return m.group("reason"), m.group("detail")
+    return None
 
 
 class RevisionSuperseded(BasilicaError):
@@ -712,6 +753,7 @@ class RlPolicyHandle:
         *,
         timeout: float = 1800.0,
         poll_interval: float = 5.0,
+        session: Optional[str] = None,
     ) -> dict:
         """Block until the fleet confirms the revision (state ``Active``).
 
@@ -722,6 +764,10 @@ class RlPolicyHandle:
         :class:`BasilicaError` — the revision may still activate later.
         After a rejection of the handle's current chain, the next
         ``publish`` is an anchor.
+
+        ``session`` (a session uid serving this policy) lets a rejection
+        carry its reason: the public revision record omits it, so it is read
+        from that session's ``Revision`` condition, best effort.
         """
         rev = _validate_revision(revision)
         deadline = time.monotonic() + timeout
@@ -745,11 +791,21 @@ class RlPolicyHandle:
                 # one: fall back to a neutral message when neither is present.
                 reason = rec.get("rejectedReason")
                 detail = rec.get("rejectedDetail")
+                if reason is None and detail is None and session is not None:
+                    found = _rejection_from_session(self._core, session, rev)
+                    if found is not None:
+                        reason, detail = found
                 why = ": ".join(p for p in (reason, detail) if p)
-                raise RevisionRejected(
-                    f"revision {rev!r} was rejected by the fleet"
-                    + (f": {why}" if why else "")
-                )
+                if why:
+                    msg = f"revision {rev!r} was rejected by the fleet: {why}"
+                else:
+                    msg = (
+                        f"revision {rev!r} was rejected by the fleet; the "
+                        "reason is on the serving session's Revision condition "
+                        "(client.rl.get_session(uid)['conditions'], or pass "
+                        "session=uid here)"
+                    )
+                raise RevisionRejected(msg, reason=reason, detail=detail)
             if state == "Superseded":
                 raise RevisionSuperseded(
                     f"revision {rev!r} was superseded by a newer publish"

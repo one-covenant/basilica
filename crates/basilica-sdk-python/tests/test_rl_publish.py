@@ -374,6 +374,96 @@ def test_explicit_anchor_clears_a_pending_reanchor(handle):
     assert core.revisions[-1]["parentRevision"] == "r1"
 
 
+def _rejected_condition(rev, reason, detail=None):
+    # The exact shape the session GET renders (rl_sessions.rs, T7 conditions).
+    tail = f": {detail}" if detail else ""
+    return {
+        "type": "Revision",
+        "reason": "Rejected",
+        "message": f'revision "{rev}" was rejected ({reason}{tail}); the prior '
+        "revision keeps serving",
+    }
+
+
+def test_rejection_reason_is_read_from_the_session_condition(handle, monkeypatch):
+    # The public revision record omits the reason (kind rig, Oct 8); the
+    # session's Revision condition carries it.
+    core = handle._test_core
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    detail = "patch r1 failed the digest gate: lm_head.weight: mismatch"
+    conditions = [
+        {"type": "Numerics", "reason": "Ok", "message": "fine"},
+        _rejected_condition("r1", "RevisionApplyFailed", detail),
+    ]
+    monkeypatch.setattr(
+        core,
+        "rl_get_session",
+        lambda uid: json.dumps({"id": uid, "conditions": conditions}),
+        raising=False,
+    )
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01, session="s-1")
+    assert ei.value.reason == "RevisionApplyFailed"
+    assert ei.value.detail == detail
+    assert "RevisionApplyFailed" in str(ei.value) and detail in str(ei.value)
+
+
+def test_session_condition_for_another_revision_is_ignored(handle, monkeypatch):
+    core = handle._test_core
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    conditions = [_rejected_condition("r2", "RevisionStateMismatch")]
+    monkeypatch.setattr(
+        core,
+        "rl_get_session",
+        lambda uid: json.dumps({"conditions": conditions}),
+        raising=False,
+    )
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01, session="s-1")
+    assert ei.value.reason is None
+    assert "RevisionStateMismatch" not in str(ei.value)
+
+
+def test_rejection_without_a_session_says_where_the_reason_is(handle):
+    core = handle._test_core
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01)
+    assert ei.value.reason is None and ei.value.detail is None
+    assert "Revision condition" in str(ei.value)
+    assert "session=" in str(ei.value)
+
+
+def test_failed_session_read_still_raises_the_rejection(handle, monkeypatch):
+    core = handle._test_core
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+
+    def broken(uid):
+        raise RuntimeError("503")
+
+    monkeypatch.setattr(core, "rl_get_session", broken, raising=False)
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01, session="s-1")
+    assert ei.value.reason is None
+
+
+def test_reason_on_the_revision_record_wins_and_skips_the_session_read(
+    handle, monkeypatch
+):
+    core = handle._test_core
+    core.revision_states["r1"] = [
+        {"state": "Rejected", "rejectedReason": "RevisionArtifactMismatch"}
+    ]
+
+    def must_not_read(uid):
+        raise AssertionError("the session must not be read")
+
+    monkeypatch.setattr(core, "rl_get_session", must_not_read, raising=False)
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01, session="s-1")
+    assert ei.value.reason == "RevisionArtifactMismatch"
+
+
 def test_revision_grammar_is_validated_before_any_work(handle):
     with pytest.raises(ValueError, match="letter-or-digit edges"):
         handle.publish_anchor(_state().items(), revision="-bad-")

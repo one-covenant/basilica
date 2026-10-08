@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status read of the parent before encoding a patch when the parent has
   not been seen Active (trainers that never wait are covered too).
 
+- **`RevisionRejected` now carries the rejection reason.** The public
+  revision record never includes `rejectedReason`/`rejectedDetail` (the
+  platform keeps them on the session surface), so every rejection read
+  "was rejected by the fleet" with no class. `wait_until_active()` takes an
+  optional `session=` uid and reads the reason from that session's
+  `Revision` condition; the exception exposes `reason` and `detail`
+  (`RevisionApplyFailed`, `RevisionStateMismatch`, ...). Without a session,
+  the message says where the reason is.
+
 ## [0.36.4] - 2026-10-01
 
 ### Changed
