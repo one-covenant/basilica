@@ -245,6 +245,275 @@ def test_non_integrity_rejection_is_not_reported_as_digest_mismatch(handle):
     assert "digest mismatch" not in msg2
 
 
+def _is_anchor(body):
+    uri = body["artifact"]["uri"]
+    return "parentRevision" not in body and uri.endswith("/anchor.safetensors")
+
+
+def test_rejected_revision_makes_the_next_publish_an_anchor(handle):
+    # The fleet refused r1 after the registry accepted it: no replica holds
+    # r1's state, so a patch diffed against it would be rejected too (kind
+    # rig, Oct 8: every later patch on the handle was). The next publish
+    # must re-anchor, and the chain continues from that anchor.
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [
+        {"state": "Rejected", "rejectedReason": "RevisionApplyFailed"}
+    ]
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert _is_anchor(core.revisions[-1]), (
+        "the publish after a rejection must be an anchor"
+    )
+    handle.publish(_state(1.3).items(), revision="r3")
+    assert core.revisions[-1]["parentRevision"] == "r2", (
+        "the chain resumes from the new anchor"
+    )
+
+
+def test_reanchor_matches_a_fresh_anchor_of_the_same_state(handle):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    handle.publish(_state(1.2).items(), revision="r2")
+    fresh = RlPolicyHandle(
+        FakeCore(),
+        "math-policy",
+        storage=PolicyStorage(bucket="my-weights", endpoint="https://acc.example"),
+    )
+    fresh._upload = lambda key, path: f"s3://my-weights/{key}"
+    fresh.publish_anchor(_state(1.2).items(), revision="x")
+    assert (
+        core.revisions[-1]["expectedStateDigest"]
+        == fresh._core.revisions[-1]["expectedStateDigest"]
+    )
+
+
+def test_rejected_parent_is_detected_without_wait_until_active(handle):
+    # A trainer that never waits still must not chain on a refused revision:
+    # publish reads the parent's status once before encoding a patch.
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert _is_anchor(core.revisions[-1])
+
+
+def test_rejection_of_an_older_chain_does_not_reanchor(handle):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    handle.publish_anchor(_state(1.2).items(), revision="r2")
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    handle.publish(_state(1.3).items(), revision="r3")
+    assert core.revisions[-1]["parentRevision"] == "r2", (
+        "r1 belongs to a chain the handle already left; its rejection changes nothing"
+    )
+
+
+def test_superseded_parent_does_not_reanchor(handle):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [{"state": "Superseded"}]
+    with pytest.raises(RevisionSuperseded):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert core.revisions[-1]["parentRevision"] == "r1"
+
+
+def test_parent_seen_active_skips_the_status_read(handle, monkeypatch):
+    core = handle._test_core
+    reads = []
+    real = core.rl_get_revision
+
+    def counting(policy, revision):
+        reads.append(revision)
+        return real(policy, revision)
+
+    monkeypatch.setattr(core, "rl_get_revision", counting)
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.wait_until_active("r0", poll_interval=0.01)
+    reads.clear()
+    handle.publish(_state(1.1).items(), revision="r1")
+    assert reads == [], "a parent already seen Active needs no status read"
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert reads == ["r1"], "an unconfirmed parent is read exactly once"
+    handle.publish(_state(1.3).items(), revision="r3")
+    assert reads == ["r1", "r2"]
+
+
+def test_failed_parent_status_read_does_not_block_the_patch(handle, monkeypatch):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+
+    def broken(policy, revision):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(core, "rl_get_revision", broken)
+    handle.publish(_state(1.1).items(), revision="r1")
+    assert core.revisions[-1]["parentRevision"] == "r0"
+
+
+def test_failed_reanchor_keeps_the_reanchor_pending(handle, monkeypatch):
+    # The parent read found r1 Rejected, but the anchor publish failed. A
+    # later publish whose status read also fails must still re-anchor, never
+    # patch against the refused r1.
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    good_upload = handle._upload
+
+    def broken_upload(key, path):
+        raise RuntimeError("upload failed")
+
+    monkeypatch.setattr(handle, "_upload", broken_upload)
+    with pytest.raises(PublishError):
+        handle.publish(_state(1.2).items(), revision="r2")
+    monkeypatch.setattr(handle, "_upload", good_upload)
+
+    def broken_read(policy, revision):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(core, "rl_get_revision", broken_read)
+    handle.publish(_state(1.2).items(), revision="r3")
+    assert _is_anchor(core.revisions[-1])
+
+
+def test_rejection_seen_after_the_chain_moved_on_does_not_reanchor(
+    handle, monkeypatch
+):
+    # A new anchor starts a new chain while wait_until_active is polling a
+    # revision of the old one; the late Rejected must not flag the new chain.
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    handle.publish(_state(1.1).items(), revision="r1")
+    real = core.rl_get_revision
+
+    def read_then_reanchor(policy, revision):
+        if revision == "r1":
+            handle.publish_anchor(_state(1.2).items(), revision="r2")
+            return json.dumps({"revision": "r1", "state": "Rejected"})
+        return real(policy, revision)
+
+    monkeypatch.setattr(core, "rl_get_revision", read_then_reanchor)
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r1", poll_interval=0.01)
+    monkeypatch.setattr(core, "rl_get_revision", real)
+    handle.publish(_state(1.3).items(), revision="r3")
+    assert core.revisions[-1]["parentRevision"] == "r2"
+
+
+def test_explicit_anchor_clears_a_pending_reanchor(handle):
+    core = handle._test_core
+    handle.publish(_state(1.0).items(), revision="r0")
+    core.revision_states["r0"] = [{"state": "Rejected"}]
+    with pytest.raises(RevisionRejected):
+        handle.wait_until_active("r0", poll_interval=0.01)
+    handle.publish_anchor(_state(1.1).items(), revision="r1")
+    handle.publish(_state(1.2).items(), revision="r2")
+    assert core.revisions[-1]["parentRevision"] == "r1"
+
+
+def _rejected_condition(rev, reason, detail=None):
+    # The exact shape the session GET renders (rl_sessions.rs, T7 conditions).
+    tail = f": {detail}" if detail else ""
+    return {
+        "type": "Revision",
+        "reason": "Rejected",
+        "message": f'revision "{rev}" was rejected ({reason}{tail}); the prior '
+        "revision keeps serving",
+    }
+
+
+def test_rejection_reason_is_read_from_the_session_condition(handle, monkeypatch):
+    # The public revision record omits the reason (kind rig, Oct 8); the
+    # session's Revision condition carries it.
+    core = handle._test_core
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    detail = "patch r1 failed the digest gate: lm_head.weight: mismatch"
+    conditions = [
+        {"type": "Numerics", "reason": "Ok", "message": "fine"},
+        _rejected_condition("r1", "RevisionApplyFailed", detail),
+    ]
+    monkeypatch.setattr(
+        core,
+        "rl_get_session",
+        lambda uid: json.dumps({"id": uid, "conditions": conditions}),
+        raising=False,
+    )
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01, session="s-1")
+    assert ei.value.reason == "RevisionApplyFailed"
+    assert ei.value.detail == detail
+    assert "RevisionApplyFailed" in str(ei.value) and detail in str(ei.value)
+
+
+def test_session_condition_for_another_revision_is_ignored(handle, monkeypatch):
+    core = handle._test_core
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    conditions = [_rejected_condition("r2", "RevisionStateMismatch")]
+    monkeypatch.setattr(
+        core,
+        "rl_get_session",
+        lambda uid: json.dumps({"conditions": conditions}),
+        raising=False,
+    )
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01, session="s-1")
+    assert ei.value.reason is None
+    assert "RevisionStateMismatch" not in str(ei.value)
+
+
+def test_rejection_without_a_session_says_where_the_reason_is(handle):
+    core = handle._test_core
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01)
+    assert ei.value.reason is None and ei.value.detail is None
+    assert "Revision condition" in str(ei.value)
+    assert "session=" in str(ei.value)
+
+
+def test_failed_session_read_still_raises_the_rejection(handle, monkeypatch):
+    core = handle._test_core
+    core.revision_states["r1"] = [{"state": "Rejected"}]
+
+    def broken(uid):
+        raise RuntimeError("503")
+
+    monkeypatch.setattr(core, "rl_get_session", broken, raising=False)
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01, session="s-1")
+    assert ei.value.reason is None
+
+
+def test_reason_on_the_revision_record_wins_and_skips_the_session_read(
+    handle, monkeypatch
+):
+    core = handle._test_core
+    core.revision_states["r1"] = [
+        {"state": "Rejected", "rejectedReason": "RevisionArtifactMismatch"}
+    ]
+
+    def must_not_read(uid):
+        raise AssertionError("the session must not be read")
+
+    monkeypatch.setattr(core, "rl_get_session", must_not_read, raising=False)
+    with pytest.raises(RevisionRejected) as ei:
+        handle.wait_until_active("r1", poll_interval=0.01, session="s-1")
+    assert ei.value.reason == "RevisionArtifactMismatch"
+
+
 def test_revision_grammar_is_validated_before_any_work(handle):
     with pytest.raises(ValueError, match="letter-or-digit edges"):
         handle.publish_anchor(_state().items(), revision="-bad-")

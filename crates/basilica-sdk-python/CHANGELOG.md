@@ -20,6 +20,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settings as before. R2 remains the default and is unchanged; `endpoint`
   is now optional only for `backend="s3"`.
 
+### Fixed
+
+- **A rejected revision no longer poisons the publisher's diff base.** The
+  handle advanced its diff base as soon as the registry accepted a
+  revision, so after the fleet rejected one, every later `publish()` was a
+  patch on state no replica held, and was rejected too until the next
+  cadence anchor (up to `anchor_every` publishes). Now, when a revision of
+  the current chain is Rejected, the next `publish()` is a full anchor. The
+  handle learns of the rejection from `wait_until_active()`, or from one
+  status read of the parent before encoding a patch when the parent has
+  not been seen Active (trainers that never wait are covered too).
+
+- **`RevisionRejected` now carries the rejection reason.** The public
+  revision record never includes `rejectedReason`/`rejectedDetail` (the
+  platform keeps them on the session surface), so every rejection read
+  "was rejected by the fleet" with no class. `wait_until_active()` takes an
+  optional `session=` uid and reads the reason from that session's
+  `Revision` condition; the exception exposes `reason` and `detail`
+  (`RevisionApplyFailed`, `RevisionStateMismatch`, ...). Without a session,
+  the message says where the reason is.
+
 ## [0.36.4] - 2026-10-01
 
 ### Changed
