@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.5] - 2026-10-12
+
 ### Added
 
 - **PULSE patch format v3 (opt-in).** Format v2's values with the changed
@@ -85,8 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is raised; it subclasses `SessionServingError`, so existing handlers
   keep working. Other errors, including `StaleRevisionError`, are raised
   at once as before.
-
-### Fixed
 
 - **A rejected revision no longer poisons the publisher's diff base.** The
   handle advanced its diff base as soon as the registry accepted a
