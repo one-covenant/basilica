@@ -86,6 +86,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keep working. Other errors, including `StaleRevisionError`, are raised
   at once as before.
 
+### Fixed
+
+- **A rejected revision no longer poisons the publisher's diff base.** The
+  handle advanced its diff base as soon as the registry accepted a
+  revision, so after the fleet rejected one, every later `publish()` was a
+  patch on state no replica held, and was rejected too until the next
+  cadence anchor (up to `anchor_every` publishes). Now, when a revision of
+  the current chain is Rejected, the next `publish()` is a full anchor. The
+  handle learns of the rejection from `wait_until_active()`, or from one
+  status read of the parent before encoding a patch when the parent has
+  not been seen Active (trainers that never wait are covered too).
+
 ## [0.36.4] - 2026-10-01
 
 ### Changed
