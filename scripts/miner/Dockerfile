@@ -16,6 +16,9 @@ RUN rustup component add rustfmt
 
 WORKDIR /workspace
 
+# bittensor-rs: generate the chain API from bundled metadata, not the live chain.
+ENV BITTENSOR_OFFLINE=1
+
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
