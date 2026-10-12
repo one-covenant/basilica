@@ -69,6 +69,14 @@ DEFAULT_ENCODE_THREADS = 1
 ENCODE_WORKERS_ENV = "BASILICA_PUBLISH_ENCODE_WORKERS"
 DEFAULT_ENCODE_WORKERS = 4
 
+#: PULSE patch format the publisher emits: 1 (C2.4), 2 (#2156: rice-gap
+#: indices and zigzag-delta values, about half the bytes of v1) or 3 (v2 with
+#: indices coded per class of the old cell's exponent, about half again). Set
+#: 2 or 3 only once every consumer of the policy decodes it; anchors are
+#: unaffected.
+PATCH_FORMAT_ENV = "BASILICA_PUBLISH_PATCH_FORMAT"
+DEFAULT_PATCH_FORMAT = 1
+
 
 class RevisionRejected(BasilicaError):
     """The fleet refused this revision.
@@ -182,6 +190,18 @@ def _encode_threads() -> int:
 
 def _encode_workers() -> int:
     return _env_int(ENCODE_WORKERS_ENV, DEFAULT_ENCODE_WORKERS, 1)
+
+
+def _patch_format() -> int:
+    value = _env_int(PATCH_FORMAT_ENV, DEFAULT_PATCH_FORMAT, 1)
+    if value not in (1, 2, 3):
+        warnings.warn(
+            f"{PATCH_FORMAT_ENV}={value} is not 1, 2 or 3; using {DEFAULT_PATCH_FORMAT}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return DEFAULT_PATCH_FORMAT
+    return value
 
 
 # Overlapping scopes (two handles encoding at once) share one saved value:
@@ -626,6 +646,7 @@ class RlPolicyHandle:
                 model=model,
                 base_state_digest=self._snapshot.digest(),
                 workers=_encode_workers(),
+                format_version=_patch_format(),
             )
         key = self._artifact_key(revision, "patch.pulsept")
         uploaded = False
@@ -735,6 +756,11 @@ class RlPolicyHandle:
         :class:`BasilicaError` — the revision may still activate later.
         After a rejection of the handle's current chain, the next
         ``publish`` is an anchor.
+
+        Returns the revision record. It may carry a ``probes`` block (see
+        :meth:`revision_probes`), but replicas report probes after they
+        activate, so the record returned here often has none yet; poll
+        :meth:`revision_probes` for them.
         """
         rev = _validate_revision(revision)
         deadline = time.monotonic() + timeout
@@ -784,3 +810,28 @@ class RlPolicyHandle:
                     f"(last state: {state!r})"
                 )
             time.sleep(poll_interval)
+
+    def revision_probes(self, revision: str) -> Optional[dict]:
+        """The numerics probes the serving replicas reported for
+        ``revision``, or ``None`` before the first one arrives (or from a
+        server without probes).
+
+        After each activation every session replica scores 8 fixed prompts
+        by prefill and by decode and compares the logprobs. ``k3`` is the
+        token-mean of ``e^d - d - 1`` over the logprob differences ``d``: a
+        non-negative KL estimate that is near zero when the two agree. The
+        dict carries ``status`` (the worst replica's band: ``ok`` below
+        1e-3, ``warn`` from 1e-3 to 1.3e-2 or above 5x the session
+        baseline, ``collapse`` at 1.3e-2 or more, ``error`` only when every
+        replica's probe failed), ``k3Max``, ``worstReplica`` and
+        ``replicas`` (each with ``replica``, ``status``, ``tokens``,
+        ``k3``, ``k1``, ``maxAbs``, ``clipFrac``, ``observedAt``; numbers
+        may be absent).
+
+        Probes are report-only: they never reject or roll back a revision.
+        They arrive shortly after ``Active``, so poll this after
+        :meth:`wait_until_active` returns.
+        """
+        rev = _validate_revision(revision)
+        rec = json.loads(self._core.rl_get_revision(self.name, rev))
+        return rec.get("probes")

@@ -50,6 +50,20 @@ mpirun / accelerate), pass `command=[...]` and the same
 | `21_distributed_torchrun.py` | BYO `command=[torchrun ...]` factory + mid-run `scale()` | `python3 21_distributed_torchrun.py` |
 | `22_distributed_with_bench.py` | Bench-result inspection + JSON dump for offline aggregation | `python3 22_distributed_with_bench.py` |
 
+## RL: Bring Your Own Trainer (byot/)
+
+Your trainer, Basilica's vLLM rollout fleet: publish anchors and sparse
+patches to your own bucket, sample in the training dialect (token ids and
+sampler logprobs) and train with GRPO. Staging only during the beta. See
+[`byot/README.md`](byot/README.md) and [`byot/BYOT-GUIDE.md`](byot/BYOT-GUIDE.md).
+
+| Example | Description | Run |
+|---------|-------------|-----|
+| `byot/byot-demo.sh` | The BYOT contract end to end with a synthetic weight change | `bash byot/byot-demo.sh` |
+| `byot/byot-train.sh` | Real GRPO on a rented trainer GPU against a rollout session | `bash byot/byot-train.sh` |
+| `byot/byot_grpo_minimal.py` | Minimal GRPO trainer to copy | `python3 byot/byot_grpo_minimal.py` |
+| `byot/fsdp/` | Multi-GPU FSDP2 trainer (Qwen3-30B-A3B) | `bash byot/fsdp/run-qwen3-30b.sh` |
+
 ## Advanced Examples (06-23)
 
 | Example | Description | Run |
