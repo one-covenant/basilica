@@ -514,6 +514,54 @@ def test_reason_on_the_revision_record_wins_and_skips_the_session_read(
     assert ei.value.reason == "RevisionArtifactMismatch"
 
 
+_PROBES = {
+    "status": "ok",
+    "k3Max": 0.0012,
+    "worstReplica": "pod-b",
+    "replicas": [
+        {
+            "replica": "pod-a",
+            "status": "ok",
+            "tokens": 512,
+            "k3": 0.0001,
+            "k1": -0.0004,
+            "maxAbs": 0.41,
+            "clipFrac": 0.004,
+            "observedAt": "2026-10-07T08:49:23Z",
+        }
+    ],
+}
+
+
+def test_wait_until_active_passes_probes_through(handle):
+    core = handle._test_core
+    core.revision_states["probed"] = [
+        {"state": "Loading"},
+        {"state": "Active", "probes": _PROBES},
+    ]
+    rec = handle.wait_until_active("probed", poll_interval=0.01)
+    assert rec["state"] == "Active"
+    assert rec["probes"] == _PROBES
+
+
+def test_revision_probes_returns_the_block_or_none(handle):
+    core = handle._test_core
+    # Active before any replica reported: no probes yet.
+    core.revision_states["early"] = [{"state": "Active"}]
+    assert handle.wait_until_active("early", poll_interval=0.01).get("probes") is None
+    assert handle.revision_probes("early") is None
+
+    # The probe lands shortly after; polling picks it up.
+    core.revision_states["early"] = [{"state": "Active", "probes": _PROBES}]
+    probes = handle.revision_probes("early")
+    assert probes["status"] == "ok"
+    assert probes["worstReplica"] == "pod-b"
+    assert probes["replicas"][0]["k3"] == 0.0001
+
+    with pytest.raises(ValueError, match="letter-or-digit edges"):
+        handle.revision_probes("-bad-")
+
+
 def test_revision_grammar_is_validated_before_any_work(handle):
     with pytest.raises(ValueError, match="letter-or-digit edges"):
         handle.publish_anchor(_state().items(), revision="-bad-")
@@ -925,3 +973,42 @@ def test_encode_workers_knob_parsing(monkeypatch, raw, want, warns):
             assert _encode_workers() == want
     else:
         assert _encode_workers() == want
+
+
+@pytest.mark.parametrize("version", [2, 3])
+def test_patch_format_knob_emits_v2_and_v3_with_the_same_digests(monkeypatch, version):
+    from basilica._pulse import codec
+
+    monkeypatch.delenv("BASILICA_PUBLISH_PATCH_FORMAT", raising=False)
+    v1_patches, v1_digests = _publish_chain(monkeypatch, None, None)
+    monkeypatch.setenv("BASILICA_PUBLISH_PATCH_FORMAT", str(version))
+    seen = []
+    real_build = codec.build_patch
+
+    def spy(**kw):
+        seen.append(kw["format_version"])
+        return real_build(**kw)
+
+    monkeypatch.setattr(codec, "build_patch", spy)
+    v2_patches, v2_digests = _publish_chain(monkeypatch, None, None)
+    assert seen == [version, version]
+    assert v2_digests == v1_digests  # same states, same evidence
+    assert v2_patches != v1_patches  # but different bytes on the wire
+
+
+@pytest.mark.parametrize(
+    "raw, want, warns",
+    [(None, 1, False), ("1", 1, False), ("2", 2, False), ("3", 3, False), ("4", 1, True), ("0", 1, True), ("v2", 1, True)],
+)
+def test_patch_format_knob_parsing(monkeypatch, raw, want, warns):
+    from basilica.publisher import _patch_format
+
+    if raw is None:
+        monkeypatch.delenv("BASILICA_PUBLISH_PATCH_FORMAT", raising=False)
+    else:
+        monkeypatch.setenv("BASILICA_PUBLISH_PATCH_FORMAT", raw)
+    if warns:
+        with pytest.warns(RuntimeWarning, match="BASILICA_PUBLISH_PATCH_FORMAT"):
+            assert _patch_format() == want
+    else:
+        assert _patch_format() == want
