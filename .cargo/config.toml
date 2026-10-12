@@ -4,3 +4,10 @@
 # Must match the Kubernetes version feature used in dev-dependencies/tests.
 K8S_OPENAPI_ENABLED_VERSION = "1.29"
 
+
+# bittensor-rs generates its chain API in build.rs. Without this it fetches live
+# finney metadata, so a chain upgrade breaks the build (StorageApi::alpha is now
+# alpha_v2 on finney); with it, build.rs uses the metadata bundled at the pinned
+# revision. Docker builds do not read this file: the Rust Dockerfiles set the
+# same ENV. Same fix as basilica-backend#2182.
+BITTENSOR_OFFLINE = "1"
