@@ -1,6 +1,7 @@
 //! Python bindings for the Basilica SDK
 #![allow(clippy::useless_conversion)]
 
+mod pulse_expctx;
 mod types;
 
 use basilica_sdk::{
@@ -1109,9 +1110,70 @@ impl BasilicaClient {
     }
 }
 
+/// PULSE format v3 index encode (the vendored codec's native path):
+/// old cells as u16 LE bytes, changed indices as u64 LE bytes.
+#[pyfunction]
+fn _pulse_expctx_encode<'py>(
+    py: Python<'py>,
+    old: &[u8],
+    idx: &[u8],
+) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
+    if !old.len().is_multiple_of(2) || !idx.len().is_multiple_of(8) {
+        return Err(PyValueError::new_err(
+            "old cells must be 16-bit and indices 64-bit",
+        ));
+    }
+    let out = py.detach(|| {
+        let cells: Vec<u16> = old
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        let idx: Vec<u64> = idx
+            .chunks_exact(8)
+            .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        pulse_expctx::encode(&cells, &idx).map_err(|e| e.0)
+    });
+    out.map(|b| pyo3::types::PyBytes::new(py, &b))
+        .map_err(PyValueError::new_err)
+}
+
+/// PULSE format v3 index decode: the changed indices as u64 LE bytes.
+#[pyfunction]
+fn _pulse_expctx_decode<'py>(
+    py: Python<'py>,
+    old: &[u8],
+    changed: u64,
+    stream: &[u8],
+    threads: usize,
+) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
+    if !old.len().is_multiple_of(2) {
+        return Err(PyValueError::new_err("old cells must be 16-bit"));
+    }
+    let out = py.detach(|| {
+        let cells: Vec<u16> = old
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        pulse_expctx::decode_parallel(&cells, changed, stream, threads)
+            .map(|idx| {
+                idx.iter()
+                    .flat_map(|i| i.to_le_bytes())
+                    .collect::<Vec<u8>>()
+            })
+            .map_err(|e| e.0)
+    });
+    out.map(|b| pyo3::types::PyBytes::new(py, &b))
+        .map_err(PyValueError::new_err)
+}
+
 /// Python module for Basilica SDK
 #[pymodule(gil_used = true)]
 fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // PULSE format v3 native codec (basilica._pulse.expctx)
+    m.add_function(wrap_pyfunction!(_pulse_expctx_encode, m)?)?;
+    m.add_function(wrap_pyfunction!(_pulse_expctx_decode, m)?)?;
+
     // Add constants
     m.add("DEFAULT_API_URL", DEFAULT_API_URL)?;
     m.add("DEFAULT_TIMEOUT_SECS", DEFAULT_TIMEOUT_SECS)?;

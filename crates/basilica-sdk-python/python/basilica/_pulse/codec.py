@@ -18,6 +18,11 @@ indices are ``rice-gap`` (indices.py) and values are ``zz-delta-u8esc``
 cell. Apply stays integer-only on bit patterns, so it is bit-exact (I3), but
 it reads the cells it overwrites. The header's ``formatVersion`` selects the
 decoder; v2 tensor headers also name ``valEnc``. v1 patches are unchanged.
+
+Format v3 keeps v2's values and codes the indices as ``exp-class-rice``
+(expctx.py): per class of the OLD cell's exponent byte, so the decoder also
+needs the whole old tensor, not only the cells it overwrites. Both ends hold
+it: the producer's diff base and the consumer's snapshot.
 """
 
 from __future__ import annotations
@@ -32,13 +37,17 @@ import torch
 import zstandard
 
 from .digest import format_digest, parse_digest, state_digest, tensor_digest
+from .expctx import IDX_ENC_EXPCTX, decode_indices_expctx, encode_indices_expctx
 from .indices import IDX_ENC_RICE, decode_indices, decode_indices_rice, encode_indices, encode_indices_rice
 from .values import VAL_ENC_ZZ, ValueFormatError, decode_values_zz, encode_values_zz
 
 MAGIC = b"PULSEPT1"
 FORMAT_VERSION = 1  # what encoders emit unless asked for another version
 FORMAT_VERSION_V2 = 2
-SUPPORTED_FORMAT_VERSIONS = (FORMAT_VERSION, FORMAT_VERSION_V2)
+FORMAT_VERSION_V3 = 3
+SUPPORTED_FORMAT_VERSIONS = (FORMAT_VERSION, FORMAT_VERSION_V2, FORMAT_VERSION_V3)
+# Versions whose values are zz-delta against the old cell (decoded with the old cells).
+DELTA_VALUE_VERSIONS = (FORMAT_VERSION_V2, FORMAT_VERSION_V3)
 INDEX_ENCODING = "delta-u16-esc"
 MAX_NUMEL = 2**32  # v1 first-index is u32 (C2.4)
 ZSTD_LEVEL = 1  # paper: zstd-1
@@ -104,8 +113,8 @@ class TensorEntry:
             "valBytes": len(self.val_bytes),
             "tensorDigest": format_digest(self.digest),
         }
-        if self.format_version == FORMAT_VERSION_V2:
-            h["idxEnc"] = IDX_ENC_RICE
+        if self.format_version in DELTA_VALUE_VERSIONS:
+            h["idxEnc"] = IDX_ENC_EXPCTX if self.format_version == FORMAT_VERSION_V3 else IDX_ENC_RICE
             h["valEnc"] = VAL_ENC_ZZ
         return h
 
@@ -206,10 +215,22 @@ class ParsedPatch:
         idx_start, val_start, end = self._offsets[i]
         return self._payload[idx_start:val_start], self._payload[val_start:end]
 
-    def tensor_indices(self, i: int) -> np.ndarray:
-        """Decode tensor ``i``'s changed flat indices (int64), per the patch's format."""
+    def tensor_indices(self, i: int, old: torch.Tensor | None = None, threads: int | None = None) -> np.ndarray:
+        """Decode tensor ``i``'s changed flat indices (int64), per the patch's format.
+
+        v3 decodes against the whole tensor before the apply (``old``, any
+        shape, bf16 or its int16 view); v1 and v2 ignore it. ``threads``
+        splits a v3 decode within the tensor (see ``expctx``).
+        """
         th = self.tensors[i]
         idx_b, _ = self.tensor_payload(i)
+        if self.format_version == FORMAT_VERSION_V3:
+            if old is None:
+                raise PatchFormatError("format v3 indices decode against the old tensor")
+            cells = old.reshape(-1).view(torch.int16).numpy()
+            if cells.size != th["numel"]:
+                raise PatchApplyError(f"{th['name']}: old tensor has {cells.size} cells, header says {th['numel']}")
+            return decode_indices_expctx(idx_b, th["changed"], cells, threads)
         if self.format_version == FORMAT_VERSION_V2:
             return decode_indices_rice(idx_b, th["changed"], th["numel"])
         return decode_indices(idx_b, th["changed"])
@@ -222,7 +243,7 @@ class ParsedPatch:
         """
         th = self.tensors[i]
         _, val_b = self.tensor_payload(i)
-        if self.format_version == FORMAT_VERSION_V2:
+        if self.format_version in DELTA_VALUE_VERSIONS:
             try:
                 new = decode_values_zz(val_b, old.numpy(), th["changed"])
             except ValueFormatError as e:
@@ -286,11 +307,12 @@ def _validate_tensor_headers(tensors: list[dict], version: int = FORMAT_VERSION)
     names = [t["name"] for t in tensors]
     if names != sorted(names) or len(set(names)) != len(names):
         raise PatchFormatError("tensors[] must be unique and name-ascending")
-    v2 = version == FORMAT_VERSION_V2
+    v2 = version in DELTA_VALUE_VERSIONS
+    idx_enc = {FORMAT_VERSION_V2: IDX_ENC_RICE, FORMAT_VERSION_V3: IDX_ENC_EXPCTX}.get(version, INDEX_ENCODING)
     for t in tensors:
         if t["dtype"] != "bf16":
             raise PatchFormatError(f"{t['name']}: v1 admits dtype bf16 only")
-        if t["idxEnc"] != (IDX_ENC_RICE if v2 else INDEX_ENCODING):
+        if t["idxEnc"] != idx_enc:
             raise PatchFormatError(f"{t['name']}: unknown idxEnc {t['idxEnc']!r}")
         if t["numel"] != int(np.prod(t["shape"], dtype=np.int64)) or t["numel"] >= MAX_NUMEL:
             raise PatchFormatError(f"{t['name']}: inconsistent or oversized numel")
@@ -312,13 +334,18 @@ def _encode_entry(
     """One tensor's patch entry: diff ``cur`` against ``prev``, encode, digest ``cur``.
 
     v2 encodes the new cells against the ``prev`` cells they replace, which
-    the producer holds anyway: it is the diff base.
+    the producer holds anyway: it is the diff base. v3 also codes the indices
+    against the whole ``prev`` tensor.
     """
     _check_format_version(format_version)
     idx, vals = diff_tensor(cur, prev)
-    if format_version == FORMAT_VERSION_V2:
-        old = prev.reshape(-1).view(torch.int16).numpy()[idx.astype(np.int64, copy=False)]
-        idx_bytes = encode_indices_rice(idx)
+    if format_version in DELTA_VALUE_VERSIONS:
+        prev_cells = prev.reshape(-1).view(torch.int16).numpy()
+        old = prev_cells[idx.astype(np.int64, copy=False)]
+        if format_version == FORMAT_VERSION_V3:
+            idx_bytes = encode_indices_expctx(idx, prev_cells)
+        else:
+            idx_bytes = encode_indices_rice(idx)
         vals = encode_values_zz(old, np.frombuffer(vals, dtype="<i2"))
     else:
         idx_bytes = encode_indices(idx)
@@ -485,7 +512,7 @@ class Snapshot:
             t = self._tensors[th["name"]]
             if list(t.shape) != th["shape"]:
                 raise PatchApplyError(f"{th['name']}: shape mismatch")
-            idx = patch.tensor_indices(i)
+            idx = patch.tensor_indices(i, t)
             if idx.size and int(idx[-1]) >= t.numel():
                 raise PatchApplyError(f"{th['name']}: index out of range")
             if patch.format_version == FORMAT_VERSION:
