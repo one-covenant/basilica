@@ -21,7 +21,12 @@ without one.
 
 from __future__ import annotations
 
+import email.utils
 import json
+import logging
+import math
+import random
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -40,6 +45,61 @@ class StaleRevisionError(BasilicaError):
 
 class SessionServingError(BasilicaError):
     """The session endpoint refused or failed a generate call."""
+
+
+class SessionUnavailableError(SessionServingError):
+    """The session kept answering with a retryable 503 (a replica draining,
+    or an engine fault being repaired) until the retry budget ran out.
+
+    ``error_type`` is the last refusal's type (``SessionDraining`` or
+    ``EngineFault``). A subclass of :class:`SessionServingError`, so code
+    that catches that keeps working.
+    """
+
+    def __init__(self, message: str, error_type: str):
+        super().__init__(message)
+        self.error_type = error_type
+
+
+#: 503 refusals the session's consumer uses for conditions that clear on
+#: their own: a replica in its preStop drain, and a replica whose engine
+#: weights match no revision until it reloads an anchor. Generation is safe
+#: to resend (seeded, no side effects, an asserted revision is re-checked).
+RETRYABLE_503_TYPES = frozenset({"SessionDraining", "EngineFault"})
+
+_log = logging.getLogger(__name__)
+
+
+class _Retryable(Exception):
+    """A retryable 503 from the session, raised inside ``_post_json``."""
+
+    def __init__(self, error_type: str, message: str, retry_after: Optional[float]):
+        super().__init__(message)
+        self.error_type = error_type
+        self.message = message
+        self.retry_after = retry_after
+
+
+def _retry_after(e: urllib.error.HTTPError) -> Optional[float]:
+    """``Retry-After`` in seconds: either form HTTP allows (delay-seconds or
+    an HTTP-date). ``None`` for a missing or unusable value, so the caller
+    falls back to its own backoff."""
+    value = e.headers.get("Retry-After") if e.headers is not None else None
+    if value is None:
+        return None
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            when = email.utils.parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if when is None or when.tzinfo is None:
+            return None
+        delay = when.timestamp() - time.time()
+    if not math.isfinite(delay):
+        return None
+    return max(delay, 0.0)
 
 
 @dataclass
@@ -75,10 +135,14 @@ class RlSessionClient:
         api: Any = None,
         session_uid: Optional[str] = None,
         timeout: float = 1800.0,
+        retry_budget_s: float = 300.0,
     ):
         self._base = url.rstrip("/")
         self._token = token
         self._timeout = timeout
+        # Seconds to keep retrying a retryable 503 before raising
+        # SessionUnavailableError; 0 raises on the first one.
+        self._retry_budget_s = retry_budget_s
         self._publisher = publisher
         self._api = api
         self._session_uid = session_uid
@@ -142,6 +206,37 @@ class RlSessionClient:
         return result
 
     def _post_json(self, path: str, body: dict) -> dict:
+        """POST with retries on the session's retryable 503s (a draining
+        replica, an engine fault); every other failure raises at once."""
+        deadline = time.monotonic() + max(self._retry_budget_s, 0.0)
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                return self._post_json_once(path, body)
+            except _Retryable as r:
+                # Exponential backoff with jitter: ~1, 2, 4 ... 15 s.
+                backoff = random.uniform(0.5, 1.0) * min(15.0, 2.0 ** (attempt - 1))
+                if r.retry_after is None:
+                    wait = backoff
+                elif attempt == 1:
+                    wait = r.retry_after
+                else:
+                    # Honour a longer server delay, but never retry a replica
+                    # that keeps refusing with a short one in a tight loop.
+                    wait = max(r.retry_after, backoff)
+                if time.monotonic() + wait > deadline:
+                    raise SessionUnavailableError(
+                        f"HTTP 503 {r.error_type} after {attempt} attempt(s): {r.message}",
+                        r.error_type,
+                    ) from r.__cause__
+                _log.warning(
+                    "session %s (attempt %d): retrying in %.1fs: %s",
+                    r.error_type, attempt, wait, r.message,
+                )
+                time.sleep(wait)
+
+    def _post_json_once(self, path: str, body: dict) -> dict:
         req = urllib.request.Request(
             f"{self._base}{path}",
             data=json.dumps(body).encode(),
@@ -165,6 +260,8 @@ class RlSessionClient:
             # "When something fails, the reason says who acts").
             if err.get("type") == "StaleRevision" or e.code == 409:
                 raise StaleRevisionError(message) from e
+            if e.code == 503 and err.get("type") in RETRYABLE_503_TYPES:
+                raise _Retryable(err["type"], message, _retry_after(e)) from e
             raise SessionServingError(f"HTTP {e.code}: {message}") from e
         except urllib.error.URLError as e:
             raise SessionServingError(f"session unreachable: {e.reason}") from e
