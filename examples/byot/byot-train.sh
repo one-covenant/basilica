@@ -280,8 +280,9 @@ df -h ~ | awk 'NR==2 {print "   disk free:", $4}'
               else "./venv/bin/python -u byot_grpo.py")
     # Credentials travel on stdin and live only in the job's environment. The
     # job runs detached from this SSH connection, capped at MAX_RUNTIME_HOURS,
-    # and stops its OWN rental when it ends: if this machine goes away mid-run
-    # (a closed laptop, a killed terminal) the rented GPU cannot keep billing.
+    # and when it ends deletes the session and policy and stops its OWN rental:
+    # if this machine goes away mid-run (a closed laptop, a killed terminal)
+    # neither the rollout session nor the rented GPU can keep billing.
     # The job also copies run.log to your bucket (byot-runs/<rental>/run.log)
     # every 2 minutes and once at the end, so the results survive the box
     # stopping itself and any loss of this machine's connection.
@@ -304,6 +305,24 @@ timeout --signal=INT --kill-after=300 @MAXS@s @LAUNCH@ > run.log 2>&1
 echo "BYOT-EXIT $?" >> run.log
 kill $UPLOADER 2>/dev/null
 ./venv/bin/python upload_log.py > /dev/null 2>&1
+./venv/bin/python - >> run.log 2>&1 <<'PY'
+# A trainer killed at the time cap (or one without its own cleanup) leaves its
+# session and policy behind: delete them here (harmless if already gone).
+import os, re
+from basilica import BasilicaClient
+rl = BasilicaClient(base_url=os.environ["BASILICA_API_URL"], api_key=os.environ["BASILICA_STAGING_API_KEY"]).rl
+for uid in sorted(set(re.findall(r"session ([0-9a-f-]{36})", open("run.log").read()))):
+    try:
+        rl.delete_session(uid)
+        print(f"job cleanup: session {uid} deleted")
+    except Exception:
+        pass
+try:
+    rl.delete_policy(os.environ["BYOT_POLICY"])
+    print(f"job cleanup: policy {os.environ['BYOT_POLICY']} deleted")
+except Exception:
+    pass
+PY
 ./venv/bin/python - >> run.log 2>&1 <<'PY'
 import os
 from basilica import BasilicaClient

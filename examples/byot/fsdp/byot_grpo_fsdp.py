@@ -566,6 +566,7 @@ def main():
             rl.create_policy(policy, repo=MODEL, commit=os.path.basename(snap.rstrip("/")), **bucket,
                              tokenizer_digest="sha256:" + hashlib.sha256(
                                  open(f"{snap}/tokenizer.json", "rb").read()).hexdigest())
+            ctx["policy_created"] = True  # cleanup deletes only a policy this run created
             # The rollout fleet: each replica serves the model tensor-parallel over SESSION_GPUS.
             s = ctx["session_info"] = rl.create_session(
                 policy, gpu_model=SESSION_GPU, gpu_count=SESSION_GPUS, replicas=REPLICAS,
@@ -573,7 +574,11 @@ def main():
                 min_gpu_memory_gb=SESSION_MIN_GPU_GB)
             print(f"session {s['sessionUid']} starting: {REPLICAS} replica(s) x {SESSION_GPUS} {SESSION_GPU}, "
                   f"{SESSION_MEMORY_GIB} GiB, {SESSION_CPU_CORES} cores", flush=True)
-            while rl.get_session(s["sessionUid"])["state"] not in ("ready", "active"):
+            t0 = time.time()
+            while (state := rl.get_session(s["sessionUid"])["state"]) not in ("ready", "active"):
+                # Give up inside the 3 h collective timeout the other ranks wait under.
+                if state == "failed" or time.time() - t0 > 2 * 3600:
+                    raise RuntimeError(f"session {s['sessionUid']} not serving (state {state})")
                 time.sleep(20)
 
         rank0(start)
@@ -590,6 +595,7 @@ def main():
             handle.wait_until_active("step-0000", timeout=4 * 3600)
             print(f"anchor Active {time.time() - t:.0f}s after publish", flush=True)
             ctx["handle"] = handle
+            ctx["last_rev"] = "step-0000"  # the newest published revision
             ctx["session"] = rl.open_session(s["url"], s["token"], publisher=handle,
                                              session_uid=s["sessionUid"])
 
@@ -623,7 +629,7 @@ def main():
                 # says which. Every K3_SYNC_EVERY steps, sample at the trainer's
                 # current weights instead, so that batch's k3 is pure mismatch.
                 sync = K3_SYNC_EVERY and step > 1 and step % K3_SYNC_EVERY == 0
-                rev = f"step-{step - 1:04d}" if sync else None
+                rev = ctx["last_rev"] if sync else None  # a skipped step published nothing
                 if sync:
                     ctx["handle"].wait_until_active(rev, timeout=3600)
                 out = ctx["session"].generate(token_ids=prompts, n=N, max_tokens=MAX_TOKENS,
@@ -659,6 +665,7 @@ def main():
                     ctx["session"].publish(weights, revision=f"step-{step:04d}")
                 except NonFiniteWeights as e:
                     raise SystemExit(f"step {step}: {e}")
+                ctx["last_rev"] = f"step-{step:04d}"
                 served = batch["served"] or ""
                 lag = (step - 1) - int(served[5:]) if served.startswith("step-") else -1
                 print(f"step {step:3d}  reward {batch['reward']:.3f}  grad-norm {gnorm.item():.3f}  "
@@ -680,12 +687,17 @@ def main():
         if rank == 0:
             uid = ctx.get("session_info", {}).get("sessionUid")
             if uid:
-                rl.delete_session(uid)
-            try:
-                rl.delete_policy(policy)
-            except Exception as e:  # noqa: BLE001 (never created, or already gone)
-                print(f"delete_policy: {e}", flush=True)
-            print(f"cleaned up: session {uid} and policy {policy} deleted", flush=True)
+                try:
+                    rl.delete_session(uid)
+                    print(f"cleaned up: session {uid} deleted", flush=True)
+                except Exception as e:  # noqa: BLE001 (keep cleaning up)
+                    print(f"delete_session {uid}: {e}; delete it by hand", flush=True)
+            if ctx.get("policy_created"):
+                try:
+                    rl.delete_policy(policy)
+                    print(f"cleaned up: policy {policy} deleted", flush=True)
+                except Exception as e:  # noqa: BLE001 (already gone)
+                    print(f"delete_policy {policy}: {e}; delete it by hand", flush=True)
         dist.destroy_process_group()
 
 

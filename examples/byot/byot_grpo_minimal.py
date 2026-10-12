@@ -82,7 +82,10 @@ try:
     s = rl.create_session(policy, gpu_model="H100", gpu_count=1, replicas=2)
     uid = s["sessionUid"]
     print(f"session {uid} starting (renting GPUs takes a few minutes)", flush=True)
-    while rl.get_session(uid)["state"] not in ("ready", "active"):
+    t0 = time.time()
+    while (state := rl.get_session(uid)["state"]) not in ("ready", "active"):
+        if state == "failed" or time.time() - t0 > 3600:
+            raise SystemExit(f"session {uid} not serving (state {state})")
         time.sleep(20)
     # The starting weights go out once in full (the anchor); every step after is a patch.
     handle = rl.policy(policy, storage=PolicyStorage(**bucket), work_dir="./publish")

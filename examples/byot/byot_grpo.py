@@ -345,8 +345,8 @@ def main() -> None:
 
         # -- verdicts -----------------------------------------------------------
         rows = [r for r in (json.loads(l) for l in open(OUT)) if not r.get("skipped")]
-        first = statistics.fmean(r["reward"] for r in rows[:10])
-        last = statistics.fmean(r["reward"] for r in rows[-10:])
+        first = statistics.fmean(r["reward"] for r in rows[:10]) if rows else float("nan")
+        last = statistics.fmean(r["reward"] for r in rows[-10:]) if rows else float("nan")
         sync_rows = [r for r in rows if r["sync"]]
         sync_gap = statistics.fmean(r["gap"] for r in sync_rows) if sync_rows else float("nan")
         sync_ratio = statistics.fmean(r["ratio"] for r in sync_rows) if sync_rows else float("nan")
@@ -354,6 +354,10 @@ def main() -> None:
         anchors = [r["step"] for r in rows if r["kind"] == "anchor"]
         patch_mb = [r["rev_bytes"] / 1e6 for r in rows if r["kind"] == "patch"]
         waits = [r["active_wait"] for r in sync_rows]
+
+        def spread(xs, fmt=""):  # min / median / max, or n/a when a list is empty
+            return " / ".join(f"{k} {f(xs):{fmt}}" for k, f in
+                              (("min", min), ("median", statistics.median), ("max", max))) if xs else "n/a"
 
         log("waiting for the usage ledger to cover the last generation")
         t_last = time.time()
@@ -377,11 +381,11 @@ def main() -> None:
         print("\n================ BYOT TRAINING: RESULT ================", flush=True)
         print(f"reward: first 10 steps {first:.3f} -> last 10 steps {last:.3f} ({'UP' if last > first else 'NOT UP'})")
         print(f"numerics (asserted, trainer == sampler revision): mean |logp gap| {sync_gap:.4f}, mean ratio {sync_ratio:.4f}")
-        print(f"async lag (trainer step - served step): min {min(lags)} / median {statistics.median(lags)} / max {max(lags)}")
+        print(f"async lag (trainer step - served step): {spread(lags)}")
         print(f"time to Active at sync points: {waits} s")
         print(f"anchors published at steps: {anchors or 'none'} (plus step-0000"
               + ("" if STEPS > 30 else "; the SDK re-anchors after 30 patches") + ")")
-        print(f"patch size MB: min {min(patch_mb):.1f} / median {statistics.median(patch_mb):.1f} / max {max(patch_mb):.1f} "
+        print(f"patch size MB: {spread(patch_mb, '.1f')} "
               f"(full anchor {anchor_mb:.0f} MB)")
         print(f"revision states: {states}")
         print(f"usage expected {usage_expected} vs ledger requests={u.get('requests')} "

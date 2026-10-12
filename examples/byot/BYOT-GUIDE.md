@@ -98,7 +98,7 @@ The base model already solves over 90% of GSM8K, so 10 small steps don't move th
 
 **Notes for your own trainer at this size:**
 
-- **Memory.** Full fine-tuning keeps fp32 weights, gradients and AdamW state: about 16 bytes per parameter, so 71 GiB per GPU on 8 GPUs for 30B. That fits a 141 GB H200 but not an 80 GB A100. With FSDP2 CPU offload (`CPUOffloadPolicy`) the peak drops to about 8 GiB per GPU, and the host needs a few hundred GB of RAM.
+- **Memory.** Full fine-tuning keeps fp32 weights, gradients and AdamW state: about 16 bytes per parameter, so about 57 GiB per GPU on 8 GPUs for 30B, with a measured peak of 71 GiB once activations and FSDP's temporary buffers are added. That fits a 141 GB H200 but not an 80 GB A100. With FSDP2 CPU offload (`CPUOffloadPolicy`) the peak drops to about 8 GiB per GPU, and the host needs a few hundred GB of RAM.
 - **CPU offload settings.** Use the `cpu:gloo,cuda:nccl` process-group backend: gradient clipping then runs collectives on CPU tensors, which NCCL alone cannot do. Raise each rank's torch threads (`torchrun` sets 1): at 1 thread a step took 948 s, at about 24 threads 143 s.
 - **Gathering weights to publish.** Cast each shard to bf16 on its GPU before gathering. That halves the bytes and keeps the gather on NCCL. Gathering fp32 shards from host memory took 10 minutes per step.
 - **Trainer wall time.** The trainer's step and its publish dominate. The rollout side is not the bottleneck once the anchor has loaded.
@@ -152,8 +152,10 @@ rewards = [reward(tok.decode(ids, skip_special_tokens=True), golds[i // N])
            for i, ids in enumerate(out.token_ids)]
 
 # 3. PPO-clip update against the SAMPLER's own logprobs (out.logprobs).
+opt.zero_grad(set_to_none=True)
 ratio = torch.exp(trainer_logprobs - torch.tensor(out.logprobs[i], device="cuda"))
 loss = -torch.minimum(ratio * a, ratio.clamp(1 - CLIP, 1 + CLIP) * a).sum() / ntok
+loss.backward()
 gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 if torch.isfinite(gnorm):
     opt.step()

@@ -257,12 +257,15 @@ try:
     say("done. Your trainer published two revisions; the fleet loaded, verified, served and")
     say("metered them, and survived a park/resume. Cleaning up.")
 finally:
-    try:
-        if uid:
+    if uid:
+        try:
             rl.delete_session(uid)
             say(f"cleanup: session {uid} deleted (GPU released)")
+        except Exception as e:
+            say(f"cleanup problem: {e}; delete session {uid} by hand")
+    try:
         rl.delete_policy(policy)
         say(f"cleanup: policy {policy} deleted (the weights in your bucket stay yours)")
     except Exception as e:
-        say(f"cleanup problem: {e}; delete session {uid} and policy {policy} by hand")
+        say(f"cleanup problem: {e}; delete policy {policy} by hand")
 PYEOF
