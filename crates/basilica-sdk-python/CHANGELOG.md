@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PULSE patch format v2 (opt-in).** The vendored codec can encode and
+  decode format v2 patches (#2156): changed indices as Golomb-Rice coded
+  gaps and new values as the zigzag difference of the BF16 bit patterns
+  against the previous cell, about half the bytes of v1 on real training
+  patches with bit-identical results. `publish()` keeps emitting v1 unless
+  `BASILICA_PUBLISH_PATCH_FORMAT=2` is set; set it only once the serving
+  fleet decodes v2.
+
 - **AWS S3 and S3-compatible policy storage.** `create_policy()` accepts
   `backend="s3"` (AWS: `region` required, `endpoint` optional and derived
   by the server, virtual-hosted addressing by default) and
@@ -51,7 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SessionDraining` (a replica shutting down) or `EngineFault` (a replica
   whose weights match no revision until it reloads an anchor), with
   jittered exponential backoff (about 1 to 15 s) and honouring
-  `Retry-After`. Retries stop after `retry_budget_s` (default 300 s, `0`
+  `Retry-After` in either form (seconds or an HTTP date; an unusable value
+  falls back to the backoff, and repeated short delays never retry in a
+  tight loop). Retries stop after `retry_budget_s` (default 300 s, `0`
   disables, settable on `open_session()`), then `SessionUnavailableError`
   is raised; it subclasses `SessionServingError`, so existing handlers
   keep working. Other errors, including `StaleRevisionError`, are raised
