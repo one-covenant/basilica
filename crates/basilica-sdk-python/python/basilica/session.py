@@ -21,8 +21,10 @@ without one.
 
 from __future__ import annotations
 
+import email.utils
 import json
 import logging
+import math
 import random
 import time
 import urllib.error
@@ -79,12 +81,25 @@ class _Retryable(Exception):
 
 
 def _retry_after(e: urllib.error.HTTPError) -> Optional[float]:
-    """``Retry-After`` in seconds, if the response carries a numeric one."""
+    """``Retry-After`` in seconds: either form HTTP allows (delay-seconds or
+    an HTTP-date). ``None`` for a missing or unusable value, so the caller
+    falls back to its own backoff."""
     value = e.headers.get("Retry-After") if e.headers is not None else None
-    try:
-        return max(float(value), 0.0) if value is not None else None
-    except ValueError:
+    if value is None:
         return None
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            when = email.utils.parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if when is None or when.tzinfo is None:
+            return None
+        delay = when.timestamp() - time.time()
+    if not math.isfinite(delay):
+        return None
+    return max(delay, 0.0)
 
 
 @dataclass
@@ -200,10 +215,16 @@ class RlSessionClient:
             try:
                 return self._post_json_once(path, body)
             except _Retryable as r:
-                wait = r.retry_after
-                if wait is None:
-                    # Exponential backoff with full jitter: 1, 2, 4 ... 15 s.
-                    wait = random.uniform(0.5, 1.0) * min(15.0, 2.0 ** (attempt - 1))
+                # Exponential backoff with jitter: ~1, 2, 4 ... 15 s.
+                backoff = random.uniform(0.5, 1.0) * min(15.0, 2.0 ** (attempt - 1))
+                if r.retry_after is None:
+                    wait = backoff
+                elif attempt == 1:
+                    wait = r.retry_after
+                else:
+                    # Honour a longer server delay, but never retry a replica
+                    # that keeps refusing with a short one in a tight loop.
+                    wait = max(r.retry_after, backoff)
                 if time.monotonic() + wait > deadline:
                     raise SessionUnavailableError(
                         f"HTTP 503 {r.error_type} after {attempt} attempt(s): {r.message}",

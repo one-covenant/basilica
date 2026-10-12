@@ -27,7 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SessionDraining` (a replica shutting down) or `EngineFault` (a replica
   whose weights match no revision until it reloads an anchor), with
   jittered exponential backoff (about 1 to 15 s) and honouring
-  `Retry-After`. Retries stop after `retry_budget_s` (default 300 s, `0`
+  `Retry-After` in either form (seconds or an HTTP date; an unusable value
+  falls back to the backoff, and repeated short delays never retry in a
+  tight loop). Retries stop after `retry_budget_s` (default 300 s, `0`
   disables, settable on `open_session()`), then `SessionUnavailableError`
   is raised; it subclasses `SessionServingError`, so existing handlers
   keep working. Other errors, including `StaleRevisionError`, are raised
