@@ -16,6 +16,9 @@ RUN rustup component add rustfmt
 
 WORKDIR /workspace
 
+# bittensor-rs: generate the chain API from bundled metadata, not the live chain.
+ENV BITTENSOR_OFFLINE=1
+
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
@@ -76,6 +79,7 @@ FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bb
 RUN apt-get update && apt-get install -y \
     libssl3 \
     libpcre2-8-0 \
+    perl-base \
     ca-certificates \
     curl \
     libsqlite3-0 \
