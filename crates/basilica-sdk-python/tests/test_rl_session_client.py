@@ -3,8 +3,10 @@ generate() against a scripted session endpoint speaking the T4 serving
 dialect — pure stdlib on both sides (the session client is deliberately
 zero-dependency; session traffic never touches the compiled core)."""
 
+import email.utils
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -268,6 +270,34 @@ def test_retry_after_is_honoured(session, no_sleep):
     fake.responses = [(status, body, {"Retry-After": "3"}), _OK]
     client.generate(token_ids=[[1]])
     assert no_sleep == [3.0]
+
+
+def test_retry_after_accepts_an_http_date(session, no_sleep):
+    client, fake = session
+    status, body = _refusal("SessionDraining")
+    when = email.utils.formatdate(time.time() + 30, usegmt=True)
+    fake.responses = [(status, body, {"Retry-After": when}), _OK]
+    client.generate(token_ids=[[1]])
+    assert len(no_sleep) == 1 and 25 <= no_sleep[0] <= 30
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf", "soon"])
+def test_an_unusable_retry_after_falls_back_to_backoff(session, no_sleep, value):
+    client, fake = session
+    status, body = _refusal("EngineFault")
+    fake.responses = [(status, body, {"Retry-After": value}), _OK]
+    client.generate(token_ids=[[1]])
+    assert len(no_sleep) == 1 and 0 < no_sleep[0] <= 1
+
+
+def test_repeated_zero_retry_after_backs_off(session, no_sleep):
+    client, fake = session
+    status, body = _refusal("EngineFault")
+    fake.responses = [(status, body, {"Retry-After": "0"})] * 4 + [_OK]
+    client.generate(token_ids=[[1]])
+    # The first explicit zero is honoured; later ones get the backoff.
+    assert no_sleep[0] == 0.0
+    assert all(s > 0 for s in no_sleep[1:]) and len(no_sleep) == 4
 
 
 def test_an_exhausted_budget_raises_a_typed_serving_error(session, no_sleep):
