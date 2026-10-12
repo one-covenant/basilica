@@ -442,7 +442,9 @@ class RlNamespace:
 
     def get_revision(self, policy: str, revision: str) -> dict:
         """One revision's registry state (Validated | Loading | Active |
-        Rejected | Superseded)."""
+        Rejected | Superseded). Once the serving replicas report numerics
+        probes the record also carries a ``probes`` block (see
+        :meth:`basilica.publisher.RlPolicyHandle.revision_probes`)."""
         return json.loads(self._core.rl_get_revision(policy, revision))
 
     def policy(
