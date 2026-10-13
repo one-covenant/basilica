@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.6] - 2026-10-13
+
 ### Added
 
 - **`create_session(serving=...)`.** Sessions accept the API's `serving`
