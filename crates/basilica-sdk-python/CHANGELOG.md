@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`create_session(serving=...)`.** Sessions accept the API's `serving`
+  block: `logprobsMode`, `maxLogprobs`, `probes` (`prefillDecode`,
+  `everyN`) and `sparseApply`. `sparseApply` pushes patches through the
+  workers' recorded slice plans instead of reloading every weight (Bet 2)
+  and needs a platform that supports it; the server refuses unknown keys.
+  Omitted, nothing is sent and the defaults apply as before.
+
 ## [0.36.5] - 2026-10-12
 
 ### Added

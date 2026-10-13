@@ -339,6 +339,40 @@ def test_create_session_cpu_cores_refused_client_side(server, bad):
     assert rec.requests == [], "an invalid cpu_cores never reaches the wire"
 
 
+def test_create_session_serving_wire_shape(server):
+    base, rec = server
+    rec.responses = [(200, _SESSION_RESP)]
+    serving = {"probes": {"everyN": 4}, "sparseApply": True}
+    rl(base).create_session(
+        "math-policy", gpu_model="A100", gpu_count=1, serving=serving
+    )
+    (r,) = rec.requests
+    assert r["body"] == {
+        "policy": "math-policy",
+        "fleet": {"replicas": 1, "gpu": {"model": "A100", "count": 1}},
+        "serving": {"probes": {"everyN": 4}, "sparseApply": True},
+    }
+    assert serving == {"probes": {"everyN": 4}, "sparseApply": True}, "caller's dict untouched"
+
+
+def test_create_session_omitted_serving_is_not_sent(server):
+    base, rec = server
+    rec.responses = [(200, _SESSION_RESP)]
+    rl(base).create_session("math-policy", gpu_model="A100", gpu_count=1)
+    (r,) = rec.requests
+    assert "serving" not in r["body"], "default serving = OMITTED, not sent"
+
+
+@pytest.mark.parametrize("bad", ["sparseApply", ["sparseApply"], True, 1])
+def test_create_session_serving_must_be_a_mapping(server, bad):
+    base, rec = server
+    with pytest.raises(ValueError, match="serving must be a dict"):
+        rl(base).create_session(
+            "math-policy", gpu_model="A100", gpu_count=1, serving=bad
+        )
+    assert rec.requests == [], "an invalid serving block never reaches the wire"
+
+
 def test_get_and_delete_session_paths(server):
     base, rec = server
     uid = _SESSION_RESP["sessionUid"]
