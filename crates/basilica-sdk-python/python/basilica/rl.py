@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # publisher deps stay lazy; types cost nothing here
@@ -487,6 +488,7 @@ class RlNamespace:
         activation: Optional[str] = None,
         memory_gib: Optional[int] = None,
         cpu_cores: Optional[int] = None,
+        serving: Optional[dict] = None,
     ) -> dict:
         """Start a rollout session: a PRIVATE, token-gated vLLM fleet
         serving one policy (POST /rl/rollout-sessions).
@@ -507,7 +509,20 @@ class RlNamespace:
         128), in place of the platform's per-GPU default. Use it when
         loading is CPU bound regardless of GPU count, e.g. hashing and
         exporting a large anchor on one GPU. Omit it for the default
-        sizing."""
+        sizing.
+
+        ``serving`` is the session's serving settings, sent as the API's
+        ``serving`` block (camelCase keys), for example
+        ``{"logprobsMode": "processed", "maxLogprobs": 32,
+        "probes": {"everyN": 4}, "sparseApply": True}``. ``sparseApply``
+        pushes patches through the workers' recorded slice plans instead
+        of reloading every weight, and falls back to full pushes when a
+        plan can't be captured. The server refuses unknown keys and out of
+        range values. Omit it for the defaults."""
+        if serving is not None and not isinstance(serving, Mapping):
+            raise ValueError(
+                f"serving must be a dict of serving settings, got {type(serving).__name__}"
+            )
         if memory_gib is not None and (
             isinstance(memory_gib, bool)
             or not isinstance(memory_gib, int)
@@ -542,6 +557,7 @@ class RlNamespace:
                 "activation": activation,
                 "memoryGib": memory_gib,
                 "cpuCores": cpu_cores,
+                "serving": dict(serving) if serving is not None else None,
             }
         )
         return json.loads(self._core.rl_create_session(json.dumps(body)))
