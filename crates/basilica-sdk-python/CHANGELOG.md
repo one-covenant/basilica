@@ -47,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   last 10, which for a run of 20 steps or fewer overlapped or compared a
   window with itself.
 
+### Documentation
+
+- **Numerics probe warn rule.** `revision_probes()` and
+  `create_session(serving=...)` describe the baseline-relative warn rule:
+  a probe warns at max(1e-3, 3x the session's noise baseline), or at
+  4e-3 before the first anchor measured one, and `serving.probes` takes
+  `warnK3` (1e-5 to 1e-2, default 1e-3) and `warnFactor` (1.5 to 20,
+  default 3) to override the floor and the factor.
+
 ## [0.36.6] - 2026-10-13
 
 ### Added

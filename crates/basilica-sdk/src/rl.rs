@@ -653,9 +653,12 @@ pub struct RlRevisionResponse {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RlRevisionProbes {
-    /// The worst replica's band: `ok` (k3 below 1e-3), `warn` (1e-3 up to
-    /// 1.3e-2, or more than 5x the session baseline) or `collapse` (1.3e-2
-    /// or more); `error` only when every replica's probe failed.
+    /// The worst replica's band: `collapse` at k3 1.3e-2 or more; `warn` at
+    /// max(1e-3, 3x the session baseline), where the baseline is the k3 the
+    /// first anchor measured (the engine's own noise floor), or at 4e-3
+    /// before there is one; `ok` below that; `error` only when every
+    /// replica's probe failed. The session's `serving.probes.warnK3` and
+    /// `warnFactor` override the 1e-3 and the 3x.
     #[serde(default)]
     pub status: String,
     /// Largest k3 across replicas.

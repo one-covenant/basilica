@@ -900,10 +900,13 @@ class RlPolicyHandle:
         by prefill and by decode and compares the logprobs. ``k3`` is the
         token-mean of ``e^d - d - 1`` over the logprob differences ``d``: a
         non-negative KL estimate that is near zero when the two agree. The
-        dict carries ``status`` (the worst replica's band: ``ok`` below
-        1e-3, ``warn`` from 1e-3 to 1.3e-2 or above 5x the session
-        baseline, ``collapse`` at 1.3e-2 or more, ``error`` only when every
-        replica's probe failed), ``k3Max``, ``worstReplica`` and
+        dict carries ``status`` (the worst replica's band: ``collapse`` at
+        1.3e-2 or more; ``warn`` at max(1e-3, 3x the session baseline),
+        where the baseline is the k3 the first anchor measured, the
+        engine's own noise floor, or at 4e-3 before there is one; ``ok``
+        below that; ``error`` only when every replica's probe failed; the
+        session's ``serving.probes`` ``warnK3`` and ``warnFactor`` override
+        the 1e-3 and the 3x), ``k3Max``, ``worstReplica`` and
         ``replicas`` (each with ``replica``, ``status``, ``tokens``,
         ``k3``, ``k1``, ``maxAbs``, ``clipFrac``, ``observedAt``; numbers
         may be absent).

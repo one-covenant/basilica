@@ -517,8 +517,13 @@ class RlNamespace:
         "probes": {"everyN": 4}, "sparseApply": True}``. ``sparseApply``
         pushes patches through the workers' recorded slice plans instead
         of reloading every weight, and falls back to full pushes when a
-        plan can't be captured. The server refuses unknown keys and out of
-        range values. Omit it for the defaults."""
+        plan can't be captured. ``probes`` also takes ``warnK3`` (1e-5 to
+        1e-2, default 1e-3) and ``warnFactor`` (1.5 to 20, default 3), the
+        k3 floor and the multiple of the session's noise baseline at which
+        a numerics probe warns (see
+        :meth:`basilica.publisher.RlPolicyHandle.revision_probes`). The
+        server refuses unknown keys and out of range values. Omit it for
+        the defaults."""
         if serving is not None and not isinstance(serving, Mapping):
             raise ValueError(
                 f"serving must be a dict of serving settings, got {type(serving).__name__}"
