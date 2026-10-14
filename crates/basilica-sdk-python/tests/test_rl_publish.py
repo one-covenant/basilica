@@ -1045,3 +1045,39 @@ def test_publish_emits_format_v3_by_default(monkeypatch):
     _publish_chain(monkeypatch, None, None)
     assert seen == [1, 1]
 
+
+def test_wait_until_active_polls_every_second_then_backs_off(handle, monkeypatch):
+    """A patch goes Active in about 10 to 15 s, so the default reads the
+    revision every second for the first minute, then every 5 s so a long
+    anchor wait is read less often. An explicit poll_interval is used as is."""
+    import basilica.publisher as pub
+
+    now = [0.0]
+    slept = []
+
+    def fake_sleep(s):
+        slept.append(s)
+        now[0] += s
+
+    monkeypatch.setattr(pub.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(pub.time, "sleep", fake_sleep)
+    core = handle._test_core
+    core.revision_states["r"] = [{"state": "Loading"}] * 64 + [{"state": "Active"}]
+    assert handle.wait_until_active("r")["state"] == "Active"
+    assert slept[:60] == [1.0] * 60
+    assert set(slept[60:]) == {5.0}
+
+    slept.clear()
+    core.revision_states["e"] = [{"state": "Loading"}] * 3 + [{"state": "Active"}]
+    handle.wait_until_active("e", poll_interval=2.5)
+    assert slept == [2.5, 2.5, 2.5]
+
+
+def test_poll_wait_never_reads_faster_than_half_a_second_by_default():
+    from basilica.publisher import _poll_wait
+
+    assert _poll_wait(None, 0.0) == 1.0
+    assert _poll_wait(None, 59.9) == 1.0
+    assert _poll_wait(None, 60.0) == 5.0
+    assert min(_poll_wait(None, t / 10) for t in range(0, 4000)) >= 0.5
+    assert _poll_wait(0.01, 1000.0) == 0.01

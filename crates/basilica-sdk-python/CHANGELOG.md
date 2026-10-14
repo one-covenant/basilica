@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back to full pushes. A self-hosted or pinned session image older than
   v0.11.0-12 cannot decode v2 or v3: set `BASILICA_PUBLISH_PATCH_FORMAT=1`
   for it. Anchors are unaffected.
+- **`wait_until_active()` polls every second.** The default was a fixed
+  5 s, which added about 2.5 s on average to every wait now that a patch
+  goes Active in 10 to 15 s. By default the revision is now read every
+  second for the first minute and every 5 s after that, so a long anchor
+  wait does not read once a second throughout. An explicit
+  `poll_interval` is used as before.
 
 ### Fixed
 

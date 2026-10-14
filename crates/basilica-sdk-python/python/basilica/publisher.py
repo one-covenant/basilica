@@ -234,6 +234,22 @@ def _encode_workers() -> int:
     return _env_int(ENCODE_WORKERS_ENV, DEFAULT_ENCODE_WORKERS, 1)
 
 
+#: Default ``wait_until_active`` polling: every POLL_FAST_S for the first
+#: POLL_FAST_FOR_S seconds, then every POLL_SLOW_S. A patch goes Active in
+#: about 10 to 15 s, so a fast poll adds about half a second on average to
+#: each wait; an anchor can take many minutes, and is read less often.
+POLL_FAST_S = 1.0
+POLL_FAST_FOR_S = 60.0
+POLL_SLOW_S = 5.0
+
+
+def _poll_wait(poll_interval: Optional[float], elapsed: float) -> float:
+    """Seconds to sleep before the next status read."""
+    if poll_interval is not None:
+        return poll_interval
+    return POLL_FAST_S if elapsed < POLL_FAST_FOR_S else POLL_SLOW_S
+
+
 def _patch_format() -> int:
     value = _env_int(PATCH_FORMAT_ENV, DEFAULT_PATCH_FORMAT, 1)
     if value not in (1, 2, 3):
@@ -787,10 +803,16 @@ class RlPolicyHandle:
         revision: str,
         *,
         timeout: float = 1800.0,
-        poll_interval: float = 5.0,
+        poll_interval: Optional[float] = None,
         session: Optional[str] = None,
     ) -> dict:
         """Block until the fleet confirms the revision (state ``Active``).
+
+        ``poll_interval`` is the time between status reads in seconds. By
+        default the revision is read every second for the first minute,
+        which is when a patch goes Active, and every 5 seconds after that,
+        which keeps a long anchor wait from reading once a second for its
+        whole length.
 
         Raises :class:`RevisionRejected` when the fleet refuses the revision
         (for the reason the platform reported) and
@@ -810,7 +832,8 @@ class RlPolicyHandle:
         :meth:`revision_probes` for them.
         """
         rev = _validate_revision(revision)
-        deadline = time.monotonic() + timeout
+        start = time.monotonic()
+        deadline = start + timeout
         while True:
             rec = json.loads(self._core.rl_get_revision(self.name, rev))
             state = rec.get("state")
@@ -866,7 +889,7 @@ class RlPolicyHandle:
                     f"revision {rev!r} did not activate within {timeout:.0f}s "
                     f"(last state: {state!r})"
                 )
-            time.sleep(poll_interval)
+            time.sleep(_poll_wait(poll_interval, time.monotonic() - start))
 
     def revision_probes(self, revision: str) -> Optional[dict]:
         """The numerics probes the serving replicas reported for
