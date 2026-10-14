@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.7] - 2026-10-14
+
 ### Changed
 
 - **`publish()` emits PULSE patch format v3 by default** (was v1). Platform
