@@ -52,6 +52,20 @@ ignore = [
     "RUSTSEC-2025-0161",  # libsecp256k1 unmaintained
     "RUSTSEC-2026-0173",  # proc-macro-error2 unmaintained
     "RUSTSEC-2024-0449",  # unsafe-libyaml unmaintained (archived, no fix); only via kube-client 0.88's serde_yaml
+
+    # rustls advisories of 2026-10-14, reviewed the same day as in
+    # basilica-backend#2223; re-review by 2026-10-21 and whenever TLS client or
+    # session handling changes. Modern rustls is patched to 0.23.46 in
+    # Cargo.lock. Legacy rustls 0.21.12 has no patched release and reaches us
+    # only through the subnet-era stack above (aws-smithy-http-client,
+    # hyper-rustls 0.24, kube-client 0.88, reqwest 0.11, tokio-rustls 0.24,
+    # tonic 0.10); no code here implements or logs a client session store,
+    # and 0.21 offers classical key exchange only. Usage-based exceptions,
+    # not upstream fixes: they go with that stack in the 0.27.0 cleanup.
+    # Advisory ignores are global, so the rustls bans below MUST stay: only
+    # 0.21.12 or >=0.23.46 is allowed.
+    { id = "RUSTSEC-2026-0346", reason = "legacy rustls 0.21.12 only: no custom session-store Debug logging in this repository or its six dependency callers; modern rustls patched to >=0.23.46 and version bans confine this exception" },
+    { id = "RUSTSEC-2026-0349", reason = "legacy rustls 0.21.12 offers classical key exchange only, so the post-quantum downgrade does not apply; modern rustls patched to >=0.23.46 and version bans confine this exception" },
 ]
 
 # ---------------------------------------------------------------------------
@@ -110,7 +124,12 @@ multiple-versions = "warn"
 wildcards = "allow"
 # Add specific bans here as they come up, e.g.:
 # { name = "openssl", reason = "prefer rustls for consistency" }
-deny = []
+deny = [
+    # Bound the two reviewed rustls advisory exceptions above to legacy
+    # 0.21.12; every other accepted rustls release must contain the fixes.
+    { crate = "rustls:<0.21.12", reason = "do not extend the reviewed legacy TLS advisory exceptions to older versions" },
+    { crate = "rustls:>0.21.12, <0.23.46", reason = "only reviewed legacy 0.21.12 or patched rustls >=0.23.46 is allowed" },
+]
 skip = []
 skip-tree = []
 
