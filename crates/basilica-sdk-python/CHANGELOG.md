@@ -38,6 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged, so a field a newer API adds reaches Python without an SDK
   release. Rust callers that build these response types with struct
   literals need to add `extra: Default::default()`.
+- **BYOT examples train in training mode.** `byot_grpo.py` and
+  `byot_grpo_minimal.py` now call `model.train()` after `from_pretrained`,
+  which returns the model in eval mode, where transformers skips gradient
+  checkpointing. Qwen2.5 has no dropout, so nothing else changes. The
+  end-of-run "reward trends up" check in `byot_grpo.py` compares the
+  first half of the steps with the second half instead of the first and
+  last 10, which for a run of 20 steps or fewer overlapped or compared a
+  window with itself.
 
 ## [0.36.6] - 2026-10-13
 

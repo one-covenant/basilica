@@ -162,6 +162,10 @@ def main() -> None:
 
     device = "cuda"
     model = AutoModelForCausalLM.from_pretrained(snap, dtype=torch.float32).to(device)
+    # from_pretrained returns the model in eval mode, and transformers runs
+    # gradient checkpointing only in training mode. Qwen2.5 has no dropout
+    # (attention_dropout is 0), so train() changes nothing else.
+    model.train()
     model.gradient_checkpointing_enable()
     model.config.use_cache = False
     opt = torch.optim.AdamW(model.parameters(), lr=LR, betas=(0.9, 0.999), weight_decay=0.0)
@@ -345,8 +349,11 @@ def main() -> None:
 
         # -- verdicts -----------------------------------------------------------
         rows = [r for r in (json.loads(l) for l in open(OUT)) if not r.get("skipped")]
-        first = statistics.fmean(r["reward"] for r in rows[:10]) if rows else float("nan")
-        last = statistics.fmean(r["reward"] for r in rows[-10:]) if rows else float("nan")
+        # First half against second half: fixed 10-step windows would
+        # compare a short run with itself.
+        half = max(1, len(rows) // 2)
+        first = statistics.fmean(r["reward"] for r in rows[:half]) if rows else float("nan")
+        last = statistics.fmean(r["reward"] for r in rows[half:]) if len(rows) > 1 else float("nan")
         sync_rows = [r for r in rows if r["sync"]]
         sync_gap = statistics.fmean(r["gap"] for r in sync_rows) if sync_rows else float("nan")
         sync_ratio = statistics.fmean(r["ratio"] for r in sync_rows) if sync_rows else float("nan")
@@ -379,7 +386,8 @@ def main() -> None:
             states[st] = states.get(st, 0) + 1
 
         print("\n================ BYOT TRAINING: RESULT ================", flush=True)
-        print(f"reward: first 10 steps {first:.3f} -> last 10 steps {last:.3f} ({'UP' if last > first else 'NOT UP'})")
+        print(f"reward: first {half} steps {first:.3f}, last {len(rows) - half} steps {last:.3f} "
+              f"({'UP' if last > first else 'NOT UP'})")
         print(f"numerics (asserted, trainer == sampler revision): mean |logp gap| {sync_gap:.4f}, mean ratio {sync_ratio:.4f}")
         print(f"async lag (trainer step - served step): {spread(lags)}")
         print(f"time to Active at sync points: {waits} s")
@@ -431,6 +439,7 @@ def preflight() -> None:
     tok = AutoTokenizer.from_pretrained(snap)
     data = load_dataset("openai/gsm8k", "main", split="train")
     model = AutoModelForCausalLM.from_pretrained(snap, dtype=torch.float32).to("cuda")
+    model.train()  # as in the run: from_pretrained returns eval mode
     model.gradient_checkpointing_enable(); model.config.use_cache = False
     sd = model.state_dict()
     missing = [n for n in names if n not in sd]
