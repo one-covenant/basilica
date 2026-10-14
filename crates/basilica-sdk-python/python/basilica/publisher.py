@@ -72,11 +72,12 @@ DEFAULT_ENCODE_WORKERS = 4
 
 #: PULSE patch format the publisher emits: 1 (C2.4), 2 (#2156: rice-gap
 #: indices and zigzag-delta values, about half the bytes of v1) or 3 (v2 with
-#: indices coded per class of the old cell's exponent, about half again). Set
-#: 2 or 3 only once every consumer of the policy decodes it; anchors are
-#: unaffected.
+#: indices coded per class of the old cell's exponent, about half again). The
+#: default is 3: platform session images decode it from rl-session
+#: v0.11.0-12. Set 1 for a fleet on an older session image, which cannot
+#: decode v2 or v3; anchors are unaffected.
 PATCH_FORMAT_ENV = "BASILICA_PUBLISH_PATCH_FORMAT"
-DEFAULT_PATCH_FORMAT = 1
+DEFAULT_PATCH_FORMAT = 3
 
 
 class RevisionRejected(BasilicaError):
@@ -231,6 +232,22 @@ def _encode_threads() -> int:
 
 def _encode_workers() -> int:
     return _env_int(ENCODE_WORKERS_ENV, DEFAULT_ENCODE_WORKERS, 1)
+
+
+#: Default ``wait_until_active`` polling: every POLL_FAST_S for the first
+#: POLL_FAST_FOR_S seconds, then every POLL_SLOW_S. A patch goes Active in
+#: about 10 to 15 s, so a fast poll adds about half a second on average to
+#: each wait; an anchor can take many minutes, and is read less often.
+POLL_FAST_S = 1.0
+POLL_FAST_FOR_S = 60.0
+POLL_SLOW_S = 5.0
+
+
+def _poll_wait(poll_interval: Optional[float], elapsed: float) -> float:
+    """Seconds to sleep before the next status read."""
+    if poll_interval is not None:
+        return poll_interval
+    return POLL_FAST_S if elapsed < POLL_FAST_FOR_S else POLL_SLOW_S
 
 
 def _patch_format() -> int:
@@ -786,10 +803,16 @@ class RlPolicyHandle:
         revision: str,
         *,
         timeout: float = 1800.0,
-        poll_interval: float = 5.0,
+        poll_interval: Optional[float] = None,
         session: Optional[str] = None,
     ) -> dict:
         """Block until the fleet confirms the revision (state ``Active``).
+
+        ``poll_interval`` is the time between status reads in seconds. By
+        default the revision is read every second for the first minute,
+        which is when a patch goes Active, and every 5 seconds after that,
+        which keeps a long anchor wait from reading once a second for its
+        whole length.
 
         Raises :class:`RevisionRejected` when the fleet refuses the revision
         (for the reason the platform reported) and
@@ -809,7 +832,8 @@ class RlPolicyHandle:
         :meth:`revision_probes` for them.
         """
         rev = _validate_revision(revision)
-        deadline = time.monotonic() + timeout
+        start = time.monotonic()
+        deadline = start + timeout
         while True:
             rec = json.loads(self._core.rl_get_revision(self.name, rev))
             state = rec.get("state")
@@ -865,7 +889,7 @@ class RlPolicyHandle:
                     f"revision {rev!r} did not activate within {timeout:.0f}s "
                     f"(last state: {state!r})"
                 )
-            time.sleep(poll_interval)
+            time.sleep(_poll_wait(poll_interval, time.monotonic() - start))
 
     def revision_probes(self, revision: str) -> Optional[dict]:
         """The numerics probes the serving replicas reported for
@@ -876,10 +900,13 @@ class RlPolicyHandle:
         by prefill and by decode and compares the logprobs. ``k3`` is the
         token-mean of ``e^d - d - 1`` over the logprob differences ``d``: a
         non-negative KL estimate that is near zero when the two agree. The
-        dict carries ``status`` (the worst replica's band: ``ok`` below
-        1e-3, ``warn`` from 1e-3 to 1.3e-2 or above 5x the session
-        baseline, ``collapse`` at 1.3e-2 or more, ``error`` only when every
-        replica's probe failed), ``k3Max``, ``worstReplica`` and
+        dict carries ``status`` (the worst replica's band: ``collapse`` at
+        1.3e-2 or more; ``warn`` at max(1e-3, 3x the session baseline),
+        where the baseline is the k3 the first anchor measured, the
+        engine's own noise floor, or at 4e-3 before there is one; ``ok``
+        below that; ``error`` only when every replica's probe failed; the
+        session's ``serving.probes`` ``warnK3`` and ``warnFactor`` override
+        the 1e-3 and the 3x), ``k3Max``, ``worstReplica`` and
         ``replicas`` (each with ``replica``, ``status``, ``tokens``,
         ``k3``, ``k1``, ``maxAbs``, ``clipFrac``, ``observedAt``; numbers
         may be absent).

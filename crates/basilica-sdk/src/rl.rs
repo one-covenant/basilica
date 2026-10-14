@@ -278,6 +278,11 @@ pub struct CreateRlClusterResponse {
     /// storage and on servers predating #1574.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_prefix: Option<String>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Response after rotating a cluster's storage credentials (#1577).
@@ -290,6 +295,11 @@ pub struct RotateRlCredentialsResponse {
     /// with the new key material within seconds of this instant — keep the
     /// OLD key valid until then, then revoke it.
     pub rotated_at: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Response after rotating a POLICY's storage credentials (the #1577
@@ -303,6 +313,11 @@ pub struct RotateRlPolicyCredentialsResponse {
     /// storage access restarts onto the new key material shortly after
     /// this instant — keep the OLD key valid until then, then revoke it.
     pub rotated_at: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Cluster status (`GET /rl/clusters/{name}`).
@@ -317,6 +332,11 @@ pub struct RlClusterStatusResponse {
     /// The bound job's name, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_job_name: Option<String>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Response after creating a job.
@@ -332,6 +352,11 @@ pub struct CreateRlJobResponse {
     /// sha256 of the admitted reward source (absent for builtin-reward jobs).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reward_sha256: Option<String>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Latest training metrics.
@@ -347,6 +372,11 @@ pub struct RlJobMetrics {
     /// Latest KL divergence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kl: Option<f64>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Job status (`GET /rl/jobs/{name}`).
@@ -364,6 +394,11 @@ pub struct RlJobStatusResponse {
     /// Object-store location of the trained model (null until bound).
     #[serde(rename = "artifactURI", skip_serializing_if = "Option::is_none")]
     pub artifact_uri: Option<String>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Manifest submission result.
@@ -376,6 +411,11 @@ pub struct RlManifestResponse {
     /// The created job, when the manifest carried a `job` block.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub job: Option<CreateRlJobResponse>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Response after deleting a cluster (`DELETE /rl/clusters/{name}`).
@@ -384,6 +424,11 @@ pub struct RlManifestResponse {
 pub struct DeleteRlClusterResponse {
     /// The deleted cluster's name.
     pub name: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Response after deleting a job (`DELETE /rl/jobs/{name}`).
@@ -392,6 +437,11 @@ pub struct DeleteRlClusterResponse {
 pub struct DeleteRlJobResponse {
     /// The deleted job's name.
     pub name: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +542,11 @@ pub struct CreateRlPolicyResponse {
     /// `policies/<policy-uid>/` — scope your fleet's read-only IAM grant to
     /// this, and upload every artifact under it.
     pub effective_prefix: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// One policy's registry view (`GET /rl/policies/{name}`).
@@ -507,6 +562,11 @@ pub struct RlPolicyResponse {
     pub total_revisions: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_revision: Option<String>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Response after deleting a policy (`DELETE /rl/policies/{name}`).
@@ -514,6 +574,11 @@ pub struct RlPolicyResponse {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteRlPolicyResponse {
     pub name: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// The artifact coordinates of one revision manifest.
@@ -572,6 +637,11 @@ pub struct RlRevisionResponse {
     /// revision turns `Active`, and always absent from older servers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probes: Option<RlRevisionProbes>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Numerics probes for one revision: after each activation every session
@@ -583,9 +653,12 @@ pub struct RlRevisionResponse {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RlRevisionProbes {
-    /// The worst replica's band: `ok` (k3 below 1e-3), `warn` (1e-3 up to
-    /// 1.3e-2, or more than 5x the session baseline) or `collapse` (1.3e-2
-    /// or more); `error` only when every replica's probe failed.
+    /// The worst replica's band: `collapse` at k3 1.3e-2 or more; `warn` at
+    /// max(1e-3, 3x the session baseline), where the baseline is the k3 the
+    /// first anchor measured (the engine's own noise floor), or at 4e-3
+    /// before there is one; `ok` below that; `error` only when every
+    /// replica's probe failed. The session's `serving.probes.warnK3` and
+    /// `warnFactor` override the 1e-3 and the 3x.
     #[serde(default)]
     pub status: String,
     /// Largest k3 across replicas.
@@ -597,6 +670,11 @@ pub struct RlRevisionProbes {
     /// One entry per reporting replica.
     #[serde(default)]
     pub replicas: Vec<RlRevisionReplicaProbe>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// One replica's probe of a revision. Numeric fields are optional so an
@@ -628,6 +706,11 @@ pub struct RlRevisionReplicaProbe {
     /// RFC 3339 time the replica reported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observed_at: Option<String>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -686,6 +769,11 @@ pub struct CreateRlSessionResponse {
     pub url: String,
     pub token: String,
     pub state: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// One session's lifecycle view (`GET /rl/rollout-sessions/{id}`).
@@ -703,6 +791,99 @@ pub struct RlSessionStatusResponse {
     /// say (and from servers predating the field, hence `default`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<RlSessionCondition>,
+    /// The effective serving settings: the create-time `serving` block
+    /// with the defaults filled in. Absent when the server could not read
+    /// the session spec, and from servers predating the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serving: Option<RlSessionServing>,
+    /// The serving engine. Absent from servers predating the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<RlSessionEngine>,
+    /// What each replica runs on, as last recorded in-cluster. Empty while
+    /// nothing is recorded (a new or parked session).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replicas: Vec<RlSessionReplica>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// The effective serving settings a session runs with, as `GET` echoes
+/// them. Every field is optional so a server that omits one still parses.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionServing {
+    /// `raw` | `processed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logprobs_mode: Option<String>,
+    /// vLLM `--max-logprobs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_logprobs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probes: Option<RlSessionProbes>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampling_mask: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sparse_apply: Option<bool>,
+    /// Settings this SDK does not model yet, passed through.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// `serving.probes` as `GET` echoes it. `warnK3` and `warnFactor` are
+/// present only when the session set them.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionProbes {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefill_decode: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub every_n: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warn_k3: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warn_factor: Option<f64>,
+    /// Settings this SDK does not model yet, passed through.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// The engine a session serves with.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionEngine {
+    /// vLLM version, for example `0.11.0`. Absent when the platform cannot
+    /// tell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vllm: Option<String>,
+    /// Engine fields this SDK does not model yet, passed through.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// One replica of a session and the GPU it serves on.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionReplica {
+    /// The replica's pod, as responses name it in `replica`.
+    #[serde(default)]
+    pub pod: String,
+    /// The exact GPU product, for example `NVIDIA-H100-80GB-HBM3`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_product: Option<String>,
+    /// NVIDIA driver version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driver: Option<String>,
+    /// Compute provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Replica fields this SDK does not model yet, passed through.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// One curated condition on a session read: `type` is the family
@@ -715,6 +896,11 @@ pub struct RlSessionCondition {
     pub type_: String,
     pub reason: String,
     pub message: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Response after deleting a session (`DELETE /rl/rollout-sessions/{id}`).
@@ -722,6 +908,11 @@ pub struct RlSessionCondition {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteRlSessionResponse {
     pub session_uid: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Usage & cost (`GET /rl/rollout-sessions/{id}/usage`; interface doc
@@ -764,6 +955,11 @@ pub struct RlSessionUsageResponse {
     /// Reporting replicas whose counters do not survive a restart.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub non_durable_replicas: Option<u32>,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Response of `POST /rl/rollout-sessions/{id}/park` (and `/resume`).
@@ -773,6 +969,11 @@ pub struct ParkRlSessionResponse {
     pub session_uid: String,
     /// `parked` after park, `starting` after resume.
     pub state: String,
+    /// Response fields this SDK does not model yet. Kept so that a
+    /// re-serialize (the Python binding returns this struct as a dict)
+    /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[cfg(test)]
@@ -1307,5 +1508,110 @@ mod tests {
             "absent, not a false 0"
         );
         assert!(out.get("observedAt").is_none());
+    }
+
+    // The Python binding returns `get_session` as this struct re-serialized,
+    // so a field the struct drops is a field Python users never see. The
+    // API's `serving`, `engine` and `replicas` blocks, and any field a newer
+    // API adds, must survive the round trip unchanged.
+    #[test]
+    fn session_status_keeps_serving_engine_and_unknown_fields() {
+        let wire = serde_json::json!({
+            "sessionUid": "s-1", "state": "active", "policy": "math",
+            "chainHead": "step-0003", "url": "https://s-1.example",
+            "conditions": [{"type": "Revision", "reason": "RevisionApplyFailed",
+                            "message": "shim 502", "since": "2026-10-14T09:00:00Z"}],
+            "serving": {
+                "logprobsMode": "raw", "maxLogprobs": 20,
+                "probes": {"prefillDecode": true, "everyN": 1, "warnK3": 0.002,
+                           "warnFactor": 4.0, "crossReplica": true},
+                "routing": false, "samplingMask": false, "sparseApply": true,
+                "futureSetting": {"x": 1}
+            },
+            "engine": {"vllm": "0.11.0", "build": "abc"},
+            "replicas": [{"pod": "p-0", "gpuProduct": "NVIDIA-A100-SXM4-80GB",
+                          "driver": "580.65.06", "provider": "hyperstack",
+                          "zone": "eu-1"}],
+            "newTopLevel": [1, 2, 3]
+        });
+        let s: RlSessionStatusResponse = serde_json::from_value(wire.clone()).unwrap();
+        let serving = s.serving.as_ref().expect("serving");
+        assert_eq!(serving.logprobs_mode.as_deref(), Some("raw"));
+        assert_eq!(serving.max_logprobs, Some(20));
+        assert_eq!(serving.sparse_apply, Some(true));
+        let probes = serving.probes.as_ref().expect("probes");
+        assert_eq!(probes.every_n, Some(1));
+        assert_eq!(probes.warn_k3, Some(0.002));
+        assert_eq!(probes.warn_factor, Some(4.0));
+        assert_eq!(s.engine.as_ref().unwrap().vllm.as_deref(), Some("0.11.0"));
+        assert_eq!(s.replicas.len(), 1);
+        assert_eq!(s.replicas[0].provider.as_deref(), Some("hyperstack"));
+        assert_eq!(s.extra["newTopLevel"], serde_json::json!([1, 2, 3]));
+        assert_eq!(serde_json::to_value(&s).unwrap(), wire);
+    }
+
+    #[test]
+    fn session_status_from_an_older_api_omits_the_new_blocks() {
+        let wire = serde_json::json!({
+            "sessionUid": "s-1", "state": "starting", "policy": "math",
+            "url": "https://s-1.example"
+        });
+        let s: RlSessionStatusResponse = serde_json::from_value(wire.clone()).unwrap();
+        assert!(s.serving.is_none() && s.engine.is_none());
+        assert!(s.replicas.is_empty() && s.extra.is_empty());
+        assert_eq!(serde_json::to_value(&s).unwrap(), wire);
+    }
+
+    // Every other response the Python binding hands back as a dict keeps
+    // fields this SDK does not model.
+    #[test]
+    fn responses_pass_unknown_fields_through() {
+        fn round_trip<T: serde::de::DeserializeOwned + Serialize>(wire: serde_json::Value) {
+            let t: T = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&t).unwrap(), wire);
+        }
+        let x = || serde_json::json!({"a": [1, "b"]});
+        round_trip::<RlRevisionResponse>(serde_json::json!({
+            "revision": "r1", "state": "Active", "submittedAt": "t", "new": x(),
+            "probes": {"status": "ok", "replicas": [{"replica": "p", "status": "ok", "new": x()}],
+                       "crossReplica": {"status": "ok", "k3Max": 0.0, "reference": "p"}}
+        }));
+        round_trip::<RlPolicyResponse>(serde_json::json!({
+            "name": "n", "policyUid": "u", "effectivePrefix": "policies/u/", "repo": "r",
+            "commit": "c", "updateFormat": "pulse-bf16-v1", "totalRevisions": 0, "new": x()
+        }));
+        round_trip::<CreateRlPolicyResponse>(
+            serde_json::json!({"policyUid": "u", "effectivePrefix": "p/", "new": x()}),
+        );
+        round_trip::<DeleteRlPolicyResponse>(serde_json::json!({"name": "n", "new": x()}));
+        round_trip::<RotateRlPolicyCredentialsResponse>(
+            serde_json::json!({"name": "n", "rotatedAt": "t", "new": x()}),
+        );
+        round_trip::<CreateRlSessionResponse>(serde_json::json!({
+            "sessionUid": "s", "url": "u", "token": "t", "state": "starting", "new": x()
+        }));
+        round_trip::<DeleteRlSessionResponse>(serde_json::json!({"sessionUid": "s", "new": x()}));
+        round_trip::<ParkRlSessionResponse>(
+            serde_json::json!({"sessionUid": "s", "state": "parked", "new": x()}),
+        );
+        round_trip::<RlSessionUsageResponse>(serde_json::json!({
+            "gpuHours": 0.5, "promptTokens": 1, "completionTokens": 2,
+            "samplingUtilization": 0.1, "replicasReporting": 1, "new": x()
+        }));
+        round_trip::<RlClusterStatusResponse>(serde_json::json!({"phase": "Ready", "new": x()}));
+        round_trip::<RlJobStatusResponse>(serde_json::json!({
+            "phase": "Running", "step": 3, "metrics": {"loss": 0.5, "new": x()},
+            "artifactURI": "s3://b/k", "new": x()
+        }));
+        round_trip::<RlManifestResponse>(serde_json::json!({
+            "cluster": {"name": "c", "uid": "u", "phase": "Provisioning", "new": x()},
+            "job": {"name": "j", "uid": "u", "phase": "Pending", "new": x()},
+            "new": x()
+        }));
+        round_trip::<RotateRlCredentialsResponse>(
+            serde_json::json!({"name": "n", "rotatedAt": "t", "new": x()}),
+        );
+        round_trip::<DeleteRlClusterResponse>(serde_json::json!({"name": "n", "new": x()}));
+        round_trip::<DeleteRlJobResponse>(serde_json::json!({"name": "n", "new": x()}));
     }
 }

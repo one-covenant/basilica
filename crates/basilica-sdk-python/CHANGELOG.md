@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`publish()` emits PULSE patch format v3 by default** (was v1). Platform
+  rollout sessions decode v3 from session image rl-session v0.11.0-12, and
+  the API now starts sessions on v0.11.0-15. On recorded Qwen3-8B patches
+  v3 is about 0.19% of the BF16 state against 0.34% for v2, with
+  bit-identical results. Sessions with `serving.sparseApply` push v3
+  patches through the sparse path from v0.11.0-13; on v0.11.0-12 they fall
+  back to full pushes. A self-hosted or pinned session image older than
+  v0.11.0-12 cannot decode v2 or v3: set `BASILICA_PUBLISH_PATCH_FORMAT=1`
+  for it. Anchors are unaffected.
+- **`wait_until_active()` polls every second.** The default was a fixed
+  5 s, which added about 2.5 s on average to every wait now that a patch
+  goes Active in 10 to 15 s. By default the revision is now read every
+  second for the first minute and every 5 s after that, so a long anchor
+  wait does not read once a second throughout. An explicit
+  `poll_interval` is used as before.
+
+### Fixed
+
+- **`get_session()` returns `serving`, `engine` and `replicas`.** The
+  session read round-trips through the Rust SDK's response type, which
+  did not model these fields, so the effective serving settings, the vLLM
+  version and each replica's GPU were silently dropped. They are now
+  typed fields of `RlSessionStatusResponse`, and every RL response type
+  the Python SDK returns as a dict (session, usage, park and resume,
+  policy, revision and its probes, cluster, job, manifest and the
+  credential rotations) passes fields it does not model through
+  unchanged, so a field a newer API adds reaches Python without an SDK
+  release. Rust callers that build these response types with struct
+  literals need to add `extra: Default::default()`.
+- **BYOT examples train in training mode.** `byot_grpo.py` and
+  `byot_grpo_minimal.py` now call `model.train()` after `from_pretrained`,
+  which returns the model in eval mode, where transformers skips gradient
+  checkpointing. Qwen2.5 has no dropout, so nothing else changes. The
+  end-of-run "reward trends up" check in `byot_grpo.py` compares the
+  first half of the steps with the second half instead of the first and
+  last 10, which for a run of 20 steps or fewer overlapped or compared a
+  window with itself.
+
+### Documentation
+
+- **Numerics probe warn rule.** `revision_probes()` and
+  `create_session(serving=...)` describe the baseline-relative warn rule:
+  a probe warns at max(1e-3, 3x the session's noise baseline), or at
+  4e-3 before the first anchor measured one, and `serving.probes` takes
+  `warnK3` (1e-5 to 1e-2, default 1e-3) and `warnFactor` (1.5 to 20,
+  default 3) to override the floor and the factor.
+
 ## [0.36.6] - 2026-10-13
 
 ### Added

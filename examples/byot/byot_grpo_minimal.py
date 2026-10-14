@@ -60,6 +60,7 @@ snap = snapshot_download(MODEL, allow_patterns=["*.safetensors", "*.json", "toke
 tok = AutoTokenizer.from_pretrained(snap)
 names = [n for f in sorted(glob.glob(f"{snap}/*.safetensors")) for n in safe_open(f, "pt").keys()]
 model = AutoModelForCausalLM.from_pretrained(snap, dtype=torch.float32).cuda()  # fp32 master weights
+model.train()  # from_pretrained returns eval mode, where gradient checkpointing does not run
 model.gradient_checkpointing_enable()
 model.config.use_cache = False
 opt = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=0.0)
