@@ -81,7 +81,7 @@ wheels = [
 
 [[package]]
 name = "basilica-sdk"
-version = "0.36.6"
+version = "0.36.7"
 source = { editable = "." }
 
 [package.optional-dependencies]
