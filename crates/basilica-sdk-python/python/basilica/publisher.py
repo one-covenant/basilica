@@ -72,11 +72,12 @@ DEFAULT_ENCODE_WORKERS = 4
 
 #: PULSE patch format the publisher emits: 1 (C2.4), 2 (#2156: rice-gap
 #: indices and zigzag-delta values, about half the bytes of v1) or 3 (v2 with
-#: indices coded per class of the old cell's exponent, about half again). Set
-#: 2 or 3 only once every consumer of the policy decodes it; anchors are
-#: unaffected.
+#: indices coded per class of the old cell's exponent, about half again). The
+#: default is 3: platform session images decode it from rl-session
+#: v0.11.0-12. Set 1 for a fleet on an older session image, which cannot
+#: decode v2 or v3; anchors are unaffected.
 PATCH_FORMAT_ENV = "BASILICA_PUBLISH_PATCH_FORMAT"
-DEFAULT_PATCH_FORMAT = 1
+DEFAULT_PATCH_FORMAT = 3
 
 
 class RevisionRejected(BasilicaError):

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`publish()` emits PULSE patch format v3 by default** (was v1). Platform
+  rollout sessions decode v3 from session image rl-session v0.11.0-12, and
+  the API now starts sessions on v0.11.0-15. On recorded Qwen3-8B patches
+  v3 is about 0.19% of the BF16 state against 0.34% for v2, with
+  bit-identical results. Sessions with `serving.sparseApply` push v3
+  patches through the sparse path from v0.11.0-13; on v0.11.0-12 they fall
+  back to full pushes. A self-hosted or pinned session image older than
+  v0.11.0-12 cannot decode v2 or v3: set `BASILICA_PUBLISH_PATCH_FORMAT=1`
+  for it. Anchors are unaffected.
+
 ### Fixed
 
 - **`get_session()` returns `serving`, `engine` and `replicas`.** The

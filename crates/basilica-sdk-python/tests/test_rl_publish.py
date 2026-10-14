@@ -979,7 +979,7 @@ def test_encode_workers_knob_parsing(monkeypatch, raw, want, warns):
 def test_patch_format_knob_emits_v2_and_v3_with_the_same_digests(monkeypatch, version):
     from basilica._pulse import codec
 
-    monkeypatch.delenv("BASILICA_PUBLISH_PATCH_FORMAT", raising=False)
+    monkeypatch.setenv("BASILICA_PUBLISH_PATCH_FORMAT", "1")
     v1_patches, v1_digests = _publish_chain(monkeypatch, None, None)
     monkeypatch.setenv("BASILICA_PUBLISH_PATCH_FORMAT", str(version))
     seen = []
@@ -998,7 +998,16 @@ def test_patch_format_knob_emits_v2_and_v3_with_the_same_digests(monkeypatch, ve
 
 @pytest.mark.parametrize(
     "raw, want, warns",
-    [(None, 1, False), ("1", 1, False), ("2", 2, False), ("3", 3, False), ("4", 1, True), ("0", 1, True), ("v2", 1, True)],
+    [
+        (None, 3, False),
+        ("", 3, False),
+        ("1", 1, False),
+        ("2", 2, False),
+        ("3", 3, False),
+        ("4", 3, True),
+        ("0", 3, True),
+        ("v2", 3, True),
+    ],
 )
 def test_patch_format_knob_parsing(monkeypatch, raw, want, warns):
     from basilica.publisher import _patch_format
@@ -1012,3 +1021,27 @@ def test_patch_format_knob_parsing(monkeypatch, raw, want, warns):
             assert _patch_format() == want
     else:
         assert _patch_format() == want
+
+
+def test_publish_emits_format_v3_by_default(monkeypatch):
+    """Platform session images decode v3 from rl-session v0.11.0-12, so an
+    unset knob publishes v3; BASILICA_PUBLISH_PATCH_FORMAT=1 is the opt-out
+    for fleets on older images."""
+    from basilica._pulse import codec
+
+    seen = []
+    real_build = codec.build_patch
+
+    def spy(**kw):
+        seen.append(kw["format_version"])
+        return real_build(**kw)
+
+    monkeypatch.setattr(codec, "build_patch", spy)
+    monkeypatch.delenv("BASILICA_PUBLISH_PATCH_FORMAT", raising=False)
+    _publish_chain(monkeypatch, None, None)
+    assert seen == [3, 3]
+    seen.clear()
+    monkeypatch.setenv("BASILICA_PUBLISH_PATCH_FORMAT", "1")
+    _publish_chain(monkeypatch, None, None)
+    assert seen == [1, 1]
+
