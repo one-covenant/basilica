@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`get_session()` returns `serving`, `engine` and `replicas`.** The
+  session read round-trips through the Rust SDK's response type, which
+  did not model these fields, so the effective serving settings, the vLLM
+  version and each replica's GPU were silently dropped. They are now
+  typed fields of `RlSessionStatusResponse`, and every RL response type
+  the Python SDK returns as a dict (session, usage, park and resume,
+  policy, revision and its probes, cluster, job, manifest and the
+  credential rotations) passes fields it does not model through
+  unchanged, so a field a newer API adds reaches Python without an SDK
+  release. Rust callers that build these response types with struct
+  literals need to add `extra: Default::default()`.
+
 ## [0.36.6] - 2026-10-13
 
 ### Added

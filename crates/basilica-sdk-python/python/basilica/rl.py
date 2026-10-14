@@ -563,7 +563,13 @@ class RlNamespace:
         return json.loads(self._core.rl_create_session(json.dumps(body)))
 
     def get_session(self, session_uid: str) -> dict:
-        """A session's lifecycle state (never echoes the token)."""
+        """A session's lifecycle state (never echoes the token):
+        ``sessionUid``, ``state``, ``policy``, ``chainHead``, ``url`` and
+        ``conditions``, plus, from servers that send them, ``serving`` (the
+        effective serving settings, defaults filled in), ``engine`` (for
+        example ``{"vllm": "0.11.0"}``) and ``replicas`` (each replica's
+        ``pod``, ``gpuProduct``, ``driver`` and ``provider``). Fields this
+        SDK does not know yet are passed through unchanged."""
         return json.loads(self._core.rl_get_session(session_uid))
 
     def delete_session(self, session_uid: str) -> dict:
