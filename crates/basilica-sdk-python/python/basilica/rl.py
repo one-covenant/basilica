@@ -42,6 +42,7 @@ release.
 
 from __future__ import annotations
 
+import datetime
 import json
 import time
 from collections.abc import Mapping
@@ -64,6 +65,27 @@ _POLL_FAILURE_BUDGET = 5
 _SESSION_MEMORY_GIB_MAX = 1024
 # Mirrors the server's session cpu cap (SessionCpuInvalid above it).
 _SESSION_CPU_CORES_MAX = 128
+
+
+def _since_param(
+    since: "str | int | float | datetime.date | datetime.datetime | None",
+) -> Optional[str]:
+    """``list_usage(since=...)`` as the server's ``since`` query value."""
+    if since is None:
+        return None
+    if isinstance(since, bool):
+        raise TypeError("since must be epoch seconds, a date/datetime or a string")
+    if isinstance(since, datetime.datetime):
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=datetime.timezone.utc)
+        return str(int(since.timestamp()))
+    if isinstance(since, datetime.date):
+        return since.isoformat()
+    if isinstance(since, (int, float)):
+        return str(int(since))
+    if isinstance(since, str):
+        return since
+    raise TypeError("since must be epoch seconds, a date/datetime or a string")
 
 
 def _drop_none(d: dict) -> dict:
@@ -620,10 +642,13 @@ class RlNamespace:
 
     def delete_session(self, session_uid: str) -> dict:
         """Stop a session. The policy and every revision stay in YOUR
-        bucket — a new session resumes the lineage. A transient failure is
-        retried; when a retry finds the session already gone (the first
-        attempt landed but its response was lost) the delete counts as done
-        and ``{}`` is returned."""
+        bucket — a new session resumes the lineage. Servers that support
+        it add ``usage``: the session's usage as of the delete, with
+        ``final: false`` (the draining replicas' last counters are still
+        to come; ``session_usage`` returns the final totals). A transient
+        failure is retried; when a retry finds the session already gone
+        (the first attempt landed but its response was lost) the delete
+        counts as done and ``{}`` is returned."""
         return _delete(
             lambda: self._core.rl_delete_session(session_uid), f"delete session {session_uid}"
         )
@@ -636,11 +661,35 @@ class RlNamespace:
         ``effectiveCostPerMTok`` when the platform has a configured rate
         (ABSENT otherwise — never invented).
 
-        Readable while the session exists: read it before
-        :meth:`delete_session` to keep the final numbers."""
+        Also works after the session was deleted: the response then
+        carries ``deletedAt`` (epoch seconds; ``gpuHours`` stop there) and
+        ``final``, which turns ``true`` within about a minute, once the
+        draining replicas' last counters are in. Deleted sessions stay
+        readable for the platform's retention window (30 days by
+        default)."""
         return _read(
             lambda: self._core.rl_get_session_usage(session_uid),
             f"get usage of session {session_uid}",
+        )
+
+    def list_usage(
+        self,
+        since: "str | int | float | datetime.date | datetime.datetime | None" = None,
+        policy: Optional[str] = None,
+    ) -> dict:
+        """Usage of every rollout session of the account, live and
+        deleted, newest first: ``{"sessions": [{"sessionUid", "policy",
+        "createdAt", "usage": {...}}], "totals": {...}}``. Each ``usage``
+        has the ``session_usage`` shape (``final`` / ``deletedAt`` for
+        deleted sessions); ``totals`` sums ``gpuHours``, tokens, requests
+        and ``costUsd`` (absent without a configured rate).
+
+        ``since`` keeps the sessions still running at or after it: epoch
+        seconds, a ``datetime`` (naive means UTC), a ``date`` (its UTC
+        midnight), or a string the server parses (RFC 3339 or
+        ``YYYY-MM-DD``). ``policy`` keeps one policy's sessions."""
+        return _read(
+            lambda: self._core.rl_list_usage(_since_param(since), policy), "list usage"
         )
 
     def park_session(self, session_uid: str) -> dict:

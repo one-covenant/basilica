@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`client.rl.list_usage(since=None, policy=None)`** lists the usage of
+  every rollout session of the account, live and deleted, newest first,
+  with totals (`GET /rl/usage`). `since` takes epoch seconds, a `date`, a
+  `datetime` (naive means UTC) or an RFC 3339 / `YYYY-MM-DD` string;
+  `policy` keeps one policy's sessions. Rust: `list_rl_usage`.
+
+### Changed
+
+- **Session usage stays readable after delete.** On servers that keep
+  usage ledgers past the session, `session.usage()` /
+  `client.rl.session_usage(uid)` keep answering after the session is
+  deleted, with `deletedAt` and `final` (true once the draining replicas'
+  last counters are in). `delete_session()` returns the server's `usage`
+  as of the delete when it sends one. The Rust types model `final`,
+  `deletedAt` and the delete response's `usage`; nothing appears that the
+  server did not send.
+
 ### Fixed
 
 - **A network blip no longer ends a BYOT run.** Platform reads

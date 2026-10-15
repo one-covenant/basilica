@@ -449,7 +449,10 @@ class RlSessionClient:
         return self._api
 
     def usage(self) -> dict:
-        """Usage & cost for THIS session (interface doc step 7)."""
+        """Usage & cost for THIS session (interface doc step 7). Still
+        readable after the session is deleted: ``deletedAt`` is set and
+        ``final`` turns ``true`` once the draining replicas' last counters
+        are in (see ``client.rl.session_usage``)."""
         return self._need_api().session_usage(self._session_uid)
 
     def park(self) -> dict:
