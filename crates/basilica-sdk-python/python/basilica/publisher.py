@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -40,7 +41,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional, Tuple, Union
 
+from basilica._retry import backoff_s, call_with_retry
 from basilica.exceptions import BasilicaError
+
+_log = logging.getLogger(__name__)
 
 #: Server grammar for revision names (rl.rs RevisionNameInvalid) — validated
 #: client-side so a typo fails before tensors are diffed and bytes uploaded.
@@ -57,6 +61,37 @@ UPLOAD_PART_SIZE = 64 * 2**20
 UPLOAD_READ_TIMEOUT_S = 900
 #: Slack when comparing the store's LastModified with the local clock.
 UPLOAD_CLOCK_SKEW_S = 300
+#: Connect timeout for store calls: a laptop on a slow link can take a few
+#: seconds to open a TLS connection, and botocore's default is 60 s anyway.
+UPLOAD_CONNECT_TIMEOUT_S = 30
+#: Attempts per store request (botocore's ``standard`` retry mode: dropped
+#: connections, timeouts, 5xx and throttling, with backoff). Each part of a
+#: multipart upload is its own request, so a dropped connection costs one
+#: 64 MiB part, not the upload.
+UPLOAD_MAX_ATTEMPTS_ENV = "BASILICA_UPLOAD_MAX_ATTEMPTS"
+DEFAULT_UPLOAD_MAX_ATTEMPTS = 10
+#: Whole-upload restarts once a request has used up its attempts (a network
+#: outage longer than the per-request backoff, or the store refusing a
+#: multipart completion with InvalidPart for parts it accepted). The failed
+#: multipart upload is aborted first; the restart uploads from the start.
+UPLOAD_RESTARTS_ENV = "BASILICA_UPLOAD_RESTARTS"
+DEFAULT_UPLOAD_RESTARTS = 3
+#: Error text of store failures that a fresh upload can get past.
+_TRANSIENT_UPLOAD_MARKERS = (
+    "InvalidPart",
+    "RequestTimeout",
+    "SlowDown",
+    "InternalError",
+    "ServiceUnavailable",
+    "Connection was closed",
+    "Could not connect",
+    "Read timeout",
+    "Connect timeout",
+    "(500)",
+    "(502)",
+    "(503)",
+    "(504)",
+)
 
 #: Torch intra-op threads while a patch encodes. Encoding runs thousands of
 #: small per-tensor torch ops; with one pool thread per core, the fan-out of
@@ -224,6 +259,26 @@ def _env_int(name: str, default: int, minimum: int) -> int:
         )
         return default
     return value
+
+
+def _upload_transient(exc: BaseException) -> bool:
+    """Whether a failed upload is worth restarting: a network failure that
+    outlasted botocore's own retries, or a store-side hiccup."""
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    try:
+        from botocore.exceptions import (  # noqa: PLC0415
+            ConnectionError as BotoConnectionError,
+            HTTPClientError,
+            IncompleteReadError,
+        )
+    except ImportError:  # pragma: no cover - boto3 is a publisher dependency
+        pass
+    else:
+        if isinstance(exc, (BotoConnectionError, HTTPClientError, IncompleteReadError)):
+            return True
+    text = str(exc)
+    return any(marker in text for marker in _TRANSIENT_UPLOAD_MARKERS)
 
 
 def _encode_threads() -> int:
@@ -498,7 +553,7 @@ class RlPolicyHandle:
         # configuration time, not minutes later mid-publish.
         if self._work_dir is not None:
             os.makedirs(self._work_dir, exist_ok=True)
-        meta = json.loads(core.rl_get_policy(name))
+        meta = json.loads(call_with_retry(lambda: core.rl_get_policy(name), f"get policy {name!r}"))
         self._effective_prefix: str = meta["effectivePrefix"]
         self._repo: str = meta["repo"]
         self._commit: str = meta["commit"]
@@ -564,6 +619,16 @@ class RlPolicyHandle:
                     # take the store over a minute; the 60 s default made
                     # botocore retry a completion that had already landed.
                     read_timeout=UPLOAD_READ_TIMEOUT_S,
+                    connect_timeout=UPLOAD_CONNECT_TIMEOUT_S,
+                    # Retry dropped connections, timeouts and 5xx per
+                    # request (per multipart part), with backoff; the
+                    # legacy default gave up after a few quick tries.
+                    retries={
+                        "mode": "standard",
+                        "total_max_attempts": _env_int(
+                            UPLOAD_MAX_ATTEMPTS_ENV, DEFAULT_UPLOAD_MAX_ATTEMPTS, 1
+                        ),
+                    },
                     **extra,
                 ),
             )
@@ -582,25 +647,48 @@ class RlPolicyHandle:
         timeout on a slow completion), the store answers NoSuchUpload for an
         object that is in fact there. That case counts as uploaded once a
         HEAD shows the object with this file's size, written after the
-        upload started; anything else still raises.
+        upload started.
+
+        Every request (each part) is retried by botocore on a dropped
+        connection, a timeout or a 5xx (``BASILICA_UPLOAD_MAX_ATTEMPTS``,
+        default 10). A failure that outlasts those retries, or a store
+        hiccup such as R2's occasional InvalidPart on completion, restarts
+        the whole upload after a backoff, up to ``BASILICA_UPLOAD_RESTARTS``
+        times (default 3); anything else raises at once.
         """
         from boto3.s3.transfer import TransferConfig  # noqa: PLC0415
 
         size = path.stat().st_size
         started = time.time()
-        try:
-            self._s3_client().upload_file(
-                str(path),
-                self._storage.bucket,
-                key,
-                Config=TransferConfig(
-                    multipart_threshold=UPLOAD_PART_SIZE,
-                    multipart_chunksize=UPLOAD_PART_SIZE,
-                ),
-            )
-        except Exception as e:
-            if "NoSuchUpload" not in str(e) or not self._landed(key, size, started):
-                raise
+        restarts = _env_int(UPLOAD_RESTARTS_ENV, DEFAULT_UPLOAD_RESTARTS, 0)
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                self._s3_client().upload_file(
+                    str(path),
+                    self._storage.bucket,
+                    key,
+                    Config=TransferConfig(
+                        multipart_threshold=UPLOAD_PART_SIZE,
+                        multipart_chunksize=UPLOAD_PART_SIZE,
+                    ),
+                )
+                break
+            except Exception as e:
+                if "NoSuchUpload" in str(e) and self._landed(key, size, started):
+                    break
+                if attempt > restarts or not _upload_transient(e):
+                    raise
+                # Longer than the per-read backoff: the per-part retries
+                # already spent a minute or so on this outage.
+                wait = 10.0 * backoff_s(attempt)
+                _log.warning(
+                    "upload of %s (%.1f GB) failed (%s); restarting it in %.0fs "
+                    "(restart %d of %d)",
+                    key, size / 1e9, e, wait, attempt, restarts,
+                )
+                time.sleep(wait)
         return f"s3://{self._storage.bucket}/{key}"
 
     def _landed(self, key: str, size: int, started: float) -> bool:
@@ -835,7 +923,9 @@ class RlPolicyHandle:
         start = time.monotonic()
         deadline = start + timeout
         while True:
-            rec = json.loads(self._core.rl_get_revision(self.name, rev))
+            # A read that fails transiently is retried (bounded); one that
+            # keeps failing raises, and the revision may still activate.
+            rec = self._read_revision(rev)
             state = rec.get("state")
             if state == "Active":
                 with self._chain_lock:
@@ -916,5 +1006,12 @@ class RlPolicyHandle:
         :meth:`wait_until_active` returns.
         """
         rev = _validate_revision(revision)
-        rec = json.loads(self._core.rl_get_revision(self.name, rev))
-        return rec.get("probes")
+        return self._read_revision(rev).get("probes")
+
+    def _read_revision(self, rev: str) -> dict:
+        return json.loads(
+            call_with_retry(
+                lambda: self._core.rl_get_revision(self.name, rev),
+                f"get revision {self.name!r}/{rev!r}",
+            )
+        )

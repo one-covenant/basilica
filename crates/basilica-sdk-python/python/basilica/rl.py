@@ -28,6 +28,12 @@ PermissionError (authz), ConnectionError (transport), KeyError
 (not found), or RuntimeError (server error), each carrying the server's
 message verbatim.
 
+Reads (every ``get_*`` and ``session_usage``) and the BYOT deletes retry a
+transient failure (a dropped connection, a DNS error, a timeout, a 502, 503
+or 504, a 429) with backoff for up to ``BASILICA_RETRY_BUDGET_S`` seconds
+(default 120, 0 disables) before raising it. Creates are never retried: a
+create whose response was lost may have happened.
+
 The ``body=`` escape hatch on every create call sends a raw dict; unknown
 fields survive the typed round-trip verbatim (serde-flatten catch-alls in
 the core DTOs), so server-side schema additions never strand you on an SDK
@@ -40,6 +46,8 @@ import json
 import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Optional
+
+from basilica._retry import call_with_retry
 
 if TYPE_CHECKING:  # publisher deps stay lazy; types cost nothing here
     from basilica.publisher import PolicyStorage, RlPolicyHandle
@@ -60,6 +68,30 @@ _SESSION_CPU_CORES_MAX = 128
 
 def _drop_none(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
+
+
+def _read(call, what: str) -> dict:
+    """An idempotent GET through the core, retried on transient failures."""
+    return json.loads(call_with_retry(call, what))
+
+
+def _delete(call, what: str) -> dict:
+    """A DELETE through the core, retried on transient failures. A retry
+    that finds the resource gone means an earlier attempt deleted it (its
+    response was lost on the way back): that is success, not an error.
+    A not-found on the FIRST attempt still raises KeyError."""
+    attempts = [0]
+
+    def once():
+        attempts[0] += 1
+        try:
+            return call()
+        except KeyError:
+            if attempts[0] > 1:
+                return "{}"
+            raise
+
+    return json.loads(call_with_retry(once, what))
 
 
 class RlNamespace:
@@ -155,7 +187,7 @@ class RlNamespace:
         )
 
     def get_cluster(self, name: str) -> dict:
-        return json.loads(self._core.rl_get_cluster(name))
+        return _read(lambda: self._core.rl_get_cluster(name), f"get cluster {name!r}")
 
     def delete_cluster(self, name: str) -> dict:
         """Delete a cluster. Refused (ValueError) while a job is active —
@@ -294,7 +326,7 @@ class RlNamespace:
         return json.loads(self._core.rl_create_job(json.dumps(body)))
 
     def get_job(self, name: str) -> dict:
-        return json.loads(self._core.rl_get_job(name))
+        return _read(lambda: self._core.rl_get_job(name), f"get job {name!r}")
 
     def wait_job(
         self, name: str, timeout_s: float = 6 * 3600.0, poll_s: float = 30.0
@@ -413,10 +445,14 @@ class RlNamespace:
         return json.loads(self._core.rl_create_policy(json.dumps(body)))
 
     def get_policy(self, name: str) -> dict:
-        return json.loads(self._core.rl_get_policy(name))
+        return _read(lambda: self._core.rl_get_policy(name), f"get policy {name!r}")
 
     def delete_policy(self, name: str) -> dict:
-        return json.loads(self._core.rl_delete_policy(name))
+        """Delete a policy registration. The revisions' artifacts stay in
+        YOUR bucket. A transient failure is retried; when a retry finds the
+        policy already gone (the first attempt landed but its response was
+        lost) the delete counts as done and ``{}`` is returned."""
+        return _delete(lambda: self._core.rl_delete_policy(name), f"delete policy {name!r}")
 
     def rotate_policy_credentials(
         self, policy: str, *, access_key_id: str, secret_access_key: str
@@ -446,7 +482,10 @@ class RlNamespace:
         Rejected | Superseded). Once the serving replicas report numerics
         probes the record also carries a ``probes`` block (see
         :meth:`basilica.publisher.RlPolicyHandle.revision_probes`)."""
-        return json.loads(self._core.rl_get_revision(policy, revision))
+        return _read(
+            lambda: self._core.rl_get_revision(policy, revision),
+            f"get revision {policy!r}/{revision!r}",
+        )
 
     def policy(
         self,
@@ -575,12 +614,19 @@ class RlNamespace:
         example ``{"vllm": "0.11.0"}``) and ``replicas`` (each replica's
         ``pod``, ``gpuProduct``, ``driver`` and ``provider``). Fields this
         SDK does not know yet are passed through unchanged."""
-        return json.loads(self._core.rl_get_session(session_uid))
+        return _read(
+            lambda: self._core.rl_get_session(session_uid), f"get session {session_uid}"
+        )
 
     def delete_session(self, session_uid: str) -> dict:
         """Stop a session. The policy and every revision stay in YOUR
-        bucket — a new session resumes the lineage."""
-        return json.loads(self._core.rl_delete_session(session_uid))
+        bucket — a new session resumes the lineage. A transient failure is
+        retried; when a retry finds the session already gone (the first
+        attempt landed but its response was lost) the delete counts as done
+        and ``{}`` is returned."""
+        return _delete(
+            lambda: self._core.rl_delete_session(session_uid), f"delete session {session_uid}"
+        )
 
     def session_usage(self, session_uid: str) -> dict:
         """Usage & cost, any time (interface doc step 7):
@@ -588,8 +634,14 @@ class RlNamespace:
         ``completionTokens`` and ``samplingUtilization`` from the
         session's own replicas, plus ``costUsd`` /
         ``effectiveCostPerMTok`` when the platform has a configured rate
-        (ABSENT otherwise — never invented)."""
-        return json.loads(self._core.rl_get_session_usage(session_uid))
+        (ABSENT otherwise — never invented).
+
+        Readable while the session exists: read it before
+        :meth:`delete_session` to keep the final numbers."""
+        return _read(
+            lambda: self._core.rl_get_session_usage(session_uid),
+            f"get usage of session {session_uid}",
+        )
 
     def park_session(self, session_uid: str) -> dict:
         """Park a session: the fleet scales away and new gpu-hours stop
@@ -619,7 +671,8 @@ class RlNamespace:
         one object — generate / publish / wait_until_active. Pass
         ``session_uid`` and ``usage()`` / ``park()`` / ``resume()`` work
         on the same object too (they call the platform API, not the
-        session). A draining replica or an engine fault (HTTP 503) is
+        session). A draining replica or an engine fault (HTTP 503), and a
+        session that cannot be reached (DNS, connect, reset, timeout), are
         retried for up to ``retry_budget_s`` seconds (0 disables)."""
         from basilica.session import RlSessionClient
 

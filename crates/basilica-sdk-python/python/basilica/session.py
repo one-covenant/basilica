@@ -78,6 +78,11 @@ RETRYABLE_503_TYPES = frozenset({"SessionDraining", "EngineFault"})
 _log = logging.getLogger(__name__)
 
 
+class _Unreachable(Exception):
+    """The session could not be reached (DNS, connect, reset, timeout),
+    raised inside ``_post_json``; retried like a retryable 503."""
+
+
 class _Retryable(Exception):
     """A retryable 503 from the session, raised inside ``_post_json``."""
 
@@ -197,8 +202,9 @@ class RlSessionClient:
         self._base = url.rstrip("/")
         self._token = token
         self._timeout = timeout
-        # Seconds to keep retrying a retryable 503 before raising
-        # SessionUnavailableError; 0 raises on the first one.
+        # Seconds to keep retrying a retryable 503 (then
+        # SessionUnavailableError) or an unreachable session (then
+        # SessionServingError); 0 raises on the first one.
         self._retry_budget_s = retry_budget_s
         self._publisher = publisher
         self._api = api
@@ -343,13 +349,24 @@ class RlSessionClient:
 
     def _post_json(self, path: str, body: dict) -> dict:
         """POST with retries on the session's retryable 503s (a draining
-        replica, an engine fault); every other failure raises at once."""
+        replica, an engine fault) and on transport failures (a DNS error, a
+        refused or reset connection, a timeout); every other failure raises
+        at once. Resending is safe: generation has no side effects, a seed
+        replays the same samples, and an asserted revision is re-checked."""
         deadline = time.monotonic() + max(self._retry_budget_s, 0.0)
         attempt = 0
         while True:
             attempt += 1
             try:
                 return self._post_json_once(path, body)
+            except _Unreachable as u:
+                wait = random.uniform(0.5, 1.0) * min(15.0, 2.0 ** (attempt - 1))
+                if time.monotonic() + wait > deadline:
+                    raise SessionServingError(str(u)) from u.__cause__
+                _log.warning(
+                    "session request (attempt %d): retrying in %.1fs: %s", attempt, wait, u
+                )
+                time.sleep(wait)
             except _Retryable as r:
                 # Exponential backoff with jitter: ~1, 2, 4 ... 15 s.
                 backoff = random.uniform(0.5, 1.0) * min(15.0, 2.0 ** (attempt - 1))
@@ -400,7 +417,11 @@ class RlSessionClient:
                 raise _Retryable(err["type"], message, _retry_after(e)) from e
             raise SessionServingError(f"HTTP {e.code}: {message}") from e
         except urllib.error.URLError as e:
-            raise SessionServingError(f"session unreachable: {e.reason}") from e
+            raise _Unreachable(f"session unreachable: {e.reason}") from e
+        except (ConnectionError, TimeoutError) as e:
+            # A reset or a read timeout after the request went out (urllib
+            # raises these unwrapped while reading the response).
+            raise _Unreachable(f"session unreachable: {e!r}") from e
 
     def trajectory(self, policy: str = "strict") -> "Trajectory":
         """A :class:`Trajectory` over this session."""
