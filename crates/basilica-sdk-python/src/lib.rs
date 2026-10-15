@@ -364,6 +364,28 @@ impl BasilicaClient {
         serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Usage of every rollout session of the account, live and deleted
+    /// (`GET /rl/usage`), optionally filtered by `since` and `policy`.
+    #[pyo3(signature = (since=None, policy=None))]
+    fn rl_list_usage(
+        &self,
+        py: Python,
+        since: Option<String>,
+        policy: Option<String>,
+    ) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    client
+                        .list_rl_usage(since.as_deref(), policy.as_deref())
+                        .await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     /// Park a session: the fleet scales away, identity survives.
     fn rl_park_session(&self, py: Python, id: String) -> PyResult<String> {
         let client = Arc::clone(&self.inner);

@@ -443,6 +443,124 @@ def test_session_usage_cost_fields_stay_absent_when_server_omits(server):
     assert "effectiveCostPerMTok" not in out
 
 
+def test_session_usage_after_delete_passes_final_through(server):
+    base, rec = server
+    uid = _SESSION_RESP["sessionUid"]
+    rec.responses = [
+        (
+            200,
+            {
+                "gpuHours": 4.0,
+                "promptTokens": 5000,
+                "completionTokens": 1000,
+                "samplingUtilization": 0.5,
+                "replicasReporting": 0,
+                "unaccountedReplicaSeconds": 0.0,
+                "final": True,
+                "deletedAt": 1790190000,
+            },
+        )
+    ]
+    out = rl(base).session_usage(uid)
+    (r,) = rec.requests
+    assert (r["method"], r["path"]) == ("GET", f"/rl/rollout-sessions/{uid}/usage")
+    assert out["final"] is True
+    assert out["deletedAt"] == 1790190000
+
+
+def test_delete_session_returns_usage_as_of_the_delete(server):
+    base, rec = server
+    uid = _SESSION_RESP["sessionUid"]
+    usage = {
+        "gpuHours": 1.0,
+        "promptTokens": 3,
+        "completionTokens": 2,
+        "samplingUtilization": 0.1,
+        "replicasReporting": 1,
+        "final": False,
+        "deletedAt": 1790190000,
+    }
+    rec.responses = [(200, {"sessionUid": uid, "usage": usage}), (200, {"sessionUid": uid})]
+    out = rl(base).delete_session(uid)
+    assert out["usage"] == usage
+    # An older server sends only the uid: no usage key appears.
+    assert rl(base).delete_session(uid) == {"sessionUid": uid}
+
+
+_USAGE_LIST = {
+    "sessions": [
+        {
+            "sessionUid": "s-1",
+            "policy": "math",
+            "createdAt": 1790100000,
+            "usage": {
+                "gpuHours": 4.0,
+                "promptTokens": 5000,
+                "completionTokens": 1000,
+                "samplingUtilization": 0.5,
+                "replicasReporting": 0,
+                "final": True,
+                "deletedAt": 1790190000,
+            },
+        }
+    ],
+    "totals": {
+        "sessions": 1,
+        "gpuHours": 4.0,
+        "promptTokens": 5000,
+        "completionTokens": 1000,
+        "requests": 9,
+        "unaccountedReplicaSeconds": 0.0,
+    },
+}
+
+
+def test_list_usage_without_filters(server):
+    base, rec = server
+    rec.responses = [(200, _USAGE_LIST)]
+    out = rl(base).list_usage()
+    (r,) = rec.requests
+    assert (r["method"], r["path"]) == ("GET", "/rl/usage")
+    assert r["auth"] == "Bearer test-key"
+    assert out == _USAGE_LIST
+    assert "costUsd" not in out["totals"], "absent, never invented"
+
+
+def test_list_usage_sends_since_and_policy(server):
+    import datetime
+    from urllib.parse import parse_qs, urlsplit
+
+    base, rec = server
+    rec.responses = [(200, _USAGE_LIST)] * 5
+    client = rl(base)
+    client.list_usage(since="2026-10-15T00:00:00Z", policy="math")
+    client.list_usage(since=1790100000)
+    client.list_usage(since=datetime.date(2026, 10, 15))
+    client.list_usage(since=datetime.datetime(2026, 10, 15, 12, 0, 0))
+    client.list_usage(
+        since=datetime.datetime(2026, 10, 15, 14, 0, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=2)))
+    )
+    queries = [parse_qs(urlsplit(r["path"]).query) for r in rec.requests]
+    assert all(urlsplit(r["path"]).path == "/rl/usage" for r in rec.requests)
+    assert queries[0] == {"since": ["2026-10-15T00:00:00Z"], "policy": ["math"]}
+    assert queries[1] == {"since": ["1790100000"]}
+    assert queries[2] == {"since": ["2026-10-15"]}
+    noon_utc = str(int(datetime.datetime(2026, 10, 15, 12, tzinfo=datetime.timezone.utc).timestamp()))
+    assert queries[3] == {"since": [noon_utc]}, "a naive datetime is UTC"
+    assert queries[4] == {"since": [noon_utc]}
+
+
+def test_list_usage_rejects_bad_input_before_the_wire(server):
+    base, rec = server
+    with pytest.raises(TypeError):
+        rl(base).list_usage(since=True)
+    with pytest.raises(TypeError):
+        rl(base).list_usage(since=[1])
+    with pytest.raises(ValueError, match="DNS-1035"):
+        rl(base).list_usage(policy="Not A Policy")
+    assert rec.requests == []
+
+
 def test_park_and_resume_paths(server):
     base, rec = server
     uid = _SESSION_RESP["sessionUid"]

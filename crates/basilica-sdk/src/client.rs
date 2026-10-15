@@ -49,8 +49,8 @@ use crate::{
         DeleteRlJobResponse, DeleteRlPolicyResponse, DeleteRlSessionResponse,
         ParkRlSessionResponse, RlClusterStatusResponse, RlJobStatusResponse, RlManifestRequest,
         RlManifestResponse, RlPolicyResponse, RlRevisionResponse, RlSessionStatusResponse,
-        RlSessionUsageResponse, RotateRelayCredentialsRequest, RotateRlCredentialsResponse,
-        RotateRlPolicyCredentialsResponse,
+        RlSessionUsageResponse, RlUsageListResponse, RotateRelayCredentialsRequest,
+        RotateRlCredentialsResponse, RotateRlPolicyCredentialsResponse,
     },
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
@@ -583,11 +583,40 @@ impl BasilicaClient {
         self.delete(&format!("/rl/rollout-sessions/{}", id)).await
     }
 
-    /// Usage & cost for a session, any time (interface doc step 7).
+    /// Usage & cost for a session, any time (interface doc step 7),
+    /// including after it was deleted: then the response carries
+    /// `deletedAt`, and `final: true` once the draining replicas' last
+    /// counters are in. Deleted sessions are kept for the platform's
+    /// retention window (30 days by default).
     pub async fn get_rl_session_usage(&self, id: &str) -> Result<RlSessionUsageResponse> {
         Self::validate_rl_session_id(id)?;
         self.get(&format!("/rl/rollout-sessions/{}/usage", id))
             .await
+    }
+
+    /// Usage of every rollout session of the account, live and deleted,
+    /// newest first, with totals (`GET /rl/usage`). `since` keeps the
+    /// sessions still running at or after it (epoch seconds, an RFC 3339
+    /// timestamp, or `YYYY-MM-DD`); `policy` keeps one policy's sessions.
+    pub async fn list_rl_usage(
+        &self,
+        since: Option<&str>,
+        policy: Option<&str>,
+    ) -> Result<RlUsageListResponse> {
+        if let Some(p) = policy {
+            Self::validate_rl_name(p)?;
+        }
+        let url = format!("{}/rl/usage", self.base_url);
+        let mut request = self.http_client.get(&url);
+        if let Some(since) = since {
+            request = request.query(&[("since", since)]);
+        }
+        if let Some(policy) = policy {
+            request = request.query(&[("policy", policy)]);
+        }
+        let request = self.apply_auth(request).await?;
+        let response = request.send().await.map_err(ApiError::HttpClient)?;
+        self.handle_response(response).await
     }
 
     /// Park a session (T9): the fleet scales away and new gpu-hours stop

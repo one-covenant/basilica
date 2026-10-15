@@ -908,6 +908,12 @@ pub struct RlSessionCondition {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteRlSessionResponse {
     pub session_uid: String,
+    /// The session's usage as of the delete (`final: false`: the draining
+    /// replicas' last counters are still to come; read the final totals
+    /// with `get_rl_session_usage`). Absent from servers that predate it,
+    /// and when the server could not read the usage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<RlSessionUsageResponse>,
     /// Response fields this SDK does not model yet. Kept so that a
     /// re-serialize (the Python binding returns this struct as a dict)
     /// passes them through instead of dropping them.
@@ -955,9 +961,72 @@ pub struct RlSessionUsageResponse {
     /// Reporting replicas whose counters do not survive a restart.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub non_durable_replicas: Option<u32>,
+    /// `true` once the session was deleted and every replica's last
+    /// counters are in: the totals never change again. `false` while the
+    /// session lives or its replicas still drain. Absent from older APIs.
+    #[serde(rename = "final", default, skip_serializing_if = "Option::is_none")]
+    pub is_final: Option<bool>,
+    /// Epoch seconds the session was deleted (gpuHours stop here). Absent
+    /// while the session lives.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<i64>,
     /// Response fields this SDK does not model yet. Kept so that a
     /// re-serialize (the Python binding returns this struct as a dict)
     /// passes them through instead of dropping them.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// One session in `GET /rl/usage`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlSessionUsageRecord {
+    pub session_uid: String,
+    /// The policy the session served.
+    pub policy: String,
+    /// Epoch seconds the session was created.
+    pub created_at: i64,
+    /// Same shape as `GET /rl/rollout-sessions/{id}/usage`.
+    pub usage: RlSessionUsageResponse,
+    /// Response fields this SDK does not model yet, passed through.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Sums over the sessions `GET /rl/usage` listed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlUsageTotals {
+    #[serde(default)]
+    pub sessions: u32,
+    #[serde(default)]
+    pub gpu_hours: f64,
+    /// Absent when the platform has no per-GPU-hour rate configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    #[serde(default)]
+    pub prompt_tokens: u64,
+    #[serde(default)]
+    pub completion_tokens: u64,
+    #[serde(default)]
+    pub requests: u64,
+    #[serde(default)]
+    pub unaccounted_replica_seconds: f64,
+    /// Response fields this SDK does not model yet, passed through.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// `GET /rl/usage`: the account's rollout sessions, live and deleted
+/// (deleted ones are kept for the platform's retention window, 30 days by
+/// default), newest first, with totals.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlUsageListResponse {
+    pub sessions: Vec<RlSessionUsageRecord>,
+    #[serde(default)]
+    pub totals: RlUsageTotals,
+    /// Response fields this SDK does not model yet, passed through.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -1496,6 +1565,69 @@ mod tests {
     }
 
     #[test]
+    fn deleted_session_usage_keeps_final_and_deleted_at() {
+        let wire = serde_json::json!({
+            "gpuHours": 4.0, "promptTokens": 5000, "completionTokens": 1000,
+            "samplingUtilization": 0.5, "replicasReporting": 0,
+            "requests": 9, "unaccountedReplicaSeconds": 0.0,
+            "final": true, "deletedAt": 1790190000
+        });
+        let u: RlSessionUsageResponse = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(u.is_final, Some(true));
+        assert_eq!(u.deleted_at, Some(1790190000));
+        assert!(u.extra.is_empty(), "modelled, not passed through");
+        assert_eq!(serde_json::to_value(&u).unwrap(), wire);
+    }
+
+    #[test]
+    fn delete_response_carries_the_usage_as_of_the_delete() {
+        let wire = serde_json::json!({
+            "sessionUid": "s-1",
+            "usage": {
+                "gpuHours": 1.0, "promptTokens": 3, "completionTokens": 2,
+                "samplingUtilization": 0.1, "replicasReporting": 1,
+                "final": false, "deletedAt": 1790190000
+            }
+        });
+        let d: DeleteRlSessionResponse = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(d.usage.as_ref().and_then(|u| u.is_final), Some(false));
+        assert_eq!(serde_json::to_value(&d).unwrap(), wire);
+        // An older API sends only the uid; nothing appears that it did not send.
+        let old: DeleteRlSessionResponse =
+            serde_json::from_value(serde_json::json!({"sessionUid": "s-1"})).unwrap();
+        assert!(old.usage.is_none());
+        assert_eq!(
+            serde_json::to_value(&old).unwrap(),
+            serde_json::json!({"sessionUid": "s-1"})
+        );
+    }
+
+    #[test]
+    fn usage_list_round_trips_sessions_and_totals() {
+        let wire = serde_json::json!({
+            "sessions": [{
+                "sessionUid": "s-1", "policy": "math", "createdAt": 1790100000,
+                "usage": {
+                    "gpuHours": 4.0, "promptTokens": 5000, "completionTokens": 1000,
+                    "samplingUtilization": 0.5, "replicasReporting": 0,
+                    "final": true, "deletedAt": 1790190000
+                }
+            }],
+            "totals": {
+                "sessions": 1, "gpuHours": 4.0, "promptTokens": 5000,
+                "completionTokens": 1000, "requests": 9,
+                "unaccountedReplicaSeconds": 0.0
+            }
+        });
+        let l: RlUsageListResponse = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(l.sessions.len(), 1);
+        assert_eq!(l.sessions[0].usage.is_final, Some(true));
+        assert_eq!(l.totals.sessions, 1);
+        assert!(l.totals.cost_usd.is_none(), "absent, not invented");
+        assert_eq!(serde_json::to_value(&l).unwrap(), wire);
+    }
+
+    #[test]
     fn session_usage_from_an_older_api_leaves_ledger_fields_absent() {
         let u: RlSessionUsageResponse = serde_json::from_value(serde_json::json!({
             "gpuHours": 0.5, "promptTokens": 0, "completionTokens": 0,
@@ -1597,6 +1729,21 @@ mod tests {
         round_trip::<RlSessionUsageResponse>(serde_json::json!({
             "gpuHours": 0.5, "promptTokens": 1, "completionTokens": 2,
             "samplingUtilization": 0.1, "replicasReporting": 1, "new": x()
+        }));
+        round_trip::<RlUsageListResponse>(serde_json::json!({
+            "sessions": [{
+                "sessionUid": "s", "policy": "p", "createdAt": 1,
+                "usage": {
+                    "gpuHours": 0.5, "promptTokens": 1, "completionTokens": 2,
+                    "samplingUtilization": 0.1, "replicasReporting": 1, "new": x()
+                },
+                "new": x()
+            }],
+            "totals": {
+                "sessions": 1, "gpuHours": 0.5, "promptTokens": 1, "completionTokens": 2,
+                "requests": 0, "unaccountedReplicaSeconds": 0.0, "new": x()
+            },
+            "new": x()
         }));
         round_trip::<RlClusterStatusResponse>(serde_json::json!({"phase": "Ready", "new": x()}));
         round_trip::<RlJobStatusResponse>(serde_json::json!({
