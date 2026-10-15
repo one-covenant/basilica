@@ -6,7 +6,7 @@ serves your rollouts from a private vLLM fleet that runs the weights you just
 published. Each step: sample -> score -> PPO-clip update against the sampler's
 own logprobs -> publish the new weights as a sparse patch.
 
-    pip install "basilica-sdk[publisher]>=0.36.4" transformers datasets
+    pip install "basilica-sdk[publisher]>=0.36.7" transformers datasets
     export BASILICA_STAGING_API_KEY=... BYOT_BUCKET=... BYOT_ENDPOINT=... \
            BYOT_ACCESS_KEY_ID=... BYOT_SECRET_ACCESS_KEY=...
     python byot_grpo_minimal.py            # STEPS=50 python ... for a longer run
@@ -79,10 +79,10 @@ rl.create_policy(policy, repo=MODEL, commit=os.path.basename(snap.rstrip("/")), 
                  tokenizer_digest="sha256:" + hashlib.sha256(open(f"{snap}/tokenizer.json", "rb").read()).hexdigest())
 uid = None
 try:
-    # A private rollout fleet serving that policy: 2 replicas, one H100 each.
-    s = rl.create_session(policy, gpu_model="H100", gpu_count=1, replicas=2)
+    # A private rollout fleet serving that policy: 2 replicas, one GPU each.
+    s = rl.create_session(policy, gpu_model=os.environ.get("BYOT_SESSION_GPU", "A100"), gpu_count=1, replicas=2)
     uid = s["sessionUid"]
-    print(f"session {uid} starting (renting GPUs takes a few minutes)", flush=True)
+    print(f"session {uid} starting (cold start ~10 min: GPU nodes, then the image)", flush=True)
     t0 = time.time()
     while (state := rl.get_session(uid)["state"]) not in ("ready", "active"):
         if state == "failed" or time.time() - t0 > 3600:
@@ -147,11 +147,19 @@ try:
         print(f"step {step:3d}  reward {statistics.fmean(rewards):.3f}  "
               f"(samples from {out.served_revision})", flush=True)
 
-    # The usage ledger refreshes about once a minute, so the last step or two
-    # may not be counted yet (its observedAt says how fresh the numbers are).
-    print("usage:", session.usage(), flush=True)
 finally:
     if uid:
-        rl.delete_session(uid)
-    rl.delete_policy(policy)
-    print(f"cleaned up: session {uid} and policy {policy} deleted", flush=True)
+        # Usage is readable only while the session exists, so read it before the
+        # delete (refreshed about once a minute; observedAt says how fresh).
+        try:
+            print("usage:", rl.session_usage(uid), flush=True)
+        except Exception as e:
+            print(f"usage: could not read it ({e})", flush=True)
+    # Delete each separately, so one failure never leaves the other running.
+    for what, delete in ([(f"session {uid}", lambda: rl.delete_session(uid))] if uid else []) + [
+            (f"policy {policy}", lambda: rl.delete_policy(policy))]:
+        try:
+            delete()
+            print(f"cleaned up: {what} deleted", flush=True)
+        except Exception as e:
+            print(f"cleanup problem: {what}: {e}; delete it by hand", flush=True)
