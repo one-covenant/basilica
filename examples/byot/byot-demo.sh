@@ -210,9 +210,11 @@ def wait_serving(uid, timeout_s=3600):
         if state == "failed":
             raise SystemExit(f"\nStopped: the session failed to start. {conds or 'No reason given.'}")
         mins = (time.time() - start) / 60
-        reps = s.get("replicas") or []
-        if reps:
-            gpus = ", ".join(sorted({r.get("gpuProduct") or "a GPU" for r in reps}))
+        # A replica is listed as soon as its pod exists; it has a GPU product
+        # only once a GPU node has taken it.
+        placed = [r for r in s.get("replicas") or [] if r.get("gpuProduct")]
+        if placed:
+            gpus = ", ".join(sorted({r["gpuProduct"] for r in placed}))
             note = (f"GPU node is up ({gpus}); pulling the serving image and starting vLLM "
                     "(usually 3 to 5 minutes)")
         elif mins < 12:
