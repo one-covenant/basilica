@@ -131,10 +131,12 @@ def wait_serving(rl, uid: str, timeout_s: float = 3600) -> None:
         if state == "failed":
             fail(f"session failed to start: {conds or 'no reason given'}")
         mins = (time.time() - start) / 60
-        reps = s.get("replicas") or []
-        if reps:
-            gpus = ", ".join(sorted({r.get("gpuProduct") or "a GPU" for r in reps}))
-            note = f"{len(reps)} replica(s) on a GPU node ({gpus}); pulling the image and starting vLLM"
+        # A replica is listed as soon as its pod exists; it has a GPU product
+        # only once a GPU node has taken it.
+        placed = [r for r in s.get("replicas") or [] if r.get("gpuProduct")]
+        if placed:
+            gpus = ", ".join(sorted({r["gpuProduct"] for r in placed}))
+            note = f"{len(placed)} replica(s) on a GPU node ({gpus}); pulling the image and starting vLLM"
         elif mins < 12:
             note = "waiting for GPU nodes: usually 5 to 9 minutes, then a ~3 minute image pull"
         else:
