@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.8] - 2026-10-15
+
 ### Added
 
 - **`client.rl.list_usage(since=None, policy=None)`** lists the usage of
