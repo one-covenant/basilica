@@ -62,7 +62,8 @@ K3_SYNC_EVERY = int(os.environ.get("BYOT_K3_SYNC_EVERY", "5"))
 # Record every batch (token ids, sampler logprobs, rewards, advantages, served
 # revision) to s3://<bucket>/byot-recordings/<policy>/ for offline replay.
 RECORD = os.environ.get("BYOT_RECORD") == "1"
-SESSION_GPU = os.environ.get("BYOT_SESSION_GPU", "H200")
+# The verified 30B run served from 1x A100 80GB; staging lists no H200.
+SESSION_GPU = os.environ.get("BYOT_SESSION_GPU", "A100")
 SESSION_GPUS = int(os.environ.get("BYOT_SESSION_GPUS", "1"))  # tensor parallel per replica
 SESSION_MEMORY_GIB = int(os.environ.get("BYOT_SESSION_MEMORY_GIB", "128"))  # per replica pod
 SESSION_CPU_CORES = int(os.environ.get("BYOT_SESSION_CPU_CORES", "16"))
@@ -682,11 +683,16 @@ def main():
             if EVAL_EVERY and (step % EVAL_EVERY == 0 or step == STEPS):
                 rank0(lambda: evaluate(f"step-{step:04d}"))
 
-        rank0(lambda: print("usage:", ctx["session"].usage(), flush=True))
     finally:
         if rank == 0:
             uid = ctx.get("session_info", {}).get("sessionUid")
             if uid:
+                # Usage is readable only while the session exists: read it
+                # before the delete, also when the run failed.
+                try:
+                    print("usage:", rl.session_usage(uid), flush=True)
+                except Exception as e:  # noqa: BLE001 (keep cleaning up)
+                    print(f"usage: could not read it ({e})", flush=True)
                 try:
                     rl.delete_session(uid)
                     print(f"cleaned up: session {uid} deleted", flush=True)

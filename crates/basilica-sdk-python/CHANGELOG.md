@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A network blip no longer ends a BYOT run.** Platform reads
+  (`get_session`, `session_usage`, `get_revision`, `get_policy`,
+  `get_cluster`, `get_job`, and the reads inside `wait_until_active`,
+  `revision_probes` and `client.rl.policy()`) retry a dropped connection,
+  a DNS error, a timeout, a 502, 503 or 504, or a 429 with backoff for up
+  to `BASILICA_RETRY_BUDGET_S` seconds (default 120, 0 disables) before
+  raising. A 4xx, a missing resource or rejected credentials still raise
+  at once. Creates are never retried.
+- **`delete_session()` and `delete_policy()` retry too**, so cleanup in a
+  `finally` survives the same blip. When a retry finds the resource
+  already gone (the first attempt landed but its response was lost), the
+  delete counts as done and returns `{}`.
+- **Session `generate()` retries an unreachable session** (DNS, refused
+  or reset connection, timeout) within the same `retry_budget_s` as a
+  draining replica, then raises `SessionServingError` as before.
+- **Artifact uploads survive dropped connections.** Every store request
+  (each 64 MiB part of a multipart upload) is retried by botocore's
+  `standard` mode, up to `BASILICA_UPLOAD_MAX_ATTEMPTS` attempts (default
+  10). A failure that outlasts those, or R2's occasional `InvalidPart` on
+  completion, restarts the upload after a backoff, up to
+  `BASILICA_UPLOAD_RESTARTS` times (default 3). A 3 GB anchor from a
+  laptop used to fail on a single `ConnectionClosedError`.
+
 ## [0.36.7] - 2026-10-14
 
 ### Changed

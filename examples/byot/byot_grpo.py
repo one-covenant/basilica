@@ -17,6 +17,9 @@ is at the numerical floor. At the end: usage must match what the loop
 generated, no revision may be Rejected, and the session is cleaned up.
 
 Env: BASILICA_STAGING_API_KEY, BYOT_{BUCKET,ENDPOINT,ACCESS_KEY_ID,SECRET_ACCESS_KEY}.
+Optional: BYOT_SESSION_GPU (default A100), and the BYOT_TRAIN_* settings below;
+each also reads the shorter name byot-train.sh forwards (BYOT_MODEL,
+BYOT_REPLICAS, BYOT_PROMPTS, BYOT_LR, BYOT_MAX_TOKENS).
 """
 from __future__ import annotations
 
@@ -37,15 +40,24 @@ from basilica.publisher import PolicyStorage
 from basilica.session import SessionServingError
 
 API = os.environ.get("BASILICA_API_URL", "https://api-staging.basilica.ai")
-MODEL = os.environ.get("BYOT_TRAIN_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
+
+
+def setting(name: str, default: str) -> str:
+    """BYOT_TRAIN_<name>, else the BYOT_<name> that byot-train.sh forwards."""
+    return os.environ.get(f"BYOT_TRAIN_{name}") or os.environ.get(f"BYOT_{name}") or default
+
+
+MODEL = setting("MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
 STEPS = int(os.environ.get("BYOT_TRAIN_STEPS", "20"))
-PROMPTS = int(os.environ.get("BYOT_TRAIN_PROMPTS", "8"))      # prompts per step
+PROMPTS = int(setting("PROMPTS", "8"))      # prompts per step
 N = int(os.environ.get("BYOT_TRAIN_N", "8"))                   # GRPO group size
-MAX_TOK = int(os.environ.get("BYOT_TRAIN_MAX_TOKENS", "320"))
-LR = float(os.environ.get("BYOT_TRAIN_LR", "1e-6"))
+MAX_TOK = int(setting("MAX_TOKENS", "320"))
+LR = float(setting("LR", "1e-6"))
 CLIP = 0.2
 SYNC_EVERY = int(os.environ.get("BYOT_TRAIN_SYNC_EVERY", "10"))
-REPLICAS = int(os.environ.get("BYOT_TRAIN_REPLICAS", "2"))
+REPLICAS = int(setting("REPLICAS", "2"))
+# A100 is what staging has most of; BYOT_SESSION_GPU=H100 where it is offered.
+SESSION_GPU = os.environ.get("BYOT_SESSION_GPU", "A100")
 MICRO = 8                                                 # sequences per fwd/bwd
 OUT = os.path.expanduser("~/byot/metrics.jsonl")
 
@@ -61,6 +73,80 @@ def log(msg: str) -> None:
 
 def fail(msg: str) -> NoReturn:
     raise SystemExit(f"\nFAILED: {msg}")
+
+
+def transient(e: BaseException) -> bool:
+    """A failure the same call can get past a little later: a dropped
+    connection, a DNS error, a timeout, a 502/503/504, a rate limit."""
+    if isinstance(e, (ConnectionError, TimeoutError)):
+        return True
+    return isinstance(e, RuntimeError) and bool(re.search(
+        r"status 50[234]|temporarily unavailable|Request timeout|Rate limit", str(e), re.I))
+
+
+def retrying(desc: str, fn, budget_s: float = 600):
+    """fn(), riding out transient network failures for up to budget_s. Newer
+    SDKs retry their own reads; this also covers older ones and longer
+    outages. Only for calls that are safe to repeat."""
+    deadline, attempt = time.time() + budget_s, 0
+    while True:
+        attempt += 1
+        try:
+            return fn()
+        except Exception as e:
+            if not transient(e) or time.time() >= deadline:
+                raise
+            wait = min(30, 2 ** attempt)
+            log(f"   {desc}: network problem ({' '.join(str(e).split())[:160]}); retrying in {wait}s")
+            time.sleep(wait)
+
+
+def publish_with_retry(desc: str, fn, attempts: int = 3):
+    """A failed publish leaves the handle unchanged (the SDK rolls its diff
+    base back), so a storage or network hiccup is retried by publishing again."""
+    for i in range(1, attempts + 1):
+        try:
+            return fn()
+        except Exception as e:
+            text = str(e)
+            hiccup = transient(e) or any(m in text for m in (
+                "InvalidPart", "Connection was closed", "Could not connect", "timeout",
+                "Read timed out", "dns error", "SlowDown", "ServiceUnavailable"))
+            if not hiccup or i == attempts:
+                raise
+            log(f"   {desc}: storage or network hiccup ({' '.join(text.split())[:160]}); "
+                f"publishing again ({i + 1}/{attempts})")
+            time.sleep(15 * i)
+
+
+def wait_serving(rl, uid: str, timeout_s: float = 3600) -> None:
+    """Poll the session until it serves, saying what it is waiting for."""
+    start, last_note, last_said = time.time(), None, 0.0
+    while True:
+        s = retrying("checking the session", lambda: rl.get_session(uid))
+        state = s.get("state")
+        if state in ("ready", "active"):
+            return
+        conds = "; ".join(f"{c.get('reason')}: {c.get('message')}" for c in s.get("conditions") or [])
+        if state == "failed":
+            fail(f"session failed to start: {conds or 'no reason given'}")
+        mins = (time.time() - start) / 60
+        reps = s.get("replicas") or []
+        if reps:
+            gpus = ", ".join(sorted({r.get("gpuProduct") or "a GPU" for r in reps}))
+            note = f"{len(reps)} replica(s) on a GPU node ({gpus}); pulling the image and starting vLLM"
+        elif mins < 12:
+            note = "waiting for GPU nodes: usually 5 to 9 minutes, then a ~3 minute image pull"
+        else:
+            note = "still no GPU node: the provider is slow or short on this GPU type right now"
+        if conds:
+            note += f" [{conds}]"
+        if note != last_note or time.time() - last_said >= 120:
+            log(f"   session {state}, {mins:.1f} min so far: {note}")
+            last_note, last_said = note, time.time()
+        if time.time() - start > timeout_s:
+            fail(f"session not serving after {timeout_s / 60:.0f} min")
+        time.sleep(20)
 
 
 def record(**kw) -> None:
@@ -178,31 +264,32 @@ def main() -> None:
     # process dies without running its own cleanup.
     policy = os.environ.get("BYOT_POLICY") or "byot-train-" + secrets.token_hex(3)
     uid = None
+    try:
+        balance0 = float(client.get_balance()["balance"])
+    except Exception:
+        balance0 = None
     usage_expected = {"requests": 0, "promptTokens": 0, "completionTokens": 0}
     published = {}  # revision -> step
     skipped = []    # steps refused for a non-finite gradient
     try:
         log(f"policy {policy} + {REPLICAS}-replica session")
         rl.create_policy(policy, repo=MODEL, commit=commit, tokenizer_digest=tok_digest, **R2)
-        sess = rl.create_session(policy, gpu_model="H100", gpu_count=1, replicas=REPLICAS)
+        sess = rl.create_session(policy, gpu_model=SESSION_GPU, gpu_count=1, replicas=REPLICAS)
         uid, url, token = sess["sessionUid"], sess["url"], sess["token"]
         log(f"session {uid}")
+        log(f"   {REPLICAS} replica(s) x 1 {SESSION_GPU}; a cold start is about 10 min (GPU nodes, then the image)")
         t = time.time()
-        while rl.get_session(uid).get("state") not in ("ready", "active"):
-            if rl.get_session(uid).get("state") == "failed":
-                fail("session failed to start")
-            if time.time() - t > 3600:
-                fail("session not serving after 60 min")
-            time.sleep(20)
+        wait_serving(rl, uid)
         log(f"session serving after {(time.time() - t) / 60:.1f} min")
 
-        prefix = rl.get_policy(policy)["effectivePrefix"]
-        handle = rl.policy(policy, storage=PolicyStorage(**R2), work_dir=os.path.expanduser("~/byot/publish"))
+        prefix = retrying("reading the policy", lambda: rl.get_policy(policy))["effectivePrefix"]
+        handle = retrying("opening the policy", lambda: rl.policy(
+            policy, storage=PolicyStorage(**R2), work_dir=os.path.expanduser("~/byot/publish")))
         t = time.time()
-        handle.publish_anchor(bf16_state(), revision="step-0000")
+        publish_with_retry("anchor step-0000", lambda: handle.publish_anchor(bf16_state(), revision="step-0000"))
         pub_s = time.time() - t
         published["step-0000"] = 0
-        handle.wait_until_active("step-0000", timeout=3600)
+        retrying("waiting for step-0000", lambda: handle.wait_until_active("step-0000", timeout=3600, session=uid))
         anchor_mb = sum(sz for _, sz in revision_objects(s3, prefix, "step-0000")) / 1e6
         log(f"anchor step-0000 ({anchor_mb:.0f} MB) published in {pub_s:.0f}s, "
             f"Active after {time.time() - t:.0f}s")
@@ -237,7 +324,8 @@ def main() -> None:
             if sync:
                 latest = max(published, key=published.get)
                 t_act = time.time()
-                handle.wait_until_active(latest, timeout=3600)
+                retrying(f"waiting for {latest}",
+                         lambda: handle.wait_until_active(latest, timeout=3600, session=uid))
                 active_wait = time.time() - t_act
                 out = generate(batch, step, revision=latest)   # ASSERTED: trainer == sampler
             else:
@@ -321,7 +409,7 @@ def main() -> None:
 
             rev = f"step-{step:04d}"
             t_pub = time.time()
-            session.publish(bf16_state(), revision=rev)
+            publish_with_retry(rev, lambda: session.publish(bf16_state(), revision=rev))
             pub_s = time.time() - t_pub
             published[rev] = step
             objs = revision_objects(s3, prefix, rev)
@@ -342,7 +430,7 @@ def main() -> None:
                 + (f" | SYNC: Active after {active_wait:.0f}s" if sync else "")
                 + (f" | {bad_tok} sampler tokens floored (no gradient)" if bad_tok else ""))
             if sync:
-                conds = rl.get_session(uid).get("conditions") or []
+                conds = retrying("checking the session", lambda: rl.get_session(uid)).get("conditions") or []
                 bad = [c for c in conds if c.get("reason") in ("Rejected", "Stalled")]
                 if bad:
                     fail(f"session condition: {bad}")
@@ -370,14 +458,14 @@ def main() -> None:
         t_last = time.time()
         u = {}
         while time.time() - t_last < 300:
-            u = rl.session_usage(uid)
+            u = retrying("reading usage", lambda: rl.session_usage(uid))
             if (u.get("observedAt") or 0) >= t_last and u.get("requests", 0) >= usage_expected["requests"]:
                 break
             time.sleep(15)
         states = {}
         for rev in published:
             try:
-                st = rl.get_revision(policy, rev).get("state")
+                st = retrying("reading a revision", lambda: rl.get_revision(policy, rev)).get("state")
             except KeyError:
                 # A newer anchor starts a new active window; the registry
                 # drops the revisions before it (their artifacts stay in the
@@ -416,14 +504,42 @@ def main() -> None:
         print("ALL PASS" if all(checks.values()) else "SOME CHECKS FAILED", flush=True)
     finally:
         log("cleanup")
+        if uid:
+            # Usage is readable only while the session exists: read it first.
+            try:
+                u = retrying("reading usage", lambda: rl.session_usage(uid), budget_s=120)
+                cost = u.get("costUsd")
+                log(f"usage: session {uid}: {float(u.get('gpuHours') or 0):.3f} GPU hours, "
+                    f"requests={u.get('requests')}, promptTokens={u.get('promptTokens')}, "
+                    f"completionTokens={u.get('completionTokens')}, "
+                    + (f"cost ${float(cost):.2f}" if cost is not None
+                       else "no cost figure (costUsd absent: no rate configured here)"))
+            except Exception as e:
+                log(f"usage: could not read it ({e})")
+        for what, call in ((f"session {uid}", lambda: rl.delete_session(uid)) if uid else (None, None),
+                           (f"policy {policy}", lambda: rl.delete_policy(policy))):
+            if what is None:
+                continue
+            for attempt in range(1, 6):
+                try:
+                    call()
+                    log(f"{what} deleted")
+                    break
+                except KeyError:
+                    log(f"{what} already gone")
+                    break
+                except Exception as e:
+                    if attempt == 5:
+                        log(f"cleanup problem: could not delete {what}: {e}; the job's own cleanup retries it")
+                    else:
+                        time.sleep(10 * attempt)
         try:
-            if uid:
-                rl.delete_session(uid)
-                log(f"session {uid} deleted")
-            rl.delete_policy(policy)
-            log(f"policy {policy} deleted")
-        except Exception as e:
-            log(f"cleanup problem: {e}")
+            balance1 = float(client.get_balance()["balance"])
+            if balance0 is not None:
+                log(f"usage: account balance ${balance0:.2f} at the start of training, ${balance1:.2f} now "
+                    f"({balance1 - balance0:+.2f}; account-wide, includes the trainer box so far)")
+        except Exception:
+            pass
 
 
 def preflight() -> None:

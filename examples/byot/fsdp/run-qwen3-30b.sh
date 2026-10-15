@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Real BYOT GRPO on Qwen3-30B-A3B: an 8-GPU trainer box (FSDP2, torchrun)
-# against a rollout session of BYOT_REPLICAS replicas x BYOT_SESSION_GPUS H200
-# (tensor parallel; BYOT_SESSION_GPU picks the type). Uses the same saved
-# answers as byot-train.sh.
+# against a rollout session of BYOT_REPLICAS replicas x BYOT_SESSION_GPUS A100
+# 80GB (tensor parallel; BYOT_SESSION_GPU picks the type, H200 where staging
+# offers it). Uses the same saved answers as byot-train.sh.
 #
 # Needs on staging: session pods with at least ~90 GiB of memory (a 61 GB
 # model; default BYOT_SESSION_MEMORY_GIB=128), and multi-GPU sessions for
@@ -21,7 +21,8 @@ export BYOT_TRAIN_GPU="${BYOT_TRAIN_GPU:-A100}"
 export BYOT_TRAIN_MIN_GPU_GB="${BYOT_TRAIN_MIN_GPU_GB:-80}"
 export BYOT_MODEL="${BYOT_MODEL:-Qwen/Qwen3-30B-A3B}"
 export BYOT_SESSION_GPUS="${BYOT_SESSION_GPUS:-1}"
-export BYOT_SESSION_GPU="${BYOT_SESSION_GPU:-H200}"
+export BYOT_SESSION_GPU="${BYOT_SESSION_GPU:-A100}"
+export BYOT_SESSION_MIN_GPU_GB="${BYOT_SESSION_MIN_GPU_GB:-80}"
 export BYOT_SESSION_MEMORY_GIB="${BYOT_SESSION_MEMORY_GIB:-128}"
 export BYOT_SESSION_CPU_CORES="${BYOT_SESSION_CPU_CORES:-16}"
 export BYOT_MICRO_BATCH="${BYOT_MICRO_BATCH:-1}"
