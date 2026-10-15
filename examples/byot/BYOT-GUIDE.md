@@ -1,5 +1,8 @@
 # Bring Your Own Trainer on Basilica: hands-on guide (staging)
 
+Beta testers: [`BETA-TESTERS.md`](BETA-TESTERS.md) is the short version, with
+timings, cost and usage, a troubleshooting table and hints for coding agents.
+
 ## Fastest path: the one-command demo
 
 ```
@@ -12,7 +15,7 @@ That's the whole thing (`byot-demo.sh` in this directory). It needs:
 - a Basilica staging API key: during the beta, ask the Basilica team for one (if you already have staging access in the Basilica CLI, `basilica tokens create` prints one)
 - a Cloudflare R2 bucket and an R2 API token with write access to it (R2 is the storage backend in this version)
 
-It asks for these once and stores them locally, readable only by you. It cleans up after itself, including on Ctrl-C.
+It asks for these once and stores them locally, readable only by you. It cleans up after itself, including on Ctrl-C, and prints the session's usage and your account balance change before it does. Keep the machine awake while it runs (on macOS the script holds a `caffeinate` assertion; a closed lid still sleeps a laptop on battery).
 
 **Which R2 value goes where.**
 
@@ -27,9 +30,9 @@ Don't use the Cloudflare account API token: it looks similar but is a different 
 
 The key goes into the demo's first prompt.
 
-Plan on about an hour the first time, and about 25 minutes after that. The first run downloads the model (about 3 GB) unless it is already in your Hugging Face cache; after that, most of the time is renting the GPU. Set `BYOT_DEMO_SKIP_PARK=1` to skip park/resume.
+Plan on about an hour the first time, and about 25 minutes after that. The first run downloads the model (about 3 GB) unless it is already in your Hugging Face cache; after that, most of the time is renting the GPU: a session's cold start is about 10 minutes (5 to 9 for the GPU node, about 3 for the image), and the demo prints what it is waiting for. Before it creates anything it checks that the GPU type is listed as available. Set `BYOT_DEMO_SKIP_PARK=1` to skip park/resume.
 
-**Latest verified run (2026-09-24): a brand-new user on a fresh machine** (empty home directory, SDK 0.36.0 from PyPI at the time; the demo now installs 0.36.4 or newer, Qwen2.5-1.5B-Instruct), every step through the public API:
+**Latest verified run (2026-09-24): a brand-new user on a fresh machine** (empty home directory, SDK 0.36.0 from PyPI at the time; the demo now installs 0.36.7 or newer, Qwen2.5-1.5B-Instruct), every step through the public API:
 
 | Step | Result | Clock |
 |---|---|---|
@@ -123,7 +126,7 @@ The contract between the two sides is small:
 `byot_grpo_minimal.py` in this directory is a complete, runnable GRPO trainer (about 140 lines) to copy as a starting point. Run it on any machine with an NVIDIA GPU, with the same settings as the demo:
 
 ```bash
-pip install "basilica-sdk[publisher]>=0.36.4" transformers datasets
+pip install "basilica-sdk[publisher]>=0.36.7" transformers datasets
 export BASILICA_STAGING_API_KEY=... BYOT_BUCKET=... BYOT_ENDPOINT=... \
        BYOT_ACCESS_KEY_ID=... BYOT_SECRET_ACCESS_KEY=...
 python byot_grpo_minimal.py        # STEPS=50 for a longer run
@@ -134,7 +137,7 @@ The `publisher` extra pulls in torch, numpy, safetensors and boto3 for the train
 ```python
 rl = BasilicaClient(base_url="https://api-staging.basilica.ai", api_key=...).rl
 rl.create_policy(policy, repo=MODEL, commit=..., tokenizer_digest=..., **bucket)   # the lineage
-s = rl.create_session(policy, gpu_model="H100", gpu_count=1, replicas=2)          # the rollout fleet
+s = rl.create_session(policy, gpu_model="A100", gpu_count=1, replicas=2)          # the rollout fleet
 handle = rl.policy(policy, storage=PolicyStorage(**bucket), work_dir="./publish")
 handle.publish_anchor(weights(), revision="step-0000")                            # full weights, once
 handle.wait_until_active("step-0000")
@@ -175,7 +178,8 @@ session.publish(weights(), revision=f"step-{step:04d}")
 ## Notes
 
 - **Staging, beta.** The RL surface lives on staging during the beta, and the client defaults to production, so pass `base_url` as above (or set `BASILICA_API_URL`).
-- **Timing honesty.** Renting a GPU depends on marketplace stock at that moment: minutes on a good day, longer on a bad one. The demo waits it out and cleans up either way; it never leaves a GPU running.
+- **Timing honesty.** Renting a GPU depends on marketplace stock at that moment: minutes on a good day, longer on a bad one. The demo waits it out and cleans up either way; it never leaves a GPU running. On staging, A100 is listed by several providers and H100 by few.
+- **Network blips.** SDKs after 0.36.7 retry platform reads and deletes through a dropped connection or a DNS error for up to 2 minutes (`BASILICA_RETRY_BUDGET_S`), retry each upload part and restart a failed upload (`BASILICA_UPLOAD_MAX_ATTEMPTS`, `BASILICA_UPLOAD_RESTARTS`); the scripts add their own retries on top, so older SDKs ride them out too.
 - **Upload speed.** The anchor is the full model (about 3 GB for the 1.5B demo), uploaded from wherever the script runs; it took about 4 minutes in the verified run. Patches are a small fraction of that.
-- **Settings.** `byot-demo.sh` reads `BYOT_DEMO_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`), `BYOT_DEMO_GPU` (default `H100`) and `BYOT_DEMO_SKIP_PARK=1`. `byot-train.sh` reads `BYOT_TRAIN_STEPS` (default 20) and `BYOT_TRAIN_GPU` (default `H100`). Both keep their files in `~/.basilica-byot-demo/` (set `BYOT_DEMO_DIR` to use another directory): saved answers in `env` (delete it to be asked again) and the train script's SSH key in `ssh/`.
+- **Settings.** `byot-demo.sh` reads `BYOT_DEMO_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`), `BYOT_DEMO_GPU` (default `A100`), `BYOT_DEMO_SKIP_PARK=1` and `BYOT_SKIP_GPU_CHECK=1`. `byot-train.sh` reads `BYOT_TRAIN_STEPS` (default 20), `BYOT_TRAIN_GPU` (default `A100`) and `BYOT_SESSION_GPU` (default `A100`). Both keep their files in `~/.basilica-byot-demo/` (set `BYOT_DEMO_DIR` to use another directory): saved answers in `env` (delete it to be asked again) and the train script's SSH key in `ssh/`.
 - **If the key is rejected**, remove its line from `~/.basilica-byot-demo/env` and re-run.

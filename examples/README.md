@@ -55,7 +55,8 @@ mpirun / accelerate), pass `command=[...]` and the same
 Your trainer, Basilica's vLLM rollout fleet: publish anchors and sparse
 patches to your own bucket, sample in the training dialect (token ids and
 sampler logprobs) and train with GRPO. Staging only during the beta. See
-[`byot/README.md`](byot/README.md) and [`byot/BYOT-GUIDE.md`](byot/BYOT-GUIDE.md).
+[`byot/README.md`](byot/README.md), [`byot/BETA-TESTERS.md`](byot/BETA-TESTERS.md)
+(beta quickstart and troubleshooting) and [`byot/BYOT-GUIDE.md`](byot/BYOT-GUIDE.md).
 
 | Example | Description | Run |
 |---------|-------------|-----|

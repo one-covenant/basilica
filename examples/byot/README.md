@@ -3,8 +3,10 @@
 Runnable examples for Basilica's RL surface in bring-your-own-trainer mode:
 you keep the trainer (your code, your GPUs, your optimizer), Basilica runs a
 private vLLM rollout fleet that serves the weights you publish to your own
-bucket. Start with [`BYOT-GUIDE.md`](BYOT-GUIDE.md): it explains the contract,
-the credentials you need and the verified runs behind each script.
+bucket. Beta testers: start with [`BETA-TESTERS.md`](BETA-TESTERS.md), the
+short version (quickstart, timings, cost and usage, troubleshooting, hints for
+coding agents). [`BYOT-GUIDE.md`](BYOT-GUIDE.md) explains the contract, the
+credentials you need and the verified runs behind each script.
 
 The RL surface lives on staging during the beta. Every script defaults to
 `https://api-staging.basilica.ai` (override with `BASILICA_API_URL`).
@@ -19,7 +21,8 @@ The RL surface lives on staging during the beta. Every script defaults to
 The two shell scripts ask for these once and save them in
 `$BYOT_DEMO_DIR/env` (default `~/.basilica-byot-demo/env`, readable only by
 you). Both clean up their session, policy and rented GPU on exit, also on
-Ctrl-C.
+Ctrl-C, and print the session's usage and your balance change first. Keep
+the machine awake while they run.
 
 ## Files
 
