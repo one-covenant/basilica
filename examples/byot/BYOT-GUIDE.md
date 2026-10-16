@@ -154,10 +154,15 @@ out = session.generate(token_ids=prompts, n=N, max_tokens=320, temperature=1.0, 
 rewards = [reward(tok.decode(ids, skip_special_tokens=True), golds[i // N])
            for i, ids in enumerate(out.token_ids)]
 
-# 3. PPO-clip update against the SAMPLER's own logprobs (out.logprobs).
+# 3. PPO-clip update against the TRAINER's recomputed logprobs, weighted by a
+#    capped importance weight for the sampler's (out.logprobs); see Numerics.
+with torch.no_grad():
+    old = trainer_logprobs(model, seqs)          # same weights, before the update
+sampler = torch.tensor(out.logprobs[i], device="cuda")
+w = torch.exp(old - sampler).clamp(max=TIS_CAP)  # TIS_CAP = 2.0
 opt.zero_grad(set_to_none=True)
-ratio = torch.exp(trainer_logprobs - torch.tensor(out.logprobs[i], device="cuda"))
-loss = -torch.minimum(ratio * a, ratio.clamp(1 - CLIP, 1 + CLIP) * a).sum() / ntok
+ratio = torch.exp(trainer_logprobs(model, seqs) - old)
+loss = -(w * torch.minimum(ratio * a, ratio.clamp(1 - CLIP, 1 + CLIP) * a)).sum() / ntok
 loss.backward()
 gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 if torch.isfinite(gnorm):
@@ -174,6 +179,14 @@ session.publish(weights(), revision=f"step-{step:04d}")
 - **Never step on a non-finite gradient.** Check the gradient norm before `opt.step()` and skip the step if it isn't finite; that keeps NaN out of your weights in the first place. From SDK 0.36.1, `publish()` is the backstop: it raises `NonFiniteWeights` (naming the tensor) and uploads nothing. If it fires, your trainer's weights are already bad, so stop or roll back to your last good state; don't keep training from them.
 - **Right-pad and drop the attention mask** when recomputing logprobs in bf16. With causal attention, real tokens never attend to trailing padding, so the mask changes nothing, and PyTorch's fused attention can return NaN gradients from a padding mask in bf16.
 - **In async RL, samples run several revisions behind.** The fleet finishes loading one revision before starting the next, so with a publish every ~15 s our runs measured a median of about 4 steps and at most 8. Every sample carries `servedRevision`, so you can weight or filter by staleness. For strictly on-policy steps, `wait_until_active(rev)` first, then assert `revision=rev` when you generate.
+
+## Numerics: what matches and what doesn't
+
+- **The weights match exactly.** The fleet serves the bf16 weights you published, bit for bit: every replica checks the revision's content digest before serving it. The engine is stock vLLM at the checkpoint's own dtype (bf16 for Qwen), with no quantization. Precision is bf16 only in this version.
+- **The logprobs don't match exactly, and can't.** vLLM's kernels, and the way it batches requests, round differently from your trainer's, so even with identical weights the per-token logprobs differ. With a bf16-autocast trainer and both sides on the same weights, we measured a mean gap of about 0.008 nats per token on Qwen2.5-1.5B and 0.012 on Qwen3-1.7B. Running either side in fp32 would shrink the gap but not close it.
+- **So don't use the sampler's logprobs as PPO's old logprobs.** If you do, roundoff alone moves the ratio off 1, and PPO clips tokens the update never moved. In a 20-step Qwen2.5-1.5B run that came to 0.06% to 0.28% of tokens per step. Instead, recompute the old logprobs with your trainer before the update (one extra forward pass, no gradient), so the ratio starts at exactly 1 (in the same run, no token was clipped). Then use the sampler's logprobs only in a capped importance weight, `min(pi_trainer / pi_sampler, C)` with C around 2. That weight corrects for samples from a lagging revision (async RL) and for the roundoff. verl does the same: its actor recomputes the old logprobs. `byot_grpo.py` and `byot_grpo_minimal.py` do this; `byot_grpo.py` logs per step the share of tokens it clipped and the share that clipping against the sampler would have clipped.
+- **Which logprobs you get.** By default (`logprobsMode: "raw"`) `out.logprobs` is the model's log-softmax before temperature, top-k/top-p/min-p and penalties. That's the distribution the sampler drew from only at temperature 1 with none of those. If you sample with other settings, correct for it, or create the session with `serving={"logprobsMode": "processed"}`.
+- **Health check on every revision.** After each activation every replica scores 8 fixed prompts by prefill and by decode and compares them (`handle.revision_probes(rev)`; `status` is `ok`, `warn` or `collapse`). It checks the engine against itself, not against your trainer, so it catches a bad load, not the roundoff above. It reports and never rejects.
 
 ## Notes
 

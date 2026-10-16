@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BYOT examples no longer clip on roundoff.** `byot_grpo.py` and
+  `byot_grpo_minimal.py` used the sampler's logprobs as PPO's old
+  logprobs. vLLM's logprobs differ from the trainer's by bf16 roundoff even
+  on identical weights (about 0.01 nats per token on average), so PPO
+  clipped tokens the update never moved. Both now recompute the old
+  logprobs with the trainer before the update, so the PPO ratio starts at
+  1, and use the sampler's logprobs only in a capped importance weight
+  `min(pi_trainer / pi_sampler, 2)`, which also corrects for samples from
+  a lagging revision. `byot_grpo.py` logs per step the share of tokens
+  clipped and the share that clipping against the sampler would have
+  clipped, and checks at the end that no token was clipped
+  (`BYOT_TRAIN_TIS_CAP` sets the cap). One extra forward pass per step.
+
+### Documentation
+
+- **BYOT guide: Numerics.** A new section says what matches between the
+  fleet and your trainer (the weights, bit for bit) and what can't (the
+  logprobs), the recommended loss, which logprobs `logprobsMode` returns,
+  and what the per-revision probes check.
+
 ## [0.36.8] - 2026-10-15
 
 ### Added

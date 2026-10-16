@@ -3,15 +3,16 @@
 
 Your trainer (this script, on a CUDA GPU) keeps fp32 master weights. Basilica
 serves your rollouts from a private vLLM fleet that runs the weights you just
-published. Each step: sample -> score -> PPO-clip update against the sampler's
-own logprobs -> publish the new weights as a sparse patch.
+published. Each step: sample -> score -> PPO-clip update against the trainer's
+own recomputed logprobs, with a capped importance weight for the sampler's ->
+publish the new weights as a sparse patch.
 
     pip install "basilica-sdk[publisher]>=0.36.7" transformers datasets
     export BASILICA_STAGING_API_KEY=... BYOT_BUCKET=... BYOT_ENDPOINT=... \
            BYOT_ACCESS_KEY_ID=... BYOT_SECRET_ACCESS_KEY=...
     python byot_grpo_minimal.py            # STEPS=50 python ... for a longer run
 """
-import glob, hashlib, math, os, re, secrets, statistics, time
+import glob, hashlib, math, os, re, secrets, statistics, time, warnings
 
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")  # plain HTTPS downloads: Xet can stall
 
@@ -23,9 +24,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from basilica import BasilicaClient
 from basilica.publisher import NonFiniteWeights, PolicyStorage
 
+# The no-gradient recompute of the old logprobs runs through gradient
+# checkpointing, which warns that no input needs a gradient: none should.
+warnings.filterwarnings("ignore", message="None of the inputs have requires_grad=True")
+
 MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 STEPS = int(os.environ.get("STEPS", os.environ.get("BYOT_TRAIN_STEPS", "20")))
 PROMPTS, N, LR, CLIP = 8, 8, 1e-6, 0.2  # 8 prompts x 8 samples (the GRPO group) per step
+TIS_CAP = 2.0  # cap on the importance weight pi_trainer / pi_sampler
 ASK = "\nSolve step by step. Put the final numeric answer on the last line as '#### <number>'."
 
 bucket = dict(bucket=os.environ["BYOT_BUCKET"], endpoint=os.environ["BYOT_ENDPOINT"],
@@ -114,11 +120,17 @@ try:
             mean, std = statistics.fmean(group), statistics.pstdev(group)
             adv += [(r - mean) / (std + 1e-4) if std else 0.0 for r in group]
 
-        # 3. PPO-clip update against the SAMPLER's own logprobs: the importance
-        #    ratio corrects for the samples coming from a slightly older revision.
+        # 3. PPO-clip update. The old logprobs are the TRAINER's, recomputed
+        #    before the update: vLLM's differ from the trainer's by bf16
+        #    roundoff even on identical weights, and as the PPO denominator
+        #    that alone would clip some tokens. The sampler's logprobs enter
+        #    only through a capped importance weight, which corrects for the
+        #    samples coming from a slightly older revision.
         seqs = [prompts[i // N] + list(ids) for i, ids in enumerate(out.token_ids)]
         plens = [len(prompts[i // N]) for i in range(len(seqs))]
         ntok = sum(len(ids) for ids in out.token_ids)
+        with torch.no_grad():
+            prox = [lp for m in range(0, len(seqs), 8) for lp in logprobs(model, seqs[m:m + 8], plens[m:m + 8])]
         opt.zero_grad(set_to_none=True)
         for m in range(0, len(seqs), 8):
             loss = torch.zeros((), device="cuda")
@@ -126,11 +138,13 @@ try:
                 old = torch.tensor(out.logprobs[m + j], device="cuda")
                 # No gradient where the sampler's logprob is non-finite or at
                 # vLLM's -9999 floor (exp would overflow; inf * 0 is NaN), and
-                # a clamped log-ratio, as PPO trainers do.
+                # clamped log-ratios, as PPO trainers do.
                 bad = ~torch.isfinite(old) | (old < -1e3)
-                ratio = torch.exp((lp - old).masked_fill(bad, 0.0).clamp(-20.0, 20.0))
+                w = torch.exp((prox[m + j] - old).masked_fill(bad, 0.0).clamp(-20.0, 20.0))
+                w = w.clamp(max=TIS_CAP).masked_fill(bad, 0.0)
+                ratio = torch.exp((lp - prox[m + j]).clamp(-20.0, 20.0))
                 a = adv[m + j]
-                loss = loss - torch.minimum(ratio * a, ratio.clamp(1 - CLIP, 1 + CLIP) * a).sum() / ntok
+                loss = loss - (w * torch.minimum(ratio * a, ratio.clamp(1 - CLIP, 1 + CLIP) * a)).sum() / ntok
             loss.backward()
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         if not torch.isfinite(gnorm):  # never take (or publish) a non-finite step
