@@ -6,12 +6,16 @@ Run by byot-train.sh on a rented GPU; also runnable by hand on any CUDA box.
 The trainer (this process, on its own GPU) keeps fp32 master weights and an
 AdamW optimizer; the rollout fleet is a 2-replica BYOT session on staging.
 Every step: sample GSM8K prompts x N through the session in the training
-dialect, score them, take a PPO-clip step against the SAMPLER's logprobs,
-and publish the new bf16 weights as a patch. Nothing is faked.
+dialect, score them, recompute the old logprobs with the trainer itself, take
+a PPO-clip step against those (weighted by a capped importance weight for the
+sampler's logprobs), and publish the new bf16 weights as a patch. Nothing is
+faked.
 
 Measured per step: reward, which revision served the rollouts and how far
-behind the trainer it was, publish time, the revision's size in R2, and the
-trainer-vs-sampler logprob gap. Every SYNC_EVERY steps: wait for the latest
+behind the trainer it was, publish time, the revision's size in R2, the
+trainer-vs-sampler logprob gap, and the share of tokens PPO clipped (against
+the trainer's recompute, and what clipping against the sampler would have
+been). Every SYNC_EVERY steps: wait for the latest
 revision to go Active (timed), generate with it ASSERTED, and check the gap
 is at the numerical floor. At the end: usage must match what the loop
 generated, no revision may be Rejected, and the session is cleaned up.
@@ -23,7 +27,7 @@ BYOT_REPLICAS, BYOT_PROMPTS, BYOT_LR, BYOT_MAX_TOKENS).
 """
 from __future__ import annotations
 
-import json, math, os, random, re, secrets, statistics, time
+import json, math, os, random, re, secrets, statistics, time, warnings
 from typing import NoReturn
 
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")  # the Xet path stalls on some networks
@@ -38,6 +42,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import basilica
 from basilica.publisher import PolicyStorage
 from basilica.session import SessionServingError
+
+# The no-gradient recompute of the old logprobs runs through gradient
+# checkpointing, which warns that no input needs a gradient: none should.
+warnings.filterwarnings("ignore", message="None of the inputs have requires_grad=True")
 
 API = os.environ.get("BASILICA_API_URL", "https://api-staging.basilica.ai")
 
@@ -54,6 +62,10 @@ N = int(os.environ.get("BYOT_TRAIN_N", "8"))                   # GRPO group size
 MAX_TOK = int(setting("MAX_TOKENS", "320"))
 LR = float(setting("LR", "1e-6"))
 CLIP = 0.2
+# Cap on the importance weight pi_trainer / pi_sampler (truncated importance
+# sampling). It corrects for sampling from a lagging revision and for vLLM's
+# bf16 roundoff, without letting one token's weight blow up.
+TIS_CAP = float(os.environ.get("BYOT_TRAIN_TIS_CAP", "2.0"))
 SYNC_EVERY = int(os.environ.get("BYOT_TRAIN_SYNC_EVERY", "10"))
 REPLICAS = int(setting("REPLICAS", "2"))
 # A100 is what staging has most of; BYOT_SESSION_GPU=H100 where it is offered.
@@ -149,6 +161,11 @@ def wait_serving(rl, uid: str, timeout_s: float = 3600) -> None:
         if time.time() - start > timeout_s:
             fail(f"session not serving after {timeout_s / 60:.0f} min")
         time.sleep(20)
+
+
+def out_band(ratio):
+    """Tokens whose PPO ratio is outside the clip band."""
+    return (ratio < 1 - CLIP) | (ratio > 1 + CLIP)
 
 
 def record(**kw) -> None:
@@ -356,10 +373,27 @@ def main() -> None:
                 mu, sd = statistics.fmean(grp), statistics.pstdev(grp)
                 adv += [(r - mu) / (sd + 1e-4) if sd > 0 else 0.0 for r in grp]
 
-            # PPO-clip against the sampler's logprobs, token-level mean.
+            # The old logprobs come from the trainer itself, not from vLLM.
+            # vLLM's kernels round differently from the trainer's, so even
+            # with identical weights its logprobs differ per token (about
+            # 0.01 nats on average); as the PPO denominator that difference
+            # alone would push some tokens past the clip. Recomputed here, the
+            # PPO ratio starts at 1 and clips only what the update moves.
+            # The sampler's logprobs enter only through a capped importance
+            # weight, pi_trainer / pi_sampler, which corrects for sampling
+            # from a lagging revision. Costs one extra forward per step.
             t_train = time.time()
             ntok = sum(len(s) - p for s, p in zip(seqs, plens))
+            prox_lp = []
+            with torch.no_grad():
+                for m in range(0, len(seqs), MICRO):
+                    sl = slice(m, m + MICRO)
+                    prox_lp += [lp.detach() for lp in token_logprobs(model, seqs[sl], plens[sl], device)]
             gaps, ratios = [], []
+            # Token counts: clipped against the trainer's recompute, what
+            # clipping against the sampler would have been, and capped
+            # importance weights; all over tokens with a usable sampler logprob.
+            n_clip = n_sclip = n_capped = n_good = 0
             # Forensics for a non-finite step: what the inputs looked like.
             bad_tok, trainer_nf, max_d, loss_nf = 0, 0, 0.0, []
             opt.zero_grad(set_to_none=True)
@@ -370,23 +404,29 @@ def main() -> None:
                 for j, lp in enumerate(new_lp):
                     i = m + j
                     # A sampler logprob that is non-finite, or vLLM's -9999
-                    # floor, would make exp(lp - old) overflow to inf, and
+                    # floor, would make the importance weight overflow, and
                     # inf * 0 (a flat group's advantage) is NaN. Such tokens
-                    # get no gradient; the log-ratio is also clamped, as
+                    # get no gradient; the log-ratios are also clamped, as
                     # PPO trainers such as verl do.
                     bad = ~torch.isfinite(old_lp[i]) | (old_lp[i] < -1e3)
-                    raw = lp - old_lp[i]
+                    prox = prox_lp[i]
+                    gap_d = prox - old_lp[i]   # trainer vs sampler, same tokens
                     bad_tok += int(bad.sum())
                     trainer_nf += int((~torch.isfinite(lp)).sum())
-                    good = raw.detach()[~bad]
+                    good = gap_d[~bad]
                     if good.numel():
                         max_d = max(max_d, float(good.abs().max()))
                         gaps.append(float(good.abs().mean()))
-                    d = raw.masked_fill(bad, 0.0).clamp(-20.0, 20.0)
-                    ratio = torch.exp(d)
+                    ratio = torch.exp((lp - prox).clamp(-20.0, 20.0))
+                    w = torch.exp(gap_d.masked_fill(bad, 0.0).clamp(-20.0, 20.0)).clamp(max=TIS_CAP)
+                    w = w.masked_fill(bad, 0.0)
                     ratios.append(ratio.detach().mean().item())
+                    n_good += int((~bad).sum())
+                    n_clip += int((out_band(ratio.detach()) & ~bad).sum())
+                    n_sclip += int((out_band(torch.exp(gap_d.clamp(-20.0, 20.0))) & ~bad).sum())
+                    n_capped += int(((gap_d > math.log(TIS_CAP)) & ~bad).sum())
                     a = adv[i]
-                    obj = torch.minimum(ratio * a, torch.clamp(ratio, 1 - CLIP, 1 + CLIP) * a)
+                    obj = w * torch.minimum(ratio * a, torch.clamp(ratio, 1 - CLIP, 1 + CLIP) * a)
                     loss = loss - obj.sum() / ntok
                 if not torch.isfinite(loss):
                     loss_nf.append(m // MICRO)
@@ -404,6 +444,7 @@ def main() -> None:
                 record(step=step, skipped=True, reward=statistics.fmean(rewards), served=served, lag=lag,
                        sync=sync, active_wait=None, gen_s=round(gen_s, 1), train_s=0, pub_s=0,
                        rev_bytes=0, kind="skipped", gap=float("nan"), ratio=float("nan"), gnorm=gnorm,
+                       clip=float("nan"), sampler_clip=float("nan"), capped=float("nan"),
                        comp_tokens=ntok)
                 continue
             opt.step()
@@ -421,13 +462,15 @@ def main() -> None:
             mean_r = statistics.fmean(rewards)
             gap = statistics.fmean(gaps)
             rat = statistics.fmean(ratios)
+            clip, sclip, capped = ((k / n_good if n_good else 0.0) for k in (n_clip, n_sclip, n_capped))
             record(step=step, reward=mean_r, served=served, lag=lag, sync=sync,
                    active_wait=round(active_wait, 1) if sync else None, gen_s=round(gen_s, 1),
                    train_s=round(train_s, 1), pub_s=round(pub_s, 1), rev_bytes=size, kind=kind,
                    gap=round(gap, 4), ratio=round(rat, 4), gnorm=round(gnorm, 3),
-                   comp_tokens=ntok)
+                   clip=clip, sampler_clip=sclip, capped=capped, comp_tokens=ntok)
             log(f"step {step:3d} reward {mean_r:.3f} | served {served} (lag {lag}) | "
-                f"gap {gap:.4f} ratio {rat:.3f} | {kind} {size / 1e6:.1f} MB pub {pub_s:.0f}s | "
+                f"gap {gap:.4f} ratio {rat:.3f} clipped {clip:.2%} (vs sampler {sclip:.2%}) "
+                f"capped {capped:.2%} | {kind} {size / 1e6:.1f} MB pub {pub_s:.0f}s | "
                 f"gen {gen_s:.0f}s train {train_s:.0f}s"
                 + (f" | SYNC: Active after {active_wait:.0f}s" if sync else "")
                 + (f" | {bad_tok} sampler tokens floored (no gradient)" if bad_tok else ""))
@@ -447,6 +490,8 @@ def main() -> None:
         sync_rows = [r for r in rows if r["sync"]]
         sync_gap = statistics.fmean(r["gap"] for r in sync_rows) if sync_rows else float("nan")
         sync_ratio = statistics.fmean(r["ratio"] for r in sync_rows) if sync_rows else float("nan")
+        sync_sclip = statistics.fmean(r["sampler_clip"] for r in sync_rows) if sync_rows else float("nan")
+        max_clip = max((r["clip"] for r in rows), default=0.0)
         lags = [r["lag"] for r in rows if not r["sync"]]
         anchors = [r["step"] for r in rows if r["kind"] == "anchor"]
         patch_mb = [r["rev_bytes"] / 1e6 for r in rows if r["kind"] == "patch"]
@@ -478,7 +523,10 @@ def main() -> None:
         print("\n================ BYOT TRAINING: RESULT ================", flush=True)
         print(f"reward: first {half} steps {first:.3f}, last {len(rows) - half} steps {last:.3f} "
               f"({'UP' if last > first else 'NOT UP'})")
-        print(f"numerics (asserted, trainer == sampler revision): mean |logp gap| {sync_gap:.4f}, mean ratio {sync_ratio:.4f}")
+        print(f"numerics (asserted, trainer == sampler revision): mean |logp gap| {sync_gap:.4f}, "
+              f"mean PPO ratio {sync_ratio:.4f}; clipping against the sampler would have clipped "
+              f"{sync_sclip:.2%} of tokens from roundoff alone")
+        print(f"PPO clipping against the trainer's recompute: at most {max_clip:.2%} of tokens in any step")
         print(f"async lag (trainer step - served step): {spread(lags)}")
         print(f"time to Active at sync points: {waits} s")
         print(f"anchors published at steps: {anchors or 'none'} (plus step-0000"
@@ -492,6 +540,9 @@ def main() -> None:
         checks = {
             "reward trends up": last > first,
             "numerics at the floor (gap < 0.05, ratio within 5%)": sync_gap < 0.05 and abs(sync_ratio - 1) < 0.05,
+            # One update per batch: the ratio is 1 up to the trainer's own
+            # nondeterminism, so nothing should reach the clip.
+            "PPO ratio starts at 1 (no token clipped)": max_clip == 0,
             # The SDK re-anchors after 30 patches; shorter runs never reach one.
             **({"auto-anchor happened": bool(anchors)} if STEPS > 30 else {}),
             "no revision Rejected": "Rejected" not in states,
