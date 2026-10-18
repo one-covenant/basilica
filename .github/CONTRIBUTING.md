@@ -2,20 +2,39 @@
 
 Thanks for your interest in contributing to Basilica. We welcome contributions from the community.
 
+The public `one-covenant/basilica` repository distributes the reviewed `public/`
+tree from the private `one-covenant/basilica-backend` development monorepo.
+Maintainers develop changes in the monorepo and export additive, signed public
+commits. CLI/SDK release workflows, tags and package installation paths remain
+in this public repository.
+
 ## Getting Started
 
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/basilica.git`
-3. Add upstream remote: `git remote add upstream https://github.com/one-covenant/basilica.git`
-4. Create a feature branch: `git checkout -b feature/your-feature-name`
+Open an [issue in the public repository](https://github.com/one-covenant/basilica/issues)
+with a clear reproduction, proposed change, or patch. Public PRs remain welcome
+and accessible. Maintainers review and carry accepted changes into a private
+monorepo PR with attribution, then regenerate this public tree. Existing PR
+history remains available; do not merge independently authored changes directly
+into the generated distribution.
+
+Dependency version PRs for the public Rust workspace, Python SDK and validator
+images are scheduled in the development monorepo and exported after review.
+The public mirror does not schedule new version PRs; existing public PRs remain
+available for maintainers to carry forward. Maintainers review the SHA pins in
+the public release workflows manually in the monorepo before export, because
+GitHub's Dependabot Actions scanner covers only repository-root workflows.
+
+Maintainers working in the monorepo run the commands below from `public/`.
+They also work from the repository root when validating a coordinated backend
+and public change. In the standalone public repository, run them from its root.
 
 ## Development Setup
 
 ### Prerequisites
 
-- Rust 1.75.0 or higher
-- Docker (for containerized execution)
-- CUDA toolkit (for GPU support)
+- Rust toolchain from `rust-toolchain.toml`
+- Docker for container integration work
+- CUDA toolkit for GPU-specific work
 
 ### Building
 
@@ -26,7 +45,6 @@ cargo build
 # Build specific crate
 cargo build -p basilica-validator
 cargo build -p basilica-miner
-cargo build -p basilica-executor
 
 # Build with release optimizations
 cargo build --release
@@ -84,38 +102,20 @@ Fix weight calculation in validator scoring
 - Update tests to cover edge cases
 ```
 
-## Pull Request Process
+## Change Review
 
-1. Update your fork with latest upstream changes:
-   ```bash
-   git fetch upstream
-   git checkout main
-   git merge upstream/main
-   ```
+For a code change, run the relevant locked Cargo checks and include their
+results in the issue or maintainer PR:
 
-2. Rebase your feature branch:
-   ```bash
-   git checkout feature/your-feature-name
-   git rebase main
-   ```
+```bash
+cargo test --locked
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+```
 
-3. Run tests and ensure they pass:
-   ```bash
-   cargo test
-   cargo fmt --check
-   cargo clippy
-   ```
-
-4. Push to your fork:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-5. Create a pull request:
-   - Use the PR template
-   - Link related issues
-   - Provide clear description of changes
-   - Include test results
+Link the public issue and explain any API or package compatibility effects.
+Maintainers verify the changed monorepo component and its exported public tree
+before updating this distribution or publishing a release.
 
 ## Testing Requirements
 

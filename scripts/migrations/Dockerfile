@@ -1,9 +1,10 @@
 # AEAD Key Migration Tool Dockerfile
 # Builds a minimal container for running the migration in ECS Fargate
 
-FROM rust:1.80-slim-bookworm AS builder
+FROM rust:1.97.1-slim-bookworm AS builder
 
 WORKDIR /build
+ENV BITTENSOR_OFFLINE=1
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -23,6 +24,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    libpcre2-8-0 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -r -u 1000 -s /bin/false migration
 

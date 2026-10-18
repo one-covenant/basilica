@@ -1,6 +1,6 @@
 ---
 name: basilica-serverless-ops
-description: Use when the user wants to deploy apps, APIs, inference endpoints, or OpenClaw/Tau-style services with the Basilica CLI.
+description: Use when the user wants to deploy apps, APIs, inference endpoints, or Tau agents with the Basilica CLI.
 ---
 
 # Basilica Serverless Ops
@@ -9,7 +9,6 @@ Use this skill for the managed deployment surface exposed by the CLI:
 
 - generic `basilica deploy`
 - inference templates like `vllm` and `sglang`
-- `basilica summon openclaw`
 - `basilica summon tau`
 - deployment logs, status, scale, and delete
 - share-token operations for private deployments
@@ -150,35 +149,11 @@ basilica deploy sglang Qwen/Qwen2.5-0.5B-Instruct --name my-sglang
 
 For large or unusual models, expect to tune health checks, GPU count, memory, or move to rentals.
 
-## OpenClaw And Tau
-
-OpenClaw:
-
-```bash
-basilica summon openclaw --provider openai
-basilica summon openclaw --provider anthropic
-```
-
-Tau:
+## Tau
 
 ```bash
 basilica summon tau
 ```
-
-OpenClaw-specific flags exposed by the current template include:
-
-- `--provider openai|anthropic`
-- `--backend-url`
-- `--model-id`
-- `--provider-id`
-- `--provider-api`
-- `--context-window`
-- `--max-tokens`
-
-OpenClaw template env requirements:
-
-- `OPENAI_API_KEY` for OpenAI-backed deploys
-- `ANTHROPIC_API_KEY` for Anthropic-backed deploys
 
 Tau template env requirements:
 
@@ -209,7 +184,6 @@ Current behavior:
 
 - deployments are public by default
 - `--private` makes the deploy share-token-gated
-- OpenClaw is a special case and is intended to be public with its own gateway token behavior
 
 ## Topology And Placement Controls
 
@@ -254,12 +228,10 @@ basilica deploy image \
 - `examples/15_cli_deploy/README.md`
 - `examples/inference/README.md`
 - `crates/basilica-cli/src/cli/handlers/deploy/mod.rs`
-- `crates/basilica-cli/src/cli/handlers/deploy/templates/openclaw.rs`
 - `crates/basilica-cli/src/cli/handlers/deploy/templates/vllm.rs`
 - `crates/basilica-cli/src/cli/handlers/deploy/templates/sglang.rs`
 - `crates/basilica-cli/src/cli/handlers/deploy/templates/tau.rs`
 
 ## TODOs
 
-- add a repo-local end-to-end example for `summon openclaw` with provider env setup
 - add a tested table mapping model size to recommended `deploy` vs `rentals` path

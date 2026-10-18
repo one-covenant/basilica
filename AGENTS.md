@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repository is the customer-facing surface for Basilica: the `basilica` CLI, the Python and Rust SDKs, and runnable examples. All agent work should target this surface.
+This directory is the customer-facing surface for Basilica: the `basilica` CLI, the Python and Rust SDKs, and runnable examples. Paths in this guide resolve from this directory, whether it is `public/` in the monorepo or the root of the public distribution repository.
 
 Start here:
 
@@ -12,19 +12,19 @@ Start here:
 
 Use these repo-local skills for agent work:
 
-- `basilica/.claude/skills/basilica-account-ops/SKILL.md`
+- [Account operations](.claude/skills/basilica-account-ops/SKILL.md)
   - login, device-code auth, API tokens, balance, TAO funding, deposit tracking
-- `basilica/.claude/skills/basilica-rentals-ops/SKILL.md`
+- [Rentals operations](.claude/skills/basilica-rentals-ops/SKILL.md)
   - machine discovery, SSH keys, direct rentals, volumes, copy/exec/ssh, teardown
-- `basilica/.claude/skills/basilica-serverless-ops/SKILL.md`
-  - `basilica deploy`, `summon`, vLLM, SGLang, OpenClaw, Tau, scale/logs/share-token
-- `basilica/.claude/skills/basilica-sdk-ops/SKILL.md`
+- [Serverless operations](.claude/skills/basilica-serverless-ops/SKILL.md)
+  - `basilica deploy`, `summon`, vLLM, SGLang, Tau, scale/logs/share-token
+- [SDK operations](.claude/skills/basilica-sdk-ops/SKILL.md)
   - Python automation, SDK caveats, blocking deploy semantics, low-level API gaps
 
 For a single end-to-end playbook with copyable flows, use:
 
-- `basilica/docs/agent-cloud-ops.md`
-  - auth, funding, rentals, deploys, inference, OpenClaw, Tau, SDK, cleanup
+- [Agent cloud operations](docs/agent-cloud-ops.md)
+  - auth, funding, rentals, deploys, inference, Tau, SDK, cleanup
 
 ## Routing
 
@@ -119,9 +119,9 @@ Rules:
   bench + DiLoCo), `examples/21_distributed_torchrun.py` (BYO command +
   mid-run scale), `examples/22_distributed_with_bench.py` (bench-result
   inspection + JSON dump).
-- User-facing runbook: `docs/runbooks/USER-RUNBOOK-DISTRIBUTED-NCCL.md`
-  on basilica-backend. Custom-image guide:
-  `docs/runbooks/BRINGING-YOUR-OWN-TRAINER-IMAGE.md`.
+- User-facing runbooks in the backend repository:
+  [distributed NCCL](https://github.com/one-covenant/basilica-backend/blob/main/docs/runbooks/USER-RUNBOOK-DISTRIBUTED-NCCL.md) and
+  [bring your own trainer image](https://github.com/one-covenant/basilica-backend/blob/main/docs/runbooks/BRINGING-YOUR-OWN-TRAINER-IMAGE.md).
 
 ## Canonical Agent Rules
 
@@ -197,7 +197,6 @@ Be careful with stale examples in old docs or transcripts.
 
 - deploys are public by default
 - `--private` changes the deploy to share-token-gated access
-- OpenClaw deployments are intentionally public and use their own gateway token flow
 
 ### 7. Know the current gaps
 
@@ -231,7 +230,7 @@ These files are the best source of truth for agent docs and command behavior:
 - User wants to top up credits: account ops
 - User wants programmatic provisioning in Python: SDK ops
 - User wants multi-rank distributed training (DDP, DiLoCo, FSDP, NCCL collectives): `@basilica.distributed` decorator (see "Distributed Training" above)
-- User wants OpenClaw or Tau specifically: serverless deploy skill
+- User wants Tau specifically: serverless deploy skill
 - User wants huge multi-GPU model serving with lots of manual control: rentals first, deploy second
 
 ## TODOs For Future Agent Docs

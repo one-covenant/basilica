@@ -1,5 +1,6 @@
 services:
   validator:
+    platform: linux/amd64  # Veritas executables are x86-64 ELF files.
     build:
       context: ../..
       dockerfile: scripts/validator/Dockerfile

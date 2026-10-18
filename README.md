@@ -4,6 +4,12 @@ On-demand access to the Basilica GPU cloud — via CLI, Python SDK, and programm
 
 This repository is the public surface for Basilica users: the `basilica` CLI, the Python and Rust SDKs, and runnable examples.
 
+This distribution is generated from `public/` in the
+[Basilica development monorepo](https://github.com/one-covenant/basilica-backend).
+CLI/SDK releases and public issues remain here. Maintainers carry accepted
+community changes into the monorepo before regenerating this public tree;
+see [contributing](.github/CONTRIBUTING.md).
+
 ---
 
 **Quick links:**
@@ -31,7 +37,7 @@ basilica skills install
 ## What you can do
 
 - **Rent GPUs directly** — SSH-accessible machines (secure cloud or community cloud) for training, inference, and interactive work.
-- **Deploy services** — stand up public HTTP endpoints, inference servers (vLLM, SGLang), OpenClaw apps, or custom containers.
+- **Deploy services** — stand up public HTTP endpoints, inference servers (vLLM, SGLang), Tau agents, or custom containers.
 - **Drive it from Python** — provision, monitor, and tear down resources programmatically with the Python SDK.
 - **Fund with TAO** — top up credits directly from a TAO wallet and track deposits.
 

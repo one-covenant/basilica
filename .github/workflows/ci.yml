@@ -47,6 +47,8 @@ jobs:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Validator artifact staging contracts
+        run: python3 -m unittest discover -s scripts/validator -p 'test_*.py'
       - name: Install pinned Rust toolchain
         run: |
           rustup show
@@ -242,7 +244,8 @@ jobs:
           ./scripts/gen-key.sh
       - name: Build and test validator
         run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          export VALIDATOR_PUBLIC_KEY
           cargo build --locked -p basilica-validator
           cargo nextest run --locked -p basilica-validator --all-features --no-fail-fast
           ./target/debug/basilica-validator --help
@@ -316,7 +319,8 @@ jobs:
           ./scripts/gen-key.sh
       - name: Build and test miner
         run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          export VALIDATOR_PUBLIC_KEY
           cargo build --locked -p basilica-miner
           cargo nextest run --locked -p basilica-miner --lib --no-fail-fast
           ./target/debug/basilica-miner --help

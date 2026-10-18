@@ -11,7 +11,7 @@ SYNC_WALLETS=false
 FOLLOW_LOGS=false
 HEALTH_CHECK=false
 TIMEOUT=60
-VERITAS_BINARIES_DIR="./bin"
+VERITAS_BINARIES_DIR=""
 
 usage() {
     cat <<EOF
@@ -114,17 +114,15 @@ build_service() {
 }
 
 deploy_veritas_binaries() {
-    if [[ -z "$VERITAS_BINARIES_DIR" ]]; then
-        return
-    fi
+    local binaries_dir="${VERITAS_BINARIES_DIR:-./bin}"
 
-    if [[ ! -d "$VERITAS_BINARIES_DIR" ]]; then
-        log "ERROR: Veritas binaries directory does not exist: $VERITAS_BINARIES_DIR"
+    if [[ ! -d "$binaries_dir" ]]; then
+        log "ERROR: Veritas binaries directory does not exist: $binaries_dir"
         exit 1
     fi
 
-    local executor_binary="$VERITAS_BINARIES_DIR/executor-binary/executor-binary"
-    local validator_binary="$VERITAS_BINARIES_DIR/validator-binary/validator-binary"
+    local executor_binary="$binaries_dir/executor-binary/executor-binary"
+    local validator_binary="$binaries_dir/validator-binary/validator-binary"
 
     if [[ ! -f "$executor_binary" ]]; then
         log "ERROR: executor-binary not found at: $executor_binary"
@@ -137,13 +135,23 @@ deploy_veritas_binaries() {
     fi
 
     log "Deploying veritas binaries to validator"
-    ssh_cmd "mkdir -p /opt/basilica/bin"
+    # Earlier releases copied flat files at these names. Preserve them before
+    # creating the directory layout used by validator.toml.
+    # Expand path and backup variables on the remote host.
+    # shellcheck disable=SC2016
+    ssh_cmd 'set -e; mkdir -p /opt/basilica/bin && for name in executor-binary validator-binary; do
+        path="/opt/basilica/bin/$name"
+        if [ -f "$path" ]; then
+            backup="$(mktemp "$path.legacy.XXXXXX")" && mv "$path" "$backup"
+        fi
+        mkdir -p "$path"
+    done'
 
-    scp_file "$executor_binary" "/opt/basilica/bin/executor-binary"
-    scp_file "$validator_binary" "/opt/basilica/bin/validator-binary"
+    scp_file "$executor_binary" "/opt/basilica/bin/executor-binary/executor-binary"
+    scp_file "$validator_binary" "/opt/basilica/bin/validator-binary/validator-binary"
 
-    ssh_cmd "chmod +x /opt/basilica/bin/executor-binary"
-    ssh_cmd "chmod +x /opt/basilica/bin/validator-binary"
+    ssh_cmd "chmod +x /opt/basilica/bin/executor-binary/executor-binary"
+    ssh_cmd "chmod +x /opt/basilica/bin/validator-binary/validator-binary"
 
     log "Veritas binaries deployed successfully"
 }

@@ -16,7 +16,7 @@ Runnable examples live in [`../examples/`](../examples/). They cover:
 - GPU workloads with PyTorch + CUDA
 - Persistent storage, queues, and scale
 - Inference servers (vLLM, SGLang)
-- OpenClaw-style browser-native apps
+- Containerized browser-native apps
 
 ## Choosing the right control plane
 
@@ -25,7 +25,7 @@ Runnable examples live in [`../examples/`](../examples/). They cover:
 | A persistent GPU/CPU machine with SSH access | `basilica up` (rentals) |
 | A public HTTP endpoint or containerized service | `basilica deploy` |
 | Hosted inference with vLLM/SGLang | `basilica deploy vllm …` / `basilica deploy sglang …` |
-| OpenClaw or Tau apps | `basilica summon …` / `basilica deploy …` |
+| Tau agents | `basilica summon tau` / `basilica deploy tau` |
 | Programmatic automation | Python SDK (`basilica-sdk`) |
 
 ## Support

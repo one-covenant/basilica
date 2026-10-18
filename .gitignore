@@ -95,12 +95,16 @@ backup/*.sql
 # Runtime State
 *.pid
 *.lock
+!Cargo.lock
 !crates/basilica-sdk-python/uv.lock
 tmp/
 temp/
 .venv/
 
 # Binaries
+# Pinned Veritas blobs are staged locally for Docker builds, never committed.
+/bin/executor-binary/
+/bin/validator-binary/
 # executor
 # gpu-attestor
 # miner

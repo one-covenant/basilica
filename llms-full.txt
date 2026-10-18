@@ -186,26 +186,11 @@ basilica deploy sglang Qwen/Qwen2.5-0.5B-Instruct --name my-sglang
 
 Prefer rentals for huge models or workflows needing manual control.
 
-## OpenClaw And Tau
-
-OpenClaw:
-
-```bash
-basilica summon openclaw --provider openai
-basilica summon openclaw --provider anthropic
-```
-
-Tau:
+## Tau
 
 ```bash
 basilica summon tau
 ```
-
-OpenClaw notes:
-
-- OpenClaw deploys are intentionally public
-- access is controlled by the gateway token, not share tokens
-- provider/model/backend flags include `--backend-url`, `--model-id`, `--provider-id`, `--context-window`, and `--max-tokens`
 
 ## Private Deployments
 

@@ -33,8 +33,8 @@ base64 = { workspace = true }
 etcetera = { workspace = true }
 
 # Internal dependencies
-basilica-common = { path = "../basilica-common" }
-basilica-validator = { path = "../basilica-validator", features = ["client"] }
+basilica-common = { version = "0.1.0", path = "../basilica-common" }
+basilica-validator = { version = "0.1.0", path = "../basilica-validator", features = ["client"] }
 urlencoding = { workspace = true }
 
 [dev-dependencies]

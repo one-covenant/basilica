@@ -54,8 +54,8 @@ rust_decimal = { workspace = true }
 bigdecimal = { workspace = true }
 
 # Internal dependencies
-basilica-common = { path = "../basilica-common" }
-basilica-protocol = { path = "../basilica-protocol" }
+basilica-common = { version = "0.1.0", path = "../basilica-common" }
+basilica-protocol = { version = "0.1.0", path = "../basilica-protocol" }
 bittensor = { workspace = true }
 
 # Validator-specific dependencies

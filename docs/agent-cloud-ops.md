@@ -9,7 +9,7 @@ Use this when the user wants any of:
 - GPU/CPU rentals
 - serverless deploys
 - inference endpoints
-- OpenClaw or Tau
+- Tau agents
 - Python SDK automation
 
 ## 0. Control Plane Decision
@@ -184,26 +184,11 @@ For very large models:
 - expect longer startup and health-check tuning
 - prefer rentals if the workload needs manual control or long warmup
 
-## 6. OpenClaw And Tau
-
-OpenClaw:
-
-```bash
-basilica summon openclaw --provider openai
-basilica summon openclaw --provider anthropic
-```
-
-Tau:
+## 6. Tau
 
 ```bash
 basilica summon tau
 ```
-
-OpenClaw notes:
-
-- OpenClaw deploys are intentionally public
-- access is controlled by the OpenClaw gateway token, not share-token auth
-- the template supports provider/model/backend flags like `--backend-url`, `--model-id`, `--provider-id`, `--context-window`, and `--max-tokens`
 
 ## 7. Private Deployments
 

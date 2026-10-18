@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -63,59 +63,48 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-cd "$PROJECT_ROOT"
-
-# Copy veritas binaries to build context if specified
 if [[ -n "$VERITAS_BINARIES_DIR" ]]; then
     if [[ ! -d "$VERITAS_BINARIES_DIR" ]]; then
-        echo "Error: Veritas binaries directory does not exist: $VERITAS_BINARIES_DIR"
+        echo "Error: Veritas binaries directory does not exist: $VERITAS_BINARIES_DIR" >&2
         exit 1
     fi
-
-    EXECUTOR_BINARY_PATH="$VERITAS_BINARIES_DIR/executor-binary/executor-binary"
-    VALIDATOR_BINARY_PATH="$VERITAS_BINARIES_DIR/validator-binary/validator-binary"
-
-    if [[ ! -f "$EXECUTOR_BINARY_PATH" ]]; then
-        echo "Error: executor-binary not found at: $EXECUTOR_BINARY_PATH"
-        exit 1
-    fi
-
-    if [[ ! -f "$VALIDATOR_BINARY_PATH" ]]; then
-        echo "Error: validator-binary not found at: $VALIDATOR_BINARY_PATH"
-        exit 1
-    fi
-
-    echo "Copying veritas binaries to build context..."
-    cp "$EXECUTOR_BINARY_PATH" ./executor-binary
-    cp "$VALIDATOR_BINARY_PATH" ./validator-binary
-    echo "  - executor-binary: copied to ./executor-binary"
-    echo "  - validator-binary: copied to ./validator-binary"
-else
-    # Create empty placeholder files for Docker COPY
-    touch ./executor-binary
-    touch ./validator-binary
+    VERITAS_BINARIES_DIR="$(cd "$VERITAS_BINARIES_DIR" && pwd -P)"
 fi
 
-BUILD_ARGS=""
+cd "$PROJECT_ROOT"
+
+# Stage into the exact Docker COPY paths. The default pins both public source
+# blobs; custom binaries are accepted only through the explicit override.
+VERITAS_BINARY_SOURCE=pinned
+if [[ "$BUILD_IMAGE" == true ]]; then
+    if [[ -n "$VERITAS_BINARIES_DIR" ]]; then
+        ./scripts/validator/stage-veritas.sh --destination ./bin \
+            --source-dir "$VERITAS_BINARIES_DIR" --custom
+        VERITAS_BINARY_SOURCE=custom
+    else
+        ./scripts/validator/stage-veritas.sh --destination ./bin
+    fi
+fi
+
 if [[ "$RELEASE_MODE" == "true" ]]; then
-    BUILD_ARGS="--build-arg BUILD_MODE=release"
+    BUILD_ARGS=(--build-arg BUILD_MODE=release)
 else
-    BUILD_ARGS="--build-arg BUILD_MODE=debug"
+    BUILD_ARGS=(--build-arg BUILD_MODE=debug)
 fi
 
 if [[ -n "$FEATURES" ]]; then
-    BUILD_ARGS="$BUILD_ARGS --build-arg FEATURES=$FEATURES"
+    BUILD_ARGS+=(--build-arg "FEATURES=$FEATURES")
 fi
 
 
 # Pass Bittensor network configuration if set
-if [[ -n "$BITTENSOR_NETWORK" ]]; then
-    BUILD_ARGS="$BUILD_ARGS --build-arg BITTENSOR_NETWORK=$BITTENSOR_NETWORK"
+if [[ -n "${BITTENSOR_NETWORK:-}" ]]; then
+    BUILD_ARGS+=(--build-arg "BITTENSOR_NETWORK=$BITTENSOR_NETWORK")
     echo "Building with BITTENSOR_NETWORK=$BITTENSOR_NETWORK"
 fi
 
-if [[ -n "$METADATA_CHAIN_ENDPOINT" ]]; then
-    BUILD_ARGS="$BUILD_ARGS --build-arg METADATA_CHAIN_ENDPOINT=$METADATA_CHAIN_ENDPOINT"
+if [[ -n "${METADATA_CHAIN_ENDPOINT:-}" ]]; then
+    BUILD_ARGS+=(--build-arg "METADATA_CHAIN_ENDPOINT=$METADATA_CHAIN_ENDPOINT")
     echo "Building with METADATA_CHAIN_ENDPOINT=$METADATA_CHAIN_ENDPOINT"
 fi
 
@@ -125,7 +114,8 @@ if [[ "$BUILD_IMAGE" == "true" ]]; then
 
     docker build \
         --platform linux/amd64 \
-        $BUILD_ARGS \
+        --build-arg "VERITAS_BINARY_SOURCE=$VERITAS_BINARY_SOURCE" \
+        "${BUILD_ARGS[@]}" \
         -f scripts/validator/Dockerfile \
         -t "$IMAGE_NAME:$IMAGE_TAG" \
         .

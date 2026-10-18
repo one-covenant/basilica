@@ -38,8 +38,8 @@ hex = { workspace = true }
 url = { workspace = true }
 
 # Internal dependencies
-basilica-common = { path = "../basilica-common", features = ["sqlite"] }
-basilica-protocol = { path = "../basilica-protocol" }
+basilica-common = { version = "0.1.0", path = "../basilica-common", features = ["sqlite"] }
+basilica-protocol = { version = "0.1.0", path = "../basilica-protocol" }
 bittensor = { workspace = true }
 
 # Miner-specific dependencies

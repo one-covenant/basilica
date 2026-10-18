@@ -94,17 +94,23 @@ RUN apt-get update && \
 # Copy the built binary
 COPY --from=builder /workspace/basilica-validator /usr/local/bin/basilica-validator
 
-# Create basilica bin directory
-RUN mkdir -p /opt/basilica/bin
-
-# Copy veritas binaries if they exist in build context
-COPY bin/executor-binary /opt/basilica/bin/executor-binary
-COPY bin/validator-binary /opt/basilica/bin/validator-binary
-
-# Make binaries executable
-RUN chmod +x /usr/local/bin/basilica-validator && \
-    chmod +x /opt/basilica/bin/executor-binary 2>/dev/null || true && \
-    chmod +x /opt/basilica/bin/validator-binary 2>/dev/null || true
+# Stage the two pinned public binaries when building directly from a clean
+# checkout. build.sh can supply validated custom binaries explicitly.
+COPY scripts/validator/stage-veritas.sh /usr/local/bin/stage-veritas
+COPY bin/ /tmp/veritas-input/
+ARG VERITAS_BINARY_SOURCE=pinned
+RUN if [ "$VERITAS_BINARY_SOURCE" = custom ]; then \
+        /usr/local/bin/stage-veritas --destination /opt/basilica/bin \
+            --source-dir /tmp/veritas-input --custom; \
+    elif [ "$VERITAS_BINARY_SOURCE" = pinned ]; then \
+        /usr/local/bin/stage-veritas --destination /opt/basilica/bin; \
+    else \
+        echo "Invalid VERITAS_BINARY_SOURCE" >&2; exit 1; \
+    fi && \
+    test -x /opt/basilica/bin/executor-binary/executor-binary && \
+    test -x /opt/basilica/bin/validator-binary/validator-binary && \
+    chmod +x /usr/local/bin/basilica-validator && \
+    rm -rf /tmp/veritas-input
 
 # Create data directory for SQLite database
 RUN mkdir -p /var/lib/basilica/basilica-validator && \

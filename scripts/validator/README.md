@@ -18,6 +18,34 @@ Bittensor neuron for verification and scoring of miners and executors.
 docker-compose -f compose.dev.yml up
 ```
 
+## Veritas binary provenance
+
+Validator images include two x86-64 Veritas executables that were already
+published as Git blobs in `one-covenant/basilica` commit
+`e40e11f96712806644a586a9ee8895548efdebd9`. They are downloaded from the
+commit-pinned `raw.githubusercontent.com/one-covenant/basilica` paths and
+verified by `scripts/validator/stage-veritas.sh` before use:
+
+| Binary | SHA-256 |
+| --- | --- |
+| `bin/executor-binary/executor-binary` | `056922331186a08fd9a644ce8cbd0b0455accd73bc23dedd740109415ce6968a` |
+| `bin/validator-binary/validator-binary` | `391d6c5c673276e428ee5d9531a8c1aa7e306944a2eeb2102a5d42e548402eab` |
+
+The build script stages these under root `bin/`, which is ignored by Git. The
+Dockerfile always downloads and verifies the pinned blobs for its default
+build, including direct Docker or Compose builds. Existing local files in
+`bin/` cannot change a pinned image. Neither build path uses empty
+placeholders. Builds fail if the download is unavailable or its hash changes.
+
+To use a separately supplied Veritas build, pass
+`--veritas-binaries DIR` to `build.sh`; `DIR` must contain both
+`<name>/<name>` files. This explicit override validates that each input is a
+nonempty x86-64 ELF file before staging it. Its provenance is the operator's
+responsibility and the pinned SHA-256 checks do not apply to the override.
+`deploy.sh` uses the pinned files staged by `build.sh` for an ordinary SSH
+deployment and uses the supplied files when `-b DIR` is set. Both are copied to
+the nested paths expected by the validator configuration.
+
 ## Deployment Modes
 
 The validator supports two deployment modes:

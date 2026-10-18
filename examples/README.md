@@ -88,9 +88,7 @@ sampler logprobs) and train with GRPO. Staging only during the beta. See
 | `22_vllm_embeddings.py` | vLLM Embeddings API (E5-Mistral) | `python3 22_vllm_embeddings.py` |
 | `22_vllm_embeddings_llama.py` | vLLM Embeddings with Llama-3.1-8B | `python3 22_vllm_embeddings_llama.py` |
 | `23_vllm_llama_with_embeddings.py` | Llama-3.1-8B + E5 Embeddings (RAG stack) | `python3 23_vllm_llama_with_embeddings.py` |
-| `24_clawdbot.py` | Clawdbot AI agent platform | `python3 24_clawdbot.py` |
 | `25_kimi_k2_5.py` | Kimi-K2-Instruct 1T MoE (8x H200) | `python3 25_kimi_k2_5.py` |
-| `28_openclaw.py` | OpenClaw gateway | `python3 28_openclaw.py` |
 | `29_deploy_sglang_health_check.py` | SGLang with custom health check probes | `python3 29_deploy_sglang_health_check.py` |
 | `31_public_metadata.py` | Public metadata enrollment via Python SDK | `python3 31_public_metadata.py` |
 | `31_public_metadata.sh` | Public metadata enrollment lifecycle via CLI | `./31_public_metadata.sh` |
