@@ -2,6 +2,7 @@
 name = "basilica-cli"
 version = "0.34.0"
 edition = "2021"
+rust-version = "1.98.1"
 authors = ["Basilica Team"]
 description = "Unified CLI for Basilica GPU rental and network management"
 license = "MIT"
@@ -79,6 +80,6 @@ basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }
 
 [dev-dependencies]
-serial_test = "3"
+serial_test = "4"
 assert_cmd = "2"
 tempfile = { workspace = true }

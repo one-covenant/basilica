@@ -2,6 +2,7 @@
 name = "basilica-sdk"
 version = "0.36.0"
 edition = "2021"
+rust-version = "1.98.1"
 authors = ["Basilica Team"]
 description = "SDK for interacting with the Basilica GPU rental network"
 license = "MIT OR Apache-2.0"

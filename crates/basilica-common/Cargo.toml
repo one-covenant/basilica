@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Core shared types, errors, traits, and cryptographic utilities for Basilica "
 license = "MIT"
-rust-version = "1.70"
+rust-version = "1.98.1"
 build = "build.rs"
 
 [dependencies]

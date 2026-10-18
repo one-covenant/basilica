@@ -14,11 +14,11 @@
 
 use crate::error::CryptoError;
 use crate::identity::Hotkey;
+use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use bittensor::crypto::sr25519;
 use blake3::Hasher;
-use rand::RngCore;
 use std::str::FromStr;
 
 /// Blake3 hash digest size in bytes

@@ -99,7 +99,7 @@ impl ValidatorSshKeyManager {
     /// Generate new persistent SSH key
     async fn generate_persistent_key(&self, key_path: &PathBuf) -> Result<(String, PathBuf)> {
         // Generate keypair
-        let mut rng = rand::thread_rng();
+        let mut rng = ssh_key::rand_core::OsRng;
         let private_key = PrivateKey::random(&mut rng, self.key_algorithm.clone())
             .context("Failed to generate persistent private key")?;
         let public_key = private_key.public_key();
@@ -158,7 +158,7 @@ impl ValidatorSshKeyManager {
 
         // Generate keypair (do this synchronously to avoid Send issues)
         let (private_key, public_key, key_content) = {
-            let mut rng = rand::thread_rng();
+            let mut rng = ssh_key::rand_core::OsRng;
             let private_key = PrivateKey::random(&mut rng, self.key_algorithm.clone())
                 .context("Failed to generate private key")?;
             let public_key = private_key.public_key().clone();

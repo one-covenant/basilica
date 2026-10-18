@@ -4,12 +4,9 @@
 //! for deriving cryptographic keys from passwords or other key material.
 
 use crate::error::CryptoError;
-use argon2::{
-    password_hash::{PasswordHasher, SaltString},
-    Argon2, Params, Version,
-};
+use aes_gcm::aead::{rand_core::RngCore, OsRng};
+use argon2::{Argon2, Params, Version};
 use pbkdf2::pbkdf2_hmac_array;
-use rand::{rngs::OsRng, RngCore};
 use sha2::Sha256;
 
 /// Default number of iterations for PBKDF2
@@ -193,24 +190,14 @@ pub fn argon2_derive_key(password: &str, params: &KdfParams) -> Result<Vec<u8>, 
     // Create Argon2 instance
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, argon2_params);
 
-    // Generate output
-    let salt_string =
-        SaltString::encode_b64(&params.salt).map_err(|e| CryptoError::KeyDerivationFailed {
-            details: format!("Failed to encode salt: {e}"),
-        })?;
-
-    let hash = argon2
-        .hash_password(password.as_bytes(), &salt_string)
+    // Derive raw bytes directly so existing encrypted data retains the same key.
+    let mut key = vec![0u8; params.key_length];
+    argon2
+        .hash_password_into(password.as_bytes(), &params.salt, &mut key)
         .map_err(|e| CryptoError::KeyDerivationFailed {
             details: format!("Argon2 hashing failed: {e}"),
         })?;
-
-    // Extract the raw hash bytes
-    let hash_bytes = hash.hash.ok_or_else(|| CryptoError::KeyDerivationFailed {
-        details: "No hash output from Argon2".to_string(),
-    })?;
-
-    Ok(hash_bytes.as_bytes().to_vec())
+    Ok(key)
 }
 
 /// Simple wrapper for backward compatibility - uses PBKDF2 with sensible defaults
@@ -322,6 +309,11 @@ mod tests {
         // Same inputs should produce same key
         assert_eq!(key1, key2);
         assert_eq!(key1.len(), 32);
+        // Fixed output from Argon2 0.5.3's PHC path: preserve stored-key compatibility.
+        assert_eq!(
+            hex::encode(&key1),
+            "b04f7b0c1780f4c1ed1bac9abce1cacaff669ce9f23a19593c17c5a689bea71c"
+        );
 
         // Different salt should produce different key
         let params2 = params.clone().with_salt(b"different_salt16".to_vec());

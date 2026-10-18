@@ -38,8 +38,8 @@ anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_with = "3.4"
-utoipa = { version = "5.5", features = ["chrono"] }
-toml = "0.8"
+utoipa = { version = "6", features = ["chrono"] }
+toml = "1.1"
 hex = "0.4"
 md5 = "0.7"
 bigdecimal = "0.3"
@@ -72,15 +72,16 @@ sqlx = { version = "0.8", features = [
 ] }
 
 # gRPC and networking
-tonic = { version = "0.12", features = ["tls", "tls-roots"] }
-tonic-build = "0.12"
-prost = "0.13"
-prost-types = "0.13"
+tonic = { version = "0.14", features = ["tls-ring", "tls-native-roots"] }
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+prost = "0.14"
+prost-types = "0.14"
 
 # Crypto and security
 blake3 = "1.5"
 aes-gcm = "0.10"
-rand = "0.8"
+rand = "0.10"
 base64 = "0.21"
 
 # Utilities
@@ -108,7 +109,7 @@ sp-core = "34.0.0"
 ed25519-dalek = { version = "2.1", features = ["rand_core", "pem"] }
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
 pbkdf2 = { version = "0.13", features = ["hmac"] }
-argon2 = "0.5"
+argon2 = "0.6"
 scrypt = { version = "0.11", features = ["simple"] }
 password-hash = "0.5"
 ssh-key = { version = "0.6", features = ["ed25519", "rand_core", "std"] }
@@ -129,7 +130,7 @@ nvml-wrapper = "0.9"
 num_cpus = "1.16"
 
 # Miner-specific dependencies
-tonic-health = "0.12"
+tonic-health = "0.14"
 governor = "0.6"
 jsonwebtoken = "9.2"
 async-stream = "0.3"
@@ -155,11 +156,11 @@ wiremock = "0.6"
 # CLI-specific dependencies
 dialoguer = "0.11"
 indicatif = "0.18"
-console = "0.15"
+console = "0.16"
 tabled = { version = "0.22", default-features = true, features = ["ansi"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 shellexpand = "3.1"
-etcetera = "0.8"
+etcetera = "0.11"
 color-eyre = "0.6"
 oauth2 = "4.4"
 # `hardened` rejects non-HTTP(S) URLs before they reach the OS handler. Both
@@ -208,7 +209,7 @@ oci-client = { version = "0.13", default-features = false, features = [
 ] }
 
 # HTTP server (for validator API)
-axum = "0.7"
+axum = "0.8"
 tower = "0.4"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 
@@ -220,4 +221,4 @@ bittensor = { version = "0.1.1", git = "https://github.com/one-covenant/bittenso
 
 [workspace.metadata]
 # Workspace metadata for tooling
-rust-version = "1.80"
+rust-version = "1.98.1"

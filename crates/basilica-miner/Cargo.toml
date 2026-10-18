@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Basilca Miner - Bittensor neuron that manages node fleets"
 license = "MIT"
-rust-version = "1.70"
+rust-version = "1.98.1"
 
 [lib]
 name = "basilica_miner"

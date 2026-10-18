@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use std::time::SystemTime;
 use uuid::Uuid;
 
@@ -183,6 +183,20 @@ mod tests {
         // With the same seed, they should be identical
         assert_eq!(id1.uuid(), id2.uuid());
         assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn seeded_node_ids_match_the_persisted_rand_08_values() {
+        // Validator registration derives stable node IDs from host strings.
+        // These UUIDs were produced by the original rand 0.8.6 implementation;
+        // changing them would make existing hosts appear as new nodes.
+        for (host, expected) in [
+            ("host-1", "fc74bc88-7010-4acb-ab1f-986dd150c9ee"),
+            ("miner.example.com", "cd73c438-a633-4099-b29d-8030d4b22410"),
+            ("192.0.2.10", "21aa8340-7d3b-4efc-a19e-5272ffa60bb3"),
+        ] {
+            assert_eq!(NodeId::new(host).unwrap().uuid.to_string(), expected);
+        }
     }
 
     #[test]

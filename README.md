@@ -10,6 +10,9 @@ CLI/SDK releases and public issues remain here. Maintainers carry accepted
 community changes into the monorepo before regenerating this public tree;
 see [contributing](.github/CONTRIBUTING.md).
 
+Building the Rust CLI, SDK, or other workspace crates from source requires Rust
+1.98.1 or newer. This checkout pins 1.98.1 in `rust-toolchain.toml`.
+
 ---
 
 **Quick links:**

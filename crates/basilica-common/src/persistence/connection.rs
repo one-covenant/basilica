@@ -84,10 +84,7 @@ where
 
     Err(
         last_error.unwrap_or_else(|| PersistenceError::ConnectionFailed {
-            source: Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Unknown connection error",
-            )),
+            source: Box::new(std::io::Error::other("Unknown connection error")),
         }),
     )
 }

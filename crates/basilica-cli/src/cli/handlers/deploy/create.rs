@@ -213,7 +213,7 @@ async fn create_with_retry(
     client: &BasilicaClient,
     request: CreateDeploymentRequest,
 ) -> Result<DeploymentResponse, CliError> {
-    use rand::Rng;
+    use rand::RngExt;
 
     let mut last_error = None;
     let mut delay = Duration::from_millis(INITIAL_RETRY_DELAY_MS);
@@ -231,7 +231,7 @@ async fn create_with_retry(
                 last_error = Some(e);
                 if attempt < MAX_RETRIES - 1 {
                     // Add jitter: delay +/- 25%
-                    let jitter_factor = rand::thread_rng().gen_range(0.75..1.25);
+                    let jitter_factor = rand::rng().random_range(0.75..1.25);
                     let jittered_delay = delay.mul_f64(jitter_factor);
                     tokio::time::sleep(jittered_delay).await;
                     delay *= 2; // Exponential backoff

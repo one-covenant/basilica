@@ -14,7 +14,7 @@ use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
-use rand::Rng;
+use rand::RngExt;
 use reqwest;
 use serde_json;
 use sha2::{Digest, Sha256};
@@ -43,8 +43,8 @@ pub struct OAuthFlow {
 pub fn generate_pkce_verifier() -> String {
     debug!("Generating PKCE code verifier");
 
-    let mut rng = rand::thread_rng();
-    let verifier_bytes: [u8; 32] = rng.gen();
+    let mut rng = rand::rng();
+    let verifier_bytes: [u8; 32] = rng.random();
     let verifier = URL_SAFE_NO_PAD.encode(verifier_bytes);
 
     debug!("PKCE verifier generated: {} bytes", verifier.len());
@@ -68,8 +68,8 @@ pub fn generate_pkce_challenge(verifier: &str) -> String {
 pub fn generate_state() -> String {
     debug!("Generating state parameter for CSRF protection");
 
-    let mut rng = rand::thread_rng();
-    let state_bytes: [u8; 32] = rng.gen();
+    let mut rng = rand::rng();
+    let state_bytes: [u8; 32] = rng.random();
     let state = URL_SAFE_NO_PAD.encode(state_bytes);
 
     debug!("State parameter generated: {} bytes", state.len());
@@ -359,6 +359,25 @@ impl OAuthFlow {
                 "Token revocation failed with status {}: {}",
                 status, error_text
             )))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{generate_pkce_verifier, generate_state};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+
+    #[test]
+    fn pkce_and_csrf_values_remain_url_safe_and_fresh() {
+        let verifier = generate_pkce_verifier();
+        let state = generate_state();
+        assert_ne!(verifier, generate_pkce_verifier());
+        assert_ne!(state, generate_state());
+
+        for value in [verifier, state] {
+            assert_eq!(value.len(), 43);
+            assert_eq!(URL_SAFE_NO_PAD.decode(value).unwrap().len(), 32);
         }
     }
 }

@@ -6,11 +6,11 @@
 #![allow(unused_assignments)] // ZeroizeOnDrop derive generates assignments in Drop impl
 
 use crate::error::CryptoError;
+use aes_gcm::aead::OsRng;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ed25519_dalek::{
     Signature, Signer, SigningKey, Verifier, VerifyingKey, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH,
 };
-use rand::rngs::OsRng;
 use std::fmt;
 use zeroize::ZeroizeOnDrop;
 

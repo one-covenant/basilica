@@ -544,7 +544,7 @@ pub async fn start_registration_server(
         .parse()
         .map_err(|e| anyhow::anyhow!("invalid gRPC listen address: {}", e))?;
 
-    let (mut health_reporter, health_service) = health_reporter();
+    let (health_reporter, health_service) = health_reporter();
     health_reporter
         .set_serving::<MinerRegistrationServer<RegistrationService>>()
         .await;

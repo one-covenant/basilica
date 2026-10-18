@@ -113,20 +113,20 @@ impl ApiHandler {
         Router::new()
             .route("/rentals", get(routes::list_rentals))
             .route("/rentals", post(routes::start_rental))
-            .route("/rentals/:id", get(routes::get_rental_status))
-            .route("/rentals/:id", delete(routes::stop_rental))
-            .route("/rentals/:id/logs", get(routes::stream_rental_logs))
+            .route("/rentals/{id}", get(routes::get_rental_status))
+            .route("/rentals/{id}", delete(routes::stop_rental))
+            .route("/rentals/{id}/logs", get(routes::stream_rental_logs))
             .route("/nodes", get(routes::list_available_nodes))
             // Existing miner routes
             .route("/miners", get(routes::list_miners))
-            .route("/miners/:miner_id", get(routes::get_miner))
-            .route("/miners/:miner_id/health", get(routes::get_miner_health))
-            .route("/miners/:miner_id/nodes", get(routes::list_miner_nodes))
+            .route("/miners/{miner_id}", get(routes::get_miner))
+            .route("/miners/{miner_id}/health", get(routes::get_miner_health))
+            .route("/miners/{miner_id}/nodes", get(routes::list_miner_nodes))
             .route("/health", get(routes::health_check))
             // new
             .route("/gpu-profiles", get(routes::list_gpu_profiles))
             .route(
-                "/gpu-profiles/:category",
+                "/gpu-profiles/{category}",
                 get(routes::list_gpu_profiles_by_category),
             )
             .route("/gpu-categories", get(routes::list_gpu_categories))
@@ -135,7 +135,7 @@ impl ApiHandler {
                 get(routes::list_active_verifications),
             )
             .route(
-                "/verification/results/:miner_id",
+                "/verification/results/{miner_id}",
                 get(routes::get_verification_results),
             )
             .route("/config", get(routes::get_config))
@@ -144,5 +144,61 @@ impl ApiHandler {
             .layer(TraceLayer::new_for_http())
             .layer(CorsLayer::permissive())
             .with_state(self.state.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Method, Request, StatusCode},
+        middleware,
+    };
+    use sqlx::SqlitePool;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn parameter_routes_match_in_the_server_router() {
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let config = crate::config::ValidatorConfig::default();
+        let handler = ApiHandler::new(
+            config.api.clone(),
+            Arc::new(crate::persistence::SimplePersistence::with_pool(
+                pool.clone(),
+            )),
+            Arc::new(crate::persistence::gpu_profile_repository::GpuProfileRepository::new(pool)),
+            basilica_common::MemoryStorage::new().await.unwrap(),
+            config,
+            basilica_common::identity::Hotkey::new(
+                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
+            )
+            .unwrap(),
+        );
+
+        // Intercept matched routes before handlers touch persistence. A 404 means
+        // Axum did not recognize the path or method in the production router.
+        let router = handler.create_router().route_layer(middleware::from_fn(
+            |_request: Request<Body>, _next: middleware::Next| async { StatusCode::NO_CONTENT },
+        ));
+
+        for (method, path) in [
+            (Method::GET, "/rentals/rental-1"),
+            (Method::DELETE, "/rentals/rental-1"),
+            (Method::GET, "/rentals/rental-1/logs"),
+            (Method::GET, "/miners/miner-1"),
+            (Method::GET, "/miners/miner-1/health"),
+            (Method::GET, "/miners/miner-1/nodes"),
+            (Method::GET, "/gpu-profiles/H100"),
+            (Method::GET, "/verification/results/miner-1"),
+        ] {
+            let request = Request::builder()
+                .method(method)
+                .uri(path)
+                .body(Body::empty())
+                .unwrap();
+            let response = router.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::NO_CONTENT, "{path}");
+        }
     }
 }

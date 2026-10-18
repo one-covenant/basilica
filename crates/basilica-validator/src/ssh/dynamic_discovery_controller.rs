@@ -453,7 +453,7 @@ impl DynamicDiscoveryController {
         debug!("Testing SSH key generation capability");
 
         match ssh_key::PrivateKey::random(
-            &mut rand::thread_rng(),
+            &mut ssh_key::rand_core::OsRng,
             match self.ssh_session_config.key_algorithm.as_str() {
                 "ed25519" => ssh_key::Algorithm::Ed25519,
                 "rsa" => ssh_key::Algorithm::Rsa { hash: None },

@@ -1,6 +1,6 @@
 //! Build script for basilica-protocol crate.
 //!
-//! Compiles `.proto` files into Rust code with tonic-build. Generated code
+//! Compiles `.proto` files into Rust code with tonic-prost-build. Generated code
 //! is emitted to `OUT_DIR` and included via `tonic::include_proto!` — the
 //! files are never written into the source tree.
 
@@ -10,7 +10,7 @@ use std::path::PathBuf;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(true)
         .build_client(true)
         .file_descriptor_set_path(out_dir.join("descriptor.bin"))

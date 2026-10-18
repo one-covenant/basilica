@@ -2,6 +2,7 @@
 name = "basilica-sdk-python"
 version = "0.36.8"
 edition = "2021"
+rust-version = "1.98.1"
 authors = ["Basilica Team"]
 description = "Python bindings for the Basilica SDK"
 license = "MIT OR Apache-2.0"

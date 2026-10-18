@@ -373,3 +373,31 @@ impl CliCache {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn saved_toml_loads_through_the_common_config_loader() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("nested/config.toml");
+        let mut config = CliConfig::default();
+        config.api.base_url = "https://example.invalid/api".to_string();
+        config.api.request_timeout = 123;
+        config.wallet.base_wallet_path = temp.path().join("wallets");
+
+        config.save_to_path(&path).await.unwrap();
+        let loaded = CliConfig::load_from_file(&path).unwrap();
+
+        assert_eq!(loaded.api.base_url, config.api.base_url);
+        assert_eq!(loaded.api.request_timeout, config.api.request_timeout);
+        assert_eq!(loaded.ssh.connection_timeout, config.ssh.connection_timeout);
+        assert_eq!(loaded.image.name, config.image.name);
+        assert_eq!(loaded.wallet.default_wallet, config.wallet.default_wallet);
+        assert_eq!(
+            loaded.wallet.base_wallet_path,
+            config.wallet.base_wallet_path
+        );
+    }
+}

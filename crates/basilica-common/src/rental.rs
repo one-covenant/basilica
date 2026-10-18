@@ -114,9 +114,9 @@ pub fn generate_default_rental_name(rental_id: &str) -> String {
 /// a valid `RentalName` (lowercase alpha + dashes, well under 64 chars).
 pub fn generate_random_rental_name() -> String {
     use crate::node_identity::words::{ADJECTIVES, NOUNS};
-    use rand::seq::SliceRandom;
+    use rand::prelude::IndexedRandom;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let adj1 = ADJECTIVES
         .choose(&mut rng)
         .expect("ADJECTIVES is non-empty");

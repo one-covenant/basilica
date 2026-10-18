@@ -6,13 +6,13 @@
 #![allow(unused_assignments)] // ZeroizeOnDrop derive generates assignments in Drop impl
 
 use crate::error::CryptoError;
+use aes_gcm::aead::OsRng;
 use p256::{
     ecdsa::{signature::Signer, signature::Verifier, Signature, SigningKey, VerifyingKey},
     elliptic_curve::sec1::ToEncodedPoint,
     pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding},
     PublicKey,
 };
-use rand::rngs::OsRng;
 use std::fmt;
 use zeroize::ZeroizeOnDrop;
 

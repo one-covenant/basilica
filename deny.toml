@@ -20,10 +20,6 @@ no-default-features = false
 version = 2
 yanked = "deny"
 ignore = [
-    # Yanked crates inherited through the subnet-era dep graph; will be
-    # resolved when validator/miner are dropped in 0.27.0.
-    { crate = "keccak@0.1.5", reason = "yanked upstream; pulled via alloy/proptest chain inside the subnet stack" },
-
     # rustls-webpki through the rustls 0.21 subnet chain.
     # The reqwest 0.12 / rustls 0.23 chain was bumped to rustls-webpki 0.103.13
     # on 2026-04-23 via Cargo.lock; the remaining 0.101.x hits come from the
