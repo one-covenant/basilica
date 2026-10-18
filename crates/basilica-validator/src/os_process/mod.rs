@@ -23,6 +23,39 @@ impl ProcessGroup {
 pub struct ProcessTerminator;
 
 impl ProcessTerminator {
+    /// Stop a child owned by this process and collect its exit status.
+    /// Waiting on the child handle avoids reaping another task's child.
+    pub async fn terminate_child(
+        child: &mut tokio::process::Child,
+        timeout: Duration,
+    ) -> Result<()> {
+        let pid = child
+            .id()
+            .ok_or_else(|| anyhow!("Child process has no PID"))?;
+        let result = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+        if result != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                return Err(error.into());
+            }
+        }
+
+        match tokio::time::timeout(timeout, child.wait()).await {
+            Ok(status) => {
+                status?;
+                Ok(())
+            }
+            Err(_) => {
+                warn!(
+                    "Process {} did not exit after SIGTERM; sending SIGKILL",
+                    pid
+                );
+                child.kill().await?;
+                Ok(())
+            }
+        }
+    }
+
     /// Terminate a process with timeout
     pub async fn terminate(pid: i32, timeout: Duration) -> Result<()> {
         info!("Terminating process {} with timeout {:?}", pid, timeout);
@@ -79,40 +112,16 @@ pub struct ProcessUtils;
 impl ProcessUtils {
     /// Check if a process exists
     pub fn process_exists(pid: u32) -> bool {
-        use sysinfo::{Pid, System};
+        use sysinfo::{Pid, ProcessesToUpdate, System};
 
         let mut system = System::new_all();
-        system.refresh_processes();
+        system.refresh_processes(ProcessesToUpdate::All, true);
         system.process(Pid::from_u32(pid)).is_some()
-    }
-
-    /// Reap zombie (defunct) child processes
-    /// This should be called periodically to clean up zombie processes
-    pub fn reap_zombies() {
-        use std::ptr;
-
-        // Use waitpid with WNOHANG to reap any zombie children without blocking
-        loop {
-            let result = unsafe { libc::waitpid(-1, ptr::null_mut(), libc::WNOHANG) };
-
-            if result > 0 {
-                debug!("Reaped zombie process with PID {}", result);
-            } else if result == 0 {
-                // No more zombie children to reap
-                break;
-            } else {
-                // Error or no children
-                break;
-            }
-        }
     }
 
     /// Kill any SSH tunnels
     pub fn cleanup_ssh_tunnels() {
         info!("Starting SSH tunnel cleanup");
-
-        // First, reap any zombie processes
-        Self::reap_zombies();
 
         let mut killed_count = 0;
         let mut found_processes = Vec::new();
@@ -236,9 +245,6 @@ impl ProcessUtils {
             }
         }
 
-        // Final reap of any zombies created
-        Self::reap_zombies();
-
         if found_processes.is_empty() {
             info!("No SSH tunnel processes found");
             // Log some processes for debugging
@@ -268,14 +274,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_group_configuration() {
-        let mut command = Command::new("echo");
+        let mut command = Command::new("/bin/echo");
         command.arg("test");
 
         ProcessGroup::configure_command(&mut command);
 
-        // Should not panic
-        let result = command.output().await;
-        assert!(result.is_ok());
+        let output = command
+            .output()
+            .await
+            .expect("spawn /bin/echo in a new process group");
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"test\n");
     }
 
     #[test]
@@ -323,11 +332,23 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_reap_zombies() {
-        // This test verifies that reap_zombies doesn't crash
-        // It won't have any zombies to reap in a test environment
-        ProcessUtils::reap_zombies();
-        // The function should complete without panicking
+    #[tokio::test]
+    async fn test_terminate_child_reaps_only_its_own_process() {
+        let mut unrelated = std::process::Command::new("/usr/bin/true")
+            .spawn()
+            .expect("spawn unrelated child");
+        let mut child = Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn child");
+
+        ProcessTerminator::terminate_child(&mut child, Duration::from_secs(1))
+            .await
+            .expect("terminate and reap child");
+        assert!(child.try_wait().expect("inspect child status").is_some());
+        assert!(unrelated
+            .wait()
+            .expect("unrelated child remains waitable")
+            .success());
     }
 }

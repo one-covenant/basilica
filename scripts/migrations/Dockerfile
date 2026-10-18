@@ -1,7 +1,7 @@
 # AEAD Key Migration Tool Dockerfile
 # Builds a minimal container for running the migration in ECS Fargate
 
-FROM rust:1.97.1-slim-bookworm AS builder
+FROM rust:1.98.1-slim-bookworm AS builder
 
 WORKDIR /build
 ENV BITTENSOR_OFFLINE=1

@@ -1147,12 +1147,16 @@ fn _pulse_expctx_encode<'py>(
     }
     let out = py.detach(|| {
         let cells: Vec<u16> = old
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
             .collect();
         let idx: Vec<u64> = idx
-            .chunks_exact(8)
-            .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|c| u64::from_le_bytes(*c))
             .collect();
         pulse_expctx::encode(&cells, &idx).map_err(|e| e.0)
     });
@@ -1174,8 +1178,10 @@ fn _pulse_expctx_decode<'py>(
     }
     let out = py.detach(|| {
         let cells: Vec<u16> = old
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
             .collect();
         pulse_expctx::decode_parallel(&cells, changed, stream, threads)
             .map(|idx| {

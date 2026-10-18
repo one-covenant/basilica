@@ -5,15 +5,19 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio;
 
+fn client_with_known_hosts(temp_dir: &TempDir) -> StandardSshClient {
+    StandardSshClient::with_config(SshConnectionConfig {
+        known_hosts_file: Some(temp_dir.path().join(".ssh").join("known_hosts")),
+        ..SshConnectionConfig::default()
+    })
+}
+
 #[tokio::test]
 async fn test_ensure_host_key_available_creates_ssh_directory() {
     let temp_dir = TempDir::new().unwrap();
     let ssh_dir = temp_dir.path().join(".ssh");
 
-    // Set HOME to temp directory
-    std::env::set_var("HOME", temp_dir.path());
-
-    let client = StandardSshClient::new();
+    let client = client_with_known_hosts(&temp_dir);
     let details = SshConnectionDetails {
         host: "192.0.2.1".to_string(), // RFC5737 test address
         username: "test".to_string(),
@@ -40,9 +44,7 @@ async fn test_ensure_host_key_available_creates_ssh_directory() {
 #[tokio::test]
 async fn test_ensure_host_key_available_timeout() {
     let temp_dir = TempDir::new().unwrap();
-    std::env::set_var("HOME", temp_dir.path());
-
-    let client = StandardSshClient::new();
+    let client = client_with_known_hosts(&temp_dir);
     let details = SshConnectionDetails {
         host: "192.0.2.1".to_string(), // RFC5737 test address that should not respond
         username: "test".to_string(),
@@ -68,9 +70,7 @@ mod integration_tests {
     #[ignore] // Use `cargo test -- --ignored` to run this test
     async fn test_ensure_host_key_available_github() {
         let temp_dir = TempDir::new().unwrap();
-        std::env::set_var("HOME", temp_dir.path());
-
-        let client = StandardSshClient::new();
+        let client = client_with_known_hosts(&temp_dir);
         let details = SshConnectionDetails {
             host: "github.com".to_string(),
             username: "git".to_string(),
@@ -109,9 +109,7 @@ mod integration_tests {
     #[ignore] // Network-dependent test
     async fn test_ensure_host_key_available_non_standard_port() {
         let temp_dir = TempDir::new().unwrap();
-        std::env::set_var("HOME", temp_dir.path());
-
-        let client = StandardSshClient::new();
+        let client = client_with_known_hosts(&temp_dir);
         // Use a test server with non-standard SSH port if available
         let details = SshConnectionDetails {
             host: "github.com".to_string(),

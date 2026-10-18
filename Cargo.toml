@@ -47,10 +47,10 @@ bigdecimal = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-journald = "0.3"
-metrics = "0.22"
+metrics = "0.24"
 # MUSL COMPATIBILITY: Disable default features and enable only http-listener
 # (default features include push-gateway which pulls in hyper-tls with native-tls)
-metrics-exporter-prometheus = { version = "0.13", default-features = false, features = [
+metrics-exporter-prometheus = { version = "0.18", default-features = false, features = [
   "http-listener",
 ] }
 
@@ -72,10 +72,10 @@ sqlx = { version = "0.8", features = [
 ] }
 
 # gRPC and networking
-tonic = { version = "0.10", features = ["tls", "tls-roots"] }
-tonic-build = "0.10"
-prost = "0.12"
-prost-types = "0.12"
+tonic = { version = "0.12", features = ["tls", "tls-roots"] }
+tonic-build = "0.12"
+prost = "0.13"
+prost-types = "0.13"
 
 # Crypto and security
 blake3 = "1.5"
@@ -107,7 +107,7 @@ parking_lot = "0.12"
 sp-core = "34.0.0"
 ed25519-dalek = { version = "2.1", features = ["rand_core", "pem"] }
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
-pbkdf2 = { version = "0.12", features = ["hmac"] }
+pbkdf2 = { version = "0.13", features = ["hmac"] }
 argon2 = "0.5"
 scrypt = { version = "0.11", features = ["simple"] }
 password-hash = "0.5"
@@ -115,7 +115,7 @@ ssh-key = { version = "0.6", features = ["ed25519", "rand_core", "std"] }
 async-ssh2-tokio = "0.12"
 zeroize = { version = "1.7", features = ["derive"] }
 data-encoding = "2"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Dev/test dependencies
 tempfile = "3.8"
@@ -129,7 +129,7 @@ nvml-wrapper = "0.9"
 num_cpus = "1.16"
 
 # Miner-specific dependencies
-tonic-health = "0.10.2"
+tonic-health = "0.12"
 governor = "0.6"
 jsonwebtoken = "9.2"
 async-stream = "0.3"
@@ -156,7 +156,7 @@ wiremock = "0.6"
 dialoguer = "0.11"
 indicatif = "0.18"
 console = "0.15"
-tabled = { version = "0.21", default-features = true, features = ["ansi"] }
+tabled = { version = "0.22", default-features = true, features = ["ansi"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 shellexpand = "3.1"
 etcetera = "0.8"
@@ -196,7 +196,7 @@ subxt-metadata = { version = "0.44" }
 subxt-utils-fetchmetadata = { version = "0.44", features = ["url"] }
 
 # System information
-sysinfo = "0.30"
+sysinfo = "0.39"
 
 # Docker integration
 bollard = "0.15"
@@ -210,7 +210,7 @@ oci-client = { version = "0.13", default-features = false, features = [
 # HTTP server (for validator API)
 axum = "0.7"
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
 
 # Bittensor integration via crabtensor (patched fork for metadata compatibility)
 crabtensor = { git = "https://github.com/one-covenant/crabtensor", branch = "main" }

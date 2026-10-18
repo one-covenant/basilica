@@ -46,6 +46,9 @@
 // `tonic::include_proto!("foo.bar.v1")` expands to
 // `include!(concat!(env!("OUT_DIR"), "/foo.bar.v1.rs"))` so the generated
 // files live in the cargo OUT_DIR rather than the source tree.
+// Tonic's generated service signatures return tonic::Status by value;
+// this API is fixed by the generator and triggers Clippy's result_large_err.
+#[allow(clippy::result_large_err)]
 pub mod basilca {
     pub mod common {
         pub mod v1 {

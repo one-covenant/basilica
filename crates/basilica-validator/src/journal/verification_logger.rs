@@ -314,7 +314,7 @@ impl VerificationLogger {
         limit: Option<usize>,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let mut filters = vec![
-            format!("_SYSTEMD_UNIT=basilica-validator.service"),
+            "_SYSTEMD_UNIT=basilica-validator.service".to_string(),
             format!("VALIDATOR_HOTKEY={}", self.validator_hotkey),
         ];
 

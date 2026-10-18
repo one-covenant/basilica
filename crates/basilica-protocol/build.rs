@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "ComputeType",
             "#[derive(serde::Serialize, serde::Deserialize)]",
         )
-        .compile(
+        .compile_protos(
             &[
                 "proto/common.proto",
                 "proto/miner_discovery.proto",

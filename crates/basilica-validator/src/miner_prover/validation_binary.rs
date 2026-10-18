@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 // Import simplified process management utilities
-use crate::os_process::{ProcessGroup, ProcessTerminator, ProcessUtils};
+use crate::os_process::{ProcessGroup, ProcessTerminator};
 
 /// Request payload for validation server
 #[derive(Debug, Clone, Serialize)]
@@ -143,25 +143,22 @@ impl ValidationServerManager {
             handle.abort();
         }
 
-        if let Some(mut child) = process_guard.take() {
+        if let Some(child) = process_guard.as_mut() {
             info!("Stopping validation server");
 
-            if let Some(pid) = child.id() {
-                // Graceful termination with timeout
-                if let Err(e) =
-                    ProcessTerminator::terminate(pid as i32, Duration::from_secs(5)).await
-                {
-                    error!("Failed to terminate validation server: {}", e);
-                    // Force kill as last resort
-                    let _ = child.kill().await;
-                } else {
-                    info!("Validation server stopped successfully");
-                }
+            if let Err(e) = ProcessTerminator::terminate_child(child, Duration::from_secs(5)).await
+            {
+                error!("Failed to terminate validation server: {}", e);
+                // Force kill and wait for this owned child as a last resort.
+                child
+                    .kill()
+                    .await
+                    .context("Failed to force-kill validation server")?;
+            } else {
+                info!("Validation server stopped successfully");
             }
+            *process_guard = None;
         }
-
-        // Clean up any zombie processes
-        ProcessUtils::reap_zombies();
 
         Ok(())
     }
@@ -224,31 +221,46 @@ impl ValidationServerManager {
 
                 if !is_healthy {
                     warn!("Validation server health check failed, attempting restart");
-
-                    // Stop the current process
-                    if let Some(child) = process.write().await.take() {
-                        if let Some(pid) = child.id() {
-                            let _ =
-                                ProcessTerminator::terminate(pid as i32, Duration::from_secs(2))
-                                    .await;
-                        }
-                    }
-
-                    // Restart the server
-                    match Self::spawn_server(&binary_path, &config).await {
-                        Ok(child) => {
-                            *process.write().await = Some(child);
-                            info!("Validation server restarted successfully");
-                        }
-                        Err(e) => {
-                            error!("Failed to restart validation server: {}", e);
-                        }
-                    }
+                    Self::restart_server(&process, &binary_path, &config).await;
                 }
             }
         });
 
         *self.health_check_handle.write().await = Some(handle);
+    }
+
+    async fn restart_server(
+        process: &RwLock<Option<Child>>,
+        binary_path: &Path,
+        config: &crate::config::ValidationServerConfig,
+    ) {
+        // Keep the child owned by the manager and serialize with stop(). If the
+        // monitor is aborted during termination, stop() can still find the child.
+        let mut process_guard = process.write().await;
+        if let Some(child) = process_guard.as_mut() {
+            if let Err(e) = ProcessTerminator::terminate_child(child, Duration::from_secs(2)).await
+            {
+                warn!("Failed to terminate unhealthy validation server: {}", e);
+                if let Err(kill_error) = child.kill().await {
+                    error!(
+                        "Failed to force-kill unhealthy validation server: {}",
+                        kill_error
+                    );
+                    return;
+                }
+            }
+            *process_guard = None;
+        }
+
+        match Self::spawn_server(binary_path, config).await {
+            Ok(child) => {
+                *process_guard = Some(child);
+                info!("Validation server restarted successfully");
+            }
+            Err(e) => {
+                error!("Failed to restart validation server: {}", e);
+            }
+        }
     }
 
     /// Helper to spawn server process with standard configuration
@@ -302,9 +314,12 @@ impl Drop for ValidationServerManager {
         // Best effort cleanup on drop
         let process = Arc::clone(&self.process);
         tokio::spawn(async move {
-            if let Some(child) = process.write().await.take() {
-                if let Some(pid) = child.id() {
-                    let _ = ProcessTerminator::terminate(pid as i32, Duration::from_secs(2)).await;
+            if let Some(mut child) = process.write().await.take() {
+                if ProcessTerminator::terminate_child(&mut child, Duration::from_secs(2))
+                    .await
+                    .is_err()
+                {
+                    let _ = child.kill().await;
                 }
             }
         });
@@ -1549,10 +1564,70 @@ impl BinaryValidator {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use tokio::io::AsyncReadExt;
 
     fn create_test_validator() -> BinaryValidator {
         let mock_ssh_client = Arc::new(crate::ssh::ValidatorSshClient::new());
         BinaryValidator::new(mock_ssh_client)
+    }
+
+    #[tokio::test]
+    async fn cancelled_restart_keeps_child_available_for_stop() {
+        let manager = ValidationServerManager::new(
+            PathBuf::from("/nonexistent/validation-server"),
+            crate::config::ValidationServerConfig::default(),
+        );
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "trap '' TERM; printf ready; exec sleep 30"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn test child");
+        let mut ready = [0; 5];
+        child
+            .stdout
+            .as_mut()
+            .expect("test child stdout")
+            .read_exact(&mut ready)
+            .await
+            .expect("test child ready signal");
+        assert_eq!(&ready, b"ready");
+        let child_pid = child.id().expect("test child PID");
+        *manager.process.write().await = Some(child);
+
+        let process = Arc::clone(&manager.process);
+        let config = manager.config.clone();
+        let binary_path = manager.binary_path.clone();
+        let restart = tokio::spawn(async move {
+            ValidationServerManager::restart_server(&process, &binary_path, &config).await;
+        });
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if manager.process.try_write().is_err() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("restart never acquired process lock");
+
+        restart.abort();
+        let _ = restart.await;
+        assert!(
+            manager.process.read().await.is_some(),
+            "restart lost its child"
+        );
+        tokio::time::timeout(Duration::from_secs(8), manager.stop())
+            .await
+            .expect("stop timed out")
+            .expect("stop failed to reap child");
+        assert!(manager.process.read().await.is_none());
+        assert_eq!(unsafe { libc::kill(child_pid as i32, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
     }
 
     #[test]

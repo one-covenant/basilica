@@ -251,8 +251,10 @@ pub fn rice_decode_positions(buf: &[u8], m: u64, limit: u64) -> Result<Vec<u64>,
         return err("index stream length does not match its escapes");
     }
     let mut esc_iter = buf[5 + ulen + rlen..]
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()) as u64);
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c) as u64);
     let mut out = Vec::with_capacity(m as usize);
     let mut pos: u64 = 0; // running sum of gaps (gap = v + 1)
     let mut bitpos: usize = 0;

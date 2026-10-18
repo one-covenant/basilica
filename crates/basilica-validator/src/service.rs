@@ -18,7 +18,7 @@ use reqwest::Client;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration as StdDuration, SystemTime};
-use sysinfo::{Pid, System};
+use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::signal;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
@@ -529,9 +529,10 @@ impl ProcessUtils {
             let cmd = process.cmd();
 
             if name == "validator"
-                || cmd
-                    .iter()
-                    .any(|arg| arg.contains("validator") && !arg.contains("cargo"))
+                || cmd.iter().any(|arg| {
+                    let arg = arg.to_string_lossy();
+                    arg.contains("validator") && !arg.contains("cargo")
+                })
             {
                 let memory_mb = process.memory() / 1024 / 1024;
                 let cpu_percent = process.cpu_usage();
@@ -554,9 +555,10 @@ impl ProcessUtils {
             let cmd = process.cmd();
 
             if name == "validator"
-                || cmd
-                    .iter()
-                    .any(|arg| arg.contains("validator") && !arg.contains("cargo"))
+                || cmd.iter().any(|arg| {
+                    let arg = arg.to_string_lossy();
+                    arg.contains("validator") && !arg.contains("cargo")
+                })
             {
                 processes.push(pid.as_u32());
             }
@@ -633,7 +635,7 @@ impl ProcessUtils {
     fn is_process_running(pid: u32) -> Result<bool> {
         let mut system = System::new();
         let pid_obj = Pid::from_u32(pid);
-        system.refresh_process(pid_obj);
+        system.refresh_processes(ProcessesToUpdate::Some(&[pid_obj]), true);
 
         Ok(system.process(pid_obj).is_some())
     }
