@@ -83,3 +83,4 @@ basilica-validator = { path = "../basilica-validator", features = ["client", "cl
 serial_test = "4"
 assert_cmd = "2"
 tempfile = { workspace = true }
+wiremock = { workspace = true }

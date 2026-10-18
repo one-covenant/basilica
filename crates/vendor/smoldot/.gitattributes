@@ -1,0 +1,2 @@
+# Preserve exact upstream license text, including its trailing spaces.
+LICENSE whitespace=-blank-at-eol

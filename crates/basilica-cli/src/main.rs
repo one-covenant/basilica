@@ -5,7 +5,7 @@ use basilica_cli::cli::Args;
 use basilica_cli::update_check;
 use clap::{CommandFactory, Parser};
 use clap_complete::env::CompleteEnv;
-use clap_verbosity_flag::{LevelFilter, OffLevel, Verbosity};
+use clap_verbosity_flag::{OffLevel, Verbosity, VerbosityFilter};
 use color_eyre::eyre::{eyre, Result};
 
 fn main() -> Result<()> {
@@ -53,8 +53,8 @@ async fn run_async(args: Args) -> Result<()> {
 
     // std::env::set_var("RUST_SPANTRACE", "0");
 
-    match args.verbosity.log_level_filter() {
-        LevelFilter::Off | LevelFilter::Error => {}
+    match args.verbosity.filter() {
+        VerbosityFilter::Off | VerbosityFilter::Error => {}
         _ => {
             std::env::set_var("RUST_LIB_BACKTRACE", "1");
         }

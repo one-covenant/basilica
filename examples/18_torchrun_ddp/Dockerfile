@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+FROM pytorch/pytorch:2.13.0-cuda12.6-cudnn9-runtime@sha256:6acf597eeb8e376a96580dde4952f37cc017fef732bb40bfc73f28f25e3f64b4
 
 # Create non-root user (required by Basilica)
 RUN useradd -m -u 1000 appuser
@@ -10,24 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for caching
-COPY pyproject.toml .
-
-# Install Python dependencies (torch already in base image)
-RUN pip install --no-cache-dir \
-    transformers>=4.28.0 \
-    accelerate>=1.6.0 \
-    datasets>=3.5.1 \
-    rich>=14.0.0 \
-    python-dotenv>=1.0.1 \
-    uvloop>=0.21.0 \
-    torchft>=0.1.1 \
-    huggingface-hub>=0.30.2 \
-    sentencepiece>=0.2.0 \
-    protobuf>=3.20.0
-
-# Copy application code
+# Install the project's declared dependencies against the patched CUDA image.
+COPY pyproject.toml README.md ./
 COPY --chown=appuser:appuser src/ ./src/
+RUN pip install --no-cache-dir . \
+    && python -c 'import torch; assert torch.__version__.split("+", 1)[0] == "2.13.0", torch.__version__; assert torch.version.cuda == "12.6", torch.version.cuda'
+
+# Copy the launcher after dependency installation for build caching.
 COPY --chown=appuser:appuser train.py .
 COPY --chown=appuser:appuser run.sh .
 COPY --chown=appuser:appuser entrypoint.py .

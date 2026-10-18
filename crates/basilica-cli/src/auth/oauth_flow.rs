@@ -11,8 +11,8 @@ use base64::Engine;
 use basilica_sdk::auth::TokenSet;
 use console::{style, Term};
 use oauth2::{
-    basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
-    CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use rand::RngExt;
 use reqwest;
@@ -128,21 +128,20 @@ impl OAuthFlow {
         }
 
         // Create OAuth2 client
-        let client = BasicClient::new(
-            ClientId::new(self.config.client_id.clone()),
-            None, // No client secret for PKCE flow
-            AuthUrl::new(self.config.auth_endpoint.clone())
-                .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
-            Some(
+        let client = BasicClient::new(ClientId::new(self.config.client_id.clone()))
+            .set_auth_uri(
+                AuthUrl::new(self.config.auth_endpoint.clone())
+                    .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
+            )
+            .set_token_uri(
                 TokenUrl::new(self.config.token_endpoint.clone()).map_err(|e| {
                     AuthError::ConfigError(format!("Invalid token endpoint: {}", e))
                 })?,
-            ),
-        )
-        .set_redirect_uri(
-            RedirectUrl::new(self.config.redirect_uri.clone())
-                .map_err(|e| AuthError::ConfigError(format!("Invalid redirect URI: {}", e)))?,
-        );
+            )
+            .set_redirect_uri(
+                RedirectUrl::new(self.config.redirect_uri.clone())
+                    .map_err(|e| AuthError::ConfigError(format!("Invalid redirect URI: {}", e)))?,
+            );
 
         // Build authorization request
         let pkce_verifier = PkceCodeVerifier::new(self.code_verifier.as_ref().unwrap().clone());
@@ -246,27 +245,30 @@ impl OAuthFlow {
             .ok_or_else(|| AuthError::PkceError("Code verifier not generated".to_string()))?;
 
         // Create OAuth2 client
-        let client = BasicClient::new(
-            ClientId::new(self.config.client_id.clone()),
-            None, // No client secret for PKCE flow
-            AuthUrl::new(self.config.auth_endpoint.clone())
-                .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
-            Some(
+        let client = BasicClient::new(ClientId::new(self.config.client_id.clone()))
+            .set_auth_uri(
+                AuthUrl::new(self.config.auth_endpoint.clone())
+                    .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
+            )
+            .set_token_uri(
                 TokenUrl::new(self.config.token_endpoint.clone()).map_err(|e| {
                     AuthError::ConfigError(format!("Invalid token endpoint: {}", e))
                 })?,
-            ),
-        )
-        .set_redirect_uri(
-            RedirectUrl::new(self.config.redirect_uri.clone())
-                .map_err(|e| AuthError::ConfigError(format!("Invalid redirect URI: {}", e)))?,
-        );
+            )
+            .set_redirect_uri(
+                RedirectUrl::new(self.config.redirect_uri.clone())
+                    .map_err(|e| AuthError::ConfigError(format!("Invalid redirect URI: {}", e)))?,
+            );
 
         // Exchange code for token
+        let http_client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|e| AuthError::NetworkError(format!("Token client creation failed: {}", e)))?;
         let token_response = client
             .exchange_code(AuthorizationCode::new(code.to_string()))
             .set_pkce_verifier(PkceCodeVerifier::new(code_verifier.clone()))
-            .request_async(async_http_client)
+            .request_async(&http_client)
             .await
             .map_err(|e| AuthError::NetworkError(format!("Token exchange failed: {}", e)))?;
 
@@ -365,8 +367,15 @@ impl OAuthFlow {
 
 #[cfg(test)]
 mod tests {
-    use super::{generate_pkce_verifier, generate_state};
+    use super::{
+        generate_pkce_challenge, generate_pkce_verifier, generate_state, AuthConfig, OAuthFlow,
+    };
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use std::collections::HashMap;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     #[test]
     fn pkce_and_csrf_values_remain_url_safe_and_fresh() {
@@ -379,5 +388,84 @@ mod tests {
             assert_eq!(value.len(), 43);
             assert_eq!(URL_SAFE_NO_PAD.decode(value).unwrap().len(), 32);
         }
+    }
+
+    #[test]
+    fn authorization_url_preserves_pkce_scopes_redirect_and_state() {
+        let mut extra = HashMap::new();
+        extra.insert("prompt".to_string(), "login".to_string());
+        let mut flow = OAuthFlow::new(AuthConfig {
+            client_id: "test-client".to_string(),
+            auth_endpoint: "https://auth.example.test/authorize".to_string(),
+            token_endpoint: "https://auth.example.test/token".to_string(),
+            device_auth_endpoint: None,
+            revoke_endpoint: None,
+            redirect_uri: "http://127.0.0.1:51413/callback".to_string(),
+            scopes: vec!["openid".to_string(), "offline_access".to_string()],
+            additional_params: extra,
+        });
+        let url = url::Url::parse(&flow.build_auth_url().unwrap()).unwrap();
+        let params: HashMap<_, _> = url.query_pairs().into_owned().collect();
+
+        assert_eq!(
+            url.as_str().split('?').next().unwrap(),
+            "https://auth.example.test/authorize"
+        );
+        assert_eq!(params["client_id"], "test-client");
+        assert_eq!(params["redirect_uri"], "http://127.0.0.1:51413/callback");
+        assert_eq!(params["response_type"], "code");
+        assert_eq!(params["scope"], "openid offline_access");
+        assert_eq!(params["prompt"], "login");
+        assert_eq!(params["audience"], basilica_common::auth0_audience());
+        assert_eq!(params["state"], *flow.state.as_ref().unwrap());
+        assert_eq!(params["code_challenge_method"], "S256");
+        assert_eq!(
+            params["code_challenge"],
+            generate_pkce_challenge(flow.code_verifier.as_ref().unwrap())
+        );
+    }
+
+    #[tokio::test]
+    async fn code_exchange_sends_pkce_verifier_and_redirect_uri() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/json")
+                    .set_body_raw(
+                        r#"{"access_token":"access-token","refresh_token":"refresh-token","token_type":"Bearer"}"#,
+                        "application/json",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let mut flow = OAuthFlow::new(AuthConfig {
+            client_id: "test-client".to_string(),
+            auth_endpoint: "https://auth.example.test/authorize".to_string(),
+            token_endpoint: format!("{}/token", server.uri()),
+            device_auth_endpoint: None,
+            revoke_endpoint: None,
+            redirect_uri: "http://127.0.0.1:51413/callback".to_string(),
+            scopes: vec!["openid".to_string()],
+            additional_params: HashMap::new(),
+        });
+        flow.build_auth_url().unwrap();
+        let expected_verifier = flow.code_verifier.clone().unwrap();
+        let tokens = flow.exchange_code_for_token("test-code").await.unwrap();
+        assert_eq!(tokens.access_token, "access-token");
+        assert_eq!(tokens.refresh_token, "refresh-token");
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        let form: HashMap<_, _> = url::form_urlencoded::parse(&requests[0].body)
+            .into_owned()
+            .collect();
+        assert_eq!(form["grant_type"], "authorization_code");
+        assert_eq!(form["client_id"], "test-client");
+        assert_eq!(form["code"], "test-code");
+        assert_eq!(form["code_verifier"], expected_verifier);
+        assert_eq!(form["redirect_uri"], "http://127.0.0.1:51413/callback");
     }
 }

@@ -75,7 +75,7 @@ impl BillingClient {
                 host
             );
 
-            let tls_config = ClientTlsConfig::new().domain_name(host);
+            let tls_config = ClientTlsConfig::new().with_native_roots().domain_name(host);
 
             endpoint = endpoint
                 .tls_config(tls_config)

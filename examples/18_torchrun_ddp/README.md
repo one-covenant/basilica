@@ -17,6 +17,7 @@ This example demonstrates how to deploy a PyTorch DDP training job to Basilica a
 - Container registry access (ghcr.io, Docker Hub, etc.)
 - Basilica API token
 - HuggingFace token with LLaMA model access
+- A GPU host with an NVIDIA driver compatible with CUDA 12.6
 
 ## Deployment Steps
 
@@ -25,8 +26,15 @@ This example demonstrates how to deploy a PyTorch DDP training job to Basilica a
 ```bash
 cd examples/18_torchrun_ddp
 
-docker build -t ghcr.io/<username>/torchrun-ddp:latest .
+docker build --platform linux/amd64 -t ghcr.io/<username>/torchrun-ddp:latest .
 ```
+
+The image uses the official PyTorch 2.13.0 CUDA 12.6 runtime. Docker installs
+the dependencies declared in `pyproject.toml` and checks that the CUDA build of
+PyTorch remains installed. The published base image is for `linux/amd64`, so
+specify that platform when building on another architecture. Local Python
+setups should use the same PyTorch version; a container build does not require
+a local GPU.
 
 ### 2. Push to registry
 

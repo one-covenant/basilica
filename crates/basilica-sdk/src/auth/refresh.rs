@@ -4,10 +4,7 @@
 //! between the SDK and CLI to avoid code duplication.
 
 use super::types::{AuthError, AuthResult, TokenSet};
-use oauth2::{
-    basic::BasicClient, reqwest::async_http_client, AuthUrl, ClientId, RefreshToken, TokenResponse,
-    TokenUrl,
-};
+use oauth2::{basic::BasicClient, AuthUrl, ClientId, RefreshToken, TokenResponse, TokenUrl};
 use tracing::{debug, info};
 
 /// Refresh an expired access token using the refresh token
@@ -37,24 +34,27 @@ pub async fn refresh_access_token(
     });
 
     // Create OAuth2 client
-    let client = BasicClient::new(
-        ClientId::new(client_id.to_string()),
-        None, // No client secret for PKCE flow
-        AuthUrl::new(format!(
-            "https://{}/authorize",
-            basilica_common::auth0_domain()
-        ))
-        .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
-        Some(
+    let client = BasicClient::new(ClientId::new(client_id.to_string()))
+        .set_auth_uri(
+            AuthUrl::new(format!(
+                "https://{}/authorize",
+                basilica_common::auth0_domain()
+            ))
+            .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
+        )
+        .set_token_uri(
             TokenUrl::new(token_endpoint.clone())
                 .map_err(|e| AuthError::ConfigError(format!("Invalid token endpoint: {}", e)))?,
-        ),
-    );
+        );
 
     // Refresh token using oauth2 crate
+    let http_client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| AuthError::NetworkError(format!("Token client creation failed: {}", e)))?;
     let token_response = client
         .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-        .request_async(async_http_client)
+        .request_async(&http_client)
         .await
         .map_err(|e| AuthError::NetworkError(format!("Token refresh failed: {}", e)))?;
 
@@ -70,4 +70,76 @@ pub async fn refresh_access_token(
 
     info!("Token refresh completed successfully");
     Ok(token_set)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::refresh_access_token;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    #[tokio::test]
+    async fn refresh_keeps_existing_refresh_token_when_provider_omits_rotation() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/json")
+                    .set_body_raw(
+                        r#"{"access_token":"new-access","token_type":"Bearer"}"#,
+                        "application/json",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let tokens = refresh_access_token(
+            "existing-refresh",
+            Some("test-client"),
+            Some(&format!("{}/token", server.uri())),
+        )
+        .await
+        .unwrap();
+        assert_eq!(tokens.access_token, "new-access");
+        assert_eq!(tokens.refresh_token, "existing-refresh");
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        let body = String::from_utf8(requests[0].body.clone()).unwrap();
+        assert!(body
+            .split('&')
+            .any(|field| field == "grant_type=refresh_token"));
+        assert!(body
+            .split('&')
+            .any(|field| field == "client_id=test-client"));
+        assert!(body
+            .split('&')
+            .any(|field| field == "refresh_token=existing-refresh"));
+    }
+
+    #[tokio::test]
+    async fn token_client_does_not_follow_provider_redirects() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("location", format!("{}/leak", server.uri()).as_str()),
+            )
+            .mount(&server)
+            .await;
+
+        assert!(refresh_access_token(
+            "existing-refresh",
+            Some("test-client"),
+            Some(&format!("{}/token", server.uri())),
+        )
+        .await
+        .is_err());
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url.path(), "/token");
+    }
 }

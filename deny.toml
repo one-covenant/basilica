@@ -20,48 +20,12 @@ no-default-features = false
 version = 2
 yanked = "deny"
 ignore = [
-    # rustls-webpki through the rustls 0.21 subnet chain.
-    # The reqwest 0.12 / rustls 0.23 chain was bumped to rustls-webpki 0.103.13
-    # on 2026-04-23 via Cargo.lock; the remaining 0.101.x hits come from the
-    # rustls 0.21 / reqwest 0.11 / kube 0.88 / tonic 0.10 stack that is
-    # scheduled for removal in the 0.27.0 subnet cleanup.
-    "RUSTSEC-2026-0098",  # URI name constraints incorrectly accepted
-    "RUSTSEC-2026-0099",  # wildcard-CN name constraints accepted
-    "RUSTSEC-2026-0104",  # CRL parsing reachable panic; 0.101.x has no upstream patch (added 2026-04-23)
-
-    # h2 0.3.x reaches us only through hyper 0.14, which is pulled by the same
-    # axum 0.6 / tonic 0.10 / kube 0.88 / reqwest 0.11 stack as the entries
-    # above. The fix is >=0.4.16, a different major line, and 0.3 has had no
-    # backport since 0.3.27 (July 2025), so this cannot be resolved by a bump —
-    # it goes when that stack does, in the 0.27.0 subnet cleanup.
-    #
-    # The id form is the only one that applies to vulnerabilities; `crate = ...`
-    # covers yanked crates only. Masking by id is acceptable here because this
-    # advisory is defined as "fixed in >=0.4.16", so it can never match the
-    # 0.4.17 we pin in this same change — only the unfixable 0.3.x path.
-    "RUSTSEC-2026-0258",  # h2 unbounded empty DATA frames (0.3.x only)
-
     # Unmaintained transitives through the subnet stack. Treated as advisories
     # because cargo-deny surfaces them; functional risk is low.
     "RUSTSEC-2024-0436",  # paste unmaintained
-    "RUSTSEC-2025-0134",  # rustls-pemfile unmaintained
     "RUSTSEC-2025-0161",  # libsecp256k1 unmaintained
     "RUSTSEC-2026-0173",  # proc-macro-error2 unmaintained
-    "RUSTSEC-2024-0449",  # unsafe-libyaml unmaintained (archived, no fix); only via kube-client 0.88's serde_yaml
-
-    # rustls advisories of 2026-10-14, reviewed the same day as in
-    # basilica-backend#2223; re-review by 2026-10-21 and whenever TLS client or
-    # session handling changes. Modern rustls is patched to 0.23.46 in
-    # Cargo.lock. Legacy rustls 0.21.12 has no patched release and reaches us
-    # only through the subnet-era stack above (aws-smithy-http-client,
-    # hyper-rustls 0.24, kube-client 0.88, reqwest 0.11, tokio-rustls 0.24,
-    # tonic 0.10); no code here implements or logs a client session store,
-    # and 0.21 offers classical key exchange only. Usage-based exceptions,
-    # not upstream fixes: they go with that stack in the 0.27.0 cleanup.
-    # Advisory ignores are global, so the rustls bans below MUST stay: only
-    # 0.21.12 or >=0.23.46 is allowed.
-    { id = "RUSTSEC-2026-0346", reason = "legacy rustls 0.21.12 only: no custom session-store Debug logging in this repository or its six dependency callers; modern rustls patched to >=0.23.46 and version bans confine this exception" },
-    { id = "RUSTSEC-2026-0349", reason = "legacy rustls 0.21.12 offers classical key exchange only, so the post-quantum downgrade does not apply; modern rustls patched to >=0.23.46 and version bans confine this exception" },
+    "RUSTSEC-2024-0449",  # unsafe-libyaml unmaintained (archived, no fix); kube-client 0.99 still uses serde_yaml
 ]
 
 # ---------------------------------------------------------------------------
@@ -121,10 +85,10 @@ wildcards = "allow"
 # Add specific bans here as they come up, e.g.:
 # { name = "openssl", reason = "prefer rustls for consistency" }
 deny = [
-    # Bound the two reviewed rustls advisory exceptions above to legacy
-    # 0.21.12; every other accepted rustls release must contain the fixes.
-    { crate = "rustls:<0.21.12", reason = "do not extend the reviewed legacy TLS advisory exceptions to older versions" },
-    { crate = "rustls:>0.21.12, <0.23.46", reason = "only reviewed legacy 0.21.12 or patched rustls >=0.23.46 is allowed" },
+    { crate = "rustls:<0.23.46", reason = "reject the removed legacy TLS stack and require current security fixes" },
+    { crate = "rustls-webpki:<0.103.13", reason = "reject certificate-validation versions affected by 2026 advisories" },
+    { crate = "lru:<0.18.2", reason = "lru 0.18.2 fixes GHSA-rhfx-m35p-ff5j and RUSTSEC-2026-0253" },
+    { crate = "ruzstd:<0.9.1", reason = "ruzstd 0.9.1 fixes RUSTSEC-2026-0344" },
 ]
 skip = []
 skip-tree = []

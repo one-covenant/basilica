@@ -299,7 +299,7 @@ pub mod helpers {
     /// Create a basic gRPC TLS config using system roots
     pub fn create_tls_config(
     ) -> Result<tonic::transport::ClientTlsConfig, Box<dyn std::error::Error>> {
-        Ok(tonic::transport::ClientTlsConfig::new())
+        Ok(tonic::transport::ClientTlsConfig::new().with_native_roots())
     }
 }
 

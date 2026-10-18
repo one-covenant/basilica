@@ -8,6 +8,7 @@ members = [
   "crates/basilica-sdk",
   "crates/basilica-sdk-python",
 ]
+exclude = ["crates/vendor/smoldot-light", "crates/vendor/smoldot"]
 resolver = "2"
 
 # Workspace-wide dependencies that all crates can use
@@ -42,7 +43,7 @@ utoipa = { version = "6", features = ["chrono"] }
 toml = "1.1"
 hex = "0.4"
 md5 = "0.7"
-bigdecimal = "0.3"
+bigdecimal = "0.4"
 # Logging and metrics
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -82,17 +83,17 @@ prost-types = "0.14"
 blake3 = "1.5"
 aes-gcm = "0.11"
 rand = "0.10"
-base64 = "0.21"
+base64 = "0.23"
 
 # Utilities
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.0", features = ["derive", "env"] }
-clap-verbosity-flag = "2.2"
+clap-verbosity-flag = "3.0"
 futures = "0.3"
 futures-util = "0.3"
 # MUSL COMPATIBILITY: Disable default features (includes native-tls) and use rustls-tls only
-reqwest = { version = "0.11", default-features = false, features = [
+reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "rustls-tls",
   "stream",
@@ -138,8 +139,10 @@ lru = "0.18"
 eventsource-stream = "0.2"
 fastrand = "2.0"
 aws-config = { version = "1.0", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1.119"
-aws-sdk-secretsmanager = "1.0"
+# Retain the current HTTPS client and S3 SigV4a/HTTP 1.x/Tokio support;
+# the SDK's `rustls` feature only enables its obsolete Hyper 0.14 stack.
+aws-sdk-s3 = { version = "1.152", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
+aws-sdk-secretsmanager = { version = "1.0", default-features = false, features = ["default-https-client", "rt-tokio"] }
 rust_decimal = { version = "1.33", features = ["serde"] }
 urlencoding = "2.1"
 
@@ -162,7 +165,7 @@ clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 shellexpand = "3.1"
 etcetera = "0.11"
 color-eyre = "0.6"
-oauth2 = "4.4"
+oauth2 = "5"
 # `hardened` rejects non-HTTP(S) URLs before they reach the OS handler. Both
 # call sites open an https URL (the Auth0 authorize page and the Stripe
 # checkout page), so the restriction costs nothing and closes the argument-
@@ -216,6 +219,11 @@ crabtensor = { git = "https://github.com/one-covenant/crabtensor", branch = "mai
 
 # Bittensor SDK
 bittensor = { version = "0.1.1", git = "https://github.com/one-covenant/bittensor-rs", rev = "0f27fd41f67b45bdd806f510dbf70c46dccd773f", package = "bittensor-rs" }
+
+[patch.crates-io]
+# Keep the exported public workspace on the same patched light-client source.
+smoldot-light = { path = "crates/vendor/smoldot-light" }
+smoldot = { path = "crates/vendor/smoldot" }
 
 [workspace.metadata]
 # Workspace metadata for tooling

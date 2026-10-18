@@ -18,6 +18,7 @@ name = "stub_gen"
 default = []
 extension-module = ["pyo3/extension-module"]
 stub-gen = ["dep:pyo3-stub-gen", "dep:pyo3-stub-gen-derive"]
+sdist-vendored-light-client = ["dep:smoldot-light"]
 
 [dependencies]
 basilica-sdk = { path = "../basilica-sdk" }
@@ -29,5 +30,8 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 pythonize = { workspace = true }
+# Include the workspace's patched crate in Maturin's source distribution.
+# The feature remains disabled in normal SDK builds.
+smoldot-light = { path = "../vendor/smoldot-light", optional = true, default-features = false }
 
 [build-dependencies]

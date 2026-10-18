@@ -46,6 +46,7 @@ basilica-sdk-python:
 workspace:
   - 'Cargo.toml'
   - 'Cargo.lock'
+  - 'crates/vendor/**'
   - '.cargo/**'
   - '.config/nextest.toml'
   - 'rust-toolchain*'

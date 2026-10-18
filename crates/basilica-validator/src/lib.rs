@@ -54,3 +54,27 @@ pub use ssh::{NodeSshDetails, ValidatorSshClient};
 
 /// Validator library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod aws_tls_tests {
+    #[tokio::test]
+    async fn aws_clients_construct_with_default_https_connector() {
+        // Construct both production AWS clients while Reqwest's rustls features
+        // are unified into this workspace. Static credentials avoid any network.
+        let credentials = aws_sdk_s3::config::Credentials::new(
+            "fixture-key",
+            "fixture-secret",
+            None,
+            None,
+            "basilica-validator-test",
+        );
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .credentials_provider(credentials)
+            .region(aws_sdk_s3::config::Region::new("us-west-2"))
+            .load()
+            .await;
+        let _s3 = aws_sdk_s3::Client::new(&config);
+        let _secrets = aws_sdk_secretsmanager::Client::new(&config);
+        let _reqwest = reqwest::Client::builder().build().unwrap();
+    }
+}
