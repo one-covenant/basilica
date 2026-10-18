@@ -4,9 +4,9 @@
 //! for deriving cryptographic keys from passwords or other key material.
 
 use crate::error::CryptoError;
-use aes_gcm::aead::{rand_core::RngCore, OsRng};
 use argon2::{Argon2, Params, Version};
 use pbkdf2::pbkdf2_hmac_array;
+use rand_core::{OsRng, RngCore};
 use sha2::Sha256;
 
 /// Default number of iterations for PBKDF2

@@ -60,7 +60,7 @@ fn prompt_for_method() -> Result<FundMethod, CliError> {
     let theme = ColorfulTheme::default();
     let selection = Select::with_theme(&theme)
         .with_prompt("How do you want to fund?")
-        .items(&items)
+        .items(items)
         .default(0)
         .interact()
         .map_err(|e| CliError::Internal(e.into()))?;

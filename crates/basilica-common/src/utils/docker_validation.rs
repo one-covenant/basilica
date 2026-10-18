@@ -4,7 +4,7 @@
 //! command injection attacks when image names are used in shell commands.
 
 use anyhow::{anyhow, Result};
-use oci_client::Reference;
+use oci_spec::distribution::Reference;
 
 /// Validate Docker image reference
 ///

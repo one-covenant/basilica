@@ -31,7 +31,7 @@ tokio-util = "0.7"
 async-trait = "0.1"
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
 # Serialization
@@ -80,7 +80,7 @@ prost-types = "0.14"
 
 # Crypto and security
 blake3 = "1.5"
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 rand = "0.10"
 base64 = "0.21"
 
@@ -106,12 +106,12 @@ parking_lot = "0.12"
 
 # Additional crypto dependencies
 sp-core = "34.0.0"
-ed25519-dalek = { version = "2.1", features = ["rand_core", "pem"] }
-p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+ed25519-dalek = { version = "3.0", features = ["rand_core", "pem"] }
+p256 = { version = "0.14", features = ["ecdsa", "pkcs8", "pem"] }
 pbkdf2 = { version = "0.13", features = ["hmac"] }
 argon2 = "0.6"
 scrypt = { version = "0.11", features = ["simple"] }
-password-hash = "0.5"
+password-hash = "0.6"
 ssh-key = { version = "0.6", features = ["ed25519", "rand_core", "std"] }
 async-ssh2-tokio = "0.12"
 zeroize = { version = "1.7", features = ["derive"] }
@@ -154,7 +154,7 @@ dashmap = "5.5"
 wiremock = "0.6"
 
 # CLI-specific dependencies
-dialoguer = "0.11"
+dialoguer = "0.12"
 indicatif = "0.18"
 console = "0.16"
 tabled = { version = "0.22", default-features = true, features = ["ansi"] }
@@ -202,16 +202,14 @@ sysinfo = "0.39"
 # Docker integration
 bollard = "0.15"
 
-# OCI client for Docker image validation
-# MUSL COMPATIBILITY: Use rustls-tls instead of native-tls
-oci-client = { version = "0.13", default-features = false, features = [
-  "rustls-tls",
-] }
+# Only the OCI distribution reference parser is used for image validation.
+# Keep HTTP/TLS clients out of services that only parse image names.
+oci-spec = { version = "0.10", default-features = false, features = ["distribution"] }
 
 # HTTP server (for validator API)
 axum = "0.8"
-tower = "0.4"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower = "0.5"
+tower-http = { version = "0.7", features = ["cors", "trace"] }
 
 # Bittensor integration via crabtensor (patched fork for metadata compatibility)
 crabtensor = { git = "https://github.com/one-covenant/crabtensor", branch = "main" }

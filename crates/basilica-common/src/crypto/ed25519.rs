@@ -6,11 +6,11 @@
 #![allow(unused_assignments)] // ZeroizeOnDrop derive generates assignments in Drop impl
 
 use crate::error::CryptoError;
-use aes_gcm::aead::OsRng;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ed25519_dalek::{
     Signature, Signer, SigningKey, Verifier, VerifyingKey, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH,
 };
+use rand::{rand_core::UnwrapErr, rngs::SysRng};
 use std::fmt;
 use zeroize::ZeroizeOnDrop;
 
@@ -38,7 +38,7 @@ pub struct Ed25519KeyPair {
 impl Ed25519PrivateKey {
     /// Generate a new random Ed25519 private key
     pub fn generate() -> Self {
-        let signing_key = SigningKey::generate(&mut OsRng);
+        let signing_key = SigningKey::generate(&mut UnwrapErr(SysRng));
         Self { signing_key }
     }
 
@@ -335,5 +335,27 @@ mod tests {
         let signature = keypair1.private_key().sign(message);
         let result = keypair2.public_key().verify(message, &signature);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn legacy_ed25519_key_and_signature_format() {
+        // RFC 8032's first seed also produced these bytes with ed25519-dalek 2.2.0.
+        let seed: [u8; SECRET_KEY_LENGTH] =
+            hex::decode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let private = Ed25519PrivateKey::from_bytes(&seed).unwrap();
+        let public = private.public_key();
+        assert_eq!(
+            hex::encode(public.to_bytes()),
+            "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+        );
+        let legacy_signature = hex::decode("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b").unwrap();
+        assert_eq!(private.sign(b""), legacy_signature);
+        assert!(public.verify(b"", &legacy_signature).is_ok());
+        assert!(public.verify(b"tampered", &legacy_signature).is_err());
+        let restored = Ed25519PrivateKey::from_pem(&private.to_pem()).unwrap();
+        assert_eq!(restored.to_bytes(), seed);
     }
 }

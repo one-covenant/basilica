@@ -6,10 +6,9 @@
 #![allow(unused_assignments)] // ZeroizeOnDrop derive generates assignments in Drop impl
 
 use crate::error::CryptoError;
-use aes_gcm::aead::OsRng;
 use p256::{
     ecdsa::{signature::Signer, signature::Verifier, Signature, SigningKey, VerifyingKey},
-    elliptic_curve::sec1::ToEncodedPoint,
+    elliptic_curve::{sec1::ToSec1Point, Generate},
     pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding},
     PublicKey,
 };
@@ -67,7 +66,7 @@ impl P256Signature {
 impl P256PrivateKey {
     /// Generate a new random P256 private key
     pub fn generate() -> Self {
-        let signing_key = SigningKey::random(&mut OsRng);
+        let signing_key = SigningKey::generate();
         Self { signing_key }
     }
 
@@ -188,13 +187,13 @@ impl P256PublicKey {
 
     /// Export as compressed SEC1 bytes (33 bytes)
     pub fn to_compressed_bytes(&self) -> Vec<u8> {
-        let point = PublicKey::from(&self.verifying_key).to_encoded_point(true);
+        let point = PublicKey::from(&self.verifying_key).to_sec1_point(true);
         point.as_bytes().to_vec()
     }
 
     /// Export as uncompressed SEC1 bytes (65 bytes)
     pub fn to_uncompressed_bytes(&self) -> Vec<u8> {
-        let point = PublicKey::from(&self.verifying_key).to_encoded_point(false);
+        let point = PublicKey::from(&self.verifying_key).to_sec1_point(false);
         point.as_bytes().to_vec()
     }
 
@@ -386,5 +385,30 @@ mod tests {
         bad_sig[0] ^= 1;
         let result = verify_p256_signature(keypair.public_key(), message, &bad_sig);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn legacy_p256_key_and_signature_format() {
+        // Generated with p256 0.13.2; persisted keys and signatures must remain readable.
+        let private = P256PrivateKey {
+            signing_key: SigningKey::from_slice(&[1u8; 32]).unwrap(),
+        };
+        let public = private.public_key();
+        assert_eq!(
+            public.to_hex(),
+            "026ff03b949241ce1dadd43519e6960e0a85b41a69a05c328103aa2bce1594ca16"
+        );
+        assert_eq!(
+            hex::encode(public.to_uncompressed_bytes()),
+            "046ff03b949241ce1dadd43519e6960e0a85b41a69a05c328103aa2bce1594ca163c4f753a55bf01dc53f6c0b0c7eee78b40c6ff7d25a96e2282b989cef71c144a"
+        );
+        let message = b"Basilica legacy P256 vector";
+        let legacy_signature = hex::decode("877d934ddfe05c56f3100da6d858f46bffe791f9bc8237bd1efc689a503868fd03483cd95e87e89d0a1f7a7844798c2ed873effb0e6ffd858984a290a26bf77c").unwrap();
+        assert_eq!(private.sign(message).to_bytes(), legacy_signature);
+        assert!(verify_p256_signature(&public, message, &legacy_signature).is_ok());
+        assert!(verify_p256_signature(&public, b"tampered", &legacy_signature).is_err());
+        let legacy_pkcs8_der = hex::decode("308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b02010104200101010101010101010101010101010101010101010101010101010101010101a144034200046ff03b949241ce1dadd43519e6960e0a85b41a69a05c328103aa2bce1594ca163c4f753a55bf01dc53f6c0b0c7eee78b40c6ff7d25a96e2282b989cef71c144a").unwrap();
+        let restored = P256PrivateKey::from_der(&legacy_pkcs8_der).unwrap();
+        assert_eq!(restored.public_key().to_hex(), public.to_hex());
     }
 }

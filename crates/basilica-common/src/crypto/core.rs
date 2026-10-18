@@ -14,11 +14,11 @@
 
 use crate::error::CryptoError;
 use crate::identity::Hotkey;
-use aes_gcm::aead::rand_core::RngCore;
-use aes_gcm::aead::{Aead, OsRng};
-use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
+use aes_gcm::aead::{Aead, Nonce};
+use aes_gcm::{Aes256Gcm, KeyInit};
 use bittensor::crypto::sr25519;
 use blake3::Hasher;
+use rand_core::{OsRng, RngCore};
 use std::str::FromStr;
 
 /// Blake3 hash digest size in bytes
@@ -239,7 +239,6 @@ pub fn generate_random_key(size: usize) -> Vec<u8> {
 /// - Never reuse nonce with the same key
 /// - Verify authentication tag during decryption
 /// - Key should be derived from secure source (e.g., PBKDF2, Argon2)
-#[allow(deprecated)]
 pub fn encrypt_aes_gcm(data: &[u8], key: &[u8]) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
     if key.len() != AES_KEY_SIZE {
         return Err(CryptoError::EncryptionFailed {
@@ -251,16 +250,17 @@ pub fn encrypt_aes_gcm(data: &[u8], key: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Cr
         });
     }
 
-    let key: &Key<Aes256Gcm> = key.into();
-    let cipher = Aes256Gcm::new(key);
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| CryptoError::EncryptionFailed {
+        details: format!("Invalid AES-GCM key: {e}"),
+    })?;
 
     // Generate random nonce
     let mut nonce_bytes = [0u8; AES_NONCE_SIZE];
     OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::<Aes256Gcm>::from(nonce_bytes);
 
     let ciphertext = cipher
-        .encrypt(nonce, data)
+        .encrypt(&nonce, data)
         .map_err(|e| CryptoError::EncryptionFailed {
             details: format!("AES-GCM encryption failed: {e}"),
         })?;
@@ -283,7 +283,6 @@ pub fn encrypt_aes_gcm(data: &[u8], key: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Cr
 /// - Authentication verification is automatic with GCM mode
 /// - Fails if ciphertext has been tampered with
 /// - Fails if wrong key or nonce is used
-#[allow(deprecated)]
 pub fn decrypt_aes_gcm(
     ciphertext: &[u8],
     key: &[u8],
@@ -299,23 +298,25 @@ pub fn decrypt_aes_gcm(
         });
     }
 
-    if nonce.len() != AES_NONCE_SIZE {
-        return Err(CryptoError::DecryptionFailed {
-            details: format!(
-                "Invalid nonce size: expected {}, got {}",
-                AES_NONCE_SIZE,
-                nonce.len()
-            ),
-        });
-    }
+    let nonce_bytes: [u8; AES_NONCE_SIZE] =
+        nonce
+            .try_into()
+            .map_err(|_| CryptoError::DecryptionFailed {
+                details: format!(
+                    "Invalid nonce size: expected {}, got {}",
+                    AES_NONCE_SIZE,
+                    nonce.len()
+                ),
+            })?;
 
-    let key: &Key<Aes256Gcm> = key.into();
-    let cipher = Aes256Gcm::new(key);
-    let nonce = Nonce::from_slice(nonce);
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| CryptoError::DecryptionFailed {
+        details: format!("Invalid AES-GCM key: {e}"),
+    })?;
+    let nonce = Nonce::<Aes256Gcm>::from(nonce_bytes);
 
     let plaintext =
         cipher
-            .decrypt(nonce, ciphertext)
+            .decrypt(&nonce, ciphertext)
             .map_err(|e| CryptoError::DecryptionFailed {
                 details: format!("AES-GCM decryption failed: {e}"),
             })?;
@@ -547,6 +548,34 @@ mod tests {
         // Decryption should fail
         let result = decrypt_aes_gcm(&ciphertext, &key, &nonce);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn legacy_aes_gcm_ciphertext_and_layout() {
+        // Generated with aes-gcm 0.10.3: key, nonce and plaintext are fixed.
+        let key = [0x42u8; AES_KEY_SIZE];
+        let nonce = [0x24u8; AES_NONCE_SIZE];
+        let plaintext = b"Basilica legacy AES-GCM vector";
+        let legacy_ciphertext = hex::decode("57f0b72885afa55f068447cddc51ea862dbe605df1e81d4dc6c1af2e39b7c972348460a079a9a96731625c43b2c9").unwrap();
+
+        assert_eq!(
+            decrypt_aes_gcm(&legacy_ciphertext, &key, &nonce).unwrap(),
+            plaintext
+        );
+        let mut combined = nonce.to_vec();
+        combined.extend_from_slice(&legacy_ciphertext);
+        assert_eq!(symmetric_decrypt(&key, &combined).unwrap(), plaintext);
+
+        let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+        assert_eq!(
+            cipher
+                .encrypt(&Nonce::<Aes256Gcm>::from(nonce), plaintext.as_slice())
+                .unwrap(),
+            legacy_ciphertext
+        );
+        combined[AES_NONCE_SIZE] ^= 1;
+        assert!(symmetric_decrypt(&key, &combined).is_err());
+        assert!(decrypt_aes_gcm(&legacy_ciphertext, &key, &nonce[..11]).is_err());
     }
 
     #[test]
